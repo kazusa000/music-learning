@@ -1,6 +1,6 @@
 # 数据与 AI 操作约定
 
-状态：第一阶段契约设计。这里定义必须遵守的语义；实际 Pydantic、JSON Schema 与前端类型在 P1 实现，示例不表示接口已经存在。
+状态：第一阶段契约设计，已扩展为 AI 操作优先的 VST3 DAW。这里定义必须遵守的语义；实际 Pydantic、JSON Schema 与 SDK/前端类型在 P1 实现，示例不表示接口已经存在。全操作要求见[AI DAW 约定](09-agent-daw-contract.md)。
 
 ## 数据实体
 
@@ -11,12 +11,18 @@
 | AnalysisRun | 输入、模型/权重/代码版本、参数、原始产物、归一化产物、质量问题 |
 | Stem | 原曲分离音频、类别、对齐偏移、来源运行；与符号轨道有映射关系 |
 | Track | 符号声部、名称、乐器候选、角色、音域、渲染音色；可关联多个 stems |
+| Clip | 所属轨道、asset/MIDI 引用、工程位置、素材偏移、长度、循环及增益 |
+| PluginDescriptor | VST3 class ID、厂商/版本/二进制摘要、总线、参数与已实测能力 |
+| PluginInstance | 实例 id、descriptor、component/controller 状态、参数、依赖、旁通和所属节点 |
+| RoutingGraph | 轨道、插入效果、总线、发送、侧链与主输出的有向连接及布局 |
+| AutomationLane | 参数/混音目标、时间点、值、插值方式、参数元数据版本 |
+| PresetAsset | 插件/宿主管理预设或状态、外部采样依赖及加载方法，能力可为未支持 |
 | NoteEvent | 稳定 id、track_id、音高、音名拼写、起止时间、力度、来源及核对状态 |
 | ControlEvent | 踏板、弯音等控制器事件；缺失时不假造原演奏细节 |
 | TimingMap | 原曲样本时间、拍点、下拍、小节、拍号、速度段、弱起信息 |
 | Annotation | 调性、和弦、段落、角色、解释，附区间、候选与证据引用 |
-| Revision | parent、analysis 基线、编辑事务、快照摘要、时间、创建者和说明 |
-| Render | revision、设置、每轨与混合音频、延迟/尾音、响度和生成状态 |
+| Revision | parent、analysis 基线、工程/处理图/插件状态快照、编辑事务、摘要、创建者和说明 |
+| Render | revision、宿主/插件/资源/设置、每轨与混合音频、延迟/尾音、测量与生成状态 |
 | Conversation | 工程、消息、请求时上下文快照、工具结果、引用及修订关系 |
 | Insight | 可定位笔记、方法、例子、条件、用户评价、采纳状态；为后续经验库预留 |
 
@@ -44,7 +50,9 @@
 
 SQLite 保存项目索引、任务、消息、版本关系与事务元数据；较大的事件快照和音频产物采用内容寻址文件。Revision 引用确定的快照和事务，每次发布包含完整摘要。
 
-采用“不可变基线 + 编辑事务 + 定期快照”。撤销创建新的版本或切回既有版本，不能删除旧版本令讨论引用失效。对话回复绑定发送时版本，不能随着 current_revision 改变语义。
+采用“不可变基线 + 编辑事务 + 定期快照”。撤销创建新的版本或切回既有版本，不能删除旧版本令讨论引用失效。对话回复绑定发送时版本，不能随着 current_revision 改变语义。领域服务中的 revision 是唯一权威工程，原生处理图由该快照生成。
+
+插件完整状态块按内容摘要保存，参数快照用于回读和差异。不得只保存参数列表就宣称音色可恢复。资源依赖使用受控 asset_id，并保留插件实际加载所需的路径映射；原始状态中含机器路径时通过已验证适配器重定位，不盲改未知二进制状态。
 
 编辑先写临时产物、校验、原子重命名，再在数据库短事务中发布引用；崩溃留下的未引用文件可以后续回收。绝不先把数据库标成成功再赌文件生成成功。
 
@@ -75,12 +83,17 @@ SQLite 保存项目索引、任务、消息、版本关系与事务元数据；�
 
 | 工具 | 输入/作用 | 约束 |
 | --- | --- | --- |
+| describe_capabilities | 工程/宿主/插件操作能力与 schema | supported/unsupported/untested，附实测版本 |
 | get_project_summary | 工程与版本 | 返回曲式、能力状态、问题与分析摘要 |
 | query_events | revision、范围、声部、分页 | 精确事件、来源和交叉边界音符 |
 | query_annotations | revision、范围、类型 | 和弦、节拍、段落及候选 |
 | get_audio_excerpt | asset/render、范围 | 返回受控片段引用与来源；按供应商能力发送音频 |
 | compare_sections | 两个带版本的区间 | 密度、音区、节奏与乐器统计，解释另行生成 |
 | apply_edit | expected_revision、scope、operations | 服务端验证并创建新 revision |
+| query_graph | revision、轨道/插件/路由范围 | 返回真实处理图、布局与参数/状态引用 |
+| scan_plugins / inspect_plugin | 受控目录或 descriptor | 独立扫描任务、参数与总线能力回读 |
+| query_presets | descriptor/实例与分页 | 只返回实际可用且支持加载的宿主管理预设 |
+| measure_audio | asset/render、范围、指标 | 数值、单位、算法和分析范围；不等同听觉判断 |
 | request_render | revision、模式、设置 | 返回任务；完成后才能宣称可试听 |
 | compare_revisions | 两个 revision、范围 | 事件差异与可用音频引用 |
 | add_note | 内容、范围、引用 | 保存笔记；长期偏好另有采纳状态 |
@@ -107,15 +120,19 @@ SQLite 保存项目索引、任务、消息、版本关系与事务元数据；�
 }
 ```
 
-支持原子操作 `insert_note`、`update_note`、`delete_note`、`set_instrument`、`upsert_annotation`、`update_timing_map`。高层“重新配和声”“重写贝斯”须展开成明确操作；选区局部音色变化使用时间区间映射，不能误用全轨 set_instrument。
+支持原子操作 `insert_note`、`update_note`、`delete_note`、`upsert_annotation`、`update_timing_map`，以及轨道/片段创建与编排、插件实例增删/排序/旁通、参数/完整状态加载、总线/发送/侧链连接和自动化曲线编辑。全操作清单以[AI DAW 约定](09-agent-daw-contract.md)为准，SDK/CLI 不另造独立编辑路径。
 
-校验项目包括：实体归属、revision、允许声部与范围、音高/力度合法性、时长为正、事件标识唯一、节拍映射单调性、不可变素材引用与操作数量上限。任一步失败则整条事务不发布。超出乐器常用音域可以提示音乐问题，但不等同于无效 MIDI。
+高层“重新配和声”“重写贝斯”须展开成明确操作；局部音色变化通过适当的片段/轨道分配或受支持自动化表达，不能误改全轨插件状态。结构编辑的 scope 使用明确实体集合和影响范围，不能用一个音符选区隐式授权删除整条轨道。
+
+校验项目包括：实体归属、revision、允许声部与范围、音高/力度合法性、时长为正、事件标识唯一、节拍映射单调性、素材引用、参数范围/只读/离散值、总线布局、路由无非法环路和操作数量。任一步失败则整条事务不发布。超出乐器常用音域可以提示音乐问题，但不等同于无效 MIDI。
+
+插件参数通过稳定 param_id 定位；插件字符串/单位转换与归一化值一并保存。参数写入后回读控制状态，并以渲染验证处理器生效；控制器显示变化不能单独证明声音已变。插件不支持的预设/素材加载方法返回能力错误，不回退为依赖人工点击的默认流程。
 
 范围替换须显式处理跨界延音、踏板和控制器；第一版拒绝含糊的跨界破坏性操作并返回相关事件，让调用者生成明确补丁。对齐与试听以实际事件修改为准，单独修改 Annotation 不改变声音。
 
 ## HTTP 与事件流约定
 
-初步资源：`/api/projects`、`/api/assets`、`/api/jobs`、`/api/projects/{id}/revisions`、`/api/projects/{id}/conversations`、`/api/renders`、`/api/events`。
+初步资源：`/api/capabilities`、`/api/plugins`、`/api/projects`、`/api/assets`、`/api/jobs`、`/api/projects/{id}/revisions`、`/api/projects/{id}/graph`、`/api/projects/{id}/conversations`、`/api/renders`、`/api/measurements`、`/api/events`。从同一契约生成 SDK/CLI 入口，Agent 可批量读取与操作，无需浏览器控制。
 
 写入统一使用请求 id 与幂等键；长任务返回 `202 + job_id`。SSE 事件有持久递增 cursor、project_id、job/request_id、revision_id、type 和 payload，重连按 cursor 补发。聊天和任务失败独立呈现，避免渲染失败导致对话记录丢失。
 

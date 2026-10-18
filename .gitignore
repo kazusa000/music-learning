@@ -10,6 +10,8 @@
 # User projects, audio, databases, models and runtime artifacts
 /data/
 /models/
+/plugins/
+/samples/
 /runtime/
 /exports/
 /backups/
@@ -44,6 +46,11 @@ htmlcov/
 playwright-report/
 test-results/
 *.tsbuildinfo
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+vcpkg_installed/
+.vs/
 
 # OS and logs
 Thumbs.db

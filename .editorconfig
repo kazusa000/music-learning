@@ -11,5 +11,8 @@ indent_size = 2
 [*.py]
 indent_size = 4
 
+[*.{cpp,h,hpp}]
+indent_size = 4
+
 [*.{ps1,cmd}]
 end_of_line = crlf
