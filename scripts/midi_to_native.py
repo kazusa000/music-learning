@@ -5,6 +5,7 @@ import argparse
 from collections import defaultdict, deque
 from fractions import Fraction
 import json
+import math
 from pathlib import Path
 
 import mido
@@ -73,7 +74,26 @@ def normalize(path: Path, sample_rate: int = 48000) -> dict:
             "tracks":list(voices.values()),"unhandled_events":unhandled,"issues":issues}
 
 
-def to_project(normalized: dict, duration_samples: int, drum_sfz: Path | None = None) -> tuple[dict,list]:
+def load_drum_map(path: Path) -> dict:
+    data=json.loads(path.read_text(encoding="utf-8"));directory=path.resolve().parent
+    if data.get("schema_version")!=1:raise ValueError("Unsupported drum map")
+    for asset in data["assets"]:
+        source=(directory/asset["path"]).resolve()
+        if not source.is_relative_to(directory) or digest(source)!=asset["sha256"]:
+            raise ValueError("Drum dependency digest/path mismatch")
+    sfz=(directory/data["sfz_file"]).resolve()
+    if not sfz.is_relative_to(directory) or data["sfz_file"] not in {a["path"] for a in data["assets"]}:
+        raise ValueError("SFZ must be a verified dependency")
+    notes=data["supported_notes"]
+    if not notes or any(type(n)!=int or not 0<=n<=127 for n in notes):raise ValueError("Invalid percussion pitches")
+    if (len(notes)!=len(set(notes)) or set(map(str,notes))!=set(data["per_key_render_rms"])
+            or any(not math.isfinite(v) or v<1e-4 for v in data["per_key_render_rms"].values())):
+        raise ValueError("Missing per-key render evidence")
+    return {**data,"sfz_path":sfz}
+
+
+def to_project(normalized: dict, duration_samples: int, drum_sfz: Path | None = None,
+               drum_mapping: dict | None = None) -> tuple[dict,list]:
     if normalized["unhandled_events"]:raise ValueError("Unsupported MIDI events require explicit adaptation")
     if normalized["issues"]:raise ValueError("Ambiguous MIDI events require correction before reconstruction")
     tracks=[];mapping=[]
@@ -83,12 +103,15 @@ def to_project(normalized: dict, duration_samples: int, drum_sfz: Path | None = 
         if any(n["sample"]+n["duration_samples"]>duration_samples for n in notes):
             raise ValueError("Transcription note exceeds source audio; no implicit clipping")
         if track["is_drum"]:
+            if drum_mapping:drum_sfz=drum_mapping["sfz_path"]
             if drum_sfz is None:raise ValueError("Drum MIDI requires a validated SFZ mapping")
-            unsupported=sorted({n["note"] for n in notes}-{36,38,42})
+            allowed=set(drum_mapping["supported_notes"]) if drum_mapping else {36,38,42}
+            unsupported=sorted({n["note"] for n in notes}-allowed)
             if unsupported:raise ValueError(f"Fixture drum kit does not map notes {unsupported}")
             plugin={"id":"instrument","path":str(ROOT/"plugins/sfizz-1.2.3/commoncf/VST3/sfizz.vst3"),
                     "identifier":"VST3-sfizz-fa6eb9e3-5da1643a","sfizz_sfz_path":str(drum_sfz.resolve())}
-            label="self-made three-key diagnostic drum kit"
+            label=drum_mapping["description"] if drum_mapping else "self-made three-key diagnostic drum kit"
+            if drum_mapping:plugin["binary_sha256"]=drum_mapping["plugin_binary_sha256"]
         else:
             plugin={"id":"instrument","path":str(ROOT/"plugins/surge-xt-1.3.4/Surge Synth Team/Surge XT.vst3")}
             label="Surge XT initial patch; original instrument/timbre NOT restored"
@@ -105,13 +128,16 @@ def to_project(normalized: dict, duration_samples: int, drum_sfz: Path | None = 
 def main() -> None:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("midi",type=Path);parser.add_argument("--source-audio",type=Path,required=True)
-    parser.add_argument("--output",type=Path,required=True);parser.add_argument("--drum-sfz",type=Path)
+    parser.add_argument("--output",type=Path,required=True)
+    drum=parser.add_mutually_exclusive_group()
+    drum.add_argument("--drum-sfz",type=Path);drum.add_argument("--drum-map",type=Path)
     parser.add_argument("--render",action="store_true");args=parser.parse_args()
     import soundfile as sf
     info=sf.info(args.source_audio);args.output.mkdir(parents=True,exist_ok=False)
     normalized=normalize(args.midi,info.samplerate)
     (args.output/"normalized.json").write_text(json.dumps(normalized,indent=2),encoding="utf-8")
-    project,mapping=to_project(normalized,info.frames,args.drum_sfz)
+    project,mapping=to_project(normalized,info.frames,args.drum_sfz,
+                               load_drum_map(args.drum_map) if args.drum_map else None)
     (args.output/"project.json").write_text(json.dumps(project),encoding="utf-8")
     (args.output/"mapping.json").write_text(json.dumps(mapping,indent=2),encoding="utf-8")
     if args.render:

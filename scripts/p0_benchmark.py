@@ -34,6 +34,7 @@ def main() -> None:
         (out/"owner.json").write_text(json.dumps({"pid":child.pid,"command":command}),encoding="utf-8")
         try:
             while child.poll() is None:
+                if (out/"cancel.request").exists():raise KeyboardInterrupt()
                 if time.monotonic()-started > args.timeout:raise TimeoutError()
                 try:
                     proc=psutil.Process(child.pid)

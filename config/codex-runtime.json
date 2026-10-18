@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "version": "codex-cli 0.163.0-alpha.10.2",
+  "sha256": "f6dbf48cb70f62649c645f26c87dc9bf84cc36986202dfad8e12fb5b8ca70312",
+  "source": "Existing official Codex desktop installation; locally copied runtime, not redistributed",
+  "filename": "codex.exe",
+  "sidecars": [
+    {
+      "filename": "codex-code-mode-host.exe",
+      "sha256": "3b6a9179a4da17fa5fc6948219cd61486dc3b534c683838076d8c61bd311c68e"
+    },
+    {
+      "filename": "codex-command-runner.exe",
+      "sha256": "ce80b56a2f37f808815fde33cceb97ac858ceecde296425ad3860f0f37fb4877"
+    },
+    {
+      "filename": "codex-windows-sandbox-setup.exe",
+      "sha256": "c4da812016cbfb92d9a62791f78460c59e9662faadb0a2720d3aa5d0535b80bd"
+    }
+  ]
+}

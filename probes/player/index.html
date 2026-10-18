@@ -15,5 +15,6 @@ for(const name of manifest.assets){const option=document.createElement('option')
 const showError=e=>$('status').textContent=String(e);
 $('load').onclick=()=>probe.load($('asset').value).catch(showError);$('play').onclick=()=>probe.play().catch(showError);$('pause').onclick=()=>probe.pause();
 $('seek').onclick=()=>probe.seek(Number($('position').value)).catch(showError);$('loop').onclick=()=>probe.setLoop(Number($('start').value),Number($('end').value)).catch(showError);$('unloop').onclick=()=>probe.setLoop(null);
-setInterval(()=>document.getElementById('status').textContent=JSON.stringify(probe.state(),null,2),100);
+function paint(){const state=probe.state();window.lastPaint={context_time:probe.context.currentTime,seconds:state.seconds};$('status').textContent=JSON.stringify(state,null,2);requestAnimationFrame(paint)}
+requestAnimationFrame(paint);
 </script></html>

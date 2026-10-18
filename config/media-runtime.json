@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "platform": "windows-x64",
+  "tools": {
+    "ffmpeg": {
+      "filename": "ffmpeg.EXE",
+      "sha256": "05f4251bce9293c2ab492cb17ca7724a0ffd0d06c881ba2ee83b82a89c2fc740",
+      "version": "ffmpeg version 9.0-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers"
+    },
+    "ffprobe": {
+      "filename": "ffprobe.EXE",
+      "sha256": "51e0780cd881f83749b029ed716cbb841c2eac6289f418050f2f2961b158896b",
+      "version": "ffprobe version 9.0-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers"
+    },
+    "node": {
+      "filename": "node.EXE",
+      "sha256": "58e74bf02fc5bbacc41dcb8bef089961cd5bddd37830b87784e4fc624d145d1f",
+      "version": "v24.14.1"
+    },
+    "uv": {
+      "filename": "uv.EXE",
+      "sha256": "8da6cedef60c27ac997ebf400fbfc6d373c5b0a7ae6a299b9d52be7fe63723fb",
+      "version": "uv 0.12.5 (210d1f678 2026-08-14 x86_64-pc-windows-msvc)"
+    }
+  }
+}

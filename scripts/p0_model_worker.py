@@ -71,6 +71,8 @@ def separate(audio: Path, out: Path) -> dict:
 
 
 def analyze(audio: Path, out: Path) -> dict:
+    from media_runtime import verify_tool
+    verify_tool("ffmpeg")
     import torch
     from transformers import AutoModel
     verify_model("sheetsage"); verify_model("mert")

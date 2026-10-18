@@ -1,7 +1,7 @@
 // Usage: node probe.mjs <Python with psutil> <player-assets.json> <new output dir>
 import {chromium} from 'playwright';
 import {spawn,execFileSync} from 'node:child_process';
-import {mkdir,writeFile} from 'node:fs/promises';
+import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -10,6 +10,8 @@ const [python,manifest,output]=process.argv.slice(2);
 if(!output)throw new Error('Arguments: python, asset manifest, output directory');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 await mkdir(output,{recursive:false});
+const assetManifest=JSON.parse(await readFile(manifest,'utf8'));
+const expectedDurations=assetManifest.expected_durations??{original:194,'model-reconstruction':196,'hybrid-sparse-bass':194};
 const server=spawn(python,[path.join(root,'scripts/serve_player_probe.py'),manifest],{cwd:root,windowsHide:true,stdio:['ignore','pipe','pipe']});
 let browser;let errors=[];const memory=[];let failure;
 try{
@@ -32,9 +34,10 @@ try{
   const range=await page.request.get(url+'audio/original',{headers:{Range:'bytes=0-63'}});
   assert.equal(range.status(),206);assert.equal((await range.body()).length,64);
   await page.evaluate(()=>probe.load('original'));
-  assert.equal((await page.evaluate(()=>probe.state())).duration,194);
+  const originalDuration=(await page.evaluate(()=>probe.state())).duration;
+  assert.ok(Math.abs(originalDuration-expectedDurations.original)<=1/48000);
   await sampleMemory('original-decoded');
-  for(const target of [0,97,193.5]){
+  for(const target of [0,originalDuration/2,originalDuration-.5]){
     await page.evaluate(t=>probe.seek(t),target);
     assert.ok(Math.abs((await page.evaluate(()=>probe.state())).seconds-target)<1/48000);
   }
@@ -42,6 +45,11 @@ try{
   await page.waitForTimeout(300);
   const playing=await page.evaluate(()=>probe.state());
   assert.equal(playing.context_state,'running');assert.ok(playing.seconds>120.15&&playing.seconds<120.6);
+  const uiClockLag=await page.evaluate(()=>new Promise(resolve=>{
+    const samples=[];const timer=setInterval(()=>{samples.push((probe.context.currentTime-window.lastPaint.context_time)*1000);
+      if(samples.length===60){clearInterval(timer);resolve({max_ms:Math.max(...samples),samples:samples.length})}},5);
+  }));
+  assert.ok(uiClockLag.max_ms<=30);
   await page.evaluate(()=>probe.pause());
   const paused=await page.evaluate(()=>probe.state());await page.waitForTimeout(100);
   assert.equal((await page.evaluate(()=>probe.state())).seconds,paused.seconds);
@@ -49,11 +57,15 @@ try{
   await page.waitForTimeout(1150);const loop=await page.evaluate(()=>probe.state());
   assert.ok(loop.seconds>=19.2&&loop.seconds<19.7);
   await page.evaluate(async()=>{probe.pause();await probe.setLoop(null);await probe.load('model-reconstruction')});
-  assert.equal((await page.evaluate(()=>probe.state())).duration,196);
+  const reconstructionDuration=(await page.evaluate(()=>probe.state())).duration;
+  assert.ok(Math.abs(reconstructionDuration-expectedDurations['model-reconstruction'])<=1/48000);
   await sampleMemory('original-plus-reconstruction');
-  await page.evaluate(()=>probe.load('hybrid-sparse-bass'));
-  assert.equal((await page.evaluate(()=>probe.state())).duration,194);
-  await sampleMemory('hybrid-decoded');
+  const hybridTested=Object.hasOwn(assetManifest.assets,'hybrid-sparse-bass');
+  if(hybridTested){
+    await page.evaluate(()=>probe.load('hybrid-sparse-bass'));
+    assert.ok(Math.abs((await page.evaluate(()=>probe.state())).duration-expectedDurations['hybrid-sparse-bass'])<=1/48000);
+    await sampleMemory('hybrid-decoded');
+  }
   await page.evaluate(()=>probe.load('pulses'));
   const pulseResults=await page.evaluate(async()=>{
     const {startBuffer}=await import('./player.js');
@@ -73,12 +85,12 @@ try{
   const expected=[3696,13296,22896,32496,42096];
   const maxLoopError=Math.max(...pulseResults.loop.map((x,i)=>Math.abs(x-expected[i])));
   assert.equal(pulseResults.loop.length,expected.length);assert.ok(maxLoopError<=1);
-  await sampleMemory('all-four-assets');
+  await sampleMemory('all-selected-assets');
   const state=await page.evaluate(()=>probe.state());
   await page.screenshot({path:path.join(output,'player.png'),fullPage:true});
   await page.evaluate(()=>probe.close());assert.deepEqual(errors,[]);
   await writeFile(path.join(output,'summary.json'),JSON.stringify({status:'completed',browser:browser.version(),
-    duration_original:194,duration_model_reconstruction:196,range_status:206,playing,paused,loop,
+    duration_original:originalDuration,duration_model_reconstruction:reconstructionDuration,hybrid_tested:hybridTested,range_status:206,playing,paused,loop,ui_clock_lag:uiClockLag,
     pulse_results:pulseResults,max_loop_error_samples:maxLoopError,state,memory,
     memory_sampling:'milestone RSS snapshots, not a continuous peak',
     limitations:['Headless Web Audio and OfflineAudioContext checks; no speaker or human listening test',

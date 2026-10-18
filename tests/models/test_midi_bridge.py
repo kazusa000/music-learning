@@ -1,9 +1,10 @@
 import hashlib
+import json
 import mido
 import pytest
 
 from make_whole_song import compose
-from midi_to_native import normalize, to_project
+from midi_to_native import normalize, to_project, load_drum_map
 from model_runtime import verify_file
 
 
@@ -69,3 +70,22 @@ def test_fixture_chord_truth_matches_played_harmony():
         played={n["note"]%12 for n in notes if n["sample"]==chord["start_sample"]}
         expected={(roots[root]+interval)%12 for interval in qualities[quality]}
         assert played==expected
+
+
+def drum_manifest(tmp_path, rms=.01):
+    sfz=tmp_path/"kit.sfz";sfz.write_text('<region> sample=owned.wav key=36')
+    data={"schema_version":1,"sfz_file":"kit.sfz","supported_notes":[36],
+          "assets":[{"path":"kit.sfz","sha256":hashlib.sha256(sfz.read_bytes()).hexdigest()}],
+          "per_key_render_rms":{"36":rms},"plugin_binary_sha256":"0"*64,"description":"diagnostic"}
+    path=tmp_path/"drum-map.json";path.write_text(json.dumps(data));return path
+
+
+def test_drum_map_rejects_a_modified_verified_dependency(tmp_path):
+    manifest=drum_manifest(tmp_path)
+    assert load_drum_map(manifest)["supported_notes"]==[36]
+    (tmp_path/"kit.sfz").write_text('changed')
+    with pytest.raises(ValueError,match="digest"):load_drum_map(manifest)
+
+
+def test_nan_cannot_count_as_a_successful_per_key_audio_measurement(tmp_path):
+    with pytest.raises(ValueError,match="evidence"):load_drum_map(drum_manifest(tmp_path,float('nan')))
