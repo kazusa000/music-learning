@@ -1,0 +1,7 @@
+# Windows x64 / Python 3.11. CUDA backend is explicit in the lock command.
+torch==2.8.0
+torchaudio==2.8.0
+muscriptor==0.3.0
+demucs==4.1.0
+psutil==7.2.2
+pytest==9.1.1
