@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["scripts"]
+markers = ["integration: uses downloaded third-party VST3 plugins"]

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "msvc_version": "14.44",
+  "msvc_tools_directory": "14.44.35207",
+  "windows_sdk": "26100",
+  "windows_sdk_directory": "10.0.26100.0",
+  "assets": [
+    {
+      "name": "juce-9.0.4-windows.zip",
+      "url": "https://github.com/juce-framework/JUCE/releases/download/9.0.4/juce-9.0.4-windows.zip",
+      "sha256": "f2b7bb95c761f9bdc1c01335db138ed33a80285d1f738657797cf497a489e36d"
+    },
+    {
+      "name": "surge-xt-win64-1.3.4-portable-install.zip",
+      "url": "https://github.com/surge-synthesizer/releases-xt/releases/download/1.3.4/surge-xt-win64-1.3.4-portable-install.zip",
+      "sha256": "a5f2376702ad218c0382640ed0c7b9ebb222ba2410a210879899c0f726859d8e"
+    },
+    {
+      "name": "ChowTapeModel-Win-64bit-2.11.4.exe",
+      "url": "https://github.com/jatinchowdhury18/AnalogTapeModel/releases/download/v2.11.4/ChowTapeModel-Win-64bit-2.11.4.exe",
+      "sha256": "8ba6e91196067244837877d9ca4a8e4a1f5bfad60cf33fa699c8a5b41f1211bf"
+    },
+    {
+      "name": "sfizz-1.2.3-win64.exe",
+      "url": "https://github.com/sfztools/sfizz-ui/releases/download/1.2.3/sfizz-1.2.3-win64.exe",
+      "sha256": "56f57dfe443018e947b82b8e2bf4c9d824a9c961ff2b8eb6c5e929030b71b937"
+    },
+    {
+      "name": "innoextract-1.9-windows.zip",
+      "url": "https://constexpr.org/innoextract/files/innoextract-1.9-windows.zip",
+      "sha256": "6989342c9b026a00a72a38f23b62a8e6a22cc5de69805cf47d68ac2fec993065"
+    },
+    {
+      "name": "portable-msvc.py",
+      "url": "https://gist.githubusercontent.com/mmozeiko/7f3162ec2988e81e56d5c4e22cde9977/raw/49b58850aa5e5c1e65f090d4651ee76607883e11/portable-msvc.py",
+      "sha256": "1791cccca594ff083ce8d3e0a139e6156d2c312e24332a909e608010f0230a51"
+    },
+    {
+      "name": "vs2022-channel.json",
+      "url": "https://download.visualstudio.microsoft.com/download/pr/c95450be-0a45-4779-b142-33f567ccfd6e/f24aa010ba2fd5079d502e47bf40f5932f097df4bd716234dc68175b39649401/VisualStudio.17.Release.chman",
+      "sha256": "4f0f290bb4d58a061a49a2fa893357a8c9e7e2b49fc91873f533ab8f791e4fa0"
+    },
+    {
+      "name": "VisualStudio.vsman",
+      "url": "https://download.visualstudio.microsoft.com/download/pr/c95450be-0a45-4779-b142-33f567ccfd6e/a871a5ff41acebbe5037455fd6f51fcd4907b47d8f3c9860871ea0b222a2fd45/VisualStudio.vsman",
+      "sha256": "99dda859c4ae3c446eb25620d1a6237bb135d95d14d55cd1d30a15340bb39d80",
+      "channel_advertised_sha256": "a871a5ff41acebbe5037455fd6f51fcd4907b47d8f3c9860871ea0b222a2fd45",
+      "hash_basis": "Exact HTTP response bytes, verified by two independent downloads; channel metadata differs."
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "native-release",
+      "displayName": "Local MSVC native host and VST3 fixture",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/runtime/build/msvc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_MAKE_PROGRAM": "${sourceDir}/runtime/tooling/Scripts/ninja.exe"
+      }
+    }
+  ],
+  "buildPresets": [
+    {"name": "native-release", "configurePreset": "native-release", "jobs": 4}
+  ],
+  "testPresets": [
+    {"name": "native-release", "configurePreset": "native-release", "output": {"outputOnFailure": true}}
+  ]
+}
