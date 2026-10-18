@@ -12,3 +12,16 @@
 | Surge XT / CHOW Tape / sfizz | 仅下载各自官方二进制并在本地宿主加载；来源和摘要见 config/native-dependencies.json，插件列表见 docs/10-free-vst3-candidates.md。 |
 
 sfizz 1.2.3 文件加载适配依据其 [SfizzVstState.cpp](https://github.com/sfztools/sfizz-ui/blob/1.2.3/plugins/vst/SfizzVstState.cpp) 和 SDK 字符串格式实现，仅用于已识别的版本，不适用于未知私有状态。测试音频和 SFZ 由本项目脚本生成。
+
+P0b 模型依赖独立记录：
+
+| 依赖 | 来源与使用条件 |
+| --- | --- |
+| MuScriptor 0.3.0 | [代码 MIT](https://github.com/muscriptor/muscriptor)；medium 权重为 CC BY-NC 4.0，用户需接受 gated 权重许可。本次权重未获授权、未下载成功。 |
+| Demucs 4.1.0 / HTDemucs | [作者维护仓库 MIT](https://github.com/adefossez/demucs)、[固定权重来源](https://huggingface.co/adefossez/HTDemucs)；使用 safetensors，未复制第三方代码进本仓库。 |
+| SheetSage2 / MERT-v2-FullSong | [SheetSage2](https://huggingface.co/m-a-p/SheetSage2)、[父模型](https://huggingface.co/m-a-p/MERT-v2-FullSong)，模型页及下载 LICENSE 标注 CC BY-NC 4.0。代码/权重/父模型版本与逐文件摘要见 config/model-dependencies.json，执行本地固定远程代码，不修改上游。 |
+| PyTorch / torchaudio / Python 包 | 对应 requirements-*.lock 固定版本与分发摘要；本地隔离安装，保留包自身许可。CUDA 包不等于项目源码许可。 |
+| Playwright 1.56.1 / Chromium | [官方工具](https://playwright.dev/)，用于独立 headless 播放探测；包锁位于 probes/player，浏览器下载到本机运行目录，不随源码分发。 |
+| FFmpeg 9.0 | 使用本机现有 Gyan full build CLI，整曲实际验证；共享库绑定未通过，不将系统安装冒充可移植发行包。 |
+
+完整原创夹具和 SFZ 采样由脚本合成，只作为工程诊断；用户素材和模型权重不进入 Git。以上不替代未来应用发布时逐项核对第三方依赖/权重/插件的分发方式。

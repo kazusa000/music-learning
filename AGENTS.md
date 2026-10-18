@@ -23,4 +23,8 @@
 
 ## 当前阶段
 
-P0a 原生 VST3 原型已通过 13 项测试；运行说明见 docs/11-native-host.md，证据见 docs/benchmarks/p0a-native.md。下一步 P0b。不要将当前原生处理原语当成 P1 工程数据库或完整 DAW。任务清单只有满足相应退出条件后才勾选完成。
+P0a 原生 VST3 原型已通过 13 项测试；运行说明见 docs/11-native-host.md，证据见 docs/benchmarks/p0a-native.md。P0b 部分完成：194 秒原创曲已实测 Demucs、SheetSage2、VST3 渲染/重开与浏览器探测；新增 7 项检查通过。继续前阅读 docs/12-model-probes.md 和 docs/benchmarks/p0-summary.md。
+
+本机模型环境/产物在 D:\music-learning-runtime，位置保存在被忽略的 runtime/model-runtime.json。不要把大模型再默认安装到空间不足的 E/C 盘。MuScriptor medium 尚待 Hugging Face 授权；真实对话 API 和目标录音未配置。采用 whole-song-v2 的音频与独立 truth-v3.json，旧真值有已记录的和弦标签错误；不可覆盖原音频、模型输出或旧测量。SheetSage2 结构/音符结束时间有明显缺口，Surge 默认音色重开波形非确定；均保留在汇总中。
+
+不要将探测 CLI、只读试听页和原生处理原语当成 P1 工程数据库、正式前端或完整 DAW。任务清单只有满足相应退出条件后才勾选完成。

@@ -49,6 +49,9 @@ SheetSage2 模型页面标注 CC BY-NC 4.0，并列出 Python、FFmpeg 和父模
 | D12 | 离线制作优先，无 MIDI 键盘要求 | 用户以讨论和试听参与，AI 为主要操作者；不为现场演奏和完整手工界面增加首期复杂度 |
 | D13 | C++ 原生图由权威 revision 派生 | 音频处理不依赖 Python/浏览器回调；插件完整状态和资源进入版本系统 |
 | D14 | P0a 选用 JUCE 9.0.4 headless 和 MSVC | 原生插件、时序与恢复已验证；Tracktion 高层工程模型暂不引入。范围/接口评估与实际结果见 [P0a 报告](benchmarks/p0a-native.md) |
+| D15 | SheetSage2 P0 使用官方 default/FFmpeg CLI 路径 | 完整曲实测可用；本机 torchaudio FFmpeg backend 不可用，不开放 paper 预设，不把 CLI 成功当成共享库绑定成功 |
+| D16 | 模型代码、父模型与权重按 commit 和文件摘要固定 | SheetSage2 需要执行模型仓库代码；固定版本、下载校验和推理前复核，避免自动跟随 main |
+| D17 | P0b 大文件使用独立 D 盘运行目录 | E 盘不足以承载 CUDA 包和权重；源码保留原位置，不改全局 Python/缓存，不清理其他目录 |
 
 ## 本机环境快照
 
@@ -63,11 +66,11 @@ SheetSage2 模型页面标注 CC BY-NC 4.0，并列出 Python、FFmpeg 和父模
 | pnpm | 11.25.0 |
 | uv | 0.12.5 |
 | Python | uv 已安装 3.11.15 和 3.12.14；项目优先使用独立 3.11 环境 |
-| FFmpeg | 9.0 full build；绑定兼容性待测 |
+| FFmpeg | 9.0 full build；P0b default CLI 整曲可用，torchaudio FFmpeg backend 不可用 |
 | FluidSynth / MuseScore | 本次 PATH 查询未找到，不能据此断言整机未安装 |
 | Git 提交者 | 按用户提供的 GitHub 账号 kazusa000 设置本仓库身份，使用 ID 格式 noreply 邮箱 |
 
-该表记录规划时的环境。随后 P0a 已在项目内配置原生工具链和三款插件，最新版本及实测见 [P0a 报告](benchmarks/p0a-native.md)。模型权重、转录推理和主观音质验证尚未执行。
+该表记录规划时的环境。随后 P0a 已在项目内配置原生工具链和三款插件，最新版本及实测见 [P0a 报告](benchmarks/p0a-native.md)。P0b 已用 194 秒完整原创夹具实测 Demucs/SheetSage2、VST3 重建与浏览器探测；MuScriptor、目标录音和主观听辨未完成。质量问题与授权缺口见 [P0 汇总](benchmarks/p0-summary.md)。
 
 ## P0 必须解决的事项
 
