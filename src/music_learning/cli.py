@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import httpx
 
 from .sdk import APIError, Client
 
@@ -82,7 +83,7 @@ def main():
                 result = {"output": str(path), "bytes": len(data)}
         print(json.dumps({"ok": True, "result": result}, ensure_ascii=True, allow_nan=False))
         return 0
-    except (APIError, OSError, ValueError, TimeoutError) as error:
+    except (APIError, OSError, ValueError, TimeoutError, httpx.HTTPError) as error:
         print(
             json.dumps(
                 {

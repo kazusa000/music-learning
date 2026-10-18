@@ -227,7 +227,7 @@ def create_app(settings: Settings | None = None):
                 for event in result["result"]:
                     cursor = event["cursor"]
                     yield f"id: {cursor}\nevent: domain\ndata: {canonical(event)}\n\n"
-                if not follow:
+                if not follow and len(result["result"]) < 1000:
                     return
                 if not result["result"]:
                     yield ": heartbeat\n\n"

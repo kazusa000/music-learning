@@ -1,7 +1,7 @@
 # Python SDK / CLI
 
-Implementation: `src/music_learning/sdk.py` and `cli.py`, installed as the
-`music-learning` package. They only use the HTTP API; there is no SDK-side project
+Implementation: `src/music_learning/sdk.py` and `cli.py`, currently run from the
+source checkout with `PYTHONPATH=src`. They only use the HTTP API; there is no SDK-side project
 writer. `Client.call`, `execute`, ordered `batch`, streaming `upload`,
 `import_audio`, `wait`, cursor-based `events`, and `asset_bytes` cover all P1
 transports. Capabilities and argument schemas come from `describe_capabilities`.

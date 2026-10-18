@@ -145,6 +145,112 @@ def test_real_plugin_scan_and_full_state_readback(service, project):
     assert plugin["parameters_readback"]
 
 
+def test_all_revision_entities_roundtrip_and_failed_publication_is_atomic(
+    service, project, upload, monkeypatch
+):
+    from music_learning import contracts as c
+    from sqlalchemy import select
+
+    submit(service, project, "asset.import", {"upload_id": upload["upload_id"]})
+    Worker(service.database).run_once()
+    project = invoke(service, "projects.get", {"project_id": project["id"]})
+    job = submit(service, project, "plugin.inspect", {"path": str(FIXTURE)})
+    Worker(service.database).run_once()
+    inspected = status(service, job)["result"]
+    info = inspected["plugin"]
+    snapshot = invoke(service, "revisions.get", {"project_id": project["id"]})["snapshot"]
+    provenance = dict(origin="user", source_id="entity-roundtrip", review="accepted")
+    track, instance, master = c.new_id(), c.new_id(), c.new_id()
+    snapshot.update(
+        tracks=[dict(id=track, name="fixture", kind="instrument", provenance=provenance)],
+        clips=[
+            dict(
+                id=c.new_id(),
+                track_id=track,
+                asset_id=upload["sha256"],
+                start_sample=0,
+                duration_samples=44100,
+                provenance=provenance,
+            )
+        ],
+        plugins=[
+            dict(
+                id=instance,
+                track_id=track,
+                class_id=info["vst3_class_id"],
+                version=info["version"],
+                binary_sha256=info["binary_sha256"],
+                state_asset_id=inspected["state_asset_id"],
+                order=0,
+                parameters={p["id"]: p["value"] for p in info["parameters_readback"]},
+            )
+        ],
+        routing=dict(
+            id=c.new_id(),
+            nodes=[track, instance, master],
+            edges=[dict(source=track, target=instance), dict(source=instance, target=master)],
+        ),
+        automation=[
+            dict(
+                id=c.new_id(),
+                plugin_id=instance,
+                parameter_id=info["parameters_readback"][0]["id"],
+                interpolation="step",
+                points=[dict(sample=0, value=0.5), dict(sample=22050, value=0.25)],
+                provenance=provenance,
+            )
+        ],
+        annotations=[
+            dict(
+                id=c.new_id(),
+                start_sample=0,
+                end_sample=44100,
+                kind="note",
+                text="stored data, no graph execution",
+                provenance=provenance,
+            )
+        ],
+    )
+    revision = invoke(
+        service,
+        "revisions.commit",
+        dict(
+            project_id=project["id"], snapshot=snapshot, author="test", description="all entity projections"
+        ),
+        project["current_revision"],
+    )
+    assert invoke(service, "revisions.get", {"project_id": project["id"]}) == revision
+    with service.database.engine.connect() as db:
+        for name in (
+            "tracks",
+            "clips",
+            "plugin_instances",
+            "routing_graphs",
+            "automation_lanes",
+            "annotations",
+        ):
+            table = t.entities[name]
+            values = db.execute(select(table).where(table.c.revision_id == revision["id"])).mappings().all()
+            assert len(values) == 1
+    # A real import publishes CAS bytes before the DB transaction. Inject a
+    # publication failure after asset registration, then verify complete rollback.
+    other = invoke(service, "projects.create", {"title": "atomic publication failure"})
+    failed_job = submit(service, other, "asset.import", {"upload_id": upload["upload_id"]})
+    worker = Worker(service.database)
+    original_commit = worker.service.commit
+
+    def fail(*args, **kwargs):
+        original_commit(*args, **kwargs)
+        raise RuntimeError("test crash before transaction commit")
+
+    monkeypatch.setattr(worker.service, "commit", fail)
+    worker.run_once()
+    assert status(service, failed_job)["status"] == "failed"
+    assert invoke(service, "projects.get", {"project_id": other["id"]}) == other
+    assert invoke(service, "assets.list", {"project_id": other["id"]}) == []
+    assert len(invoke(service, "revisions.list", {"project_id": other["id"]})) == 1
+
+
 def test_running_plugin_cancellation_kills_child_tree(service, project, bare_plugin, monkeypatch):
     monkeypatch.setenv("ML_FIXTURE_STARTUP", "hang")
     job = submit(service, project, "plugin.inspect", {"path": str(bare_plugin)})

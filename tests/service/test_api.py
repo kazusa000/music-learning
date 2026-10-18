@@ -39,6 +39,9 @@ def test_streamed_upload_idempotency_limits_no_arbitrary_paths(http, settings, s
     assert first.status_code == 200
     again = http.put("/v1/uploads", content=content, headers={"Idempotency-Key": "same"})
     assert again.json() == first.json()
+    # Command keys and upload keys cannot alias each other's receipts.
+    separate = invoke(service, "projects.create", {"title": "receipt namespace"}, key="upload:same")
+    assert separate["id"] != first.json()["result"]["upload_id"]
     assert http.put("/v1/uploads", content=b"changed", headers={"Idempotency-Key": "same"}).status_code == 409
     assert http.put("/v1/uploads", content=b"").status_code == 422
     settings.max_upload_bytes = 10
@@ -124,6 +127,35 @@ def test_durable_event_cursor_and_sse_reconnect(http, service, project):
     assert f"id: {cursor}\n" not in response.text
     assert len(expected) == 1
     assert http.get("/v1/events", params={"after": -1, "follow": "false"}).status_code == 422
+    # A disconnected client may accumulate more than the HTTP page size. The
+    # finite SSE drain must preserve the whole backlog and order its cursors.
+    import json
+    import time
+    from sqlalchemy import insert
+    from music_learning import schema_v1 as t
+
+    last = expected[-1]["cursor"]
+    with service.database.transaction() as db:
+        db.execute(
+            insert(t.events),
+            [
+                dict(
+                    type="fixture.backlog",
+                    project_id=project["id"],
+                    revision_id=project["current_revision"],
+                    job_id=None,
+                    request_id=None,
+                    payload={"sequence": i},
+                    created_at=time.time(),
+                )
+                for i in range(1002)
+            ],
+        )
+    drained = http.get("/v1/events", params={"project_id": project["id"], "after": last, "follow": "false"})
+    records = [json.loads(line[6:]) for line in drained.text.splitlines() if line.startswith("data: ")]
+    assert len(records) == 1002
+    assert [r["payload"]["sequence"] for r in records] == list(range(1002))
+    assert len({r["cursor"] for r in records}) == 1002
 
 
 def test_storage_rejects_network_roots_and_escape(settings):
