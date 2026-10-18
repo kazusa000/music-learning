@@ -1,0 +1,10 @@
+{
+  "data_root": "D:/music-learning-runtime/app-data",
+  "host": "127.0.0.1",
+  "port": 8765,
+  "max_upload_bytes": 1073741824,
+  "lease_seconds": 12,
+  "job_timeout_seconds": 120,
+  "plugin_roots": ["E:/Intrest/music-learning/plugins", "E:/Intrest/music-learning/runtime/build/msvc/MLFixture_artefacts"],
+  "native_host": "E:/Intrest/music-learning/runtime/build/msvc/bin/ml_audio_host.exe"
+}

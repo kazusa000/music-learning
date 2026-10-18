@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+import ctypes
+import json
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def local_fixed(path: Path) -> Path:
+    resolved = path.resolve()
+    if str(resolved).startswith("\\\\"):
+        raise ValueError("application storage must not be on a network share")
+    if os.name == "nt" and ctypes.windll.kernel32.GetDriveTypeW(str(resolved.anchor)) != 3:
+        raise ValueError("application storage must be on a local fixed drive")
+    return resolved
+
+
+@dataclass
+class Settings:
+    data_root: Path
+    host: str = "127.0.0.1"
+    port: int = 8765
+    max_upload_bytes: int = 1024**3
+    lease_seconds: float = 12
+    job_timeout_seconds: float = 120
+    plugin_roots: list[Path] = field(default_factory=list)
+    native_host: Path = ROOT / "runtime/build/msvc/bin/ml_audio_host.exe"
+
+    def __post_init__(self):
+        self.data_root = local_fixed(Path(self.data_root))
+        self.plugin_roots = [local_fixed(Path(p)) for p in self.plugin_roots]
+        self.native_host = local_fixed(Path(self.native_host))
+        if self.host != "127.0.0.1":
+            raise ValueError("P1 server only binds 127.0.0.1")
+        if self.lease_seconds <= 0 or self.job_timeout_seconds <= 0 or self.max_upload_bytes <= 0:
+            raise ValueError("limits must be positive")
+        self.data_root.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def load(cls, path: Path | None = None):
+        path = path or Path(os.environ.get("MUSIC_APP_CONFIG", ROOT / "runtime/app.local.json"))
+        if path.is_file():
+            return cls(**json.loads(path.read_text(encoding="utf-8")))
+        profile = ROOT / "runtime/model-runtime.json"
+        base = (
+            Path(json.loads(profile.read_text(encoding="utf-8"))["runtime_root"])
+            if profile.is_file()
+            else ROOT / "data"
+        )
+        return cls(data_root=base / "app-data", plugin_roots=[ROOT / "plugins"])
+
+    def path(self, *parts: str) -> Path:
+        path = local_fixed(self.data_root.joinpath(*parts))
+        if not path.is_relative_to(self.data_root):
+            raise ValueError("path escaped local application storage")
+        return path
+
+    def plugin_path(self, value: str) -> Path:
+        path = local_fixed(Path(value))
+        if not any(path.is_relative_to(root) for root in self.plugin_roots):
+            raise ValueError("plugin path outside configured local allowlist")
+        if path.suffix.lower() != ".vst3" or not path.exists():
+            raise ValueError("expected an existing VST3 bundle")
+        return path

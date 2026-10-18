@@ -1,0 +1,2886 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": 1,
+  "$defs": {
+    "AnalysisRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/AnalysisRun"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "payload",
+        "created_at"
+      ],
+      "title": "AnalysisRecord",
+      "type": "object"
+    },
+    "AnalysisRun": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "input_asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Input Asset Id",
+          "type": "string"
+        },
+        "adapter": {
+          "title": "Adapter",
+          "type": "string"
+        },
+        "model_version": {
+          "title": "Model Version",
+          "type": "string"
+        },
+        "weights_sha256": {
+          "items": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "title": "Weights Sha256",
+          "type": "array"
+        },
+        "code_version": {
+          "title": "Code Version",
+          "type": "string"
+        },
+        "configuration": {
+          "additionalProperties": true,
+          "title": "Configuration",
+          "type": "object"
+        },
+        "raw_asset_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "title": "Raw Asset Ids",
+          "type": "array"
+        },
+        "normalized_asset_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "title": "Normalized Asset Ids",
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Issues",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "input_asset_id",
+        "adapter",
+        "model_version",
+        "weights_sha256",
+        "code_version",
+        "configuration",
+        "raw_asset_ids",
+        "normalized_asset_ids"
+      ],
+      "title": "AnalysisRun",
+      "type": "object"
+    },
+    "Annotation": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "start_sample": {
+          "minimum": 0,
+          "title": "Start Sample",
+          "type": "integer"
+        },
+        "end_sample": {
+          "minimum": 0,
+          "title": "End Sample",
+          "type": "integer"
+        },
+        "kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 20000,
+          "title": "Text",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "id",
+        "start_sample",
+        "end_sample",
+        "kind",
+        "text",
+        "provenance"
+      ],
+      "title": "Annotation",
+      "type": "object"
+    },
+    "AppendConversation": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "user",
+            "assistant",
+            "tool",
+            "note"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 100000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "context": {
+          "additionalProperties": true,
+          "title": "Context",
+          "type": "object"
+        }
+      },
+      "required": [
+        "project_id",
+        "revision_id",
+        "role",
+        "content"
+      ],
+      "title": "AppendConversation",
+      "type": "object"
+    },
+    "Asset": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "bytes": {
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "media_type": {
+          "title": "Media Type",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "id",
+        "bytes",
+        "media_type",
+        "provenance"
+      ],
+      "title": "Asset",
+      "type": "object"
+    },
+    "AssetRef": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Asset Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id"
+      ],
+      "title": "AssetRef",
+      "type": "object"
+    },
+    "AutomationLane": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "plugin_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Plugin Id",
+          "type": "string"
+        },
+        "parameter_id": {
+          "title": "Parameter Id",
+          "type": "string"
+        },
+        "interpolation": {
+          "enum": [
+            "step",
+            "linear"
+          ],
+          "title": "Interpolation",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "$ref": "#/$defs/AutomationPoint"
+          },
+          "minItems": 1,
+          "title": "Points",
+          "type": "array"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "id",
+        "plugin_id",
+        "parameter_id",
+        "interpolation",
+        "points",
+        "provenance"
+      ],
+      "title": "AutomationLane",
+      "type": "object"
+    },
+    "AutomationPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "sample": {
+          "minimum": 0,
+          "title": "Sample",
+          "type": "integer"
+        },
+        "value": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "sample",
+        "value"
+      ],
+      "title": "AutomationPoint",
+      "type": "object"
+    },
+    "Beat": {
+      "additionalProperties": false,
+      "properties": {
+        "n": {
+          "title": "N",
+          "type": "integer"
+        },
+        "d": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "title": "D",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "n"
+      ],
+      "title": "Beat",
+      "type": "object"
+    },
+    "Clip": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "track_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Track Id",
+          "type": "string"
+        },
+        "asset_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asset Id"
+        },
+        "start_sample": {
+          "minimum": 0,
+          "title": "Start Sample",
+          "type": "integer"
+        },
+        "duration_samples": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Samples",
+          "type": "integer"
+        },
+        "source_offset_samples": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Source Offset Samples",
+          "type": "integer"
+        },
+        "loop": {
+          "default": false,
+          "title": "Loop",
+          "type": "boolean"
+        },
+        "gain_db": {
+          "default": 0,
+          "maximum": 24,
+          "minimum": -120,
+          "title": "Gain Db",
+          "type": "number"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "id",
+        "track_id",
+        "start_sample",
+        "duration_samples",
+        "provenance"
+      ],
+      "title": "Clip",
+      "type": "object"
+    },
+    "CommitSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/Snapshot"
+        },
+        "author": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Author",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "snapshot",
+        "author",
+        "description"
+      ],
+      "title": "CommitSnapshot",
+      "type": "object"
+    },
+    "Conversation": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "user",
+            "assistant",
+            "tool",
+            "note"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 100000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "context": {
+          "additionalProperties": true,
+          "title": "Context",
+          "type": "object"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "revision_id",
+        "role",
+        "content",
+        "created_at"
+      ],
+      "title": "Conversation",
+      "type": "object"
+    },
+    "ConvertTime": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "from_unit": {
+          "enum": [
+            "sample",
+            "seconds",
+            "beat"
+          ],
+          "title": "From Unit",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/Beat"
+        },
+        "to_unit": {
+          "enum": [
+            "sample",
+            "seconds",
+            "beat",
+            "bar"
+          ],
+          "title": "To Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "from_unit",
+        "value",
+        "to_unit"
+      ],
+      "title": "ConvertTime",
+      "type": "object"
+    },
+    "CreateProject": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "kind": {
+          "default": "research",
+          "enum": [
+            "research",
+            "composition"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "title": "CreateProject",
+      "type": "object"
+    },
+    "Empty": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "Empty",
+      "type": "object"
+    },
+    "EventPage": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "after": {
+          "default": 0,
+          "minimum": 0,
+          "title": "After",
+          "type": "integer"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "EventPage",
+      "type": "object"
+    },
+    "EventRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "title": "Cursor",
+          "type": "integer"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Project Id"
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Job Id"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Revision Id"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Request Id"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "cursor",
+        "type",
+        "project_id",
+        "job_id",
+        "revision_id",
+        "request_id",
+        "payload",
+        "created_at"
+      ],
+      "title": "EventRecord",
+      "type": "object"
+    },
+    "Job": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "asset.import",
+            "plugin.inspect",
+            "plugin.scan"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "cancel_requested",
+            "cancelled",
+            "succeeded",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "attempt": {
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "max_attempts": {
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "lease_until": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lease Until"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        },
+        "updated_at": {
+          "title": "Updated At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "revision_id",
+        "kind",
+        "status",
+        "payload",
+        "attempt",
+        "max_attempts",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "Job",
+      "type": "object"
+    },
+    "JobRef": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Job Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "title": "JobRef",
+      "type": "object"
+    },
+    "Meter": {
+      "additionalProperties": false,
+      "properties": {
+        "beat": {
+          "$ref": "#/$defs/Beat"
+        },
+        "bar": {
+          "minimum": 1,
+          "title": "Bar",
+          "type": "integer"
+        },
+        "numerator": {
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Numerator",
+          "type": "integer"
+        },
+        "denominator": {
+          "enum": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "title": "Denominator",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "beat",
+        "bar",
+        "numerator",
+        "denominator"
+      ],
+      "title": "Meter",
+      "type": "object"
+    },
+    "NoteEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "track_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Track Id",
+          "type": "string"
+        },
+        "pitch": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Pitch",
+          "type": "integer"
+        },
+        "spelling": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spelling"
+        },
+        "start_sample": {
+          "minimum": 0,
+          "title": "Start Sample",
+          "type": "integer"
+        },
+        "end_sample": {
+          "minimum": 0,
+          "title": "End Sample",
+          "type": "integer"
+        },
+        "velocity": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Velocity",
+          "type": "number"
+        },
+        "channel": {
+          "default": 1,
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Channel",
+          "type": "integer"
+        },
+        "notation_beat": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Beat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timing_map_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timing Map Id"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "id",
+        "track_id",
+        "pitch",
+        "start_sample",
+        "end_sample",
+        "velocity",
+        "provenance"
+      ],
+      "title": "NoteEvent",
+      "type": "object"
+    },
+    "Page": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "title": "Page",
+      "type": "object"
+    },
+    "PluginInstance": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "track_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Track Id",
+          "type": "string"
+        },
+        "class_id": {
+          "title": "Class Id",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "binary_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Binary Sha256",
+          "type": "string"
+        },
+        "state_asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "State Asset Id",
+          "type": "string"
+        },
+        "resource_asset_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "title": "Resource Asset Ids",
+          "type": "array"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Parameters",
+          "type": "object"
+        },
+        "bypass": {
+          "default": false,
+          "title": "Bypass",
+          "type": "boolean"
+        },
+        "order": {
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "track_id",
+        "class_id",
+        "version",
+        "binary_sha256",
+        "state_asset_id",
+        "order"
+      ],
+      "title": "PluginInstance",
+      "type": "object"
+    },
+    "Project": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "research",
+            "composition"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "empty",
+            "imported"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "current_revision": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Current Revision",
+          "type": "string"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind",
+        "status",
+        "current_revision",
+        "created_at"
+      ],
+      "title": "Project",
+      "type": "object"
+    },
+    "ProjectPage": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "ProjectPage",
+      "type": "object"
+    },
+    "ProjectRef": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "ProjectRef",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "enum": [
+            "model",
+            "user",
+            "ai_edit",
+            "rule"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "source_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "review": {
+          "default": "unreviewed",
+          "enum": [
+            "unreviewed",
+            "accepted",
+            "corrected",
+            "disputed"
+          ],
+          "title": "Review",
+          "type": "string"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "algorithm": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Algorithm"
+        }
+      },
+      "required": [
+        "origin",
+        "source_id"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "QueryEvents": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Id"
+        },
+        "start_sample": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Start Sample",
+          "type": "integer"
+        },
+        "end_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Sample"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "QueryEvents",
+      "type": "object"
+    },
+    "RegisterAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/AnalysisRun"
+        }
+      },
+      "required": [
+        "project_id",
+        "run"
+      ],
+      "title": "RegisterAnalysis",
+      "type": "object"
+    },
+    "RegisterAsset": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "upload_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Upload Id",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "project_id",
+        "upload_id",
+        "provenance"
+      ],
+      "title": "RegisterAsset",
+      "type": "object"
+    },
+    "RenameProject": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "title"
+      ],
+      "title": "RenameProject",
+      "type": "object"
+    },
+    "Request": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "request_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "operation": {
+          "title": "Operation",
+          "type": "string"
+        },
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "expected_revision": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Revision"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "title": "Request",
+      "type": "object"
+    },
+    "Revision": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent Id"
+        },
+        "snapshot_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Snapshot Sha256",
+          "type": "string"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/Snapshot"
+        },
+        "author": {
+          "title": "Author",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "parent_id",
+        "snapshot_sha256",
+        "snapshot",
+        "author",
+        "description",
+        "created_at"
+      ],
+      "title": "Revision",
+      "type": "object"
+    },
+    "RevisionRef": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "RevisionRef",
+      "type": "object"
+    },
+    "RoutingEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "kind": {
+          "default": "main",
+          "enum": [
+            "main",
+            "send",
+            "sidechain"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "gain_db": {
+          "default": 0,
+          "maximum": 24,
+          "minimum": -120,
+          "title": "Gain Db",
+          "type": "number"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "title": "RoutingEdge",
+      "type": "object"
+    },
+    "RoutingGraph": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "nodes": {
+          "items": {
+            "pattern": "^[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/RoutingEdge"
+          },
+          "title": "Edges",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RoutingGraph",
+      "type": "object"
+    },
+    "Snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "sample_rate": {
+          "default": 44100,
+          "maximum": 192000,
+          "minimum": 8000,
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "duration_samples": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Duration Samples",
+          "type": "integer"
+        },
+        "source_asset_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Asset Id"
+        },
+        "analysis_run_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "title": "Analysis Run Ids",
+          "type": "array"
+        },
+        "timing_map": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimingMap"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tracks": {
+          "items": {
+            "$ref": "#/$defs/Track"
+          },
+          "title": "Tracks",
+          "type": "array"
+        },
+        "clips": {
+          "items": {
+            "$ref": "#/$defs/Clip"
+          },
+          "title": "Clips",
+          "type": "array"
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/NoteEvent"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "plugins": {
+          "items": {
+            "$ref": "#/$defs/PluginInstance"
+          },
+          "title": "Plugins",
+          "type": "array"
+        },
+        "routing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoutingGraph"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "automation": {
+          "items": {
+            "$ref": "#/$defs/AutomationLane"
+          },
+          "title": "Automation",
+          "type": "array"
+        },
+        "annotations": {
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotations",
+          "type": "array"
+        }
+      },
+      "title": "Snapshot",
+      "type": "object"
+    },
+    "SubmitJob": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "asset.import",
+            "plugin.inspect",
+            "plugin.scan"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "max_attempts": {
+          "default": 3,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Max Attempts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "project_id",
+        "kind",
+        "payload"
+      ],
+      "title": "SubmitJob",
+      "type": "object"
+    },
+    "TimingAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "sample": {
+          "minimum": 0,
+          "title": "Sample",
+          "type": "integer"
+        },
+        "beat": {
+          "$ref": "#/$defs/Beat"
+        }
+      },
+      "required": [
+        "sample",
+        "beat"
+      ],
+      "title": "TimingAnchor",
+      "type": "object"
+    },
+    "TimingMap": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "sample_rate": {
+          "maximum": 192000,
+          "minimum": 8000,
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "anchors": {
+          "items": {
+            "$ref": "#/$defs/TimingAnchor"
+          },
+          "minItems": 2,
+          "title": "Anchors",
+          "type": "array"
+        },
+        "meters": {
+          "items": {
+            "$ref": "#/$defs/Meter"
+          },
+          "minItems": 1,
+          "title": "Meters",
+          "type": "array"
+        },
+        "pickup": {
+          "$ref": "#/$defs/Beat"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "id",
+        "sample_rate",
+        "anchors",
+        "meters",
+        "provenance"
+      ],
+      "title": "TimingMap",
+      "type": "object"
+    },
+    "Track": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "audio",
+            "instrument",
+            "midi"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "instrument_candidates": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Instrument Candidates",
+          "type": "array"
+        },
+        "gain_db": {
+          "default": 0,
+          "maximum": 24,
+          "minimum": -120,
+          "title": "Gain Db",
+          "type": "number"
+        },
+        "pan": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Pan",
+          "type": "number"
+        },
+        "stem_asset_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "title": "Stem Asset Ids",
+          "type": "array"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "provenance"
+      ],
+      "title": "Track",
+      "type": "object"
+    },
+    "UploadResult": {
+      "additionalProperties": false,
+      "properties": {
+        "upload_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Upload Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "bytes": {
+          "title": "Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "upload_id",
+        "sha256",
+        "bytes"
+      ],
+      "title": "UploadResult",
+      "type": "object"
+    }
+  },
+  "operations": {
+    "describe_capabilities": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "projects.list": {
+      "arguments": "Page",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/Project"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "projects.create": {
+      "arguments": "CreateProject",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "research",
+              "composition"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "empty",
+              "imported"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "current_revision": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Current Revision",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "status",
+          "current_revision",
+          "created_at"
+        ],
+        "title": "Project",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "projects.get": {
+      "arguments": "ProjectRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "research",
+              "composition"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "empty",
+              "imported"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "current_revision": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Current Revision",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "status",
+          "current_revision",
+          "created_at"
+        ],
+        "title": "Project",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "projects.rename": {
+      "arguments": "RenameProject",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "research",
+              "composition"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "empty",
+              "imported"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "current_revision": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Current Revision",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "status",
+          "current_revision",
+          "created_at"
+        ],
+        "title": "Project",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "revisions.list": {
+      "arguments": "ProjectPage",
+      "result": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "revisions.get": {
+      "arguments": "RevisionRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "snapshot_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Snapshot Sha256",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/$defs/Snapshot"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "parent_id",
+          "snapshot_sha256",
+          "snapshot",
+          "author",
+          "description",
+          "created_at"
+        ],
+        "title": "Revision",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "revisions.commit": {
+      "arguments": "CommitSnapshot",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "snapshot_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Snapshot Sha256",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/$defs/Snapshot"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "parent_id",
+          "snapshot_sha256",
+          "snapshot",
+          "author",
+          "description",
+          "created_at"
+        ],
+        "title": "Revision",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "events.query": {
+      "arguments": "QueryEvents",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/$defs/NoteEvent"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision_id",
+          "total",
+          "items"
+        ],
+        "title": "QueryNotesResult",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "annotations.query": {
+      "arguments": "QueryEvents",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/$defs/Annotation"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision_id",
+          "total",
+          "items"
+        ],
+        "title": "QueryAnnotationsResult",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "time.convert": {
+      "arguments": "ConvertTime",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "assets.list": {
+      "arguments": "ProjectPage",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/Asset"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "assets.get": {
+      "arguments": "AssetRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "bytes": {
+            "minimum": 0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "provenance": {
+            "$ref": "#/$defs/Provenance"
+          }
+        },
+        "required": [
+          "id",
+          "bytes",
+          "media_type",
+          "provenance"
+        ],
+        "title": "Asset",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "assets.register": {
+      "arguments": "RegisterAsset",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "bytes": {
+            "minimum": 0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "provenance": {
+            "$ref": "#/$defs/Provenance"
+          }
+        },
+        "required": [
+          "id",
+          "bytes",
+          "media_type",
+          "provenance"
+        ],
+        "title": "Asset",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "analysis.register": {
+      "arguments": "RegisterAnalysis",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "input_asset_id": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Input Asset Id",
+            "type": "string"
+          },
+          "adapter": {
+            "title": "Adapter",
+            "type": "string"
+          },
+          "model_version": {
+            "title": "Model Version",
+            "type": "string"
+          },
+          "weights_sha256": {
+            "items": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "title": "Weights Sha256",
+            "type": "array"
+          },
+          "code_version": {
+            "title": "Code Version",
+            "type": "string"
+          },
+          "configuration": {
+            "additionalProperties": true,
+            "title": "Configuration",
+            "type": "object"
+          },
+          "raw_asset_ids": {
+            "items": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "title": "Raw Asset Ids",
+            "type": "array"
+          },
+          "normalized_asset_ids": {
+            "items": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "title": "Normalized Asset Ids",
+            "type": "array"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "input_asset_id",
+          "adapter",
+          "model_version",
+          "weights_sha256",
+          "code_version",
+          "configuration",
+          "raw_asset_ids",
+          "normalized_asset_ids"
+        ],
+        "title": "AnalysisRun",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "analysis.list": {
+      "arguments": "ProjectPage",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/AnalysisRecord"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "conversations.append": {
+      "arguments": "AppendConversation",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant",
+              "tool",
+              "note"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "content": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "revision_id",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "Conversation",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "conversations.list": {
+      "arguments": "ProjectPage",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/Conversation"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "jobs.submit": {
+      "arguments": "SubmitJob",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "asset.import",
+              "plugin.inspect",
+              "plugin.scan"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested",
+              "cancelled",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "lease_until": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lease Until"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "revision_id",
+          "kind",
+          "status",
+          "payload",
+          "attempt",
+          "max_attempts",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Job",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "jobs.get": {
+      "arguments": "JobRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "asset.import",
+              "plugin.inspect",
+              "plugin.scan"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested",
+              "cancelled",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "lease_until": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lease Until"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "revision_id",
+          "kind",
+          "status",
+          "payload",
+          "attempt",
+          "max_attempts",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Job",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "jobs.list": {
+      "arguments": "ProjectPage",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/Job"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "jobs.cancel": {
+      "arguments": "JobRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "asset.import",
+              "plugin.inspect",
+              "plugin.scan"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested",
+              "cancelled",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "lease_until": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lease Until"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "revision_id",
+          "kind",
+          "status",
+          "payload",
+          "attempt",
+          "max_attempts",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Job",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "events.list": {
+      "arguments": "EventPage",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/EventRecord"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    }
+  }
+}

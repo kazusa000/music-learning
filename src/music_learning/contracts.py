@@ -1,0 +1,537 @@
+"""Versioned, closed data models shared by every transport."""
+
+from __future__ import annotations
+
+from fractions import Fraction
+from typing import Annotated, Literal
+from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+Id = Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]
+Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+Sample = Annotated[int, Field(ge=0, strict=True)]
+
+
+def new_id() -> str:
+    return uuid4().hex
+
+
+class Model(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, revalidate_instances="always")
+
+
+class Provenance(Model):
+    origin: Literal["model", "user", "ai_edit", "rule"]
+    source_id: str = Field(min_length=1, max_length=256)
+    review: Literal["unreviewed", "accepted", "corrected", "disputed"] = "unreviewed"
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    algorithm: str | None = None
+
+
+class Beat(Model):
+    n: int
+    d: int = Field(default=1, gt=0)
+
+    @model_validator(mode="after")
+    def reduce(self):
+        f = Fraction(self.n, self.d)
+        self.n, self.d = f.numerator, f.denominator
+        return self
+
+    def fraction(self) -> Fraction:
+        return Fraction(self.n, self.d)
+
+    @classmethod
+    def of(cls, value):
+        f = Fraction(value)
+        return cls(n=f.numerator, d=f.denominator)
+
+
+class TimingAnchor(Model):
+    sample: Sample
+    beat: Beat
+
+
+class Meter(Model):
+    beat: Beat
+    bar: int = Field(ge=1)
+    numerator: int = Field(ge=1, le=32)
+    denominator: Literal[1, 2, 4, 8, 16, 32]
+
+
+class TimingMap(Model):
+    id: Id
+    sample_rate: int = Field(ge=8000, le=192000)
+    anchors: list[TimingAnchor] = Field(min_length=2)
+    meters: list[Meter] = Field(min_length=1)
+    pickup: Beat = Field(default_factory=lambda: Beat(n=0))
+    provenance: Provenance
+
+    @model_validator(mode="after")
+    def monotonic(self):
+        if self.pickup.fraction() < 0:
+            raise ValueError("pickup must be nonnegative")
+        if self.anchors[0].sample != 0 or self.anchors[0].beat.fraction() != -self.pickup.fraction():
+            raise ValueError("sample zero must map to minus pickup")
+        for a, b in zip(self.anchors, self.anchors[1:]):
+            if a.sample >= b.sample or a.beat.fraction() >= b.beat.fraction():
+                raise ValueError("timing anchors must increase strictly")
+        if self.meters[0].beat.fraction() != 0 or self.meters[0].bar != 1:
+            raise ValueError("first complete bar starts at beat zero, bar one")
+        first = self.meters[0]
+        if self.pickup.fraction() >= Fraction(first.numerator * 4, first.denominator):
+            raise ValueError("pickup must be shorter than the first bar")
+        for a, b in zip(self.meters, self.meters[1:]):
+            bars = (b.beat.fraction() - a.beat.fraction()) / Fraction(a.numerator * 4, a.denominator)
+            if bars.denominator != 1 or bars <= 0 or b.bar != a.bar + bars:
+                raise ValueError("meter changes must occur on complete bar boundaries")
+        return self
+
+
+class Track(Model):
+    id: Id
+    name: str = Field(min_length=1, max_length=256)
+    kind: Literal["audio", "instrument", "midi"]
+    role: str | None = None
+    instrument_candidates: list[str] = Field(default_factory=list)
+    gain_db: float = Field(default=0, ge=-120, le=24)
+    pan: float = Field(default=0, ge=-1, le=1)
+    stem_asset_ids: list[Hash] = Field(default_factory=list)
+    provenance: Provenance
+
+
+class Clip(Model):
+    id: Id
+    track_id: Id
+    asset_id: Hash | None = None
+    start_sample: Sample
+    duration_samples: int = Field(gt=0)
+    source_offset_samples: Sample = 0
+    loop: bool = False
+    gain_db: float = Field(default=0, ge=-120, le=24)
+    provenance: Provenance
+
+
+class NoteEvent(Model):
+    id: Id
+    track_id: Id
+    pitch: int = Field(ge=0, le=127)
+    spelling: str | None = None
+    start_sample: Sample
+    end_sample: Sample
+    velocity: float = Field(gt=0, le=1)
+    channel: int = Field(default=1, ge=1, le=16)
+    notation_beat: Beat | None = None
+    timing_map_id: Id | None = None
+    provenance: Provenance
+
+    @model_validator(mode="after")
+    def duration(self):
+        if self.end_sample <= self.start_sample:
+            raise ValueError("note duration must be positive")
+        if (self.notation_beat is None) != (self.timing_map_id is None):
+            raise ValueError("notation beat requires its specific timing map")
+        return self
+
+
+class PluginInstance(Model):
+    id: Id
+    track_id: Id
+    class_id: str
+    version: str
+    binary_sha256: Hash
+    state_asset_id: Hash
+    resource_asset_ids: list[Hash] = Field(default_factory=list)
+    parameters: dict[str, float] = Field(default_factory=dict)
+    bypass: bool = False
+    order: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def normalized(self):
+        if any(not 0 <= v <= 1 for v in self.parameters.values()):
+            raise ValueError("plugin parameters must be normalized")
+        return self
+
+
+class RoutingEdge(Model):
+    source: Id
+    target: Id
+    kind: Literal["main", "send", "sidechain"] = "main"
+    gain_db: float = Field(default=0, ge=-120, le=24)
+
+
+class RoutingGraph(Model):
+    id: Id
+    nodes: list[Id] = Field(default_factory=list)
+    edges: list[RoutingEdge] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def graph(self):
+        if len(set(self.nodes)) != len(self.nodes):
+            raise ValueError("duplicate graph nodes")
+        adjacency = {n: [] for n in self.nodes}
+        for edge in self.edges:
+            if edge.source not in adjacency or edge.target not in adjacency:
+                raise ValueError("unknown routing node")
+            adjacency[edge.source].append(edge.target)
+        done, active = set(), set()
+
+        def visit(node):
+            if node in active:
+                raise ValueError("routing cycles are unsupported")
+            if node in done:
+                return
+            active.add(node)
+            for child in adjacency[node]:
+                visit(child)
+            active.remove(node)
+            done.add(node)
+
+        for node in adjacency:
+            visit(node)
+        return self
+
+
+class AutomationPoint(Model):
+    sample: Sample
+    value: float = Field(ge=0, le=1)
+
+
+class AutomationLane(Model):
+    id: Id
+    plugin_id: Id
+    parameter_id: str
+    interpolation: Literal["step", "linear"]
+    points: list[AutomationPoint] = Field(min_length=1)
+    provenance: Provenance
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if any(a.sample >= b.sample for a, b in zip(self.points, self.points[1:])):
+            raise ValueError("automation points must increase strictly")
+        return self
+
+
+class Annotation(Model):
+    id: Id
+    start_sample: Sample
+    end_sample: Sample
+    kind: str = Field(min_length=1, max_length=80)
+    text: str = Field(max_length=20000)
+    provenance: Provenance
+
+    @model_validator(mode="after")
+    def interval(self):
+        if self.end_sample <= self.start_sample:
+            raise ValueError("annotation interval must be positive")
+        return self
+
+
+class Snapshot(Model):
+    schema_version: Literal[1] = 1
+    sample_rate: int = Field(default=44100, ge=8000, le=192000)
+    duration_samples: Sample = 0
+    source_asset_id: Hash | None = None
+    analysis_run_ids: list[Id] = Field(default_factory=list)
+    timing_map: TimingMap | None = None
+    tracks: list[Track] = Field(default_factory=list)
+    clips: list[Clip] = Field(default_factory=list)
+    notes: list[NoteEvent] = Field(default_factory=list)
+    plugins: list[PluginInstance] = Field(default_factory=list)
+    routing: RoutingGraph | None = None
+    automation: list[AutomationLane] = Field(default_factory=list)
+    annotations: list[Annotation] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def references(self):
+        collections = [self.tracks, self.clips, self.notes, self.plugins, self.automation, self.annotations]
+        ids = [e.id for group in collections for e in group]
+        if len(ids) != len(set(ids)):
+            raise ValueError("entity identifiers must be unique")
+        tracks, plugins = {x.id for x in self.tracks}, {x.id: x for x in self.plugins}
+        for entity in [*self.clips, *self.notes, *self.plugins]:
+            if entity.track_id not in tracks:
+                raise ValueError("unknown track")
+        for note in self.notes:
+            if note.end_sample > self.duration_samples:
+                raise ValueError("note outside project duration")
+            if note.timing_map_id and (not self.timing_map or note.timing_map_id != self.timing_map.id):
+                raise ValueError("unknown notation timing map")
+        for clip in self.clips:
+            if clip.start_sample + clip.duration_samples > self.duration_samples:
+                raise ValueError("clip outside project duration")
+        if self.timing_map:
+            if self.timing_map.sample_rate != self.sample_rate:
+                raise ValueError("timing map sample rate differs")
+            if self.timing_map.anchors[-1].sample < self.duration_samples:
+                raise ValueError("timing map does not cover the project")
+        for lane in self.automation:
+            if lane.plugin_id not in plugins or lane.parameter_id not in plugins[lane.plugin_id].parameters:
+                raise ValueError("unknown automation parameter")
+            if lane.points[-1].sample > self.duration_samples:
+                raise ValueError("automation outside project duration")
+        return self
+
+
+class Asset(Model):
+    id: Hash
+    bytes: int = Field(ge=0)
+    media_type: str
+    metadata: dict = Field(default_factory=dict)
+    provenance: Provenance
+
+
+class AnalysisRun(Model):
+    id: Id
+    input_asset_id: Hash
+    adapter: str
+    model_version: str
+    weights_sha256: list[Hash]
+    code_version: str
+    configuration: dict
+    raw_asset_ids: list[Hash]
+    normalized_asset_ids: list[Hash]
+    issues: list[str] = Field(default_factory=list)
+
+
+class Project(Model):
+    id: Id
+    title: str
+    kind: Literal["research", "composition"]
+    status: Literal["empty", "imported"]
+    current_revision: Id
+    created_at: float
+
+
+class Revision(Model):
+    id: Id
+    project_id: Id
+    parent_id: Id | None
+    snapshot_sha256: Hash
+    snapshot: Snapshot
+    author: str
+    description: str
+    created_at: float
+
+
+class Job(Model):
+    id: Id
+    project_id: Id
+    revision_id: Id
+    kind: Literal["asset.import", "plugin.inspect", "plugin.scan"]
+    status: Literal["queued", "running", "cancel_requested", "cancelled", "succeeded", "failed"]
+    payload: dict
+    attempt: int
+    max_attempts: int
+    lease_until: float | None = None
+    result: dict | None = None
+    error: dict | None = None
+    created_at: float
+    updated_at: float
+
+
+class Conversation(Model):
+    id: Id
+    project_id: Id
+    revision_id: Id
+    role: Literal["user", "assistant", "tool", "note"]
+    content: str = Field(min_length=1, max_length=100000)
+    context: dict = Field(default_factory=dict)
+    created_at: float
+
+
+class Request(Model):
+    schema_version: Literal[1] = 1
+    request_id: Id = Field(default_factory=new_id)
+    operation: str
+    arguments: dict = Field(default_factory=dict)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
+    expected_revision: Id | None = None
+
+
+class Empty(Model):
+    pass
+
+
+class Page(Model):
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=1000)
+
+
+class CreateProject(Model):
+    title: str = Field(min_length=1, max_length=256)
+    kind: Literal["research", "composition"] = "research"
+
+
+class ProjectRef(Model):
+    project_id: Id
+
+
+class RevisionRef(ProjectRef):
+    revision_id: Id | None = None
+
+
+class ProjectPage(ProjectRef, Page):
+    pass
+
+
+class RenameProject(ProjectRef):
+    title: str = Field(min_length=1, max_length=256)
+
+
+class CommitSnapshot(ProjectRef):
+    snapshot: Snapshot
+    author: str = Field(min_length=1, max_length=128)
+    description: str = Field(min_length=1, max_length=2000)
+
+
+class RegisterAnalysis(ProjectRef):
+    run: AnalysisRun
+
+
+class AppendConversation(ProjectRef):
+    revision_id: Id
+    role: Literal["user", "assistant", "tool", "note"]
+    content: str = Field(min_length=1, max_length=100000)
+    context: dict = Field(default_factory=dict)
+
+
+class QueryEvents(RevisionRef, Page):
+    track_id: Id | None = None
+    start_sample: Sample = 0
+    end_sample: Sample | None = None
+
+    @model_validator(mode="after")
+    def interval(self):
+        if self.end_sample is not None and self.end_sample <= self.start_sample:
+            raise ValueError("query interval must be nonempty")
+        return self
+
+
+class ConvertTime(RevisionRef):
+    from_unit: Literal["sample", "seconds", "beat"]
+    value: Beat
+    to_unit: Literal["sample", "seconds", "beat", "bar"]
+
+
+class SubmitJob(ProjectRef):
+    kind: Literal["asset.import", "plugin.inspect", "plugin.scan"]
+    payload: dict
+    max_attempts: int = Field(default=3, ge=1, le=5)
+
+
+class ImportPayload(Model):
+    upload_id: Id
+
+
+class PluginPayload(Model):
+    path: str = Field(min_length=1, max_length=4096)
+    identifier: str | None = None
+
+
+class JobRef(Model):
+    job_id: Id
+
+
+class AssetRef(Model):
+    asset_id: Hash
+
+
+class RegisterAsset(ProjectRef):
+    upload_id: Id
+    provenance: Provenance
+
+
+class EventPage(Page):
+    after: int = Field(default=0, ge=0)
+    project_id: Id | None = None
+
+
+class EventRecord(Model):
+    cursor: int
+    type: str
+    project_id: Id | None
+    job_id: Id | None
+    revision_id: Id | None
+    request_id: Id | None
+    payload: dict
+    created_at: float
+
+
+class AnalysisRecord(Model):
+    id: Id
+    project_id: Id
+    payload: AnalysisRun
+    created_at: float
+
+
+class QueryNotesResult(Model):
+    revision_id: Id
+    total: int
+    items: list[NoteEvent]
+
+
+class QueryAnnotationsResult(Model):
+    revision_id: Id
+    total: int
+    items: list[Annotation]
+
+
+class UploadResult(Model):
+    upload_id: Id
+    sha256: Hash
+    bytes: int
+
+
+OPERATIONS = {
+    "describe_capabilities": (Empty, False),
+    "projects.list": (Page, False),
+    "projects.create": (CreateProject, True),
+    "projects.get": (ProjectRef, False),
+    "projects.rename": (RenameProject, True),
+    "revisions.list": (ProjectPage, False),
+    "revisions.get": (RevisionRef, False),
+    "revisions.commit": (CommitSnapshot, True),
+    "events.query": (QueryEvents, False),
+    "annotations.query": (QueryEvents, False),
+    "time.convert": (ConvertTime, False),
+    "assets.list": (ProjectPage, False),
+    "assets.get": (AssetRef, False),
+    "assets.register": (RegisterAsset, True),
+    "analysis.register": (RegisterAnalysis, True),
+    "analysis.list": (ProjectPage, False),
+    "conversations.append": (AppendConversation, True),
+    "conversations.list": (ProjectPage, False),
+    "jobs.submit": (SubmitJob, True),
+    "jobs.get": (JobRef, False),
+    "jobs.list": (ProjectPage, False),
+    "jobs.cancel": (JobRef, True),
+    "events.list": (EventPage, False),
+}
+
+RESULT_TYPES = {
+    "describe_capabilities": dict,
+    "projects.list": list[Project],
+    "projects.create": Project,
+    "projects.get": Project,
+    "projects.rename": Project,
+    "revisions.list": list[dict],
+    "revisions.get": Revision,
+    "revisions.commit": Revision,
+    "events.query": QueryNotesResult,
+    "annotations.query": QueryAnnotationsResult,
+    "time.convert": dict,
+    "assets.list": list[Asset],
+    "assets.get": Asset,
+    "assets.register": Asset,
+    "analysis.register": AnalysisRun,
+    "analysis.list": list[AnalysisRecord],
+    "conversations.append": Conversation,
+    "conversations.list": list[Conversation],
+    "jobs.submit": Job,
+    "jobs.get": Job,
+    "jobs.list": list[Job],
+    "jobs.cancel": Job,
+    "events.list": list[EventRecord],
+}
