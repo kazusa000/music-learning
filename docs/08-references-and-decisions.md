@@ -48,6 +48,7 @@ SheetSage2 模型页面标注 CC BY-NC 4.0，并列出 Python、FFmpeg 和父模
 | D11 | Windows x64 VST3，免费插件先验证 | 用户已明确 VST3；逐个建立参数、状态、预设/采样和渲染能力档案 |
 | D12 | 离线制作优先，无 MIDI 键盘要求 | 用户以讨论和试听参与，AI 为主要操作者；不为现场演奏和完整手工界面增加首期复杂度 |
 | D13 | C++ 原生图由权威 revision 派生 | 音频处理不依赖 Python/浏览器回调；插件完整状态和资源进入版本系统 |
+| D14 | P0a 选用 JUCE 9.0.4 headless 和 MSVC | 原生插件、时序与恢复已验证；Tracktion 高层工程模型暂不引入。范围/接口评估与实际结果见 [P0a 报告](benchmarks/p0a-native.md) |
 
 ## 本机环境快照
 
@@ -66,7 +67,7 @@ SheetSage2 模型页面标注 CC BY-NC 4.0，并列出 Python、FFmpeg 和父模
 | FluidSynth / MuseScore | 本次 PATH 查询未找到，不能据此断言整机未安装 |
 | Git 提交者 | 按用户提供的 GitHub 账号 kazusa000 设置本仓库身份，使用 ID 格式 noreply 邮箱 |
 
-该快照不代表模型、音源或开发环境已安装完成。尚未下载权重、执行推理或测试音频质量。
+该表记录规划时的环境。随后 P0a 已在项目内配置原生工具链和三款插件，最新版本及实测见 [P0a 报告](benchmarks/p0a-native.md)。模型权重、转录推理和主观音质验证尚未执行。
 
 ## P0 必须解决的事项
 

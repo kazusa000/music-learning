@@ -8,7 +8,9 @@
 
 ## 当前状态
 
-2026-10-18：完成初始规划后，根据用户确认更新为 AI 操作优先的 VST3 DAW。当前仓库仅包含文档与仓库配置，尚未实现应用、安装模型/插件或验证实际效果。
+2026-10-18：P0a 原生 VST3 原型已实现。AI 可通过 JSON/CLI 扫描插件、读取参数/状态、写入 MIDI、混合音频轨、执行阶跃自动化、渲染及恢复快照。真实 Surge XT、CHOW Tape、sfizz 和自制 VST3 夹具的 13 项测试通过。
+
+当前尚无完整应用前端、工程数据库、整曲扒谱流水线或产品内对话。下一步为 P0b；阶段边界见 [P0a 验证记录](docs/benchmarks/p0a-native.md)。
 
 第一阶段目标：一首完整音乐完成预处理后，AI 能定位、讨论和改编任意片段，程序化操作轨道、MIDI、VST3、混音与自动化，生成可试听版本；用户在前端查看、讨论和比较，重启后继续工作。
 
@@ -26,6 +28,8 @@
 | [选型依据与待验证项](docs/08-references-and-decisions.md) | 官方来源、决策理由、本机环境、待验证风险 |
 | [AI DAW 操作约定](docs/09-agent-daw-contract.md) | 全操作 API、原生宿主、插件可控性、状态恢复与制作循环 |
 | [免费 VST3 候选](docs/10-free-vst3-candidates.md) | 音源/效果器清单、官方来源、适配优先级与验收 |
+| [原生宿主运行说明](docs/11-native-host.md) | 当前可运行命令、原型请求格式、快照和已实现边界 |
+| [P0a 验证记录](docs/benchmarks/p0a-native.md) | 真实测试、创作实验、锁定环境与宿主选择 |
 
 阅读顺序：项目规划 → 交互与工作流 → 技术方案 → 开发顺序；实现前同时阅读数据约定与验收方案。
 
@@ -33,13 +37,24 @@
 
 - Windows 本地运行，浏览器访问专用前端。
 - React、TypeScript、Vite；结果时间线、事件展示、讨论和试听；浏览器播放原曲或已渲染产物。
-- C++20 原生 VST3 宿主与处理图，优先验证 JUCE；Tracktion Engine 在 P0 比较后决定。制作优先离线渲染，不依赖浏览器处理插件音频。
+- C++20 原生 VST3 宿主与处理图，P0a 已选择 JUCE 9.0.4 headless。制作优先离线渲染，不依赖浏览器处理插件音频。
 - Python 3.11、FastAPI、Pydantic；SQLite 元数据和磁盘文件；独立任务进程。
 - MuScriptor 多乐器转录、Demucs 分轨、SheetSage2 和声及结构分析，分别通过可替换适配器接入。
 - 原生处理图统一执行 VST3 乐器、效果链、自动化和渲染；FluidSynth 仅作可选参考后端，FFmpeg 负责媒体转换。
 - AI 通过统一命令服务读取并操作工程、回读结果、渲染和测量；API/SDK/CLI 使用同一契约，具体 AI 供应商可替换。
 
-以上是开发基线。模型兼容性、音质、耗时与对话服务接入将在 P0 验证，随后锁定具体依赖及权重版本。
+原生环境与三款插件已锁定版本和下载摘要；模型兼容性、转录质量、耗时与对话服务接入在 P0b 验证。
+
+## 运行当前原型
+
+本机已准备环境，可直接运行：
+
+```powershell
+& runtime/tooling/Scripts/python.exe -m pytest tests/native -q --basetemp=runtime/pytest-p0a
+& runtime/tooling/Scripts/python.exe scripts/make_native_demo.py
+```
+
+从空环境重建、Agent 调用与当前限制见 [运行说明](docs/11-native-host.md)。第三方许可与工具来源见 [THIRD_PARTY.md](THIRD_PARTY.md)。
 
 ## 仓库与音乐工程
 

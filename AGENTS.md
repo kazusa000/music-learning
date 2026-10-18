@@ -23,4 +23,4 @@
 
 ## 当前阶段
 
-仓库初始交付为规划文档。按 docs/05-development-plan.md 开始后续实现；任务清单只有满足相应退出条件后才勾选完成。
+P0a 原生 VST3 原型已通过 13 项测试；运行说明见 docs/11-native-host.md，证据见 docs/benchmarks/p0a-native.md。下一步 P0b。不要将当前原生处理原语当成 P1 工程数据库或完整 DAW。任务清单只有满足相应退出条件后才勾选完成。

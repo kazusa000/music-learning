@@ -2,7 +2,7 @@
 
 ## 当前仓库
 
-根目录为 `E:\Intrest\music-learning`。当前只包含规划文档和仓库配置；下面的应用目录与命令是后续开发目标，尚未创建或实现。
+根目录为 `E:\Intrest\music-learning`。当前已有 native、scripts、tests 与原生依赖清单；运行命令见 [原生宿主说明](11-native-host.md)。下列前端、API、worker 和完整 Agent SDK 目录仍为后续开发目标。
 
 ```text
 music-learning/
@@ -52,7 +52,7 @@ Git 管理应用源码；音乐工程使用应用版本系统和独立备份。�
 
 ## 开发检查
 
-P1 落地后统一提供原生构建/CTest、前端 typecheck/lint/test/build、后端 lint/test 和端到端 CLI smoke 命令，并在 README 写出可直接运行的命令。当前不列出尚不存在的可执行命令以免误导。
+原生构建/CTest、pytest 和演示命令已经提供。P1 落地后再统一提供前端 typecheck/lint/test/build、后端 lint/test 和端到端 CLI smoke 命令，并在 README 写出可直接运行的命令。
 
 优先测试具有明确失败风险的逻辑：全操作接口、插件扫描/崩溃、参数/状态/预设、路由/延迟/自动化、时间映射、任务恢复、编辑范围、原子发布、幂等、版本冲突和数据迁移。视觉文案等低影响调整以适当界面检查为主，不编写只重复实现的测试。
 

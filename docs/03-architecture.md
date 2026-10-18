@@ -1,6 +1,6 @@
 # 第一阶段技术方案
 
-状态：2026-10-18 更新为 AI 操作优先的 VST3 DAW。原生宿主替代初版以 Web Audio/FluidSynth 为主的制作引擎；具体框架和依赖在 P0 实测后锁定。详见[AI 操作约定](09-agent-daw-contract.md)与[选型依据](08-references-and-decisions.md)。
+状态：2026-10-18 更新为 AI 操作优先的 VST3 DAW；P0a 已验证并锁定 JUCE 9.0.4 headless/MSVC 原生宿主。模型与应用服务依赖继续在 P0b/P1 验证。详见[AI 操作约定](09-agent-daw-contract.md)与[选型依据](08-references-and-decisions.md)。
 
 ## 系统结构
 
@@ -31,7 +31,7 @@ flowchart TB
 | 前端 | React + TypeScript + Vite + pnpm | 呈现作品、讨论、状态、差异与试听；不要求 AI 操作界面 |
 | 时间线 | Canvas 绘制波形/事件，DOM 提供交互控件与无障碍说明 | 避免大量音符 DOM 节点；视口裁剪和多级波形缓存 |
 | UI 状态 | Zustand 保存播放/选区；TanStack Query 管理服务端状态 | 播放位置不触发整页刷新，工程版本以服务端为准 |
-| 音频引擎 | C++20 + CMake，JUCE 宿主基础优先探测；对比 Tracktion Engine | Windows x64 VST3、处理图、路由、自动化、延迟补偿、离线渲染 |
+| 音频引擎 | C++20 + CMake，JUCE 9.0.4 headless/MSVC 已验证 | Windows x64 VST3；P0a 支持受限处理图/阶跃自动化/补偿/渲染，复杂路由在 P3 |
 | 试听 | Web Audio 播放原曲/已渲染产物 | 原生引擎拥有制作时间基准，前端只负责试听和位置显示；独奏/混合由引擎或受控 stems 提供 |
 | 后端 | Python 3.11 + FastAPI + Pydantic 2 + uv | 与音频生态衔接，接口和编辑参数显式校验 |
 | 元数据 | SQLite WAL + SQLAlchemy 2 + Alembic | 单机事务、迁移、工程和任务状态持久化 |
@@ -47,7 +47,7 @@ flowchart TB
 | AI | 供应商适配器 + 服务端工具执行循环 | 供应商可更换；具体服务在 P0 根据现有凭据配置 |
 | 检查 | CTest/原生宿主夹具、pytest、Vitest、Playwright | 真实插件处理、全操作 API、恢复、整曲能力；浏览器检查展示与试听 |
 
-模块边界已选定；JUCE/Tracktion 取舍、模型运行结果、插件适配、具体版本和对话服务尚待验证。P0 通过后提交锁文件与模型/插件清单。所选模块失败时先记录问题与替代对比，再更新决策，不能用空输出替代能力。
+模块边界和 P0a 宿主已选定，原生工具/三款插件版本与摘要已提交。模型、更多插件适配、应用服务和对话接入继续验证。所选模块失败时先记录问题与替代对比，再更新决策，不能用空输出替代能力。
 
 ## 运行环境与隔离
 
