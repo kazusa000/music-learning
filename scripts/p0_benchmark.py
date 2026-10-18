@@ -27,7 +27,7 @@ def main() -> None:
     python=runtime_root()/"envs"/env_name/"Scripts/python.exe"
     command=[str(python),str(ROOT/"scripts/p0_model_worker.py"),"--model",args.model,"--output",str(out)]
     if args.input:command += ["--input",str(args.input.resolve())]
-    started=time.monotonic();peak=0;status="failed"
+    started=time.monotonic();peak=0;status="failed";launcher_error=None
     with (out/"stdout.log").open("wb") as stdout,(out/"stderr.log").open("wb") as stderr:
         child=subprocess.Popen(command,env=environment(),stdout=stdout,stderr=stderr,
                                creationflags=subprocess.CREATE_NO_WINDOW if os.name=="nt" else 0)
@@ -43,6 +43,7 @@ def main() -> None:
             status="completed" if child.returncode==0 else "failed"
         except BaseException as error:
             status="timeout" if isinstance(error,TimeoutError) else "cancelled" if isinstance(error,KeyboardInterrupt) else "failed"
+            launcher_error=type(error).__name__
         finally:
             # Also clean up on unexpected launcher/monitor errors, not just
             # deliberate cancellation. This PID belongs to this invocation.
@@ -51,6 +52,7 @@ def main() -> None:
                 else:child.kill()
                 child.wait()
             result={"schema_version":1,"model":args.model,"status":status,
+                    "launcher_error_type":launcher_error,
                     "returncode":child.returncode,"elapsed_seconds":time.monotonic()-started,
                     "peak_process_tree_rss_bytes":peak,"rss_sample_interval_seconds":.5}
             (out/"execution.json").write_text(json.dumps(result,indent=2),encoding="utf-8")

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>P0 整曲试听探测</title>
+<style>body{font:17px system-ui;max-width:850px;margin:60px auto;background:#151a21;color:#e2e8ef}button,input,select{font:inherit;padding:8px;margin:6px}pre{white-space:pre-wrap}small{color:#a9b6c5}</style>
+<h1>整曲试听探测 · P0</h1><p>验证原曲与渲染产物的播放、定位和循环。工程操作由 CLI 完成。</p>
+<select id="asset"></select><button id="load">载入</button><button id="play">播放</button><button id="pause">暂停</button>
+<p><input id="position" type="number" min="0" value="0"><button id="seek">定位（秒）</button></p>
+<p>循环 <input id="start" type="number" min="0" value="19.2"> 至 <input id="end" type="number" value="28.8"><button id="loop">设置</button><button id="unloop">取消循环</button></p>
+<pre id="status">等待载入</pre><small>这是 P0 验证页。浏览器调度测试不等于扬声器听辨验收。</small>
+<script type="module">
+import {ProbePlayer} from './player.js';
+window.probe=new ProbePlayer();
+const $=id=>document.getElementById(id);
+const manifest=await (await fetch('manifest.json')).json();
+for(const name of manifest.assets){const option=document.createElement('option');option.value=name;option.textContent=name;$('asset').append(option)}
+const showError=e=>$('status').textContent=String(e);
+$('load').onclick=()=>probe.load($('asset').value).catch(showError);$('play').onclick=()=>probe.play().catch(showError);$('pause').onclick=()=>probe.pause();
+$('seek').onclick=()=>probe.seek(Number($('position').value)).catch(showError);$('loop').onclick=()=>probe.setLoop(Number($('start').value),Number($('end').value)).catch(showError);$('unloop').onclick=()=>probe.setLoop(null);
+setInterval(()=>document.getElementById('status').textContent=JSON.stringify(probe.state(),null,2),100);
+</script></html>
