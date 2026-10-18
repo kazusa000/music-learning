@@ -96,7 +96,7 @@ class Service:
                             )
                         return receipt["response"]
                     project_id = getattr(args, "project_id", None)
-                    if request.operation == "jobs.cancel":
+                    if request.operation in ("jobs.cancel", "jobs.retry"):
                         project_id = row(db, t.jobs, "id", args.job_id)["project_id"]
                     if project_id:
                         project = row(db, t.projects, "id", project_id)
@@ -178,7 +178,19 @@ class Service:
             db.execute(insert(t.project_assets).values(project_id=project_id, asset_id=sha))
         return row(db, t.assets, "id", sha)
 
-    def commit(self, db, project_id, parent, snapshot, author, description, request_id=None):
+    def commit(
+        self,
+        db,
+        project_id,
+        parent,
+        snapshot,
+        author,
+        description,
+        request_id=None,
+        *,
+        revision_id=None,
+        advance_head=True,
+    ):
         snapshot = c.Snapshot.model_validate(snapshot)
         if parent:
             previous = row(db, t.revisions, "id", parent)["snapshot"]
@@ -193,6 +205,10 @@ class Service:
         for plugin in snapshot.plugins:
             asset_ids.add(plugin.state_asset_id)
             asset_ids.update(plugin.resource_asset_ids)
+            asset_ids.update(plugin.resource_paths.values())
+            if plugin.descriptor_asset_id:
+                asset_ids.add(plugin.descriptor_asset_id)
+        asset_ids.update(stem.asset_id for stem in snapshot.stems)
         for sha in asset_ids:
             asset = self._asset(db, sha, project_id)
             if sha == snapshot.source_asset_id:
@@ -208,7 +224,7 @@ class Service:
                 raise DomainError("analysis_mismatch", "Analysis belongs to another project", 422)
         data = snapshot.model_dump(mode="json")
         revision = dict(
-            id=c.new_id(),
+            id=revision_id or c.new_id(),
             project_id=project_id,
             parent_id=parent,
             snapshot_sha256=hashlib.sha256(canonical(data).encode()).hexdigest(),
@@ -237,9 +253,26 @@ class Service:
                         for x in values
                     ],
                 )
-        db.execute(
-            update(t.projects).where(t.projects.c.id == project_id).values(current_revision=revision["id"])
-        )
+        from . import schema_v2 as v2
+
+        for table, values in ((v2.stems, snapshot.stems), (v2.controllers, snapshot.controllers)):
+            if values:
+                db.execute(
+                    insert(table),
+                    [
+                        dict(revision_id=revision["id"], id=x.id, payload=x.model_dump(mode="json"))
+                        for x in values
+                    ],
+                )
+        if advance_head:
+            db.execute(
+                update(t.projects)
+                .where(t.projects.c.id == project_id)
+                .values(
+                    current_revision=revision["id"],
+                    status="imported" if snapshot.source_asset_id else "empty",
+                )
+            )
         emit(
             db,
             "revision.created",
@@ -254,7 +287,7 @@ class Service:
         if op == "describe_capabilities":
             return {
                 "schema_version": 1,
-                "phase": "P1",
+                "phase": "P2",
                 "operations": {
                     name: {
                         "mutates": write,
@@ -269,9 +302,14 @@ class Service:
                     "asset_bytes": "GET /v1/assets/{sha}",
                     "events": "GET /v1/events (SSE, Last-Event-ID or after)",
                 },
-                "job_kinds": ["asset.import", "plugin.inspect", "plugin.scan"],
+                "job_kinds": ["asset.import", "plugin.inspect", "plugin.scan", "project.preprocess"],
+                "job_payload_schemas": {
+                    "asset.import": c.ImportPayload.model_json_schema(),
+                    "plugin.inspect": c.PluginPayload.model_json_schema(),
+                    "plugin.scan": c.PluginPayload.model_json_schema(),
+                    "project.preprocess": c.PreprocessPayload.model_json_schema(),
+                },
                 "unsupported": [
-                    "model.preprocessing",
                     "native.render_project",
                     "live_plugin_edit",
                     "routing_execution",
@@ -442,6 +480,18 @@ class Service:
                 args,
             )
         if op == "jobs.submit":
+            if args.kind == "project.preprocess":
+                from .pipeline import submit_pipeline
+
+                return submit_pipeline(
+                    self,
+                    db,
+                    args.project_id,
+                    request.expected_revision,
+                    args.payload,
+                    request.request_id,
+                    args.max_attempts,
+                )
             if args.kind == "asset.import":
                 payload = c.ImportPayload.model_validate(args.payload).model_dump()
                 row(db, t.uploads, "id", payload["upload_id"])
@@ -475,6 +525,52 @@ class Service:
                 request_id=request.request_id,
             )
             return {k: v for k, v in job.items() if k != "lease_token"}
+        if op == "jobs.retry":
+            previous = row(db, t.jobs, "id", args.job_id)
+            if previous["status"] not in ("failed", "cancelled"):
+                raise DomainError("job_not_retryable", "Only failed or cancelled tasks can be retried", 409)
+            if previous["kind"] == "project.preprocess":
+                from .pipeline import submit_pipeline
+
+                return submit_pipeline(
+                    self,
+                    db,
+                    previous["project_id"],
+                    request.expected_revision,
+                    {"use_cache": previous["payload"]["use_cache"]},
+                    request.request_id,
+                    previous["max_attempts"],
+                    previous=previous,
+                )
+            return self._dispatch(
+                db,
+                "jobs.submit",
+                c.SubmitJob(
+                    project_id=previous["project_id"],
+                    kind=previous["kind"],
+                    payload=previous["payload"],
+                    max_attempts=previous["max_attempts"],
+                ),
+                request,
+            )
+        if op == "jobs.stages":
+            from . import schema_v2 as v2
+
+            row(db, t.jobs, "id", args.job_id)
+            return [
+                dict(x)
+                for x in db.execute(
+                    select(v2.job_stages)
+                    .where(v2.job_stages.c.job_id == args.job_id)
+                    .order_by(v2.job_stages.c.ordinal)
+                ).mappings()
+            ]
+        if op in ("preprocessing.get", "preprocessing.adopt"):
+            from .pipeline import preprocessing_view, adopt_preprocessing
+
+            if op == "preprocessing.get":
+                return preprocessing_view(self, db, args)
+            return adopt_preprocessing(self, db, args, request)
         if op == "jobs.get":
             job = row(db, t.jobs, "id", args.job_id)
             return {k: v for k, v in job.items() if k != "lease_token"}
@@ -496,6 +592,23 @@ class Service:
                     .where(t.jobs.c.id == args.job_id)
                     .values(status=status, updated_at=time.time())
                 )
+                if job["kind"] == "project.preprocess" and status == "cancelled":
+                    from . import schema_v2 as p
+
+                    db.execute(
+                        update(p.job_stages)
+                        .where(p.job_stages.c.job_id == job["id"], p.job_stages.c.status == "pending")
+                        .values(status="cancelled", updated_at=time.time())
+                    )
+                    if job["payload"]["adopt"]:
+                        db.execute(
+                            update(t.projects)
+                            .where(
+                                t.projects.c.id == job["project_id"],
+                                t.projects.c.current_revision == job["revision_id"],
+                            )
+                            .values(status="cancelled")
+                        )
                 emit(
                     db,
                     "job." + status,

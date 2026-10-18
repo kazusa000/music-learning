@@ -35,6 +35,7 @@ def main():
     imp.add_argument("--project", required=True)
     imp.add_argument("--expected-revision", required=True)
     imp.add_argument("--key")
+    imp.add_argument("--preprocess", action="store_true", help="Queue whole-song preprocessing after import")
     wait = sub.add_parser("wait")
     wait.add_argument("job_id")
     wait.add_argument("--timeout", type=float, default=180)
@@ -65,6 +66,7 @@ def main():
                     project_id=args.project,
                     expected_revision=args.expected_revision,
                     idempotency_key=args.key,
+                    preprocess=args.preprocess,
                 )
             elif args.command == "wait":
                 result = client.wait(args.job_id, timeout=args.timeout)

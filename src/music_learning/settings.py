@@ -28,11 +28,23 @@ class Settings:
     job_timeout_seconds: float = 120
     plugin_roots: list[Path] = field(default_factory=list)
     native_host: Path = ROOT / "runtime/build/msvc/bin/ml_audio_host.exe"
+    model_runtime: Path | None = None
+    pipeline_stage_timeout_seconds: float = 1800
+    pipeline_max_duration_seconds: float = 600
+    pipeline_min_free_bytes: int = 3 * 1024**3
 
     def __post_init__(self):
         self.data_root = local_fixed(Path(self.data_root))
         self.plugin_roots = [local_fixed(Path(p)) for p in self.plugin_roots]
         self.native_host = local_fixed(Path(self.native_host))
+        if self.model_runtime is None:
+            profile = ROOT / "runtime/model-runtime.json"
+            self.model_runtime = (
+                Path(json.loads(profile.read_text(encoding="utf-8"))["runtime_root"])
+                if profile.is_file()
+                else self.data_root.parent
+            )
+        self.model_runtime = local_fixed(Path(self.model_runtime))
         if self.host != "127.0.0.1":
             raise ValueError("P1 server only binds 127.0.0.1")
         if self.lease_seconds <= 0 or self.job_timeout_seconds <= 0 or self.max_upload_bytes <= 0:

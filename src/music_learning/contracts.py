@@ -51,6 +51,7 @@ class Beat(Model):
 class TimingAnchor(Model):
     sample: Sample
     beat: Beat
+    estimated: bool = False
 
 
 class Meter(Model):
@@ -143,6 +144,9 @@ class PluginInstance(Model):
     binary_sha256: Hash
     state_asset_id: Hash
     resource_asset_ids: list[Hash] = Field(default_factory=list)
+    resource_paths: dict[str, Hash] = Field(default_factory=dict)
+    resource_entrypoint: str | None = None
+    descriptor_asset_id: Hash | None = None
     parameters: dict[str, float] = Field(default_factory=dict)
     bypass: bool = False
     order: int = Field(ge=0)
@@ -220,12 +224,34 @@ class Annotation(Model):
     kind: str = Field(min_length=1, max_length=80)
     text: str = Field(max_length=20000)
     provenance: Provenance
+    details: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def interval(self):
         if self.end_sample <= self.start_sample:
             raise ValueError("annotation interval must be positive")
         return self
+
+
+class Stem(Model):
+    id: Id
+    name: Literal["vocals", "drums", "bass", "other"]
+    asset_id: Hash
+    source_asset_id: Hash
+    sample_rate: int
+    duration_samples: Sample
+    offset_samples: int = 0
+    provenance: Provenance
+
+
+class ControlEvent(Model):
+    id: Id
+    track_id: Id
+    sample: Sample
+    channel: int = Field(ge=1, le=16)
+    controller: int = Field(ge=0, le=127)
+    value: int = Field(ge=0, le=127)
+    provenance: Provenance
 
 
 class Snapshot(Model):
@@ -242,15 +268,26 @@ class Snapshot(Model):
     routing: RoutingGraph | None = None
     automation: list[AutomationLane] = Field(default_factory=list)
     annotations: list[Annotation] = Field(default_factory=list)
+    stems: list[Stem] = Field(default_factory=list)
+    controllers: list[ControlEvent] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def references(self):
-        collections = [self.tracks, self.clips, self.notes, self.plugins, self.automation, self.annotations]
+        collections = [
+            self.tracks,
+            self.clips,
+            self.notes,
+            self.plugins,
+            self.automation,
+            self.annotations,
+            self.stems,
+            self.controllers,
+        ]
         ids = [e.id for group in collections for e in group]
         if len(ids) != len(set(ids)):
             raise ValueError("entity identifiers must be unique")
         tracks, plugins = {x.id for x in self.tracks}, {x.id: x for x in self.plugins}
-        for entity in [*self.clips, *self.notes, *self.plugins]:
+        for entity in [*self.clips, *self.notes, *self.plugins, *self.controllers]:
             if entity.track_id not in tracks:
                 raise ValueError("unknown track")
         for note in self.notes:
@@ -261,6 +298,17 @@ class Snapshot(Model):
         for clip in self.clips:
             if clip.start_sample + clip.duration_samples > self.duration_samples:
                 raise ValueError("clip outside project duration")
+        for stem in self.stems:
+            if (
+                stem.source_asset_id != self.source_asset_id
+                or stem.sample_rate != self.sample_rate
+                or stem.duration_samples != self.duration_samples
+                or stem.offset_samples != 0
+            ):
+                raise ValueError("stem does not share the original audio time base")
+        for control in self.controllers:
+            if control.sample >= self.duration_samples:
+                raise ValueError("controller outside project duration")
         if self.timing_map:
             if self.timing_map.sample_rate != self.sample_rate:
                 raise ValueError("timing map sample rate differs")
@@ -299,7 +347,7 @@ class Project(Model):
     id: Id
     title: str
     kind: Literal["research", "composition"]
-    status: Literal["empty", "imported"]
+    status: Literal["empty", "imported", "queued", "processing", "ready", "failed", "cancelled"]
     current_revision: Id
     created_at: float
 
@@ -319,7 +367,7 @@ class Job(Model):
     id: Id
     project_id: Id
     revision_id: Id
-    kind: Literal["asset.import", "plugin.inspect", "plugin.scan"]
+    kind: Literal["asset.import", "plugin.inspect", "plugin.scan", "project.preprocess"]
     status: Literal["queued", "running", "cancel_requested", "cancelled", "succeeded", "failed"]
     payload: dict
     attempt: int
@@ -416,13 +464,55 @@ class ConvertTime(RevisionRef):
 
 
 class SubmitJob(ProjectRef):
-    kind: Literal["asset.import", "plugin.inspect", "plugin.scan"]
+    kind: Literal["asset.import", "plugin.inspect", "plugin.scan", "project.preprocess"]
     payload: dict
     max_attempts: int = Field(default=3, ge=1, le=5)
 
 
 class ImportPayload(Model):
     upload_id: Id
+    preprocess: bool = False
+
+
+class PreprocessPayload(Model):
+    use_cache: bool = True
+
+
+class AdoptPreprocessing(ProjectRef):
+    revision_id: Id
+
+
+class StageRecord(Model):
+    job_id: Id
+    stage: str
+    ordinal: int
+    status: Literal["pending", "running", "succeeded", "failed", "cancelled"]
+    cache_key: Hash | None = None
+    cache_hit: bool = False
+    progress: dict = Field(default_factory=dict)
+    manifest: dict | None = None
+    error: dict | None = None
+    updated_at: float
+
+
+class PreprocessingResult(Model):
+    project_id: Id
+    revision_id: Id
+    job_id: Id
+    manifest_asset_id: Hash
+    report_asset_id: Hash
+    mix_asset_id: Hash
+    native_snapshot_asset_id: Hash
+    track_renders: dict[Id, Hash]
+    waveforms: dict[str, Hash]
+    issues: list[str]
+    created_at: float
+
+
+class PreprocessingView(Model):
+    revision_id: Id
+    ready: bool
+    publication: PreprocessingResult | None
 
 
 class PluginPayload(Model):
@@ -507,6 +597,10 @@ OPERATIONS = {
     "jobs.get": (JobRef, False),
     "jobs.list": (ProjectPage, False),
     "jobs.cancel": (JobRef, True),
+    "jobs.retry": (JobRef, True),
+    "jobs.stages": (JobRef, False),
+    "preprocessing.get": (RevisionRef, False),
+    "preprocessing.adopt": (AdoptPreprocessing, True),
     "events.list": (EventPage, False),
 }
 
@@ -533,5 +627,9 @@ RESULT_TYPES = {
     "jobs.get": Job,
     "jobs.list": list[Job],
     "jobs.cancel": Job,
+    "jobs.retry": Job,
+    "jobs.stages": list[StageRecord],
+    "preprocessing.get": PreprocessingView,
+    "preprocessing.adopt": Project,
     "events.list": list[EventRecord],
 }

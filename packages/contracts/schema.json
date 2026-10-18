@@ -2,6 +2,27 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "schema_version": 1,
   "$defs": {
+    "AdoptPreprocessing": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "revision_id"
+      ],
+      "title": "AdoptPreprocessing",
+      "type": "object"
+    },
     "AnalysisRecord": {
       "additionalProperties": false,
       "properties": {
@@ -139,6 +160,11 @@
         },
         "provenance": {
           "$ref": "#/$defs/Provenance"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
         }
       },
       "required": [
@@ -437,6 +463,58 @@
       "title": "CommitSnapshot",
       "type": "object"
     },
+    "ControlEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "track_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Track Id",
+          "type": "string"
+        },
+        "sample": {
+          "minimum": 0,
+          "title": "Sample",
+          "type": "integer"
+        },
+        "channel": {
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Channel",
+          "type": "integer"
+        },
+        "controller": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Controller",
+          "type": "integer"
+        },
+        "value": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Value",
+          "type": "integer"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "id",
+        "track_id",
+        "sample",
+        "channel",
+        "controller",
+        "value",
+        "provenance"
+      ],
+      "title": "ControlEvent",
+      "type": "object"
+    },
     "Conversation": {
       "additionalProperties": false,
       "properties": {
@@ -719,7 +797,8 @@
           "enum": [
             "asset.import",
             "plugin.inspect",
-            "plugin.scan"
+            "plugin.scan",
+            "project.preprocess"
           ],
           "title": "Kind",
           "type": "string"
@@ -1018,6 +1097,39 @@
           "title": "Resource Asset Ids",
           "type": "array"
         },
+        "resource_paths": {
+          "additionalProperties": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "title": "Resource Paths",
+          "type": "object"
+        },
+        "resource_entrypoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Entrypoint"
+        },
+        "descriptor_asset_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Descriptor Asset Id"
+        },
         "parameters": {
           "additionalProperties": {
             "type": "number"
@@ -1048,6 +1160,121 @@
       "title": "PluginInstance",
       "type": "object"
     },
+    "PreprocessingResult": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "job_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "manifest_asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Manifest Asset Id",
+          "type": "string"
+        },
+        "report_asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Report Asset Id",
+          "type": "string"
+        },
+        "mix_asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Mix Asset Id",
+          "type": "string"
+        },
+        "native_snapshot_asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Native Snapshot Asset Id",
+          "type": "string"
+        },
+        "track_renders": {
+          "patternProperties": {
+            "^[a-f0-9]{32}$": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            }
+          },
+          "title": "Track Renders",
+          "type": "object"
+        },
+        "waveforms": {
+          "additionalProperties": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "title": "Waveforms",
+          "type": "object"
+        },
+        "issues": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Issues",
+          "type": "array"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "project_id",
+        "revision_id",
+        "job_id",
+        "manifest_asset_id",
+        "report_asset_id",
+        "mix_asset_id",
+        "native_snapshot_asset_id",
+        "track_renders",
+        "waveforms",
+        "issues",
+        "created_at"
+      ],
+      "title": "PreprocessingResult",
+      "type": "object"
+    },
+    "PreprocessingView": {
+      "additionalProperties": false,
+      "properties": {
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "ready": {
+          "title": "Ready",
+          "type": "boolean"
+        },
+        "publication": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreprocessingResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "revision_id",
+        "ready",
+        "publication"
+      ],
+      "title": "PreprocessingView",
+      "type": "object"
+    },
     "Project": {
       "additionalProperties": false,
       "properties": {
@@ -1071,7 +1298,12 @@
         "status": {
           "enum": [
             "empty",
-            "imported"
+            "imported",
+            "queued",
+            "processing",
+            "ready",
+            "failed",
+            "cancelled"
           ],
           "title": "Status",
           "type": "string"
@@ -1204,6 +1436,34 @@
       "title": "Provenance",
       "type": "object"
     },
+    "QueryAnnotationsResult": {
+      "additionalProperties": false,
+      "properties": {
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "total": {
+          "title": "Total",
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "revision_id",
+        "total",
+        "items"
+      ],
+      "title": "QueryAnnotationsResult",
+      "type": "object"
+    },
     "QueryEvents": {
       "additionalProperties": false,
       "properties": {
@@ -1275,6 +1535,34 @@
         "project_id"
       ],
       "title": "QueryEvents",
+      "type": "object"
+    },
+    "QueryNotesResult": {
+      "additionalProperties": false,
+      "properties": {
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "total": {
+          "title": "Total",
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/NoteEvent"
+          },
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "revision_id",
+        "total",
+        "items"
+      ],
+      "title": "QueryNotesResult",
       "type": "object"
     },
     "RegisterAnalysis": {
@@ -1661,9 +1949,172 @@
           },
           "title": "Annotations",
           "type": "array"
+        },
+        "stems": {
+          "items": {
+            "$ref": "#/$defs/Stem"
+          },
+          "title": "Stems",
+          "type": "array"
+        },
+        "controllers": {
+          "items": {
+            "$ref": "#/$defs/ControlEvent"
+          },
+          "title": "Controllers",
+          "type": "array"
         }
       },
       "title": "Snapshot",
+      "type": "object"
+    },
+    "StageRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "ordinal": {
+          "title": "Ordinal",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "cache_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Key"
+        },
+        "cache_hit": {
+          "default": false,
+          "title": "Cache Hit",
+          "type": "boolean"
+        },
+        "progress": {
+          "additionalProperties": true,
+          "title": "Progress",
+          "type": "object"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manifest"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "updated_at": {
+          "title": "Updated At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "job_id",
+        "stage",
+        "ordinal",
+        "status",
+        "updated_at"
+      ],
+      "title": "StageRecord",
+      "type": "object"
+    },
+    "Stem": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "enum": [
+            "vocals",
+            "drums",
+            "bass",
+            "other"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "source_asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Source Asset Id",
+          "type": "string"
+        },
+        "sample_rate": {
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "duration_samples": {
+          "minimum": 0,
+          "title": "Duration Samples",
+          "type": "integer"
+        },
+        "offset_samples": {
+          "default": 0,
+          "title": "Offset Samples",
+          "type": "integer"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "asset_id",
+        "source_asset_id",
+        "sample_rate",
+        "duration_samples",
+        "provenance"
+      ],
+      "title": "Stem",
       "type": "object"
     },
     "SubmitJob": {
@@ -1678,7 +2129,8 @@
           "enum": [
             "asset.import",
             "plugin.inspect",
-            "plugin.scan"
+            "plugin.scan",
+            "project.preprocess"
           ],
           "title": "Kind",
           "type": "string"
@@ -1714,6 +2166,11 @@
         },
         "beat": {
           "$ref": "#/$defs/Beat"
+        },
+        "estimated": {
+          "default": false,
+          "title": "Estimated",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1918,7 +2375,12 @@
           "status": {
             "enum": [
               "empty",
-              "imported"
+              "imported",
+              "queued",
+              "processing",
+              "ready",
+              "failed",
+              "cancelled"
             ],
             "title": "Status",
             "type": "string"
@@ -1971,7 +2433,12 @@
           "status": {
             "enum": [
               "empty",
-              "imported"
+              "imported",
+              "queued",
+              "processing",
+              "ready",
+              "failed",
+              "cancelled"
             ],
             "title": "Status",
             "type": "string"
@@ -2024,7 +2491,12 @@
           "status": {
             "enum": [
               "empty",
-              "imported"
+              "imported",
+              "queued",
+              "processing",
+              "ready",
+              "failed",
+              "cancelled"
             ],
             "title": "Status",
             "type": "string"
@@ -2532,7 +3004,8 @@
             "enum": [
               "asset.import",
               "plugin.inspect",
-              "plugin.scan"
+              "plugin.scan",
+              "project.preprocess"
             ],
             "title": "Kind",
             "type": "string"
@@ -2650,7 +3123,8 @@
             "enum": [
               "asset.import",
               "plugin.inspect",
-              "plugin.scan"
+              "plugin.scan",
+              "project.preprocess"
             ],
             "title": "Kind",
             "type": "string"
@@ -2778,7 +3252,8 @@
             "enum": [
               "asset.import",
               "plugin.inspect",
-              "plugin.scan"
+              "plugin.scan",
+              "project.preprocess"
             ],
             "title": "Kind",
             "type": "string"
@@ -2868,6 +3343,228 @@
           "updated_at"
         ],
         "title": "Job",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "jobs.retry": {
+      "arguments": "JobRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "asset.import",
+              "plugin.inspect",
+              "plugin.scan",
+              "project.preprocess"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested",
+              "cancelled",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "lease_until": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lease Until"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "revision_id",
+          "kind",
+          "status",
+          "payload",
+          "attempt",
+          "max_attempts",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Job",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "jobs.stages": {
+      "arguments": "JobRef",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/StageRecord"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "preprocessing.get": {
+      "arguments": "RevisionRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreprocessingResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "revision_id",
+          "ready",
+          "publication"
+        ],
+        "title": "PreprocessingView",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "preprocessing.adopt": {
+      "arguments": "AdoptPreprocessing",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "research",
+              "composition"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "empty",
+              "imported",
+              "queued",
+              "processing",
+              "ready",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "current_revision": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Current Revision",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "status",
+          "current_revision",
+          "created_at"
+        ],
+        "title": "Project",
         "type": "object"
       },
       "mutates": true

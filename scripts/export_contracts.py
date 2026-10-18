@@ -56,6 +56,11 @@ def generate():
         c.Conversation,
         c.Request,
         *[model for model, _ in c.OPERATIONS.values()],
+        *[
+            model
+            for model in c.RESULT_TYPES.values()
+            if isinstance(model, type) and issubclass(model, c.Model)
+        ],
     ]
     definitions = {}
     for model in models:

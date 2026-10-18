@@ -83,14 +83,28 @@ class Client:
         )
         return self._result(response)
 
-    def import_audio(self, source: Path, *, project_id, expected_revision, idempotency_key=None):
+    def import_audio(
+        self, source: Path, *, project_id, expected_revision, idempotency_key=None, preprocess=False
+    ):
         key = idempotency_key or new_id()
         upload = self.upload(source, idempotency_key=key)
         return self.call(
             "jobs.submit",
-            {"project_id": project_id, "kind": "asset.import", "payload": {"upload_id": upload["upload_id"]}},
+            {
+                "project_id": project_id,
+                "kind": "asset.import",
+                "payload": {"upload_id": upload["upload_id"], "preprocess": preprocess},
+            },
             expected_revision=expected_revision,
             idempotency_key=key,
+        )
+
+    def preprocess(self, project_id, *, expected_revision, use_cache=True, idempotency_key=None):
+        return self.call(
+            "jobs.submit",
+            {"project_id": project_id, "kind": "project.preprocess", "payload": {"use_cache": use_cache}},
+            expected_revision=expected_revision,
+            idempotency_key=idempotency_key,
         )
 
     def wait(self, job_id, *, timeout=180, interval=0.25):

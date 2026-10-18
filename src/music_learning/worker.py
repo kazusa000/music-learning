@@ -53,6 +53,23 @@ class Worker:
                         error={"code": "lease_expired", "message": "Previous executor lease expired"},
                     )
                 )
+                if job["kind"] == "project.preprocess":
+                    from . import schema_v2 as p
+
+                    db.execute(
+                        update(p.job_stages)
+                        .where(p.job_stages.c.job_id == job["id"], p.job_stages.c.status == "running")
+                        .values(status="pending" if status == "queued" else status, updated_at=now)
+                    )
+                    if job["payload"]["adopt"]:
+                        db.execute(
+                            update(t.projects)
+                            .where(
+                                t.projects.c.id == job["project_id"],
+                                t.projects.c.current_revision == job["revision_id"],
+                            )
+                            .values(status=status)
+                        )
                 emit(
                     db,
                     "job.recovered",
@@ -152,6 +169,28 @@ class Worker:
                     updated_at=time.time(),
                 )
             )
+            if job["kind"] == "project.preprocess":
+                from . import schema_v2 as p
+
+                if status != "succeeded":
+                    db.execute(
+                        update(p.job_stages)
+                        .where(p.job_stages.c.job_id == job["id"], p.job_stages.c.status == "running")
+                        .values(
+                            status="cancelled" if status == "cancelled" else "failed",
+                            error=error,
+                            updated_at=time.time(),
+                        )
+                    )
+                    if job["payload"]["adopt"]:
+                        db.execute(
+                            update(t.projects)
+                            .where(
+                                t.projects.c.id == job["project_id"],
+                                t.projects.c.current_revision == job["revision_id"],
+                            )
+                            .values(status=status)
+                        )
             emit(
                 db,
                 "job." + status,
@@ -163,6 +202,10 @@ class Worker:
             return True
 
     def _publish(self, db, job, result):
+        if job["kind"] == "project.preprocess":
+            from .pipeline import publish_pipeline
+
+            return publish_pipeline(self.service, db, job, result)
         service, store = self.service, self.service.storage
         provenance = c.Provenance(
             origin="rule", source_id="p1:" + job["id"], review="unreviewed"
@@ -209,6 +252,11 @@ class Worker:
                 update(t.projects).where(t.projects.c.id == job["project_id"]).values(status="imported")
             )
             published.update(source_asset_id=sha, revision_id=rev["id"], metadata=result["metadata"])
+            if job["payload"].get("preprocess"):
+                from .pipeline import submit_pipeline
+
+                queued = submit_pipeline(service, db, job["project_id"], rev["id"], {})
+                published["preprocess_job_id"] = queued["id"]
         elif job["kind"] == "plugin.inspect":
             plugin = result["plugin"]
             state = base64.b64decode(plugin["state_base64"], validate=True)
@@ -224,19 +272,21 @@ class Worker:
             published.update(plugins=result["plugins"])
         return published
 
-    def run_once(self):
-        job = self.claim()
-        if not job:
-            return False
+    def run_child(self, job, *, child_job=None, suffix=None, timeout=None, progress_callback=None):
         directory = self.settings.path("tasks", job["id"], str(job["attempt"]) + "-" + job["lease_token"])
+        if suffix:
+            directory = directory / suffix
         directory.mkdir(parents=True)
         settings = json.loads(json.dumps(asdict(self.settings), default=str))
-        (directory / "input.json").write_text(canonical({"settings": settings, "job": job}), encoding="utf-8")
+        (directory / "input.json").write_text(
+            canonical({"settings": settings, "job": child_job or job}), encoding="utf-8"
+        )
         response = {
             "ok": False,
             "error": {"code": "executor_failed", "message": "Executor stopped without valid result"},
         }
         env = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
+        env["MUSIC_MODEL_RUNTIME"] = str(self.settings.model_runtime)
         # Plugins/model adapters never receive the API session credential.
         env.pop("MUSIC_APP_TOKEN", None)
         try:
@@ -255,7 +305,7 @@ class Worker:
                         encoding="utf-8",
                     )
                     (directory / "go").touch(exist_ok=False)
-                    started, last_heartbeat = time.monotonic(), 0
+                    started, last_heartbeat, progress_stamp = time.monotonic(), 0, None
                     while owned.process.poll() is None:
                         if self.stopping:
                             response = {
@@ -263,7 +313,7 @@ class Worker:
                                 "error": {"code": "worker_stopped", "message": "Worker shut down"},
                             }
                             break
-                        if time.monotonic() - started > self.settings.job_timeout_seconds:
+                        if time.monotonic() - started > (timeout or self.settings.job_timeout_seconds):
                             response = {
                                 "ok": False,
                                 "error": {
@@ -282,6 +332,13 @@ class Worker:
                                     "error": {"code": "lease_lost", "message": "Executor lease lost"},
                                 }
                                 break
+                        progress_path = directory / "progress.json"
+                        if progress_callback and progress_path.is_file():
+                            stamp = progress_path.stat().st_mtime_ns
+                            if stamp != progress_stamp:
+                                value = json.loads(progress_path.read_text(encoding="utf-8"))
+                                progress_callback(value)
+                                progress_stamp = stamp
                         time.sleep(min(0.1, self.settings.lease_seconds / 6))
                     else:
                         path = directory / "result.json"
@@ -289,16 +346,25 @@ class Worker:
                             response = json.loads(path.read_text(encoding="utf-8"))
                             if owned.process.returncode != 0:
                                 response["ok"] = False
-            try:
-                self.finish(job, response)
-            except Exception as error:
-                self.finish(
-                    job,
-                    {"ok": False, "error": {"code": "publication_failed", "message": type(error).__name__}},
-                )
+        except Exception as error:
+            response = {"ok": False, "error": {"code": "executor_failed", "message": type(error).__name__}}
+        return response, directory
+
+    def run_once(self):
+        job = self.claim()
+        if not job:
+            return False
+        if job["kind"] == "project.preprocess":
+            from .pipeline import PipelineRunner
+
+            PipelineRunner(self, job).run()
+            return True
+        response, _ = self.run_child(job)
+        try:
+            self.finish(job, response)
         except Exception as error:
             self.finish(
-                job, {"ok": False, "error": {"code": "executor_failed", "message": type(error).__name__}}
+                job, {"ok": False, "error": {"code": "publication_failed", "message": type(error).__name__}}
             )
         return True
 

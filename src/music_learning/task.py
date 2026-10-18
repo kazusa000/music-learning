@@ -12,9 +12,24 @@ from .settings import ROOT, Settings
 from .storage import Storage
 
 
-def execute(settings, job):
+def execute(settings, job, directory=None):
     # Existing pinned P0 media/native adapters, isolated from the API process.
     sys.path.insert(0, str(ROOT / "scripts"))
+    if job["kind"] == "pipeline.stage":
+        from model_runtime import environment
+
+        python = settings.model_runtime / "envs/transcription/Scripts/python.exe"
+        env = environment(settings.model_runtime)
+        env["MUSIC_MODEL_RUNTIME"] = str(settings.model_runtime)
+        env["PYTHONPATH"] = str(ROOT / "src")
+        subprocess.run(
+            [str(python), str(ROOT / "scripts/pipeline_adapter.py"), str(directory)],
+            check=True,
+            env=env,
+            timeout=settings.pipeline_stage_timeout_seconds,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        return json.loads((directory / "stage-result.json").read_text(encoding="utf-8"))
     if job["kind"] == "asset.import":
         from media_runtime import verify_tool
 
@@ -53,31 +68,46 @@ def execute(settings, job):
         frames = round(duration * rate)
         if frames <= 0 or duration > 24 * 3600:
             raise ValueError("invalid or excessive duration")
-        # Validate the whole local stream, not just a plausible container header.
-        subprocess.run(
-            [
-                str(verify_tool("ffmpeg")),
-                "-nostdin",
-                "-v",
-                "error",
-                "-xerror",
-                "-i",
-                str(source),
-                "-map",
-                "0:a:0",
-                "-f",
-                "null",
-                "-",
-            ],
-            capture_output=True,
-            check=True,
-            timeout=100,
-        )
+        container_frames = frames
+        # Decode/count PCM frames rather than treating compressed padding as
+        # performed audio. The owning worker enforces timeout and tree cleanup.
+        with (directory / "decode.stderr.log").open("wb") as diagnostic:
+            decoder = subprocess.Popen(
+                [
+                    str(verify_tool("ffmpeg")),
+                    "-nostdin",
+                    "-v",
+                    "error",
+                    "-xerror",
+                    "-i",
+                    str(source),
+                    "-map",
+                    "0:a:0",
+                    "-c:a",
+                    "pcm_f32le",
+                    "-f",
+                    "f32le",
+                    "-",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=diagnostic,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+            decoded_bytes = 0
+            for block in iter(lambda: decoder.stdout.read(1024 * 1024), b""):
+                decoded_bytes += len(block)
+            if decoder.wait() != 0 or decoded_bytes % (4 * channels):
+                raise ValueError("audio failed complete decoding")
+        frames = decoded_bytes // (4 * channels)
+        if frames <= 0:
+            raise ValueError("decoded audio is empty")
+        duration = Fraction(frames, rate)
         return {
             "metadata": {
                 "sample_rate": rate,
                 "channels": channels,
                 "duration_samples": frames,
+                "container_duration_samples": container_frames,
                 "duration_seconds": float(duration),
                 "codec": stream["codec_name"],
                 "format": data["format"]["format_name"],
@@ -117,7 +147,7 @@ def main():
         time.sleep(0.05)
     config = json.loads((directory / "input.json").read_text(encoding="utf-8"))
     try:
-        result = execute(Settings(**config["settings"]), config["job"])
+        result = execute(Settings(**config["settings"]), config["job"], directory)
         response = {"ok": True, "result": result}
     except Exception as error:
         # Raw stderr stays local. No credentials or arbitrary exception text in API errors.
