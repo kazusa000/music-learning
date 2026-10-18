@@ -1,6 +1,6 @@
 # 第一阶段技术方案
 
-状态：2026-10-18 更新为 AI 操作优先的 VST3 DAW；P0a 已验证并锁定 JUCE 9.0.4 headless/MSVC 原生宿主。模型与应用服务依赖继续在 P0b/P1 验证。详见[AI 操作约定](09-agent-daw-contract.md)与[选型依据](08-references-and-decisions.md)。
+状态：2026-10-18，P0a/P0b 与 P1 已完成。JUCE 9.0.4 headless/MSVC、三模型与 Codex 探测已锁定；工程持久化和统一接口见 [P1 实现](14-project-service.md)。下图是第一阶段完整目标，模型流水线、制作与内置对话分别在 P2/P3/P4 接入。
 
 ## 系统结构
 
@@ -30,14 +30,14 @@ flowchart TB
 | --- | --- | --- |
 | 前端 | React + TypeScript + Vite + pnpm | 呈现作品、讨论、状态、差异与试听；不要求 AI 操作界面 |
 | 时间线 | Canvas 绘制波形/事件，DOM 提供交互控件与无障碍说明 | 避免大量音符 DOM 节点；视口裁剪和多级波形缓存 |
-| UI 状态 | Zustand 保存播放/选区；TanStack Query 管理服务端状态 | 播放位置不触发整页刷新，工程版本以服务端为准 |
+| UI 状态 | P1 最小主页用 React state + SSE/轮询；P3 再按时间线需求引入 Zustand/TanStack Query | 工程版本以服务端为准，P1 不建立另一份工程状态权威 |
 | 音频引擎 | C++20 + CMake，JUCE 9.0.4 headless/MSVC 已验证 | Windows x64 VST3；P0a 支持受限处理图/阶跃自动化/补偿/渲染，复杂路由在 P3 |
 | 试听 | Web Audio 播放原曲/已渲染产物 | 原生引擎拥有制作时间基准，前端只负责试听和位置显示；独奏/混合由引擎或受控 stems 提供 |
 | 后端 | Python 3.11 + FastAPI + Pydantic 2 + uv | 与音频生态衔接，接口和编辑参数显式校验 |
 | 元数据 | SQLite WAL + SQLAlchemy 2 + Alembic | 单机事务、迁移、工程和任务状态持久化 |
 | 大文件 | 本地文件系统，SHA-256 内容摘要 | 原始音频、分轨、渲染与模型文件不塞进数据库 |
 | 任务 | SQLite 任务表 + 单个独立 worker，模型由受控子进程执行 | 可重启、取消、重试；第一阶段限制 GPU 并发为 1 |
-| 操作与反馈 | 类型化 HTTP API + SDK/CLI + SSE | 操作能力发现、实际状态回读、批量事务和断线补发；前端/Agent 同源 |
+| 操作与反馈 | 类型化 HTTP API + SDK/CLI + SSE | 操作能力发现、实际状态回读、单条事务/顺序批处理和断线补发；前端/Agent 同源 |
 | 音频处理 | FFmpeg/ffprobe | 解码、重采样、混音、编码和元数据提取 |
 | 分轨 | Demucs `htdemucs`，通过 SeparationAdapter | 基线分离 vocals/drums/bass/other；质量与速度在 P0 测定 |
 | 多乐器转录 | MuScriptor medium 起步，通过 TranscriptionAdapter | 整曲 MIDI 初稿；small/large 仅在测量后调整 |
@@ -47,7 +47,7 @@ flowchart TB
 | AI | Codex App Server + 应用领域工具，保留供应商适配器 | P0b 已用既有 ChatGPT 登录实测；正式服务/对话持久化后续接入，详见 docs/13-codex-integration.md |
 | 检查 | CTest/原生宿主夹具、pytest、Vitest、Playwright | 真实插件处理、全操作 API、恢复、整曲能力；浏览器检查展示与试听 |
 
-模块边界和 P0a 宿主已选定，原生工具/三款插件版本与摘要已提交。模型、更多插件适配、应用服务和对话接入继续验证。所选模块失败时先记录问题与替代对比，再更新决策，不能用空输出替代能力。
+P1 使用 SQLAlchemy 2 Core 组织显式 SQLite 事务，Alembic 管理迁移。完整版本快照是权威，各实体表为同一事务生成的只读投影。23 个领域操作共用一个命令入口；独立 worker 的音频导入/插件扫描与检查已接通。其他模型/渲染/对话适配器仍在对应阶段接入，不能用空输出替代能力。
 
 ## 运行环境与隔离
 

@@ -75,6 +75,8 @@ SheetSage2 模型页面标注 CC BY-NC 4.0，并列出 Python、FFmpeg 和父模
 
 ## P0 必须解决的事项
 
+P1 补充决策：保留 SQLite WAL + SQLAlchemy 2，使用 Core 显式事务；不可变完整快照为权威，实体表为事务内投影。上传先发布本机 CAS 文件后提交引用；任务用租约/fencing 与 Windows Job Object，避免内存队列和脱离归属的插件进程。最小主页暂用 React state + SSE，不提前引入时间线状态库。实际实现、锁文件与代价见 [P1 工程服务](14-project-service.md)，验证见 [P1 报告](benchmarks/p1-persistence.md)。
+
 | 事项 | 默认方向 | 需要的证据或输入 |
 | --- | --- | --- |
 | 目标曲目与曲风 | 一首完整曲开发，另加完整对照曲 | 用户目标音乐；早期可先选可用参考样本 |

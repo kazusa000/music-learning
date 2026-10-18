@@ -2,7 +2,7 @@
 
 ## 当前仓库
 
-根目录为 `E:\Intrest\music-learning`。当前已有 native、scripts、tests 与原生依赖清单；运行命令见 [原生宿主说明](11-native-host.md)。下列前端、API、worker 和完整 Agent SDK 目录仍为后续开发目标。
+根目录为 `E:\Intrest\music-learning`。P1 已建立下列实际模块；共享领域、SDK/CLI 实现在 `src/music_learning`，packages 存放生成契约与 SDK 入口文档。运行见 [P1 工程服务](14-project-service.md)，P0 原生接口继续见 [原生宿主](11-native-host.md)。
 
 ```text
 music-learning/
@@ -12,6 +12,7 @@ music-learning/
   apps/web/                 React 前端
   services/api/             FastAPI 和领域服务
   services/worker/          任务执行与模型适配器
+  src/music_learning/       P1 共享领域、契约、HTTP/SDK/CLI、worker 与存储
   native/audio-host/        C++ VST3 扫描、处理图和渲染宿主
   packages/contracts/       生成的 JSON Schema 与 TypeScript 类型
   packages/agent-sdk/       Agent SDK 与 CLI，同一操作契约
@@ -52,7 +53,7 @@ Git 管理应用源码；音乐工程使用应用版本系统和独立备份。�
 
 ## 开发检查
 
-原生构建/CTest、pytest 和演示命令已经提供。P1 落地后再统一提供前端 typecheck/lint/test/build、后端 lint/test 和端到端 CLI smoke 命令，并在 README 写出可直接运行的命令。
+P1 提供 ruff lint/format、pytest、生成契约漂移检查、前端严格 TypeScript 检查/构建、Playwright 整曲主页检查和真实 CLI/SDK 重启验收脚本；命令见 README 与 docs/14。P0 27 项回归用 transcription 环境（含 mido），P1 26 项用 app 环境，不能混用成缺包的 tooling 环境全量运行。
 
 优先测试具有明确失败风险的逻辑：全操作接口、插件扫描/崩溃、参数/状态/预设、路由/延迟/自动化、时间映射、任务恢复、编辑范围、原子发布、幂等、版本冲突和数据迁移。视觉文案等低影响调整以适当界面检查为主，不编写只重复实现的测试。
 

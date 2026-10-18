@@ -2,7 +2,7 @@
 
 第一阶段交付：AI 能通过 API/SDK/CLI 完成完整音乐预处理、DAW 工程操作、VST3 制作、讨论、局部改编、试听比较和保存恢复。前端展示结果并承载讨论与试听；不要求 MIDI 键盘或手工 DAW 编辑流程。
 
-截至 2026-10-18，P0a/P0b 技术探测已完成，P1～P6 尚未开始。[P0b 最新报告](benchmarks/p0b-real-song-and-codex.md)记录真实整曲链路、Codex 与模型质量限制。下一步 P1，步骤按依赖推进，暂不承诺未经实测的工期。
+截至 2026-10-18，P0a/P0b 与 P1 已完成，P2～P6 尚未开始。[P0b 报告](benchmarks/p0b-real-song-and-codex.md)记录模型质量限制；[P1 报告](benchmarks/p1-persistence.md)记录工程与任务恢复、统一接口及整曲主页验证。下一步 P2，暂不承诺未经实测的工期。
 
 ## P0 技术探测与基线锁定
 
@@ -42,15 +42,17 @@
 
 ## P1 工程数据与持久化骨架
 
-- [ ] 创建前端、API、原生宿主、worker、SDK/CLI 和契约目录；加入锁文件与环境样例。
-- [ ] 实现 Project、Asset、AnalysisRun、TimingMap、Track、Clip、NoteEvent、PluginInstance、RoutingGraph、AutomationLane、Revision、Job、Conversation 模型与迁移。
-- [ ] 实现内容寻址素材、原子发布、工程创建/打开、版本读取与幂等写入。
-- [ ] 实现秒/样本/beat/小节映射与来源记录，建立弱起、变速、三连音和延音夹具。
-- [ ] 实现持久任务队列、事件 cursor、取消、worker 崩溃恢复。
-- [ ] 实现全操作命令/查询入口、能力发现、插件参数/状态回读、SDK/CLI 批处理；领域服务持有唯一权威 revision。
-- [ ] 提供最小主页，能导入音频、显示项目与真实任务状态。
+- [x] 创建前端、API、原生宿主、worker、SDK/CLI 和契约目录；加入锁文件与环境样例。
+- [x] 实现 Project、Asset、AnalysisRun、TimingMap、Track、Clip、NoteEvent、PluginInstance、RoutingGraph、AutomationLane、Revision、Job、Conversation 模型与迁移。
+- [x] 实现内容寻址素材、原子发布、工程创建/打开、版本读取与幂等写入。
+- [x] 实现秒/样本/beat/小节映射与来源记录，建立弱起、变速、三连音和延音夹具。
+- [x] 实现持久任务队列、事件 cursor、取消、worker 崩溃恢复。
+- [x] 实现全操作命令/查询入口、能力发现、插件参数/状态回读、SDK/CLI 批处理；领域服务持有唯一权威 revision。
+- [x] 提供最小主页，能导入音频、显示项目与真实任务状态。
 
 依赖：P0 的工具链和输出形态。退出条件：工程与任务跨重启可恢复，失败/取消不破坏原素材；核心工程操作经 SDK/CLI 完成，数据约定测试通过。
+
+证据：P1 26 项测试、P0 27 项回归；305 秒真实本地副本经主页导入/播放与 CLI/SDK 持久化，6 声部/9,378 音符/插件状态/笔记/cursor 经真实服务重启核对。P1 快照提交只保存验证后的数据，不替代 P3 制作执行。详见 [运行说明](14-project-service.md)与 [P1 报告](benchmarks/p1-persistence.md)。
 
 ## P2 整曲预处理贯通
 

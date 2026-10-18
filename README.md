@@ -12,7 +12,9 @@
 
 P0b 技术探测已完成：194 秒原创真值夹具 + NAS 只读复制的 305 秒真实曲目，跑通 MuScriptor medium、Demucs、SheetSage2、真实 VST3 整曲/逐轨渲染和浏览器试听。Codex App Server 已用既有 ChatGPT 登录通过真实工具/流式/错误/中断探测。27 项回归通过，详情见 [P0b 最新报告](docs/benchmarks/p0b-real-song-and-codex.md)。
 
-下一步 P1：权威工程、素材/版本/任务持久化与统一操作接口。当前仍是探测 CLI 和只读试听页，正式工作台、产品内工程讨论/编辑尚待开发。模型漏检、声部合并和时值错误须可见并可校正；直接音乐音频理解与人工听辨未完成。
+P1 已完成：工程、内容寻址素材、不可变 revision、分析来源、版本绑定笔记、租约任务和事件 cursor 可跨重启恢复；23 个命令/查询共用 API/SDK/CLI 契约，最小主页支持完整原曲导入、真实任务状态与原曲试听。P1 26 项测试及原 P0 27 项回归通过，实际保存了 305 秒曲目、6 声部、9,378 音符并完成服务重启核对，见 [P1 报告](docs/benchmarks/p1-persistence.md)。
+
+下一步 P2：把已验证的三模型与重建适配器接入持久流水线。当前导入成功只标记原曲已保存，不冒充整曲分析完成；正式音乐工作台、产品内 Codex 讨论和制作编辑仍在 P2～P5。直接音乐音频理解与人工听辨未完成。
 
 第一阶段目标：一首完整音乐完成预处理后，AI 能定位、讨论和改编任意片段，程序化操作轨道、MIDI、VST3、混音与自动化，生成可试听版本；用户在前端查看、讨论和比较，重启后继续工作。
 
@@ -36,6 +38,8 @@ P0b 技术探测已完成：194 秒原创真值夹具 + NAS 只读复制的 305 
 | [P0 汇总](docs/benchmarks/p0-summary.md) | P0b 整曲实测、质量错误、资源测量与退出缺口 |
 | [Codex 接入方案](docs/13-codex-integration.md) | 官方 App Server、真实工具往返、登录与后续工程接入 |
 | [P0b 最新验证](docs/benchmarks/p0b-real-song-and-codex.md) | NAS 只读、305 秒三模型、完整 VST3、Codex 与模型误差 |
+| [P1 工程服务](docs/14-project-service.md) | 启停、迁移、素材/版本/任务、统一 API/SDK/CLI 与安全边界 |
+| [P1 验证记录](docs/benchmarks/p1-persistence.md) | 整曲数据保存、真实插件回读、取消/强杀恢复、主页及重启 |
 
 阅读顺序：项目规划 → 交互与工作流 → 技术方案 → 开发顺序；实现前同时阅读数据约定与验收方案。
 
@@ -51,13 +55,30 @@ P0b 技术探测已完成：194 秒原创真值夹具 + NAS 只读复制的 305 
 
 原生环境、插件、模型与代码/权重、Codex 四组件及媒体工具的版本/摘要已固定，三个模型与对话接口均已完成 P0 实测。
 
-## 运行当前原型
+## 运行应用
+
+双击 `start.cmd` 启动本机 API/worker 并打开主页；`stop.cmd` 停止。工程数据位于 `D:\music-learning-runtime\app-data`，不在 NAS。也可只启动服务给 AI 使用：
+
+```powershell
+& runtime/tooling/Scripts/python.exe scripts/app.py start
+& runtime/tooling/Scripts/python.exe scripts/app.py status
+& runtime/tooling/Scripts/python.exe scripts/app.py stop
+```
+
+首次恢复环境运行 `scripts/bootstrap_app.py`，详细 SDK/CLI 和配置命令见 [P1 运行说明](docs/14-project-service.md)。
+
+## 检查与 P0 探测
 
 本机已准备环境，可直接运行：
 
 ```powershell
 & runtime/tooling/Scripts/python.exe -m pytest tests/native -q --basetemp=runtime/pytest-p0a
 & runtime/tooling/Scripts/python.exe scripts/make_native_demo.py
+& D:\music-learning-runtime\envs\app\Scripts\python.exe -m pytest tests/service -q --basetemp=D:\music-learning-runtime\tmp\pytest-p1
+& D:\music-learning-runtime\envs\transcription\Scripts\python.exe -m pytest tests/native tests/models -q --basetemp=D:\music-learning-runtime\tmp\pytest-p0-regression
+& D:\music-learning-runtime\envs\app\Scripts\python.exe scripts/export_contracts.py --check
+pnpm --dir apps/web typecheck
+pnpm --dir apps/web build
 ```
 
 从空环境重建、Agent 调用与当前限制见 [运行说明](docs/11-native-host.md)。第三方许可与工具来源见 [THIRD_PARTY.md](THIRD_PARTY.md)。
@@ -66,6 +87,6 @@ P0b 技术探测已完成：194 秒原创真值夹具 + NAS 只读复制的 305 
 
 Git 管理源代码、开发文档、契约和小型测试数据。用户音乐、模型、分轨、渲染音频、数据库、对话与个人经验保存在被忽略的 `data/`、`models/`、`runtime/` 中，并由应用自己的工程版本与备份机制管理。
 
-本机 P0b 大文件另配置到独立的 `D:\music-learning-runtime`，同样不进入源码 Git；应用自身的正式工程备份机制尚待 P1～P6 实现。
+本机大文件和应用数据配置到独立的 `D:\music-learning-runtime`，同样不进入源码 Git。P1 提供 SQLite backup API 元数据备份；包含音频/插件依赖的完整工程备份与独立恢复验收仍在 P6。
 
 本地 Git 仓库不等于远程备份；音乐工程也不依赖 Git 提交来保存。

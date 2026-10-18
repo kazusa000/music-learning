@@ -23,7 +23,13 @@
 
 ## 当前阶段
 
-P0a/P0b 技术探测已完成，下一步 P1。27 项回归（原生 13 + 模型/导入/协议/资源 14）及真实整曲浏览器探测通过。继续前阅读 docs/12-model-probes.md、docs/13-codex-integration.md 与 docs/benchmarks/p0b-real-song-and-codex.md。P1 尚未实施。
+P0a/P0b 与 P1 已完成，下一步 P2。继续前阅读 docs/14-project-service.md、docs/benchmarks/p1-persistence.md、docs/12-model-probes.md、docs/13-codex-integration.md 与 docs/benchmarks/p0b-real-song-and-codex.md。P1 26 项 + P0 27 项回归及整曲主页浏览器验证通过。
+
+P1 代码在 src/music_learning（权威契约/领域服务、HTTP API、SDK/CLI、任务执行），services/api/migrations（Alembic 冻结 0001）、services/worker、apps/web、packages/contracts。数据在 D:\music-learning-runtime\app-data，独立 Python 环境在 envs/app。通过 scripts/app.py start/open/status/stop 管理隐藏的服务及其归属。当前从源码 checkout + PYTHONPATH=src 运行，不承诺可搬移 wheel。契约变更后运行 scripts/export_contracts.py，提交 schema/TS 并检查漂移。
+
+所有工程写入走 Service；worker 发布使用同一领域服务和 SQLite 事务。幂等键、expected_revision、素材 SHA、事件 cursor 和 attempt fencing 必须保留。快照及实体投影同时提交；素材先本地原子发布、后提交引用，孤儿文件不当成功，不自动清理。Windows Job Object/gate 用于强杀清理；不要退回只有内存的 BackgroundTasks 队列。
+
+P1 原曲导入状态是 imported，绝不是 ready。已有 P0 9,378 音符只是持久化验证导入，不是已接入正式模型流水线。快照保存图/插件/自动化数据不等于已经执行或渲染；P3 再接执行路径。SQLite 元数据备份不包含 CAS 素材，P6 全工程备份仍待实现。
 
 本机模型环境/产物在 D:\music-learning-runtime，位置保存在被忽略的 runtime/model-runtime.json。不要把大模型再默认安装到空间不足的 E/C 盘。用户已完成 Hugging Face 许可/本机登录，三个模型均跑完 NAS 授权选取的 305 秒歌曲。NAS 只允许读取/复制，禁止写标签/封面/清单、移动、删除或在原目录生成产物；所有处理走本地 references 副本。源摘要/大小/mtime 已回读一致。
 
@@ -31,4 +37,4 @@ Codex App Server 已用既有 ChatGPT 登录验证；运行时固定 0.163.0-alp
 
 夹具采用 whole-song-v2 音频与独立 truth-v3.json，旧真值有已记录错误；不能覆盖原输出。MuScriptor 存在开头漏检/鼓漏音/声部合并，SheetSage2 存在时值和夹具结构问题；真实曲目的候选结构已有完整输出。+12 dB 增益实验反复无 EOS 后已终止，不作为成功配置。Surge 默认音色重开波形非确定，保留已生成 Render。
 
-不要将探测 CLI、只读试听页和原生处理原语当成 P1 工程数据库、正式前端或完整 DAW。任务清单只有满足相应退出条件后才勾选完成。
+P0 探测 CLI/只读试听页继续独立保留。不要把 P1 主页与持久化骨架当成完整 DAW、模型预处理或产品内 Codex 讨论。任务清单只有满足相应退出条件后才勾选完成。
