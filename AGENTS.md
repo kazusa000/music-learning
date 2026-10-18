@@ -23,8 +23,12 @@
 
 ## 当前阶段
 
-P0a 原生 VST3 原型已通过 13 项测试；运行说明见 docs/11-native-host.md，证据见 docs/benchmarks/p0a-native.md。P0b 部分完成：194 秒原创曲已实测 Demucs、SheetSage2、VST3 渲染/重开与浏览器探测；新增 7 项检查通过。继续前阅读 docs/12-model-probes.md 和 docs/benchmarks/p0-summary.md。
+P0a/P0b 技术探测已完成，下一步 P1。27 项回归（原生 13 + 模型/导入/协议/资源 14）及真实整曲浏览器探测通过。继续前阅读 docs/12-model-probes.md、docs/13-codex-integration.md 与 docs/benchmarks/p0b-real-song-and-codex.md。P1 尚未实施。
 
-本机模型环境/产物在 D:\music-learning-runtime，位置保存在被忽略的 runtime/model-runtime.json。不要把大模型再默认安装到空间不足的 E/C 盘。MuScriptor medium 尚待 Hugging Face 授权；真实对话 API 和目标录音未配置。采用 whole-song-v2 的音频与独立 truth-v3.json，旧真值有已记录的和弦标签错误；不可覆盖原音频、模型输出或旧测量。SheetSage2 结构/音符结束时间有明显缺口，Surge 默认音色重开波形非确定；均保留在汇总中。
+本机模型环境/产物在 D:\music-learning-runtime，位置保存在被忽略的 runtime/model-runtime.json。不要把大模型再默认安装到空间不足的 E/C 盘。用户已完成 Hugging Face 许可/本机登录，三个模型均跑完 NAS 授权选取的 305 秒歌曲。NAS 只允许读取/复制，禁止写标签/封面/清单、移动、删除或在原目录生成产物；所有处理走本地 references 副本。源摘要/大小/mtime 已回读一致。
+
+Codex App Server 已用既有 ChatGPT 登录验证；运行时固定 0.163.0-alpha.10.2 和四个组件，当前版本需要 code-mode host 路由动态工具。正式应用默认独立 codex-home（当前尚未独立登录），不提取或复制用户 Token；既有登录只用于 --use-existing-login 探测。shell/apps/MCP/多 Agent 等受控，不能把 P0 合成 music_probe 当成已存在完整音乐领域工具。
+
+夹具采用 whole-song-v2 音频与独立 truth-v3.json，旧真值有已记录错误；不能覆盖原输出。MuScriptor 存在开头漏检/鼓漏音/声部合并，SheetSage2 存在时值和夹具结构问题；真实曲目的候选结构已有完整输出。+12 dB 增益实验反复无 EOS 后已终止，不作为成功配置。Surge 默认音色重开波形非确定，保留已生成 Render。
 
 不要将探测 CLI、只读试听页和原生处理原语当成 P1 工程数据库、正式前端或完整 DAW。任务清单只有满足相应退出条件后才勾选完成。

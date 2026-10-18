@@ -10,9 +10,9 @@
 
 2026-10-18：P0a 原生 VST3 原型已实现。AI 可通过 JSON/CLI 扫描插件、读取参数/状态、写入 MIDI、混合音频轨、执行阶跃自动化、渲染及恢复快照。真实 Surge XT、CHOW Tape、sfizz 和自制 VST3 夹具的 13 项测试通过。
 
-P0b 已用 194 秒原创完整曲实测 Demucs 与 SheetSage2、MIDI 到真实 VST3 的整曲重建、快照重开、贝斯修改/混合与浏览器定位/循环。模型环境、固定权重清单、探测 CLI 和只读试听验证页已实现。详情与质量问题见 [P0 汇总](docs/benchmarks/p0-summary.md)。
+P0b 技术探测已完成：194 秒原创真值夹具 + NAS 只读复制的 305 秒真实曲目，跑通 MuScriptor medium、Demucs、SheetSage2、真实 VST3 整曲/逐轨渲染和浏览器试听。Codex App Server 已用既有 ChatGPT 登录通过真实工具/流式/错误/中断探测。27 项回归通过，详情见 [P0b 最新报告](docs/benchmarks/p0b-real-song-and-codex.md)。
 
-P0b 尚未完成：MuScriptor medium 等待用户 Hugging Face 授权，真实对话服务与目标曲目待提供。SheetSage2 目前有明显时值/结构缺口。当前尚无正式应用前端、工程数据库、三模型完整流水线或产品内对话，不进入 P1 验收。
+下一步 P1：权威工程、素材/版本/任务持久化与统一操作接口。当前仍是探测 CLI 和只读试听页，正式工作台、产品内工程讨论/编辑尚待开发。模型漏检、声部合并和时值错误须可见并可校正；直接音乐音频理解与人工听辨未完成。
 
 第一阶段目标：一首完整音乐完成预处理后，AI 能定位、讨论和改编任意片段，程序化操作轨道、MIDI、VST3、混音与自动化，生成可试听版本；用户在前端查看、讨论和比较，重启后继续工作。
 
@@ -34,6 +34,8 @@ P0b 尚未完成：MuScriptor medium 等待用户 Hugging Face 授权，真实�
 | [P0a 验证记录](docs/benchmarks/p0a-native.md) | 真实测试、创作实验、锁定环境与宿主选择 |
 | [模型与整曲探测说明](docs/12-model-probes.md) | 模型环境、授权、完整曲 CLI、渲染及浏览器探测命令 |
 | [P0 汇总](docs/benchmarks/p0-summary.md) | P0b 整曲实测、质量错误、资源测量与退出缺口 |
+| [Codex 接入方案](docs/13-codex-integration.md) | 官方 App Server、真实工具往返、登录与后续工程接入 |
+| [P0b 最新验证](docs/benchmarks/p0b-real-song-and-codex.md) | NAS 只读、305 秒三模型、完整 VST3、Codex 与模型误差 |
 
 阅读顺序：项目规划 → 交互与工作流 → 技术方案 → 开发顺序；实现前同时阅读数据约定与验收方案。
 
@@ -47,7 +49,7 @@ P0b 尚未完成：MuScriptor medium 等待用户 Hugging Face 授权，真实�
 - 原生处理图统一执行 VST3 乐器、效果链、自动化和渲染；FluidSynth 仅作可选参考后端，FFmpeg 负责媒体转换。
 - AI 通过统一命令服务读取并操作工程、回读结果、渲染和测量；API/SDK/CLI 使用同一契约，具体 AI 供应商可替换。
 
-原生环境与三款插件已锁定版本和下载摘要；模型环境与代码/权重版本已固定，两款模型已完成 CUDA 整曲实测，MuScriptor 与对话服务继续在 P0b 验证。
+原生环境、插件、模型与代码/权重、Codex 四组件及媒体工具的版本/摘要已固定，三个模型与对话接口均已完成 P0 实测。
 
 ## 运行当前原型
 

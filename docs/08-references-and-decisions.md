@@ -52,6 +52,7 @@ SheetSage2 模型页面标注 CC BY-NC 4.0，并列出 Python、FFmpeg 和父模
 | D15 | SheetSage2 P0 使用官方 default/FFmpeg CLI 路径 | 完整曲实测可用；本机 torchaudio FFmpeg backend 不可用，不开放 paper 预设，不把 CLI 成功当成共享库绑定成功 |
 | D16 | 模型代码、父模型与权重按 commit 和文件摘要固定 | SheetSage2 需要执行模型仓库代码；固定版本、下载校验和推理前复核，避免自动跟随 main |
 | D17 | P0b 大文件使用独立 D 盘运行目录 | E 盘不足以承载 CUDA 包和权重；源码保留原位置，不改全局 Python/缓存，不清理其他目录 |
+| D18 | AI 默认接入 Codex App Server，供应商边界保留 | 既有 ChatGPT 登录完成真实工具/流式/错误/中断验证；工程事实/事务留在应用，正式默认独立登录目录。说明与官方来源见 [Codex 接入](13-codex-integration.md) |
 
 ## 本机环境快照
 
@@ -70,7 +71,7 @@ SheetSage2 模型页面标注 CC BY-NC 4.0，并列出 Python、FFmpeg 和父模
 | FluidSynth / MuseScore | 本次 PATH 查询未找到，不能据此断言整机未安装 |
 | Git 提交者 | 按用户提供的 GitHub 账号 kazusa000 设置本仓库身份，使用 ID 格式 noreply 邮箱 |
 
-该表记录规划时的环境。随后 P0a 已在项目内配置原生工具链和三款插件，最新版本及实测见 [P0a 报告](benchmarks/p0a-native.md)。P0b 已用 194 秒完整原创夹具实测 Demucs/SheetSage2、VST3 重建与浏览器探测；MuScriptor、目标录音和主观听辨未完成。质量问题与授权缺口见 [P0 汇总](benchmarks/p0-summary.md)。
+该表记录规划时的环境。随后 P0a 已配置原生工具链和三款插件。P0b 已完成 194 秒夹具/305 秒 NAS 歌曲的三模型、VST3 整曲/逐轨、浏览器与真实 Codex 接口探测；主观听辨仍待产品验收。最新版本、质量问题和证据见 [P0b 报告](benchmarks/p0b-real-song-and-codex.md)，媒体工具/Codex 二进制摘要已加入 config 清单。
 
 ## P0 必须解决的事项
 

@@ -1,6 +1,6 @@
 # P0b 模型与整曲探测运行说明
 
-这是独立进程的探测工具，尚不是 P1 工程服务、持久任务队列或正式前端。当前实际结果见 [P0 汇总](benchmarks/p0-summary.md)。所有输出保存在 Git 外，输入、模型原始输出和旧测量不覆盖。
+这是独立进程的探测工具，尚不是 P1 工程服务、持久任务队列或正式前端。当前实际结果见 [P0b 最新报告](benchmarks/p0b-real-song-and-codex.md)，[首轮记录](benchmarks/p0-summary.md)保留。所有输出保存在 Git 外，输入、模型原始输出和旧测量不覆盖。
 
 ## 存储与环境
 
@@ -26,7 +26,7 @@ Windows x64 / Python 3.11：`requirements-transcription.lock` 固定 MuScriptor 
 & runtime/tooling/Scripts/python.exe scripts/model_runtime.py download mert
 ```
 
-2026-10-18 实测 SheetSage2 和 MERT 父模型可公开下载。MuScriptor medium 的权重是 gated；本机未授权下载返回 HTTP 401 / GatedRepo。需要用户完成以下步骤：
+2026-10-18 实测 SheetSage2 和 MERT 父模型可公开下载。MuScriptor medium 权重为 gated；首次未授权返回 HTTP 401 / GatedRepo，随后用户完成许可/本机登录，固定权重已下载并通过真实整曲验证。新环境仍需以下步骤：
 
 1. 登录 Hugging Face，在 [MuScriptor medium 页面](https://huggingface.co/MuScriptor/muscriptor-medium) 阅读并接受权重许可。
 2. 在自己的交互式 PowerShell 运行下列登录命令，按提示输入有模型读取权限的 Token。不要把 Token 发到聊天或写进命令行参数。
@@ -60,11 +60,13 @@ $bench = 'D:\music-learning-runtime\benchmarks'
 
 默认超时 3600 秒，可用 `--timeout` 调整。Ctrl+C/超时会终止本次自建 worker 子进程树；已实测超时后 worker 退出。失败保留本次输出作诊断，不把残留文件视为成功。`completed` 表示推理进程结束，质量、全曲覆盖和结构缺失仍须审阅结果，不能直接据此把工程设为 ready。
 
+显式取消可在本次输出目录创建 `cancel.request`，外层探测器回报 cancelled 并清理自有 worker；真实 MuScriptor 运行已验证。此文件协议仅为 P0 探测，正式持久任务取消在 P1 实现。
+
 Demucs 使用固定 HTDemucs 单模型 safetensors，seed 20261018、shifts=1、split、overlap=0.25，输出 44.1 kHz float WAV。不通过自动下载的未固定模型包加载。
 
 SheetSage2 使用本地固定父模型、`trust_remote_code=True`、SDPA、bf16/default，全曲 `max_seconds=None`。当前官方 default 解码通过 FFmpeg CLI；本机 FFmpeg 9.0 已实际用于整曲推理。torchaudio 2.8 的 FFmpeg 共享库 backend 在本机不可用，`paper` 预设没有验证，当前 worker 不暴露该选项。这是已测的独立路径，不宣称 FFmpeg Python 绑定已通过。
 
-MuScriptor 计划使用固定 medium 本地权重、逐块流式转录并保存事件、进度和 MIDI；先保留原始演奏时间，不执行量化、自动删前导或隐式下载另一个 beat 模型。该适配代码尚未通过授权权重验证。
+MuScriptor 使用固定 medium 本地权重，逐块流式保存事件/进度/MIDI；先保留原始演奏时间，不执行量化、自动删前导或隐式下载另一个 beat 模型。已实测 305 秒真实曲目与 194 秒完整夹具；量化指标由 `evaluate_transcription.py` 生成，必须保留漏检/零时长事件/声部合并记录。
 
 ## MIDI、重建、修改与重开
 
@@ -75,7 +77,13 @@ MuScriptor 计划使用固定 medium 本地权重、逐块流式转录并保存�
 
 MIDI 桥接支持 PPQ type 0/1，用有理数积分 tempo 跨段时间，再一次舍入到样本。记录音符、CC、program/轨道来源、拍号与未支持事件；未闭合音符、同音重叠、冲突 tempo、越界、未适配的 pitch bend 等明确拒绝渲染。它不替代 P1 的正式领域数据或 P3 的完整 MIDI 编辑器。
 
-当前音色映射将旋律/和弦等有音高轨映射到 Surge XT 初始音色，**不恢复 GM 原音色**；`mapping.json` 明确记录替代。鼓必须显式提供已验证的自制 SFZ，目前仅 36/38/42 三个键，其他键报错。控制器、音源/奏法兼容性继续按真实模型输出测试。
+当前音色映射将旋律/和弦等有音高轨映射到 Surge XT 初始音色，**不恢复 GM 原音色**；`mapping.json` 明确记录替代。`--drum-sfz` 保留首次夹具 36/38/42 三键约束；完整曲可用已验证的诊断 `--drum-map`，35～81 共 47 键真实渲染非静音，资源和插件摘要校验后再加载。该合成打击乐替代用于检查事件，不是原鼓音色。控制器/奏法信息缺失保留在报告中。
+
+```powershell
+& $modelPython scripts/make_diagnostic_kit.py --output D:\music-learning-runtime\samples\my-diagnostic-kit
+& $modelPython scripts/midi_to_native.py "$bench\my-muscriptor\transcription.mid" --source-audio "$bench\my-whole-song\mix.wav" --drum-map D:\music-learning-runtime\samples\my-diagnostic-kit\drum-map.json --output "$bench\my-multi-instrument-render" --render
+& $modelPython scripts/render_transcription_stems.py "$bench\my-multi-instrument-render\render-result.json" --output "$bench\my-rendered-voices"
+```
 
 render probe 用完整插件快照在新原生进程重开模型重建；另以夹具真值贝斯创建 57～72 小节的稀疏节奏版本，生成独立完整贝斯，以及剔除 estimated bass 后加入新贝斯的混合版。后者验证分轨替换的工程路径，**不是 MuScriptor 扒出的贝斯**，并保留 Demucs 串音。最后生成 194 秒脉冲并验证插件延迟补偿。
 
@@ -96,10 +104,16 @@ node probes/player/probe.mjs $modelPython "$bench\my-render-probe\player-assets.
 
 自动脚本检查完整音频解码、定位、播放时钟、暂停、循环、切换、range、真实脉冲解码与 OfflineAudioContext 的 seek/loop，记录 Chromium 版本、解码 PCM 字节数和里程碑 RSS，最后关闭自有浏览器与服务器。它不证明扬声器输出或听辨，也不证明正式前端的光标绘制/设备延迟符合 P3 验收。
 
-## 检查与尚需输入
+manifest 可附 `expected_durations`，并省略不存在的 hybrid 资产。最新探测已覆盖 305 秒 FLAC/307 秒重建；页面通过 requestAnimationFrame 更新显示时钟，自动测显示与 AudioContext 的滞后，P0 实测 21.33 ms。
+
+## NAS 导入、运行基线与检查
+
+`import_reference.py <源音频路径> --output <本地运行目录内新目录>` 只以 rb 读取源文件，目标限定为本地固定磁盘上的受控运行目录。远端路径与详细导入记录留在本机，源文件不传给模型 worker，后续只处理本地副本。用户已明确 NAS 不许写入；不得在 NAS 生成 sidecar、标签、封面或分析产物。
+
+`config/media-runtime.json` 固定现有 FFmpeg/ffprobe/Node/uv 版本与二进制摘要。`scripts/media_runtime.py` 回读校验，SheetSage2 推理前还检查 FFmpeg；升级需重新验证后更新清单。它锁定本机依赖，不表示已经提供跨机一键安装包。
 
 ```powershell
 & $modelPython -m pytest tests/native tests/models -q --basetemp=runtime/pytest-p0b
 ```
 
-当前需用户提供 Hugging Face 本机授权，以及后续产品内对话服务的服务商/模型选择与本机密钥配置；不通过这个开发聊天的登录状态冒充产品 API。目标曲目的本机路径/曲风可以随后提供，完整真实录音与人工听辨仍是必需验收。
+当前用户授权、真实参考曲和 Codex 技术探测均已落实；[Codex 说明](13-codex-integration.md)区分现有托管登录的真实探测与正式应用的独立登录。最新 27 项回归和真实整曲浏览器探测通过。完整工程/对话持久化、人工音乐校正、听辨与产品流程继续按 P1～P6 开发。
