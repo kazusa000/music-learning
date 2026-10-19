@@ -2,6 +2,7 @@ import {PanelResize,usePanelSize} from './PanelResize';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import type {Citation,Conversation,DialogueTurn,Job,Revision} from '../../../packages/contracts/types';
 import {call} from './api';
+import {trackName} from './dawEditing';
 import {subscribeDomain} from './events';
 
 const time=(s:number)=>`${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toFixed(1).padStart(4,'0')}`;
@@ -20,7 +21,7 @@ const mergeTurns=(current:DialogueTurn[],items:DialogueTurn[])=>items.map(item=>
 });
 
 export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCompare,instrumentDraft,onConsumeDraft}:{revision:Revision;headId:string;start:number;end:number;trackId:string|null;onLocate:(citation:Citation)=>void;jobs:Job[];onCompare:(id:string)=>void;instrumentDraft?:InstrumentDraft|null;onConsumeDraft?:()=>void}){
-  const [historyHeight,setHistoryHeight]=usePanelSize('discussion.history-height',360,120,1200);
+  const [historyHeight,setHistoryHeight]=usePanelSize('discussion.history-height',240,120,1200);
   const [turns,setTurns]=useState<DialogueTurn[]>([]),[notes,setNotes]=useState<Conversation[]>([]);
   const [text,setText]=useState(''),[login,setLogin]=useState(savedLogin),[scope,setScope]=useState('whole');
   const [editing,setEditing]=useState(false),[structural,setStructural]=useState(false);
@@ -32,6 +33,8 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
   useEffect(()=>{follow.current=true;},[last?.id,showNotes]);
   useEffect(()=>{if(follow.current&&history.current)history.current.scrollTop=history.current.scrollHeight;},[last?.id,last?.text,last?.status,showNotes,notes.length]);
   const rate=revision.snapshot.sample_rate??44100,duration=revision.snapshot.duration_samples??0;
+  const selectedTrack=revision.snapshot.tracks?.find(t=>t.id===trackId);
+  const scopeName=scope==='whole'?'全部声部':selectedTrack?trackName(selectedTrack):'全部声部';
   const a=scope==='whole'?0:Math.round(start*rate),b=scope==='whole'?duration:Math.round(end*rate);
   const refresh=useCallback(async()=>{
     const [items,messages]=await Promise.all([call<DialogueTurn[]>('dialogue.list',{project_id:revision.project_id,limit:1000}),
@@ -93,9 +96,9 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
       return citation?<button key={i} className="inline-citation" onClick={()=>onLocate(citation)}>{match![1]} ↗</button>:<span key={i}>{chunk.split(/(\*\*[^*]+\*\*)/g).map((part,j)=>part.startsWith('**')?<strong key={j}>{part.slice(2,-2)}</strong>:part)}</span>;});
   }
   return <div className="discussion" aria-label="工程讨论">
-    <div className="discussion-heading"><h3>AI 助手</h3><div className="discussion-toggle"><button aria-pressed={!showNotes} onClick={()=>setShowNotes(false)}>讨论 {turns.length}</button><button aria-pressed={showNotes} onClick={()=>setShowNotes(true)}>笔记 {notes.length}</button></div></div>
+    <div className="discussion-heading"><h3>音乐助手</h3><span className="assistant-status">Codex</span><div className="discussion-toggle"><button aria-pressed={!showNotes} onClick={()=>setShowNotes(false)}>讨论 {turns.length}</button><button aria-pressed={showNotes} onClick={()=>setShowNotes(true)}>笔记 {notes.length}</button></div></div>
     <div className="discussion-history" style={{height:historyHeight,minHeight:historyHeight,maxHeight:historyHeight,flex:'none'}} ref={history} onScroll={e=>{const n=e.currentTarget;follow.current=n.scrollHeight-n.scrollTop-n.clientHeight<65;}} aria-live="polite">{showNotes?notes.map(note=><article className="discussion-note" key={note.id}><small>{note.context?.origin==='user'?'用户笔记':'AI 解释 · 待核对'} · {String(note.context?.state)}</small><p>{note.content}</p></article>):<>
-      {!turns.length&&<div className="discussion-empty"><p>选择声部或循环区间后提问。<br/>需要修改时，切换到“改编”。</p><button onClick={()=>setText('请先查询整曲摘要，从和声、配器与节奏三个角度提出值得深入研究的问题，并给出工程引用。')}>研究整曲结构 ↗</button></div>}
+      {!turns.length&&<div className="discussion-empty"><strong>从这首歌开始</strong><p>选中一段音乐，或直接聊整曲。</p><div className="question-suggestions"><button onClick={()=>{setScope('whole');setText('请先查询整曲摘要，从和声、配器与节奏三个角度提出值得深入研究的问题，并给出工程引用。');}}>分析整曲结构</button><button onClick={()=>{setScope('selection');setText('请查询当前区间的和弦与声部，解释和声走向及各乐器的作用，并引用具体位置。');}}>聊选中片段</button><button onClick={()=>{setEditing(true);setScope('selection');setText('请为当前选中区间提出一个配器改编方案，保持旋律和范围不变，生成新版本试听。');}}>试一个改编</button></div></div>}
       {turns.map(turn=><article key={turn.id} className="discussion-turn" data-turn={turn.id} data-status={turn.status}>
         <div className="question-bubble">{String(turn.payload.text)}</div><div className="turn-meta"><i className={active(turn)?'pulsing':''}/><strong>Codex</strong><span>{statusText[turn.status]}</span></div>
         <small className="turn-range">{time(Number(turn.context.start_sample)/Number(turn.context.sample_rate))}–{time(Number(turn.context.end_sample)/Number(turn.context.sample_rate))} · {turn.context.track_id?'指定声部':'全部声部'}</small>
@@ -110,11 +113,12 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
             {exports.slice(-4).map(job=><p key={job.id}>{String(job.payload.format).toUpperCase()} · {statusText[job.status]} {job.status==='succeeded'&&typeof job.result?.asset_id==='string'&&<a href={'/v1/assets/'+job.result.asset_id} download>下载 ↗</a>}{job.error&&<span className="discussion-error"> {String(job.error.code)}</span>}</p>)}</div>;})()}
       </article>)}</>}
     </div>
-    <PanelResize label="调整 AI 对话区高度" axis="y" value={historyHeight} min={120} max={1200} onChange={setHistoryHeight} reset={360}/><div className="discussion-compose"><div className="discussion-context"><select aria-label="讨论范围" value={scope} onChange={e=>setScope(e.target.value)}><option value="whole">整曲</option><option value="selection">循环区间 / 所选声部</option></select></div><small>{time(a/rate)}–{time(b/rate)} · {(scope==='selection'||editing)&&trackId?'指定声部':'全部声部'} · 版本已固定</small>
+    <PanelResize label="调整 AI 对话区高度" axis="y" value={historyHeight} min={120} max={1200} onChange={setHistoryHeight} reset={240}/><div className="discussion-compose"><div className="discussion-context"><label htmlFor="discussion-scope">范围</label><select id="discussion-scope" aria-label="讨论范围" value={scope} onChange={e=>setScope(e.target.value)}><option value="whole">整曲</option><option value="selection">循环区间 / 所选声部</option></select></div><div className="discussion-scope-summary"><span>{scopeName}</span><time>{time(a/rate)}–{time(b/rate)}</time></div>
       <div className="discussion-intent"><button aria-label="仅讨论模式" aria-pressed={!editing} onClick={()=>setEditing(false)}>讨论</button><button aria-label="允许改编模式" aria-pressed={editing} onClick={()=>{setEditing(true);setScope('selection');}}>改编</button>{editing&&<label><input type="checkbox" aria-label="允许整轨插件和自动化" checked={structural} onChange={e=>setStructural(e.target.checked)}/>允许整轨插件 / 自动化</label>}</div>
-      <textarea aria-label="讨论问题" placeholder="研究和弦、配器、节奏……" value={text} onChange={e=>setText(e.target.value)} rows={3} maxLength={12000}/>
-      <div className="compose-actions"><select aria-label="Codex 登录方式" value={login} onChange={e=>{setLogin(e.target.value);try{localStorage.setItem('music-learning-login-mode',e.target.value);}catch{/* preference storage is optional */}}}><option value="isolated">应用独立登录</option><option value="existing">使用既有 Codex 登录</option></select><button disabled={!text.trim()||busy} onClick={()=>void save()}>记笔记</button><button className="send-discussion" disabled={!text.trim()||busy||turns.some(active)} onClick={()=>void submit()}>{busy?'保存中':editing?'改编 ↗':'发送 ↗'}</button></div>
-      <p className="discussion-footnote">使用 Codex 账户额度。基于事件与候选分析，未向模型发送音频。</p>{error&&<p className="discussion-error" role="alert">{error}</p>}
+      <textarea aria-label="讨论问题" placeholder={editing?'描述你想改成什么样，例如：这段换成弦乐伴奏':'聊和弦、配器或节奏，也可以引用选中的片段…'} value={text} onChange={e=>setText(e.target.value)} rows={3} maxLength={12000}/>
+      <details className="discussion-settings"><summary>连接与权限 <span>{login==='existing'?'已选既有登录':'应用独立登录'}</span></summary><label>Codex 登录方式 <select aria-label="Codex 登录方式" value={login} onChange={e=>{setLogin(e.target.value);try{localStorage.setItem('music-learning-login-mode',e.target.value);}catch{/* preference storage is optional */}}}><option value="isolated">应用独立登录</option><option value="existing">使用既有 Codex 登录</option></select></label><p>使用 Codex 账户额度。音频保留在本机，讨论基于工程分析。</p></details>
+      <div className="compose-actions"><button disabled={!text.trim()||busy} onClick={()=>void save()}>记笔记</button><button className="send-discussion" disabled={!text.trim()||busy||turns.some(active)} onClick={()=>void submit()}>{busy?'保存中':editing?'改编 ↗':'发送 ↗'}</button></div>
+      {error&&<p className="discussion-error" role="alert">{error}</p>}
     </div>
   </div>;
 }

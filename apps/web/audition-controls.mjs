@@ -28,7 +28,7 @@ try{
     await page.getByRole('button',{name:'暂停'+name,exact:true}).click();
   }
   assert.ok(Math.abs((-10.85+20*Math.log10(homeGains[0]))-(-24.25+20*Math.log10(homeGains[1])))<.02);
-  await page.getByRole('button',{name:'打开工程',exact:true}).click();
+  await page.getByRole('button',{name:'打开工程',exact:true}).click();await page.getByLabel('锁定顶部工具栏',{exact:true}).click();
   await page.getByRole('button',{name:'钢琴卷帘',exact:true}).click();await page.locator('.daw-piano-grid [data-note-id]').first().waitFor();
   for(let i=0;i<5;i++)await page.getByLabel('放大时间轴',{exact:true}).click();
   const pan=page.getByLabel('时间轴平移',{exact:true});await pan.focus();await page.keyboard.press('End');

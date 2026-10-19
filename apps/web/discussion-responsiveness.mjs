@@ -36,7 +36,7 @@ try{
  assert.equal(await page.locator('pre').filter({hasText:'LAZY_TOOL_EVIDENCE_MARKER'}).count(),0);
  await page.locator('.tool-history>summary').click();await page.locator('.tool-history details>summary').click();
  await page.locator('pre').filter({hasText:'LAZY_TOOL_EVIDENCE_MARKER'}).waitFor();
- await page.getByLabel('Codex 登录方式',{exact:true}).selectOption('existing');await page.reload();
+ await page.locator('.discussion-settings>summary').click();await page.getByLabel('Codex 登录方式',{exact:true}).selectOption('existing');await page.reload();
  await page.getByText('已保存的讨论',{exact:true}).waitFor();
  assert.equal(await page.getByLabel('Codex 登录方式',{exact:true}).inputValue(),'existing');
  await page.getByLabel('讨论问题',{exact:true}).fill('模拟测试，不访问真实供应商');

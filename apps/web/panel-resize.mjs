@@ -16,7 +16,7 @@ try{
   await page.getByRole('button',{name:'打开工程',exact:true}).click();await page.getByLabel('制作编辑器',{exact:true}).waitFor();
   const ai=(await page.locator('.inspector').boundingBox()).width;await drag('调整 AI 侧栏宽度',-170,0);assert.ok((await page.locator('.inspector').boundingBox()).width>ai+150);
   await drag('调整声部栏宽度',60,0);assert.ok((await page.locator('.track-panel').boundingBox()).width>240);
-  await drag('调整 AI 对话区高度',0,60);assert.ok(await height('.discussion-history')>=415);
+  const aiHeight=await height('.discussion-history');await drag('调整 AI 对话区高度',0,60);assert.ok(await height('.discussion-history')>=aiHeight+50);
   const content=await height('.daw-view-content');await drag('调整制作区域高度',0,70);assert.ok(await height('.daw-view-content')>content+60);
   await page.getByRole('button',{name:'钢琴卷帘',exact:true}).click();await page.locator('.daw-piano-grid [data-note-id]').first().waitFor();
   const before=await height('.daw-piano-scroll');await drag('调整卷帘高度',0,100);assert.ok(await height('.daw-piano-scroll')>before+85);
