@@ -8,7 +8,7 @@ import './style.css';
 const connection = connect();
 const statuses: Record<string, string> = {queued: '排队中', running: '正在处理', cancel_requested: '正在取消',
   cancelled: '已取消', succeeded: '已完成', failed: '处理失败'};
-const kinds: Record<string, string> = {'asset.import': '原曲导入与检查', 'plugin.inspect': '读取插件状态', 'plugin.scan': '扫描插件', 'project.preprocess': '整曲预处理', 'project.render':'工程音频渲染', 'audio.measure':'音频测量', 'project.export':'导出指定版本'};
+const kinds: Record<string, string> = {'asset.import': '原曲导入与检查', 'plugin.inspect': '读取插件状态', 'plugin.scan': '扫描插件', 'project.preprocess': '整曲预处理', 'project.render':'工程音频渲染', 'audio.measure':'音频测量', 'project.export':'导出指定版本', 'application.backup':'完整工程备份', 'application.restore':'恢复到独立目录', 'application.diagnose':'本机环境诊断'};
 const projectStatuses: Record<string, string> = {empty:'等待导入', imported:'原曲已保存', queued:'等待整曲处理', processing:'整曲处理中', ready:'整曲材料已齐备', failed:'处理失败', cancelled:'处理已取消'};
 const stageNames: Record<string, string> = {normalize:'音频规范化', demucs:'音频分轨', muscriptor:'多声部转录', sheetsage:'节拍与和声结构', assemble:'事件对齐', render:'VST3 整曲与逐轨重建', validate:'完整性检查'};
 const short = (value: string) => value.slice(0, 8);
@@ -146,7 +146,7 @@ function App() {
               {job.error && <p className="failure">{String(job.error.code)} · {String(job.error.message)}</p>}</div>
             <span className={'status ' + job.status}>{statuses[job.status]}</span>
             {['queued', 'running'].includes(job.status) && <button className="cancel" onClick={() => void cancel(job)}>取消</button>}
-            {['failed','cancelled'].includes(job.status) && <button className="cancel" onClick={() => void startPreprocessing(job)}>重试</button>}
+            {['failed','cancelled'].includes(job.status) && !['application.backup','application.restore'].includes(job.kind) && <button className="cancel" onClick={() => void startPreprocessing(job)}>重试</button>}
             {(stages[job.id]?.length ?? 0) > 0 && <ol className="stage-list">{stages[job.id].map(stage => <li key={stage.stage} data-stage={stage.stage} className={stage.status}>
               <span>{stageNames[stage.stage]}</span><span>{stage.cache_hit ? '已复用校验产物' : stage.status === 'pending' ? '等待' : statuses[stage.status] ?? stage.status}
                 {typeof stage.progress?.completed === 'number' && typeof stage.progress?.total === 'number' ? ` · ${stage.progress.completed}/${stage.progress.total} 块` : ''}</span>

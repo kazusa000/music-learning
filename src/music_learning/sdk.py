@@ -145,9 +145,49 @@ class Client:
     def edit(self, project_id, *, expected_revision, scope, operations, description, idempotency_key=None):
         return self.call(
             "edits.apply",
-            dict(project_id=project_id, scope=scope, operations=operations, description=description),
+            {"project_id": project_id, "scope": scope, "operations": operations, "description": description},
             expected_revision=expected_revision,
             idempotency_key=idempotency_key,
+        )
+
+    def backup(self, project_id, destination, *, expected_revision):
+        return self.call(
+            "jobs.submit",
+            {
+                "project_id": project_id,
+                "kind": "application.backup",
+                "payload": {"destination": str(destination)},
+            },
+            expected_revision=expected_revision,
+        )
+
+    def restore_backup(
+        self, project_id, archive, destination, *, expected_revision, expected_sha256=None, port=8766
+    ):
+        return self.call(
+            "jobs.submit",
+            {
+                "project_id": project_id,
+                "kind": "application.restore",
+                "payload": {
+                    "archive": str(archive),
+                    "destination": str(destination),
+                    "expected_sha256": expected_sha256,
+                    "port": port,
+                },
+            },
+            expected_revision=expected_revision,
+        )
+
+    def diagnose(self, project_id, *, expected_revision, use_existing_login=False):
+        return self.call(
+            "jobs.submit",
+            {
+                "project_id": project_id,
+                "kind": "application.diagnose",
+                "payload": {"use_existing_login": use_existing_login},
+            },
+            expected_revision=expected_revision,
         )
 
     def render(self, project_id, *, expected_revision, revision_id=None, **settings):

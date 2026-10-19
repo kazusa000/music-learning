@@ -317,7 +317,7 @@ class Service:
         if op == "describe_capabilities":
             return {
                 "schema_version": 1,
-                "phase": "P5",
+                "phase": "P6",
                 "operations": {
                     name: {
                         "mutates": write,
@@ -340,6 +340,9 @@ class Service:
                     "project.render",
                     "audio.measure",
                     "project.export",
+                    "application.backup",
+                    "application.restore",
+                    "application.diagnose",
                 ],
                 "job_payload_schemas": {
                     "asset.import": c.ImportPayload.model_json_schema(),
@@ -349,10 +352,12 @@ class Service:
                     "project.render": c.RenderPayload.model_json_schema(),
                     "audio.measure": c.MeasurePayload.model_json_schema(),
                     "project.export": c.ExportPayload.model_json_schema(),
+                    "application.backup": c.BackupPayload.model_json_schema(),
+                    "application.restore": c.RestorePayload.model_json_schema(),
+                    "application.diagnose": c.DiagnosePayload.model_json_schema(),
                 },
                 "unsupported": [
                     "live_plugin_edit",
-                    "project_backup_bundle",
                     "vendor_private_preset_browsers",
                     "physical_unit_parameter_input",
                     "midi_clip_audio_gain",
@@ -609,6 +614,11 @@ class Service:
             if args.kind == "asset.import":
                 payload = c.ImportPayload.model_validate(args.payload).model_dump()
                 row(db, t.uploads, "id", payload["upload_id"])
+            elif args.kind in ("application.backup", "application.restore"):
+                from .backup import validate_payload
+                payload = validate_payload(self.settings, args.kind, args.payload)
+            elif args.kind == "application.diagnose":
+                payload = c.DiagnosePayload.model_validate(args.payload).model_dump()
             else:
                 payload = c.PluginPayload.model_validate(args.payload).model_dump()
                 payload["path"] = str(self.settings.plugin_path(payload["path"]))
@@ -621,7 +631,7 @@ class Service:
                 payload=payload,
                 status="queued",
                 attempt=0,
-                max_attempts=args.max_attempts,
+                max_attempts=1 if args.kind.startswith("application.") else args.max_attempts,
                 created_at=now,
                 updated_at=now,
                 lease_token=None,

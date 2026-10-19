@@ -1508,7 +1508,10 @@
             "project.preprocess",
             "project.render",
             "audio.measure",
-            "project.export"
+            "project.export",
+            "application.backup",
+            "application.restore",
+            "application.diagnose"
           ],
           "title": "Kind",
           "type": "string"
@@ -3526,7 +3529,10 @@
             "project.preprocess",
             "project.render",
             "audio.measure",
-            "project.export"
+            "project.export",
+            "application.backup",
+            "application.restore",
+            "application.diagnose"
           ],
           "title": "Kind",
           "type": "string"
@@ -4481,7 +4487,10 @@
               "project.preprocess",
               "project.render",
               "audio.measure",
-              "project.export"
+              "project.export",
+              "application.backup",
+              "application.restore",
+              "application.diagnose"
             ],
             "title": "Kind",
             "type": "string"
@@ -4603,7 +4612,10 @@
               "project.preprocess",
               "project.render",
               "audio.measure",
-              "project.export"
+              "project.export",
+              "application.backup",
+              "application.restore",
+              "application.diagnose"
             ],
             "title": "Kind",
             "type": "string"
@@ -4735,7 +4747,10 @@
               "project.preprocess",
               "project.render",
               "audio.measure",
-              "project.export"
+              "project.export",
+              "application.backup",
+              "application.restore",
+              "application.diagnose"
             ],
             "title": "Kind",
             "type": "string"
@@ -4857,7 +4872,10 @@
               "project.preprocess",
               "project.render",
               "audio.measure",
-              "project.export"
+              "project.export",
+              "application.backup",
+              "application.restore",
+              "application.diagnose"
             ],
             "title": "Kind",
             "type": "string"

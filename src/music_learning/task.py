@@ -19,6 +19,27 @@ class AdapterError(RuntimeError):
 
 
 def execute(settings, job, directory=None):
+    if job["kind"] == "application.diagnose":
+        from .diagnostics import collect
+
+        return collect(settings, directory, **job["payload"])
+    if job["kind"] in ("application.backup", "application.restore"):
+        from .backup import create_archive, restore_archive
+
+        function = create_archive if job["kind"] == "application.backup" else restore_archive
+        try:
+            return function(settings, job["payload"], directory)
+        except Exception as error:
+            print(type(error).__name__ + ": " + str(error), file=sys.stderr)
+            raise AdapterError(
+                {
+                    "code": "backup_validation_failed"
+                    if job["kind"] == "application.backup"
+                    else "restore_validation_failed",
+                    "message": "备份/恢复未通过校验；活动数据目录未被替换，详情保留在本机日志。",
+                    "type": type(error).__name__,
+                }
+            ) from error
     # Existing pinned P0 media/native adapters, isolated from the API process.
     sys.path.insert(0, str(ROOT / "scripts"))
     if job["kind"] in ("project.render", "audio.measure", "project.export"):

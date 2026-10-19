@@ -431,6 +431,9 @@ class Job(Model):
         "project.render",
         "audio.measure",
         "project.export",
+        "application.backup",
+        "application.restore",
+        "application.diagnose",
     ]
     status: Literal["queued", "running", "cancel_requested", "cancelled", "succeeded", "failed"]
     payload: dict
@@ -540,6 +543,9 @@ class SubmitJob(ProjectRef):
         "project.render",
         "audio.measure",
         "project.export",
+        "application.backup",
+        "application.restore",
+        "application.diagnose",
     ]
     payload: dict
     max_attempts: int = Field(default=3, ge=1, le=5)
@@ -548,6 +554,20 @@ class SubmitJob(ProjectRef):
 class ImportPayload(Model):
     upload_id: Id
     preprocess: bool = False
+
+
+class BackupPayload(Model):
+    destination: str = Field(min_length=1, max_length=2000)
+
+
+class DiagnosePayload(Model):
+    use_existing_login: bool = False
+
+
+class RestorePayload(BackupPayload):
+    archive: str = Field(min_length=1, max_length=2000)
+    expected_sha256: Hash | None = None
+    port: int = Field(default=8766, ge=1024, le=65535)
 
 
 class PreprocessPayload(Model):

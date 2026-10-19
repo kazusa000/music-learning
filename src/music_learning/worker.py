@@ -224,6 +224,8 @@ class Worker:
             db, job["project_id"], artifact, len(encoded), "application/json", {}, provenance
         )
         published = {"artifact_asset_id": artifact}
+        if job["kind"] in ("application.backup", "application.restore", "application.diagnose"):
+            return {**published, **result}
         if job["kind"] == "asset.import":
             upload = row(db, t.uploads, "id", job["payload"]["upload_id"])
             sha = upload["sha256"]
@@ -371,7 +373,14 @@ class Worker:
         response, _ = self.run_child(
             job,
             timeout=self.settings.pipeline_stage_timeout_seconds
-            if job["kind"] in ("project.render", "audio.measure", "project.export")
+            if job["kind"]
+            in (
+                "project.render",
+                "audio.measure",
+                "project.export",
+                "application.backup",
+                "application.restore",
+            )
             else None,
         )
         try:
