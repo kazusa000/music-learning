@@ -1,7 +1,8 @@
-import {useEffect,useMemo,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import type {PointerEvent as ReactPointerEvent,KeyboardEvent,ReactNode} from 'react';
 import type {Clip,NoteEvent,Revision,Track} from '../../../packages/contracts/types';
 import type {EditOperation} from './dawEditing';
+import {PanelResize,usePanelSize} from './PanelResize';
 import {arrangeClipEdits,beatSample,gridLines,orderedTracks,putNote,removeTrack,sampleBeat,snapSample,trackName,userNote,uuid} from './dawEditing';
 
 export type EditRequest={operations:EditOperation[];trackIds:string[];structural?:boolean;description:string};
@@ -17,7 +18,11 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
 }){
   const s=revision.snapshot,rate=s.sample_rate??44100,duration=s.duration_samples??0;
   const tracks=useMemo(()=>orderedTracks(s),[s]),track=tracks.find(t=>t.id===selected);
-  const [row,setRow]=useState(14);
+  const [row,setRow]=usePanelSize('piano.row-height',14,8,40);
+  const [pianoHeight,setPianoHeight]=usePanelSize('piano.panel-height',386,180,1200);
+  const [contentHeight,setContentHeight]=usePanelSize('editor.content-height',480,180,1200);
+  const [velocityHeight,setVelocityHeight]=usePanelSize('piano.velocity-height',126,60,400);
+  const [pitchScroll,setPitchScroll]=useState(0);
   const [view,setView]=useState('playlist'),[tool,setTool]=useState('select'),[division,setDivision]=useState(.25);
   useEffect(()=>{if(pianoRequest)setView('piano');},[pianoRequest]);
   const [noteIds,setNoteIds]=useState<string[]>([]),[gesture,setGesture]=useState<Gesture|null>(null);
@@ -40,18 +45,28 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
   const chosenClip=(s.clips??[]).find(c=>c.id===clipId);
   const noteEditing=editable&&!busy&&!!track&&['midi','instrument'].includes(track.kind);
   const wheelAction=useRef(onViewport);wheelAction.current=onViewport;
+  const pitchAction=useRef(pitchZoom);pitchAction.current=pitchZoom;
   useEffect(()=>{const node=frame.current;if(!node)return;
     const wheel=(event:WheelEvent)=>{
       if(liveGesture.current||clipDrag.current)return;
       if((event.target as HTMLElement).closest('input,select,textarea'))return;
       const bounds=node.getBoundingClientRect(),anchor=Math.max(0,Math.min(1,(event.clientX-bounds.left-left)/(bounds.width-left-10)));
-      if(event.ctrlKey||event.metaKey){event.preventDefault();wheelAction.current(Math.exp(-Math.max(-150,Math.min(150,event.deltaY))*.008),anchor);}
+      if(event.altKey&&(event.target as HTMLElement).closest('.daw-piano-area')){event.preventDefault();pitchAction.current(rowValue.current*Math.exp(-Math.max(-150,Math.min(150,event.deltaY))*.006),event.clientY);}
+      else if(event.ctrlKey||event.metaKey){event.preventDefault();wheelAction.current(Math.exp(-Math.max(-150,Math.min(150,event.deltaY))*.008),anchor);}
       else if(event.shiftKey||Math.abs(event.deltaX)>Math.abs(event.deltaY)){event.preventDefault();wheelAction.current(1,anchor,(event.shiftKey?event.deltaY:event.deltaX)/Math.max(540,bounds.width));}
     };
     node.addEventListener('wheel',wheel,{passive:false});return()=>node.removeEventListener('wheel',wheel);
   },[]);
-  function pitchZoom(value:number){const node=pianoScroll.current,at=node?(node.scrollTop+node.clientHeight/2-top)/row:0;
-    setRow(value);requestAnimationFrame(()=>{if(node)node.scrollTop=top+at*value-node.clientHeight/2;});}
+  const rowValue=useRef(row);rowValue.current=row;
+  const pendingPitchScroll=useRef<number|null>(null);
+  useLayoutEffect(()=>{if(pendingPitchScroll.current!==null&&pianoScroll.current){pianoScroll.current.scrollTop=pendingPitchScroll.current;pendingPitchScroll.current=null;}},[row]);
+  function pitchZoom(value:number,clientY?:number){const node=pianoScroll.current,anchor=node?(clientY===undefined?node.clientHeight/2:Math.max(0,Math.min(node.clientHeight,clientY-node.getBoundingClientRect().top))):0;
+    const at=node?(node.scrollTop+anchor-top)/row:0,next=Math.round(Math.max(8,Math.min(40,value)));
+    if(node){const target=top+at*next-anchor;if(next===row)node.scrollTop=target;else pendingPitchScroll.current=target;}setRow(next);}
+  function scrollPitch(value:number){pendingPitchScroll.current=null;const node=pianoScroll.current;if(node){node.scrollTop=value;setPitchScroll(node.scrollTop);}}
+  function fitPitch(){const node=pianoScroll.current,notes=visibleNotes.length?visibleNotes:localNotes;if(!node||!notes.length)return;
+    const high=Math.max(...notes.map(n=>n.pitch)),low=Math.min(...notes.map(n=>n.pitch)),next=Math.round(Math.max(8,Math.min(40,(node.clientHeight-48)/(high-low+3))));
+    const target=Math.max(0,top+(126-high)*next);if(next===row)node.scrollTop=target;else pendingPitchScroll.current=target;setRow(next);}
   useEffect(()=>{const node=frame.current;if(!node)return;const observer=new ResizeObserver(entries=>setWidth(entries[0].contentRect.width));observer.observe(node);return()=>observer.disconnect();},[]);
   useEffect(()=>{if(liveGesture.current||clipDrag.current)setError('工程版本已改变，未提交拖动，请重试。');liveGesture.current=null;clipDrag.current=null;setGesture(null);setClipPreview(null);setMix({});},[revision.id]);
   useEffect(()=>{setNoteIds([]);setClipId(current=>(s.clips??[]).find(c=>c.id===current)?.track_id===selected?current:null);liveGesture.current=null;setGesture(null);},[selected]);
@@ -172,16 +187,17 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
       <button disabled={!editable||busy||!canUndo} onClick={()=>void onUndo().catch(e=>setError(e.message))}>撤销</button><button disabled={!editable||busy||!canRedo} onClick={()=>void onRedo().catch(e=>setError(e.message))}>重做</button>
     </div>
     {error&&<p className="daw-editor-error" role="alert">{error}<button aria-label="关闭编辑提示" onClick={()=>setError('')}>×</button></p>}
-    {view==='piano'&&<><div className="daw-note-tools">{[['select','选择 / 拖动'],['pencil','画笔'],['erase','橡皮']].map(([id,name])=><button key={id} aria-pressed={tool===id} onClick={()=>setTool(id)}>{name}</button>)}<button disabled={!noteEditing||!selectedNotes.length} onClick={()=>void submit(selectedNotes.map(n=>({op:'delete',collection:'notes',id:n.id})),'删除所选音符')}>删除音符</button><label>音高缩放 <input aria-label="音高缩放" type="range" min={8} max={30} step={1} value={row} onChange={e=>pitchZoom(+e.target.value)}/></label><small>{noteIds.length} 个已选 · Shift 多选 / 框选</small></div>
-      {!track||!['instrument','midi'].includes(track.kind)?<div className="daw-empty">选择一个乐器或 MIDI 声部以编辑音符。</div>:<><div className="daw-piano-scroll" ref={pianoScroll}><div className="daw-piano-ruler"><svg width={Math.max(540,width)} height={24} onPointerDown={e=>onSeek(Math.max(0,Math.min(duration,sample(e.clientX-e.currentTarget.getBoundingClientRect().left))))}>{labelLines.map(l=><g key={l.sample}><line x1={x(l.sample)} x2={x(l.sample)} y1={16} y2={24} stroke="#9aa0a9"/><text x={x(l.sample)+4} y={13} fill="#b2b7bd" fontSize={10}>{l.label}</text></g>)}<text x={7} y={14} fill="#9aa0a9" fontSize={8}>{s.timing_map?'小节':'秒'}</text></svg></div><svg className={'daw-piano-grid tool-'+tool} width={Math.max(540,width)} height={top+128*row} viewBox={`0 0 ${Math.max(540,width)} ${top+128*row}`} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancelGesture} aria-label="可编辑钢琴卷帘">
+    <div className="daw-view-content" style={view==='piano'?undefined:{height:contentHeight,overflow:'auto'}}>
+    {view==='piano'&&<><div className="daw-note-tools">{[['select','选择 / 拖动'],['pencil','画笔'],['erase','橡皮']].map(([id,name])=><button key={id} aria-pressed={tool===id} onClick={()=>setTool(id)}>{name}</button>)}<button disabled={!noteEditing||!selectedNotes.length} onClick={()=>void submit(selectedNotes.map(n=>({op:'delete',collection:'notes',id:n.id})),'删除所选音符')}>删除音符</button><label>音高缩放 <button aria-label="缩小音高" onClick={()=>pitchZoom(row/1.2)}>−</button><input aria-label="音高缩放" type="range" min={8} max={40} step={1} value={row} onChange={e=>pitchZoom(+e.target.value)}/><button aria-label="放大音高" onClick={()=>pitchZoom(row*1.2)}>+</button></label><button onClick={fitPitch}>适配音域</button><small>{noteIds.length} 个已选 · Shift 多选 / 框选</small></div>
+      {!track||!['instrument','midi'].includes(track.kind)?<div className="daw-empty">选择一个乐器或 MIDI 声部以编辑音符。</div>:<><div className="daw-piano-area"><div className="daw-piano-scroll" ref={pianoScroll} style={{height:pianoHeight}} onScroll={e=>setPitchScroll(e.currentTarget.scrollTop)}><div className="daw-piano-ruler"><svg width={Math.max(540,width)} height={24} onPointerDown={e=>onSeek(Math.max(0,Math.min(duration,sample(e.clientX-e.currentTarget.getBoundingClientRect().left))))}>{labelLines.map(l=><g key={l.sample}><line x1={x(l.sample)} x2={x(l.sample)} y1={16} y2={24} stroke="#9aa0a9"/><text x={x(l.sample)+4} y={13} fill="#b2b7bd" fontSize={10}>{l.label}</text></g>)}<text x={7} y={14} fill="#9aa0a9" fontSize={8}>{s.timing_map?'小节':'秒'}</text></svg></div><svg className={'daw-piano-grid tool-'+tool} width={Math.max(540,width)} height={top+128*row} viewBox={`0 0 ${Math.max(540,width)} ${top+128*row}`} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancelGesture} aria-label="可编辑钢琴卷帘">
         {Array.from({length:128},(_,i)=>127-i).map(pitch=><g key={pitch}><rect x={left} y={y(pitch)} width={pixels} height={row} fill={[1,3,6,8,10].includes(pitch%12)?'#272a2c':'#303436'} stroke="#3b3f41" strokeWidth=".35"/><rect x={0} y={y(pitch)} width={left-2} height={row-.4} fill={[1,3,6,8,10].includes(pitch%12)?'#222628':'#b3b4b5'}/>{pitch%12===0&&<text x={7} y={y(pitch)+10} fill="#545659" fontSize={9}>{label(pitch)}</text>}</g>)}
         {lines.map(l=><line key={l.sample} x1={x(l.sample)} x2={x(l.sample)} y1={top} y2={top+128*row} stroke={l.major?'#5c6167':'#414447'} strokeWidth={l.major?1:.6}/>)}
         {displayNotes.map(n=><g key={n.id} data-note-id={n.id} data-pitch={n.pitch} data-start={n.start_sample} data-end={n.end_sample} aria-label={`${label(n.pitch)} ${(n.start_sample/rate).toFixed(2)}秒`}><rect x={Math.max(left,x(n.start_sample))} y={y(n.pitch)+1} width={Math.max(3,x(n.end_sample)-Math.max(left,x(n.start_sample)))} height={row-2} rx={1} fill={noteIds.includes(n.id)?'#f0c879':palette[Math.max(0,tracks.findIndex(t=>t.id===selected))%palette.length]} stroke={noteIds.includes(n.id)?'#fff0bc':'#2e3135'} strokeWidth={.8}/><rect data-action="resize" data-note-id={n.id} x={Math.max(left,x(n.end_sample)-5)} y={y(n.pitch)+1} width={6} height={row-2} fill="transparent" className="note-resize"/></g>)}
         {gesture?.kind==='box'&&<rect x={Math.min(gesture.x,gesture.endX)} y={Math.min(gesture.y,gesture.endY)} width={Math.abs(gesture.endX-gesture.x)} height={Math.abs(gesture.endY-gesture.y)} fill="#979ea720" stroke="#a9aeb5" pointerEvents="none"/>}
         <line x1={x(position)} x2={x(position)} y1={0} y2={top+128*row} stroke="#fbad52" pointerEvents="none"/>
         <rect x={left} y={0} width={pixels} height={top} fill="#3a4040"/>{labelLines.map(l=><text key={l.sample} x={x(l.sample)+4} y={16} fill="#aeb3ba" fontSize={10}>{l.label}</text>)}
-      </svg></div>
-      <div className="daw-velocity-label">力度 <small>拖动柱形调整所选音符 · Ctrl+C / Ctrl+V · Delete</small></div><div className="daw-velocity"><svg width={Math.max(540,width)} height={126} viewBox={`0 0 ${Math.max(540,width)} 126`} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancelGesture} aria-label="力度编辑器">{visibleNotes.map(n=><rect key={n.id} data-note-id={n.id} data-action="velocity" x={x(n.start_sample)} y={top+100-(previews.get(n.id)?.velocity??n.velocity)*100} width={5} height={(previews.get(n.id)?.velocity??n.velocity)*100} fill={noteIds.includes(n.id)?'#f0c879':'#7d8590'}/>)}<line x1={left} x2={left+pixels} y1={125} y2={125} stroke="#50565e"/></svg></div>
+      </svg></div><div className="pitch-navigator"><button aria-label="音区向上" onClick={()=>pianoScroll.current?.scrollBy({top:-row*6})}>↑</button><input aria-label="卷帘音高位置" type="range" min={0} max={Math.max(0,top+25+128*row-pianoHeight)} step={row} value={pitchScroll} onChange={e=>scrollPitch(+e.target.value)} onKeyDown={e=>{if(e.key==='Home'||e.key==='End'){e.preventDefault();scrollPitch(e.key==='Home'?0:pianoScroll.current?.scrollHeight??0);}}}/><button aria-label="音区向下" onClick={()=>pianoScroll.current?.scrollBy({top:row*6})}>↓</button></div></div><PanelResize label="调整卷帘高度" axis="y" value={pianoHeight} min={180} max={1200} onChange={setPianoHeight} reset={386}/>
+      <div className="daw-velocity-label">力度 <small>拖动柱形调整所选音符 · Ctrl+C / Ctrl+V · Delete</small></div><div className="daw-velocity" style={{height:velocityHeight}}><svg width={Math.max(540,width)} height={velocityHeight} preserveAspectRatio="none" viewBox={`0 0 ${Math.max(540,width)} 126`} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancelGesture} aria-label="力度编辑器">{visibleNotes.map(n=><rect key={n.id} data-note-id={n.id} data-action="velocity" x={x(n.start_sample)} y={top+100-(previews.get(n.id)?.velocity??n.velocity)*100} width={5} height={(previews.get(n.id)?.velocity??n.velocity)*100} fill={noteIds.includes(n.id)?'#f0c879':'#7d8590'}/>)}<line x1={left} x2={left+pixels} y1={125} y2={125} stroke="#50565e"/></svg></div><PanelResize label="调整力度栏高度" axis="y" value={velocityHeight} min={60} max={400} onChange={setVelocityHeight} reset={126}/>
       {activeNote&&<form className="daw-note-properties" onSubmit={e=>{e.preventDefault();void changeNotes([userNote(activeNote,revision.id,{pitch:fields.pitch,start_sample:Math.round(fields.start*rate),end_sample:Math.round(fields.end*rate),velocity:fields.velocity/100})],'精确修改音符');}}>
         {(['pitch','start','end','velocity'] as const).map(key=><label key={key}>{({pitch:'音高 MIDI',start:'起点 秒',end:'终点 秒',velocity:'力度 %'})[key]}<input aria-label={key==='pitch'?'音符音高':key==='start'?'音符起点秒':key==='end'?'音符终点秒':'音符力度百分比'} type="number" value={fields[key]} min={key==='velocity'?1:0} max={key==='pitch'?127:key==='velocity'?100:duration/rate} step={key==='start'||key==='end'?'any':1} onChange={e=>setFields({...fields,[key]:+e.target.value})}/></label>)}<button disabled={!noteEditing}>应用音符属性</button></form>}</>}
     </>}
@@ -207,6 +223,7 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
       <div className="daw-fader"><input aria-label={'音量推子 '+trackName(t)} type="range" min={-60} max={12} step={.1} value={Math.max(-60,Math.min(12,draft.gain_db??0))} disabled={!editable||busy} onChange={e=>mixChange(t.id,{gain_db:+e.target.value})}/><div className="daw-fader-scale"><span>+12</span><span>0</span><span>−12</span><span>−36</span><span>−60</span></div></div><label>dB<input aria-label={'音量数值 '+trackName(t)} type="number" min={-120} max={24} step={.1} value={draft.gain_db??0} disabled={!editable||busy} onChange={e=>mixChange(t.id,{gain_db:+e.target.value})}/></label><small>{mix[t.id]?'● 尚未保存':'已保存'} · {t.kind}</small>
     </div>;})}</div></>}
     <div hidden={view!=='overview'}>{overview}</div>
-    <div className="daw-editor-footer"><span>{editable?'手动操作保存为新版本 · 修改后生成试听':'历史版本受保护 · 切回当前版本后编辑'}</span><span>{s.timing_map?'网格依据当前节拍候选':'无节拍图 · 使用源秒钟'} · Ctrl+滚轮缩放 / Shift+滚轮平移</span></div>
+    </div>{view!=='piano'&&<PanelResize label="调整制作区域高度" axis="y" value={contentHeight} min={180} max={1200} onChange={setContentHeight} reset={480}/>}
+    <div className="daw-editor-footer"><span>{editable?'手动操作保存为新版本 · 修改后生成试听':'历史版本受保护 · 切回当前版本后编辑'}</span><span>{s.timing_map?'网格依据当前节拍候选':'无节拍图 · 使用源秒钟'} · 滚轮上下 · Alt+滚轮音高缩放 · Ctrl+滚轮时间缩放</span></div>
   </div>;
 }

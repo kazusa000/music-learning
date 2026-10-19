@@ -18,3 +18,31 @@
 .workspace-page .studio.is-focused .studio-body{grid-template-columns:minmax(0,1fr)}
 .studio.is-focused .track-panel,.studio.is-focused .inspector{display:none}
 .studio.is-focused .daw-piano-scroll{height:calc(100vh - 330px);min-height:340px;max-height:none}
+
+/* Explicit splitters: no native CSS resize handle hidden in a panel corner. */
+.panel-splitter{position:relative;background:#242830;touch-action:none;user-select:none;flex:none;outline:none;z-index:3}
+.panel-splitter-x{width:6px;cursor:col-resize;align-self:stretch}
+.panel-splitter-y{height:8px;cursor:row-resize;width:100%}
+.panel-splitter i{position:absolute;border-radius:2px;background:#626a78}
+.panel-splitter-x i{width:2px;height:28px;top:calc(50% - 14px);left:2px}
+.panel-splitter-y i{height:2px;width:34px;top:3px;left:calc(50% - 17px)}
+.panel-splitter:hover,.panel-splitter:focus-visible,.panel-splitter:active{background:#536b86}
+.workspace-page .studio-body.resizable-studio{grid-template-columns:var(--track-width) 6px minmax(0,1fr) 6px var(--ai-width);align-items:stretch}
+.resizable-studio>.inspector{grid-column:auto;min-width:0;overflow:hidden}
+.resizable-studio>.arrangement{min-width:0;padding-left:12px;padding-right:12px}
+.workspace-page .studio.is-focused .resizable-studio{grid-template-columns:minmax(0,1fr)}
+.studio.is-focused .resizable-studio>.panel-splitter{display:none}
+.workspace-page .studio .daw-piano-area{display:flex;min-width:0}
+.workspace-page .studio .daw-piano-scroll{min-width:0;flex:1;min-height:0;max-height:none;overflow-anchor:none}
+.pitch-navigator{width:24px;display:flex;flex-direction:column;align-items:center;background:#343943;flex:none}
+.pitch-navigator button{width:24px;padding:4px 0!important;min-height:24px}
+.pitch-navigator input{writing-mode:vertical-lr;direction:ltr;min-height:60px;flex:1;width:18px;margin:4px 0;accent-color:#c6a06a}
+.daw-note-tools{flex-wrap:wrap}
+.workspace-page .studio .daw-velocity{min-height:0;max-height:none}
+.discussion{min-height:0}
+.layout.resizable-library{grid-template-columns:clamp(180px,var(--library-width),40vw) 6px minmax(0,1fr)}
+.resizable-library>.detail{max-width:none;min-width:0;box-sizing:border-box}
+@media(max-width:900px){.workspace-page .studio-body.resizable-studio{display:flex;flex-direction:column}.resizable-studio>.panel-splitter-x{display:none}.resizable-studio>.inspector{width:100%}.pitch-navigator{width:28px}}
+@media(max-width:650px){.layout.resizable-library{grid-template-columns:minmax(0,1fr)}.resizable-library>.panel-splitter-x{display:none}}
+
+.daw-piano-scroll,.discussion-history{overscroll-behavior:contain}

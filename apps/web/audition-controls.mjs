@@ -44,7 +44,7 @@ try{
   assert.ok(Math.abs(start+305/z*.7-(s2+305/z2*.7))<.1,'pointer anchor preserved');
   await page.keyboard.down('Shift');await page.mouse.wheel(0,120);await page.keyboard.up('Shift');
   await page.waitForFunction(old=>+document.querySelector('input[aria-label="时间轴平移"]').value>old,s2);
-  const pitch=page.getByLabel('音高缩放',{exact:true});await pitch.focus();await page.keyboard.press('End');assert.equal(await pitch.inputValue(),'30');
+  const pitch=page.getByLabel('音高缩放',{exact:true});await pitch.focus();await page.keyboard.press('End');assert.equal(await pitch.inputValue(),'40');
   await page.getByRole('button',{name:'整曲',exact:true}).click();assert.equal(await pan.inputValue(),'0');
   const narrow=(await frame.boundingBox()).width;await page.getByRole('button',{name:'专注编辑',exact:true}).click();assert.ok((await frame.boundingBox()).width>narrow+300);await page.getByRole('button',{name:'恢复侧栏',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('.stem-preload')?.textContent==='声部 6/6',null,{timeout:60000});

@@ -1,5 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
+import type {CSSProperties} from 'react';
+import {PanelResize,usePanelSize} from './PanelResize';
 import type {Project, Job, Revision, StageRecord, PreprocessingView, PreprocessingResult} from '../../../packages/contracts/types';
 import {call, connect, result} from './api';
 import {Workbench} from './Workbench';
@@ -17,6 +19,7 @@ const stageNames: Record<string, string> = {normalize:'音频规范化', demucs:
 
 
 function App() {
+  const [libraryWidth,setLibraryWidth]=usePanelSize('library.sidebar-width',260,180,500);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelected] = useState<string | null>(new URLSearchParams(location.search).get('project') ?? localStorage.getItem('selected-project'));
   const activeSelection = useRef(selected);
@@ -144,7 +147,7 @@ function App() {
       <span className="connection">{connected ? '● 本机已连接' : '○ 正在连接'}</span></header>
     {error && <div role="alert">{error}<button onClick={() => setError('')} aria-label="关闭提示">×</button></div>}
     {workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh}
-      onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout"><aside>
+      onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
       <label className={'import ' + (busy ? 'disabled' : '')}><strong>{busy ? '正在导入…' : '＋ 选择音乐'}</strong>
         <span>FLAC / WAV / MP3 / OGG 等</span><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
           disabled={busy} onChange={e => {const file = e.target.files?.[0]; if (file) void importFile(file); e.target.value = '';}}/></label>
@@ -153,7 +156,7 @@ function App() {
         selectProject(p.id);
       }}><strong>{p.display_title??p.title}</strong><span>{p.archived?'已归档 · ':''}{projectStatuses[p.status]}</span></button>)}</nav>
       {!projects.length && <p className="muted empty-list">还没有工程。选一首完整音乐，保存在本机。</p>}
-    </aside><section className="detail" aria-label="工程详情">
+    </aside><PanelResize label="调整歌曲列表宽度" value={libraryWidth} min={180} max={500} onChange={setLibraryWidth} reset={260}/><section className="detail" aria-label="工程详情">
       {!project ? <div className="welcome"><h2>选择歌曲</h2><p>导入音频，或打开左侧已有歌曲。</p></div> : <>
         <div className="project-heading"><div><h2>{project.display_title??project.title}</h2></div>
           <div className="library-actions"><span className="badge">{projectStatuses[project.status]}</span><button onClick={()=>void organize()}>{project.archived?'恢复到歌曲列表':'归档工程'}</button></div></div>
