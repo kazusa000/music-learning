@@ -20,6 +20,8 @@ def ts(schema):
         return " | ".join(json.dumps(x) for x in schema["enum"])
     if "anyOf" in schema:
         return " | ".join(ts(x) for x in schema["anyOf"])
+    if "oneOf" in schema:
+        return " | ".join(ts(x) for x in schema["oneOf"])
     kind = schema.get("type")
     if kind == "array":
         return "Array<" + ts(schema["items"]) + ">"

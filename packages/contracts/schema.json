@@ -23,6 +23,82 @@
       "title": "AdoptPreprocessing",
       "type": "object"
     },
+    "AgentEdit": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "turn_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Turn Id",
+          "type": "string"
+        },
+        "operations": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "arrange_clip": "#/$defs/ArrangeClip",
+                "delete": "#/$defs/DeleteEntity",
+                "freeze": "#/$defs/FreezeTrack",
+                "patch_plugin": "#/$defs/PatchPlugin",
+                "put": "#/$defs/PutEntity",
+                "routing": "#/$defs/SetRouting",
+                "timing": "#/$defs/SetTiming",
+                "track_order": "#/$defs/SetTrackOrder"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/PutEntity"
+              },
+              {
+                "$ref": "#/$defs/DeleteEntity"
+              },
+              {
+                "$ref": "#/$defs/SetTiming"
+              },
+              {
+                "$ref": "#/$defs/SetRouting"
+              },
+              {
+                "$ref": "#/$defs/SetTrackOrder"
+              },
+              {
+                "$ref": "#/$defs/ArrangeClip"
+              },
+              {
+                "$ref": "#/$defs/FreezeTrack"
+              },
+              {
+                "$ref": "#/$defs/PatchPlugin"
+              }
+            ]
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Operations",
+          "type": "array"
+        },
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "turn_id",
+        "operations",
+        "description"
+      ],
+      "title": "AgentEdit",
+      "type": "object"
+    },
     "AnalysisRecord": {
       "additionalProperties": false,
       "properties": {
@@ -235,7 +311,20 @@
         },
         "operations": {
           "items": {
-            "anyOf": [
+            "discriminator": {
+              "mapping": {
+                "arrange_clip": "#/$defs/ArrangeClip",
+                "delete": "#/$defs/DeleteEntity",
+                "freeze": "#/$defs/FreezeTrack",
+                "patch_plugin": "#/$defs/PatchPlugin",
+                "put": "#/$defs/PutEntity",
+                "routing": "#/$defs/SetRouting",
+                "timing": "#/$defs/SetTiming",
+                "track_order": "#/$defs/SetTrackOrder"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
               {
                 "$ref": "#/$defs/PutEntity"
               },
@@ -256,6 +345,9 @@
               },
               {
                 "$ref": "#/$defs/FreezeTrack"
+              },
+              {
+                "$ref": "#/$defs/PatchPlugin"
               }
             ]
           },
@@ -421,10 +513,24 @@
             "original",
             "mix",
             "tracks",
-            "reference"
+            "reference",
+            "hybrid"
           ],
           "title": "Mode",
           "type": "string"
+        },
+        "hybrid_job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hybrid Job Id"
         },
         "reference_revision_id": {
           "anyOf": [
@@ -1820,6 +1926,72 @@
       "title": "Page",
       "type": "object"
     },
+    "PatchPlugin": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "patch_plugin",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Parameters",
+          "type": "object"
+        },
+        "bypass": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bypass"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Order"
+        },
+        "preset_plugin_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset Plugin Id"
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ],
+      "title": "PatchPlugin",
+      "type": "object"
+    },
     "PluginInstance": {
       "additionalProperties": false,
       "properties": {
@@ -2035,6 +2207,66 @@
         "publication"
       ],
       "title": "PreprocessingView",
+      "type": "object"
+    },
+    "ProductionQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 40,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "plugin_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plugin Id"
+        },
+        "parameter_search": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Parameter Search",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "ProductionQuery",
       "type": "object"
     },
     "Project": {
@@ -3258,6 +3490,17 @@
           ],
           "title": "Login Mode",
           "type": "string"
+        },
+        "edit_scope": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EditScope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -5489,6 +5732,30 @@
         "type": "object"
       },
       "mutates": true
+    },
+    "arrangements.apply": {
+      "arguments": "AgentEdit",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "arrangements.get": {
+      "arguments": "DialogueRef",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "production.query": {
+      "arguments": "ProductionQuery",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
     }
   }
 }

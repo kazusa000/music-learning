@@ -131,7 +131,7 @@ def create_app(settings: Settings | None = None):
 
     @app.get("/health")
     def health():
-        return {"schema_version": 1, "phase": "P4", "status": "ok"}
+        return {"schema_version": 1, "phase": "P5", "status": "ok"}
 
     @app.post("/v1/session")
     def session():

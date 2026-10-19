@@ -468,6 +468,8 @@ class Production:
         from music_learning.midi import export_midi
 
         payload = self.job["payload"]
+        if payload["format"] == "hybrid":
+            return self.hybrid()
         if payload["format"] == "wav":
             path = self.directory / "export.wav"
             shutil.copyfile(self.path(payload["audio_asset_id"]), path)
@@ -476,6 +478,99 @@ class Production:
             export_midi(c.Snapshot.model_validate(self.job["snapshot"]), path, self.job["revision_id"])
         return dict(
             format=payload["format"], asset_id=self.add(path), snapshot_sha256=self.job["snapshot_sha256"]
+        )
+
+    def hybrid(self):
+        from contextlib import ExitStack
+
+        s = c.Snapshot.model_validate(self.job["snapshot"])
+        recipe, payload = self.job["hybrid"], self.job["payload"]
+        a, b = recipe["start_sample"], recipe["end_sample"]
+        tail = recipe["tail_samples"] if b == s.duration_samples else 0
+        frames = s.duration_samples + tail
+        if (
+            shutil.disk_usage(self.settings.data_root).free
+            < frames * 8 + self.settings.pipeline_min_free_bytes
+        ):
+            raise ValueError("insufficient local space for hybrid output")
+        target = self.directory / "hybrid.wav"
+        fade = min(round(payload["fade_seconds"] * s.sample_rate), (b - a) // 2)
+        gain = 10 ** (payload["replacement_gain_db"] / 20)
+        peak, power, count, clipped = 0.0, 0.0, 0, 0
+        with ExitStack() as stack:
+            source = stack.enter_context(sf.SoundFile(self.path(recipe["source_asset_id"])))
+            replacement = stack.enter_context(sf.SoundFile(self.path(recipe["replacement_asset_id"])))
+            others = [
+                (stem, stack.enter_context(sf.SoundFile(self.path(stem["asset_id"]))))
+                for stem in recipe["stems"]
+                if stem["name"] != "bass"
+            ]
+            for reader in [source, replacement, *(reader for _, reader in others)]:
+                if reader.samplerate != s.sample_rate or reader.channels not in (1, 2):
+                    raise ValueError("hybrid input dimensions do not match the source clock")
+
+            def aligned(reader, start, n, offset=0):
+                out = np.zeros((n, 2), dtype=np.float32)
+                src = max(0, start - offset)
+                dest = max(0, offset - start)
+                size = min(n - dest, reader.frames - src)
+                if size > 0:
+                    reader.seek(src)
+                    block = reader.read(size, dtype="float32", always_2d=True)
+                    out[dest : dest + size] = block if block.shape[1] == 2 else np.repeat(block, 2, axis=1)
+                if not np.isfinite(out).all():
+                    raise ValueError("nonfinite hybrid input")
+                return out
+
+            writer = stack.enter_context(
+                sf.SoundFile(target, "w", samplerate=s.sample_rate, channels=2, subtype="FLOAT")
+            )
+            for start in range(0, frames, 65536):
+                n = min(65536, frames - start)
+                original = aligned(source, start, n)
+                new = aligned(replacement, start, n) * gain
+                for stem, reader in others:
+                    new += aligned(reader, start, n, stem["offset_samples"])
+                clock = np.arange(start, start + n)
+                weight = ((clock >= a) & (clock < b + tail)).astype(np.float32)
+                if fade:
+                    weight *= np.clip((clock - a) / fade, 0, 1)
+                    if b < s.duration_samples:
+                        weight *= np.clip((b - clock) / fade, 0, 1)
+                mixed = original * (1 - weight[:, None]) + new * weight[:, None]
+                writer.write(mixed)
+                peak = max(peak, float(np.abs(mixed).max()))
+                power += float(np.square(mixed.astype("float64")).sum())
+                count += mixed.size
+                clipped += int((np.abs(mixed) >= 1).sum())
+        report = dict(
+            revision_id=self.job["revision_id"],
+            snapshot_sha256=self.job["snapshot_sha256"],
+            source_asset_id=recipe["source_asset_id"],
+            included_original_stems=[stem for stem in recipe["stems"] if stem["name"] != "bass"],
+            excluded_bass_stem=next(stem for stem in recipe["stems"] if stem["name"] == "bass"),
+            replacement_track_id=payload["replacement_track_id"],
+            replacement_asset_id=recipe["replacement_asset_id"],
+            start_sample=a,
+            end_sample=b,
+            fade_samples=fade,
+            tail_samples=tail,
+            replacement_gain_db=payload["replacement_gain_db"],
+            peak=peak,
+            rms=(power / count) ** 0.5,
+            clipped_samples=clipped,
+            boundary_policy="Outside local interval original PCM is preserved; linear crossfades stay inside it. Local replacement tails crossfade back to original; full-song replacement retains rendered tail.",
+        )
+        metadata = audio_metadata(target)
+        report_path = self.directory / "hybrid-report.json"
+        write_json(report_path, report)
+        return dict(
+            format="hybrid",
+            asset_id=self.add(target, metadata),
+            report_asset_id=self.add(report_path),
+            snapshot_sha256=self.job["snapshot_sha256"],
+            metadata=metadata,
+            recipe=report,
         )
 
 

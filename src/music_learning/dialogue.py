@@ -16,8 +16,17 @@ from .service import DomainError, canonical, emit, paged, row
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
 
-def public(turn):
-    return {k: v for k, v in turn.items() if k not in ("lease_token", "lease_until")}
+def public(turn, db=None):
+    result = {k: v for k, v in turn.items() if k not in ("lease_token", "lease_until")}
+    if db is not None and turn["payload"].get("edit_scope"):
+        from .schema_v5 import arrangements
+
+        receipt = db.execute(
+            select(arrangements.c.payload).where(arrangements.c.turn_id == turn["id"])
+        ).scalar()
+        if receipt:
+            result["context"] = {**result["context"], "arrangement": receipt}
+    return result
 
 
 def bounds(snapshot, start, end, track):
@@ -215,6 +224,17 @@ def music_query(service, db, args):
 def submit(service, db, args, request, *, retry_of=None):
     revision = service._revision(db, args)
     a, b = bounds(revision["snapshot"], args.start_sample, args.end_sample, args.track_id)
+    if args.edit_scope:
+        scope = args.edit_scope
+        bounds(revision["snapshot"], scope.start_sample, scope.end_sample, None)
+        if revision["id"] != row(db, t.projects, "id", args.project_id)["current_revision"]:
+            raise DomainError(
+                "historical_edit_requires_fork",
+                "Fork the selected historical revision before arranging it",
+                409,
+            )
+        if not scope.track_ids:
+            raise DomainError("edit_tracks_required", "Select explicit tracks to authorize edits", 422)
     context = {
         "project_id": args.project_id,
         "revision_id": revision["id"],
@@ -225,6 +245,7 @@ def submit(service, db, args, request, *, retry_of=None):
         "sample_rate": revision["snapshot"]["sample_rate"],
         "retry_of": retry_of,
         "raw_audio_sent": False,
+        "edit_scope": args.edit_scope.model_dump() if args.edit_scope else None,
     }
     payload = args.model_dump(mode="json")
     payload.update(revision_id=revision["id"], end_sample=b)
@@ -244,6 +265,7 @@ def submit(service, db, args, request, *, retry_of=None):
         created_at=time.time(),
         updated_at=time.time(),
     )
+    context["turn_id"] = turn["id"]
     db.execute(insert(turns).values(**turn))
     db.execute(
         insert(t.conversations).values(
@@ -274,7 +296,7 @@ def dispatch(service, db, op, args, request):
     if op == "dialogue.list":
         row(db, t.projects, "id", args.project_id)
         return [
-            public(x)
+            public(x, db)
             for x in paged(
                 db,
                 select(turns)
@@ -288,9 +310,15 @@ def dispatch(service, db, op, args, request):
         a, b = bounds(revision["snapshot"], args.start_sample, args.end_sample, args.track_id)
         if args.source_turn_id:
             source = row(db, turns, "id", args.source_turn_id)
+            from .schema_v5 import arrangements
+
+            receipt = db.execute(
+                select(arrangements.c.payload).where(arrangements.c.turn_id == source["id"])
+            ).scalar()
+            valid_revisions = {source["revision_id"], (receipt or {}).get("revision_id")}
             if (
                 source["project_id"] != args.project_id
-                or source["revision_id"] != revision["id"]
+                or revision["id"] not in valid_revisions
                 or source["status"] != "succeeded"
             ):
                 raise DomainError(
@@ -325,7 +353,7 @@ def dispatch(service, db, op, args, request):
     if turn["project_id"] != args.project_id:
         raise DomainError("turn_mismatch", "Turn belongs to another project", 422)
     if op == "dialogue.get":
-        return public(turn)
+        return public(turn, db)
     if op == "dialogue.retry":
         if turn["status"] not in ("failed", "cancelled"):
             raise DomainError("turn_not_retryable", "Only failed or cancelled turns can be retried", 409)

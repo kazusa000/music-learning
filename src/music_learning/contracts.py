@@ -705,7 +705,26 @@ class FreezeTrack(Model):
     render_job_id: Id | None = None
 
 
-EditOperation = PutEntity | DeleteEntity | SetTiming | SetRouting | SetTrackOrder | ArrangeClip | FreezeTrack
+class PatchPlugin(Model):
+    op: Literal["patch_plugin"]
+    id: Id
+    parameters: dict[str, float] = Field(default_factory=dict)
+    bypass: bool | None = None
+    order: int | None = Field(default=None, ge=0)
+    preset_plugin_id: Id | None = None
+
+
+EditOperation = Annotated[
+    PutEntity
+    | DeleteEntity
+    | SetTiming
+    | SetRouting
+    | SetTrackOrder
+    | ArrangeClip
+    | FreezeTrack
+    | PatchPlugin,
+    Field(discriminator="op"),
+]
 
 
 class ApplyEdit(ProjectRef):
@@ -741,14 +760,20 @@ class MeasurePayload(Model):
 
 class ExportPayload(Model):
     revision_id: Id | None = None
-    format: Literal["midi", "wav"]
+    format: Literal["midi", "wav", "hybrid"]
     render_job_id: Id | None = None
+    replacement_track_id: Id | None = None
+    start_sample: Sample = 0
+    end_sample: Sample | None = None
+    fade_seconds: float = Field(default=0.02, ge=0, le=1)
+    replacement_gain_db: float = Field(default=0, ge=-120, le=24)
 
 
 class AuditionState(Model):
     revision_id: Id
     position_sample: Sample = 0
-    mode: Literal["original", "mix", "tracks", "reference"] = "original"
+    mode: Literal["original", "mix", "tracks", "reference", "hybrid"] = "original"
+    hybrid_job_id: Id | None = None
     reference_revision_id: Id | None = None
     track_ids: list[Id] = Field(default_factory=list)
     loop_start_sample: Sample = 0
@@ -781,10 +806,22 @@ class SubmitDialogue(RevisionRef):
     end_sample: Sample | None = None
     track_id: Id | None = None
     login_mode: Literal["isolated", "existing"] = "isolated"
+    edit_scope: EditScope | None = None
 
 
 class DialogueRef(ProjectRef):
     turn_id: Id
+
+
+class AgentEdit(DialogueRef):
+    operations: list[EditOperation] = Field(min_length=1, max_length=1000)
+    description: str = Field(min_length=1, max_length=2000)
+
+
+class ProductionQuery(RevisionRef, Page):
+    plugin_id: Id | None = None
+    parameter_search: str = Field(default="", max_length=200)
+    limit: int = Field(default=40, ge=1, le=100)
 
 
 class SaveNote(RevisionRef):
@@ -869,6 +906,9 @@ OPERATIONS = {
     "dialogue.cancel": (DialogueRef, True),
     "dialogue.retry": (DialogueRef, True),
     "notes.save": (SaveNote, True),
+    "arrangements.apply": (AgentEdit, True),
+    "arrangements.get": (DialogueRef, False),
+    "production.query": (ProductionQuery, False),
 }
 
 RESULT_TYPES = {
@@ -917,4 +957,7 @@ RESULT_TYPES = {
     "dialogue.cancel": DialogueTurn,
     "dialogue.retry": DialogueTurn,
     "notes.save": Conversation,
+    "arrangements.apply": dict,
+    "arrangements.get": dict,
+    "production.query": dict,
 }

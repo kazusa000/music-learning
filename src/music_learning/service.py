@@ -70,11 +70,17 @@ class Service:
             args = model.model_validate(request.arguments)
             if mutates and not request.idempotency_key:
                 raise DomainError("idempotency_required", "Writes require idempotency_key", 422)
+            hash_arguments = args.model_dump(mode="json")
+            # New optional P5 permissions must not invalidate P3/P4 replay receipts.
+            if isinstance(args, c.SubmitDialogue) and args.edit_scope is None:
+                hash_arguments.pop("edit_scope", None)
+            if isinstance(args, c.SetAudition) and args.state.hybrid_job_id is None:
+                hash_arguments["state"].pop("hybrid_job_id", None)
             payload_hash = hashlib.sha256(
                 canonical(
                     {
                         "operation": request.operation,
-                        "arguments": args.model_dump(mode="json"),
+                        "arguments": hash_arguments,
                         "expected_revision": request.expected_revision,
                         "schema_version": request.schema_version,
                     }
@@ -285,6 +291,10 @@ class Service:
         return revision
 
     def _dispatch(self, db, op, args, request):
+        if op.startswith("arrangements.") or op == "production.query":
+            from .arranging import dispatch
+
+            return dispatch(self, db, op, args, request)
         if op.startswith("dialogue.") or op in ("music.query", "notes.save"):
             from .dialogue import dispatch
 
@@ -307,7 +317,7 @@ class Service:
         if op == "describe_capabilities":
             return {
                 "schema_version": 1,
-                "phase": "P4",
+                "phase": "P5",
                 "operations": {
                     name: {
                         "mutates": write,

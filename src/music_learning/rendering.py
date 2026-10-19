@@ -38,6 +38,8 @@ def submit(service, db, args, request):
         if rendered["revision_id"] != target or rendered["project_id"] != args.project_id:
             raise ValueError("render belongs to another revision")
         payload["audio_asset_id"] = rendered["payload"]["mix_asset_id"]
+    if args.kind == "project.export" and payload["format"] == "hybrid":
+        _hybrid(service, db, args.project_id, revision, payload)
     now = time.time()
     job = dict(
         id=c.new_id(),
@@ -151,6 +153,8 @@ def prepare(service, db, job):
     revision = row(db, t.revisions, "id", job["revision_id"])
     job["snapshot"] = revision["snapshot"]
     job["snapshot_sha256"] = revision["snapshot_sha256"]
+    if job["kind"] == "project.export" and job["payload"]["format"] == "hybrid":
+        job["hybrid"] = _hybrid(service, db, job["project_id"], revision, job["payload"])
     job["asset_metadata"] = {
         r["id"]: r["metadata"]
         for r in db.execute(
@@ -159,3 +163,39 @@ def prepare(service, db, job):
     }
     job["allowed_asset_ids"] = list(job["asset_metadata"])
     return job
+
+
+def _hybrid(service, db, project_id, revision, payload):
+    s = c.Snapshot.model_validate(revision["snapshot"])
+    if (
+        not s.source_asset_id
+        or {stem.name for stem in s.stems} != {"vocals", "drums", "bass", "other"}
+        or len(s.stems) != 4
+    ):
+        raise ValueError("hybrid requires original source and exactly four distinct aligned Demucs stems")
+    if not payload["render_job_id"] or not payload["replacement_track_id"]:
+        raise ValueError("hybrid requires a completed render and an explicit replacement bass track")
+    render = row(db, v3.renders, "job_id", payload["render_job_id"])
+    if render["project_id"] != project_id or render["revision_id"] != revision["id"]:
+        raise ValueError("hybrid render belongs to another revision")
+    rendered = render["payload"]
+    if rendered["start_sample"] != 0 or rendered["end_sample"] != s.duration_samples:
+        raise ValueError("hybrid requires a full-length replacement render")
+    track = next((t for t in s.tracks if t.id == payload["replacement_track_id"]), None)
+    if track is None or track.kind == "bus" or track.id not in rendered["track_renders"]:
+        raise ValueError("replacement track is not a rendered musical track")
+    if any(
+        stem.sample_rate != s.sample_rate or stem.duration_samples != s.duration_samples for stem in s.stems
+    ):
+        raise ValueError("hybrid stems must use the exact source sample clock")
+    end = payload["end_sample"] if payload["end_sample"] is not None else s.duration_samples
+    if not 0 <= payload["start_sample"] < end <= s.duration_samples:
+        raise ValueError("invalid hybrid interval")
+    return {
+        "source_asset_id": s.source_asset_id,
+        "stems": [stem.model_dump() for stem in s.stems],
+        "replacement_asset_id": rendered["track_renders"][track.id],
+        "tail_samples": rendered["tail_samples"],
+        "start_sample": payload["start_sample"],
+        "end_sample": end,
+    }

@@ -25,7 +25,7 @@
 
 ## 当前阶段
 
-P0a/P0b、P1、P2、P3 与 P4 已完成，下一步 P5。先读 docs/16-continuous-goal.md、docs/17-daw-implementation.md、docs/benchmarks/p3-daw.md，再参考 P2/P1/P0。当前后端 45 项 + 原生/模型格式 34 项通过；P3 在本地 305 秒音乐上完成真实 VST3 制作、导出、冻结及恢复，300 秒脉冲的原生/浏览器同步通过。
+P0a/P0b、P1、P2、P3、P4 与 P5 已完成，下一步 P6。先读 docs/16-continuous-goal.md、docs/17-daw-implementation.md、docs/benchmarks/p3-daw.md，再参考 P2/P1/P0。当前后端 45 项 + 原生/模型格式 34 项通过；P3 在本地 305 秒音乐上完成真实 VST3 制作、导出、冻结及恢复，300 秒脉冲的原生/浏览器同步通过。
 
 代码在 src/music_learning（权威契约/领域服务、HTTP API、SDK/CLI、任务执行、pipeline/musical），scripts/pipeline_adapter.py（隔离模型/渲染阶段），services/api/migrations（冻结 0001 与 0002）、apps/web、packages/contracts。数据在 D:\music-learning-runtime\app-data，独立 Python 环境在 envs/app。通过 scripts/app.py start/open/status/stop 管理隐藏的服务及其归属。更新后先 stop/start，旧进程不会热更新。当前从源码 checkout + PYTHONPATH=src 运行。契约变更后运行 scripts/export_contracts.py，提交 schema/TS 并检查漂移。
 
@@ -50,3 +50,5 @@ Codex App Server 已用既有 ChatGPT 登录验证；运行时固定 0.163.0-alp
 P0 探测 CLI/只读试听页继续独立保留。不要把 P2 初版结果工作台当成完整 DAW 或产品内 Codex 讨论。任务清单只有满足相应退出条件后才勾选完成。
 
 P4 讨论在 dialogue.py/dialogue_worker.py/codex.py、冻结迁移 0004 和 Discussion.tsx；45 项统一操作，50 项后端 + 34 项原生/模型格式回归。先读 docs/18-music-dialogue.md 与 docs/benchmarks/p4-dialogue.md。讨论独立租约通道，不占音频 worker；原版本/区间固定、结果持久化，provider thread ephemeral，连接丢失不自动重试消耗额度。引用由服务生成且完成时校验；P4 不发送音频、不编辑。正式 P3 工程 head 未变，新增 7 轮讨论和 1 条草稿笔记，实际停启回读一致；阶段收尾已停止所有自有服务。
+
+P5 已完成，先读 docs/19-conversation-arranging.md 与 docs/benchmarks/p5-arranging.md。48 项统一操作，冻结迁移 0005；arrangements.apply 原子保存限定范围的新版本和完整渲染 job，独立收据保留，模型失败不撤销已提交事务。P5 操作联合按 op 判别，生产查询提供真实参数和已有自动化 ID；patch_plugin 支持捕获音色和参数。59 项后端 + 35 项原生/模型格式通过。正式 P5 工程 75f51cbf82844ff4a1d1fc2f1ea5dda3，head 83979852227f4318a0a242644c67dd30，四组真实改编完成，最终 render 4cedd30f25bd4f50b58f3a79b7e262ab；9368 音符。hybrid export 79bc5a0f89f1423d821129e15970cac3，60–90 秒移除原 bass，加新贝斯，区间外 PCM 差 0；输出/原始报告均在 D 的 p5-production-v4。P5 restart 回读 8 轮讨论与收据、笔记、版本/渲染一致，所有自有服务停止。人工听辨未完成。

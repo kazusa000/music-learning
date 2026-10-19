@@ -96,6 +96,35 @@ def apply(service, db, revision, args):
     data = snapshot.model_dump(mode="json")
     data["frozen_tracks"] = {}
     for operation in args.operations:
+        if operation.op == "patch_plugin":
+            if (
+                not args.scope.structural
+                or args.scope.start_sample
+                or args.scope.end_sample != snapshot.duration_samples
+            ):
+                raise ValueError("plugin edits require full-time structural scope")
+            plugin = next((p for p in data["plugins"] if p["id"] == operation.id), None)
+            if plugin is None:
+                raise ValueError("unknown plugin")
+            check_scope(plugin, args.scope, snapshot, structural=True)
+            if operation.preset_plugin_id:
+                source = next((p for p in data["plugins"] if p["id"] == operation.preset_plugin_id), None)
+                if source is None:
+                    raise ValueError("unknown captured preset")
+                plugin.update(
+                    {
+                        k: copy.deepcopy(v)
+                        for k, v in source.items()
+                        if k not in ("id", "track_id", "order", "bypass")
+                    }
+                )
+            plugin["parameters"].update(operation.parameters)
+            if operation.bypass is not None:
+                plugin["bypass"] = operation.bypass
+            if operation.order is not None:
+                plugin["order"] = operation.order
+            plugin_metadata(service, db, revision["project_id"], c.PluginInstance.model_validate(plugin))
+            continue
         if operation.op in ("put", "delete"):
             name = operation.collection
             if name in ("tracks", "plugins", "automation") and (
