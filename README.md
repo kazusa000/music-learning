@@ -101,6 +101,6 @@ pnpm --dir apps/web build
 
 Git 管理源代码、开发文档、契约和小型测试数据。用户音乐、模型、分轨、渲染音频、数据库、对话与个人经验保存在被忽略的 `data/`、`models/`、`runtime/` 中，并由应用自己的工程版本与备份机制管理。
 
-本机大文件和应用数据配置到独立的 `D:\music-learning-runtime`，同样不进入源码 Git。P1 提供 SQLite backup API 元数据备份；包含音频/插件依赖的完整工程备份与独立恢复验收仍在 P6。
+本机大文件和应用数据配置到独立的 `D:\music-learning-runtime`，同样不进入源码 Git。P1 的 SQLite backup API 仅备份元数据；P6 已提供数据库与全部 CAS（包括音频、插件状态及采样资源）的完整备份和独立恢复，实际演练通过。模型、已安装插件与运行时由固定依赖清单另行恢复，详见[本地交付](docs/20-local-delivery.md)。
 
 本地 Git 仓库不等于远程备份；音乐工程也不依赖 Git 提交来保存。
