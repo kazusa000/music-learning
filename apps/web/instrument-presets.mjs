@@ -10,8 +10,10 @@ try{
  const page=await browser.newPage({viewport:{width:1600,height:1120}});page.on('pageerror',e=>errors.push(String(e)));
  await page.goto(`http://127.0.0.1:8765/?project=${report.project_id}&view=workbench#token=${token}`);
  await page.getByRole('region',{name:'音乐工作台'}).waitFor();
- await page.getByRole('button',{name:'音源',exact:true}).click();
- for(const name of ['Naked Drums Gm','Shiny Electric','Swag Finger Bass','Choir Mixed','Strings Sustain','Salamander Grand'])assert.ok((await page.locator('.plugin-card').allTextContents()).join(' ').includes(name));
+ await page.getByRole('tab',{name:'音色与效果',exact:true}).click();
+ const presets=[];const trackSelect=page.getByLabel('音色与效果的音轨',{exact:true});
+ for(const id of await trackSelect.locator('option').evaluateAll(nodes=>nodes.map(n=>n.value).filter(v=>v!=='all'))){await trackSelect.selectOption(id);presets.push(...await page.locator('.plugin-card').allTextContents());}
+ for(const name of ['Naked Drums Gm','Shiny Electric','Swag Finger Bass','Choir Mixed','Strings Sustain','Salamander Grand'])assert.ok(presets.join(' ').includes(name));
  assert.equal(await page.locator('.track-card small[title="实际渲染预设"]').count(),6);
  await page.waitForFunction(()=>Number(document.querySelector('.piano-roll')?.dataset.waveformBuckets)>0);
  await page.screenshot({path:path.join(output,'workbench.png'),fullPage:true});

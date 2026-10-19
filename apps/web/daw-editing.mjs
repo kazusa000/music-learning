@@ -102,7 +102,7 @@ try{
   await page.getByRole('button',{name:'应用音符属性',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.daw-edit-state')?.textContent.includes('可编辑'));
   for(let i=0;i<80&&!postCommit;i++)await new Promise(r=>setTimeout(r,50));assert.ok(postCommit);
   await page.waitForFunction(id=>document.querySelector('.daw-editor')?.dataset.editorRevision===id,postCommit.id);await page.unroute('**/v1/commands');assert.equal((await note(n1)).velocity,.7);steps.push('authoritative post-commit head update');
-  await page.getByRole('button',{name:'音源',exact:true}).click();await page.getByRole('button',{name:'总览',exact:true}).click();
+  await page.getByRole('tab',{name:'音色与效果',exact:true}).click();await page.getByRole('button',{name:'总览',exact:true}).click();
   const renderBefore=(await api('jobs.list',{project_id:fixture.project_id,limit:1000})).map(j=>j.id);
   await page.getByRole('button',{name:'生成重建试听',exact:true}).click();
   let rendered;for(let i=0;i<120;i++){const tasks=await api('jobs.list',{project_id:fixture.project_id,limit:1000});rendered=tasks.find(j=>j.kind==='project.render'&&!renderBefore.includes(j.id));if(rendered&&['succeeded','failed','cancelled'].includes(rendered.status))break;await new Promise(r=>setTimeout(r,250));}

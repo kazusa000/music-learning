@@ -17,7 +17,7 @@ try{
   await page.locator('.toolbar-peek').hover();await page.getByLabel('锁定顶部工具栏',{exact:true}).focus();await page.keyboard.press('Space');await moveOut();await page.waitForTimeout(550);assert.equal(await expanded(),'true');
   await page.waitForTimeout(200);await page.reload();await page.getByLabel('制作编辑器',{exact:true}).waitFor();assert.equal(await page.getByLabel('锁定顶部工具栏',{exact:true}).getAttribute('aria-pressed'),'true');
   await page.getByLabel('锁定顶部工具栏',{exact:true}).click();await moveOut();await page.waitForFunction(()=>document.querySelector('.toolbar-dock').dataset.expanded==='false');
-  await page.getByRole('tab',{name:'讨论',exact:true}).focus();await page.keyboard.press('ArrowRight');assert.equal(await page.getByRole('tab',{name:'分析',exact:true}).getAttribute('aria-selected'),'true');await page.keyboard.press('Home');assert.equal(await page.getByRole('tab',{name:'讨论',exact:true}).getAttribute('aria-selected'),'true');
+  await page.getByRole('tab',{name:'讨论',exact:true}).focus();await page.keyboard.press('ArrowRight');assert.equal(await page.getByRole('tab',{name:'音色与效果',exact:true}).getAttribute('aria-selected'),'true');await page.keyboard.press('Home');assert.equal(await page.getByRole('tab',{name:'讨论',exact:true}).getAttribute('aria-selected'),'true');
   await page.getByRole('button',{name:'分析整曲结构',exact:true}).click();assert.match(await page.getByLabel('讨论问题',{exact:true}).inputValue(),/查询整曲摘要/);
   await page.getByRole('button',{name:'聊选中片段',exact:true}).click();assert.equal(await page.getByLabel('讨论范围',{exact:true}).inputValue(),'selection');
   await page.getByRole('button',{name:'试一个改编',exact:true}).click();assert.equal(await page.getByLabel('允许改编模式',{exact:true}).getAttribute('aria-pressed'),'true');

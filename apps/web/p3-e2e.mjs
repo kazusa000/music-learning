@@ -72,7 +72,7 @@ try{
   const range=page.getByLabel('时间轴缩放',{exact:true});await range.focus();await range.press('End');assert.equal(await range.inputValue(),'24');
   await page.getByLabel('时间轴平移',{exact:true}).focus();await page.getByLabel('时间轴平移',{exact:true}).press('End');
   await range.focus();await range.press('Home');
-  await page.getByRole('button',{name:'音源',exact:true}).click();await page.locator('.plugin-card').first().waitFor();
+  await page.getByRole('tab',{name:'音色与效果',exact:true}).click();await page.getByLabel('音色与效果的音轨',{exact:true}).selectOption({index:1});await page.locator('.plugin-card').first().waitFor();
   assert.ok((await page.locator('.plugin-card').first().innerText()).includes('VST3'));
   await page.getByRole('button',{name:'版本',exact:true}).click();
   await page.getByLabel('工程版本',{exact:true}).waitFor();

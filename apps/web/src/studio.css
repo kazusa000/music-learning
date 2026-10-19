@@ -135,3 +135,27 @@
 .music-markdown pre{overflow:auto;background:#1c2430;padding:10px;border-radius:4px}.music-markdown code{font-family:Consolas,monospace;background:#222d3b;padding:1px 4px}
 .music-markdown pre code{padding:0}.music-markdown blockquote{border-left:3px solid #7b91b0;margin:10px 0;padding-left:10px;color:#9db0ca}
 .music-markdown a{color:#a9c9ef}.workspace-page .discussion-reply{white-space:normal}
+
+.workspace-page .inspector-tabs{flex-wrap:nowrap}
+.sound-track-select{display:grid;gap:7px;font-size:12px;color:#bfcada}
+.sound-track-select select{width:100%;min-width:0;padding:8px;background:#222a35;color:#d5dfea;border:1px solid #526074;border-radius:4px;font-size:12px}
+.sound-current h3{margin:18px 0 8px}
+.sound-chain{display:grid;gap:6px}
+.workspace-page .sound-slot{margin:0;padding:9px;background:#303741;border:1px solid #495566;border-radius:4px}
+.sound-slot summary{display:flex;align-items:center;gap:9px;font-size:12px}
+.sound-slot summary>div{flex:1;min-width:0}
+.sound-slot summary strong{display:block;font-size:12px;font-weight:500;overflow-wrap:anywhere;color:#d6dfed}
+.workspace-page .sound-slot summary small{display:block;margin:4px 0 0;font-size:11px;color:#a0afc3}
+.sound-slot-number{font-size:11px;color:#9bacbf}
+.sound-slot-expand{font-size:10px;color:#b2c4dd;white-space:nowrap}
+.workspace-page .sound-slot p,.workspace-page .sound-slot .parameter-list>div{font-size:11px;color:#a9b9cf}
+.sound-empty{font-size:12px;color:#a2afc1;line-height:1.7;margin:12px 0 0}
+.sound-panel .instrument-browser{border-top:1px solid #46505f}
+.sound-panel .instrument-select{margin:14px 0 12px}
+.sound-panel .instrument-select select,.sound-panel .instrument-filters>input{padding:9px;background:#222a35;border-color:#526074;border-radius:4px}
+.sound-panel .instrument-summary{padding:12px;background:#343e4d;border-color:#526074;border-radius:4px}
+.sound-panel .instrument-summary>strong{font-size:13px}
+.sound-panel .instrument-filters{margin-top:14px}
+.sound-panel .instrument-preset-list{gap:8px}
+.sound-panel .instrument-preset{padding:11px;background:#2e3540;border-color:#4a5565;border-radius:4px}
+.sound-panel .instrument-browser button{border-radius:4px}

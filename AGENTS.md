@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新侧栏（2026-10-20）：讨论、音色与效果、版本、分析四页签；SoundPanel.tsx 合并原音源/乐器页，音轨选择与左侧同步，当前插件链和更换音色同页。仍只生成绑定声部/版本的改编草稿，发送后执行；API/数据无变化。说明和浏览器证据见 docs/27-toolbar-and-sidebars.md 的最新段。
+
 最新对话（2026-10-19）：先读 docs/28-conversation-usability.md。新增冻结迁移0007保存dialogue_sessions及轮次session_id，旧会话归历史讨论、不改旧文本/音乐；worker历史严格按项目+会话隔离。dialogue.sessions.list/create、dialogue.models 共55操作/11任务，统一API/SDK/CLI；模型列表按需读取固定本机App Server model/list，无推理，支持缓存及显式刷新；所选模型传thread/start，不可用明确失败不回退。React Markdown+GFM渲染对话/笔记，保留音乐引用定位；新提示词不再反复输出候选/未经审核声明，内部来源仍保留。93后端通过及新会话/模型/Markdown/流式浏览器通过，未新调用真实生成或音乐模型，工程head不变。
 
 最新顶栏和侧栏（2026-10-19）：先读 docs/27-toolbar-and-sidebars.md。用户随后要求直接删除重复的工程标题栏；歌曲名/返回只在窄条，生成试听并入播放栏。AutoHideToolbar 只包含播放栏，默认折成32px窄条；悬停/键盘聚焦展开、离开450ms收起、Escape关闭，锁定常驻并本机记忆；折叠内容hidden/inert但不卸载。窄条保留快速播放。音轨列表压缩、原曲分轨默认折叠；AI范围/草稿/发送为主，登录设置收起仍可访问，快捷建议只填草稿。保持原52操作/11任务，无数据迁移和音乐编辑；真实浏览器顶栏/侧栏/拖拽及模拟对话回归通过，未访问NAS/未调用provider或模型。
