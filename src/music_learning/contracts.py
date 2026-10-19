@@ -929,6 +929,7 @@ class AgentEdit(DialogueRef):
 
 
 class ProductionQuery(RevisionRef, Page):
+    track_id: Id | None = None
     plugin_id: Id | None = None
     parameter_search: str = Field(default="", max_length=200)
     preset_search: str | None = Field(default=None, max_length=200)

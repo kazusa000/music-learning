@@ -16,8 +16,12 @@ from .service import DomainError, canonical, row
 def production_query(service, db, args):
     revision = service._revision(db, args)
     s = revision["snapshot"]
+    if args.track_id and args.track_id not in {track["id"] for track in s["tracks"]}:
+        raise DomainError("track_mismatch", "Track is not in this revision", 422)
     plugins = []
     for value in s["plugins"]:
+        if args.track_id and value.get("track_id") != args.track_id:
+            continue
         p = c.PluginInstance.model_validate(value)
         descriptor = plugin_metadata(service, db, args.project_id, p)
         plugins.append(
@@ -37,7 +41,7 @@ def production_query(service, db, args):
         )
     result = {
         "revision_id": revision["id"],
-        "tracks": s["tracks"],
+        "tracks": [track for track in s["tracks"] if not args.track_id or track["id"] == args.track_id],
         "plugins": plugins,
         "automation": [
             {
@@ -50,12 +54,21 @@ def production_query(service, db, args):
                 "points_preview": lane["points"][:4],
             }
             for lane in s["automation"]
+            if not args.track_id
+            or lane.get("track_id") == args.track_id
+            or lane.get("plugin_id") in {plugin["id"] for plugin in plugins}
         ],
         "notice": "Use patch_plugin to change listed normalized parameters or copy an existing captured preset by preset_plugin_id. All plugin/automation edits require full-time structural scope.",
     }
     from .instruments import categories, query, recommend
 
     result["instrument_advice"] = recommend(service.settings, s)
+    if args.track_id:
+        result["instrument_advice"]["assignments"] = [
+            assignment
+            for assignment in result["instrument_advice"]["assignments"]
+            if assignment["track_id"] == args.track_id
+        ]
     if args.include_instrument_categories:
         result["instrument_categories"] = categories(service.settings)
     if args.preset_search is not None or args.instrument_id is not None:
@@ -83,6 +96,8 @@ def production_query(service, db, args):
         selected = next((p for p in s["plugins"] if p["id"] == args.plugin_id), None)
         if selected is None:
             raise DomainError("plugin_mismatch", "Plugin is not in this revision", 422)
+        if args.track_id and selected.get("track_id") != args.track_id:
+            raise DomainError("plugin_mismatch", "Plugin belongs to a different track", 422)
         descriptor = json.loads(service.storage.verify(selected["descriptor_asset_id"]).read_bytes())
         descriptor = descriptor.get("plugin", descriptor)
         parameters = [

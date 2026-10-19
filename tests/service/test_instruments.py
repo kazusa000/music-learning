@@ -82,6 +82,53 @@ def test_unverified_catalog_does_not_become_automatic_mapping(service, project, 
     assert "resources" not in rec["preset"] and rec["out_of_range_notes"] == 0
 
 
+def test_readonly_discussion_can_discover_presets_with_pinned_track(service, project, tmp_path):
+    import asyncio
+    from music_learning.dialogue_worker import DialogueWorker
+    from test_dialogue import Provider
+
+    installed(service.settings, tmp_path)
+    rev, track, *_ = musical(service, project)
+    snapshot = copy.deepcopy(rev["snapshot"])
+    other = dict(snapshot["tracks"][0], id=c.new_id(), name="Other")
+    snapshot["tracks"].append(other)
+    rev = invoke(
+        service,
+        "revisions.commit",
+        dict(project_id=project["id"], snapshot=snapshot, author="test", description="Two tracks"),
+        rev["id"],
+    )
+    turn = invoke(
+        service,
+        "dialogue.submit",
+        dict(project_id=project["id"], text="有哪些音色", track_id=track),
+        rev["id"],
+    )
+    assert turn["context"]["selected_track"]["id"] == track
+
+    class DiscoveryProvider(Provider):
+        async def request(self, method, params, **kwargs):
+            if method == "turn/start":
+                names = {tool["name"] for tool in self.instructions["dynamicTools"]}
+                assert names == {"music_query", "production_query"}
+                response = await self.handler(
+                    {"tool": "production_query", "arguments": {"preset_search": ""}}
+                )
+                assert response["success"]
+                value = json.loads(response["contentItems"][0]["text"])
+                assert [t["id"] for t in value["tracks"]] == [track]
+                assert value["library"]["total"] == 1
+            return await super().request(method, params, **kwargs)
+
+    worker = DialogueWorker(service.database, DiscoveryProvider)
+    asyncio.run(worker.execute(worker.claim()))
+    saved = invoke(service, "dialogue.get", dict(project_id=project["id"], turn_id=turn["id"]))
+    assert saved["status"] == "succeeded", saved["error"]
+    assert invoke(service, "revisions.get", dict(project_id=project["id"]))["id"] == rev["id"]
+    with pytest.raises(Exception, match="Track is not in this revision"):
+        invoke(service, "production.query", dict(project_id=project["id"], track_id=c.new_id()))
+
+
 def test_capture_pins_inventory_and_failure_does_not_change_revision(service, project, tmp_path):
     root, entry = installed(service.settings, tmp_path)
     job = invoke(
@@ -267,6 +314,27 @@ def test_agent_can_capture_then_apply_without_exposing_sample_inventory(service,
             assert choices["library"]["total"] == 1
             assert choices["library"]["items"][0]["id"] == entry["id"]
             assert "resources" not in choices["library"]["items"][0]
+
+            # A malformed operation must return a schema-derived repair path,
+            # remain uncommitted, and allow the correct capture/edit below.
+            failed = await self.handler(
+                {
+                    "tool": "music_edit",
+                    "arguments": {
+                        "description": "Invalid request stays uncommitted",
+                        "operations": [
+                            {"type": "patch_plugin", "id": plugin["id"], "preset_id": entry["id"]}
+                        ],
+                    },
+                }
+            )
+            assert not failed["success"]
+            failure = json.loads(failed["contentItems"][0]["text"])
+            schema = failure["retry_hint"]["matching_operation_schemas"]["patch_plugin"]
+            assert schema["properties"]["op"]["const"] == "patch_plugin"
+            assert "preset_id" not in schema["properties"]
+            assert "preset_capture_job_id" in schema["properties"]
+            assert invoke(service, "revisions.get", {"project_id": project["id"]})["id"] == rev["id"]
 
             async def run_capture():
                 await asyncio.sleep(0.1)

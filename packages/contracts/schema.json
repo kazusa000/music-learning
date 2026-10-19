@@ -2697,6 +2697,19 @@
           "default": null,
           "title": "Revision Id"
         },
+        "track_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Id"
+        },
         "plugin_id": {
           "anyOf": [
             {

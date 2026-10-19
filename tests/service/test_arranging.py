@@ -11,6 +11,22 @@ from test_daw import musical
 from test_dialogue import Provider
 
 
+@pytest.mark.parametrize("operations", [None, 5, "invalid", [{"type": "patch_note"}], [{"op": "delete"}]])
+def test_edit_recovery_uses_contract_for_all_operation_types(operations):
+    from music_learning.dialogue_worker import edit_recovery
+
+    result = edit_recovery({"operations": operations})
+    assert "patch_plugin" in result["valid_operation_tags"]
+    assert "patch_note" in result["valid_operation_tags"]
+    assert "delete" in result["valid_operation_tags"]
+    if isinstance(operations, list):
+        operation = operations[0]
+        tag = operation.get("op", operation.get("type"))
+        schema = result["matching_operation_schemas"][tag]
+        assert schema["properties"]["op"]["const"] == tag
+        assert "type" not in schema["properties"]
+
+
 def test_real_json_request_shape_and_edit_tool_readback(service, project):
     rev, track, turn = editable(service, project)
 

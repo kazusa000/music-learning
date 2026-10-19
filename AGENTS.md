@@ -1,5 +1,7 @@
 # 项目开发约定
 
+2026-10-20 停止状态：周额度实查剩余29%，已触发用户停止条件；不再开发/推理/验收，不自动恢复，不用重置卡。本线程 goal 工具返回无目标，paused 更新被接口拒绝，因此不新建目标，持续工作记为暂停。已有音色工具规则修正和99项回归保存，见 docs/29-timbre-tool-rules.md。production.query 支持 track_id，讨论也可只读发现真实音色；编辑错误返回契约生成的修复说明，保持原范围和事务校验。正式工程 head/音符不变，自有服务已停止。
+
 最新侧栏（2026-10-20）：讨论、音色与效果、版本、分析四页签；SoundPanel.tsx 合并原音源/乐器页，音轨选择与左侧同步，当前插件链和更换音色同页。仍只生成绑定声部/版本的改编草稿，发送后执行；API/数据无变化。说明和浏览器证据见 docs/27-toolbar-and-sidebars.md 的最新段。
 
 最新对话（2026-10-19）：先读 docs/28-conversation-usability.md。新增冻结迁移0007保存dialogue_sessions及轮次session_id，旧会话归历史讨论、不改旧文本/音乐；worker历史严格按项目+会话隔离。dialogue.sessions.list/create、dialogue.models 共55操作/11任务，统一API/SDK/CLI；模型列表按需读取固定本机App Server model/list，无推理，支持缓存及显式刷新；所选模型传thread/start，不可用明确失败不回退。React Markdown+GFM渲染对话/笔记，保留音乐引用定位；新提示词不再反复输出候选/未经审核声明，内部来源仍保留。93后端通过及新会话/模型/Markdown/流式浏览器通过，未新调用真实生成或音乐模型，工程head不变。

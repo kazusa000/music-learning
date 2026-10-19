@@ -1,6 +1,6 @@
 import {PanelResize,usePanelSize} from './PanelResize';
 import {useCallback,useEffect,useRef,useState} from 'react';
-import type {Citation,Conversation,DialogueTurn,Job,Revision} from '../../../packages/contracts/types';
+import type {Citation,Conversation,DialogueTurn,Job,Revision,Track} from '../../../packages/contracts/types';
 import {call} from './api';
 import {MusicMarkdown} from './MusicMarkdown';
 import {trackName} from './dawEditing';
@@ -47,7 +47,7 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
   useEffect(()=>{if(follow.current&&history.current)history.current.scrollTop=history.current.scrollHeight;},[last?.id,last?.text,last?.status,showNotes,notes.length]);
   const rate=revision.snapshot.sample_rate??44100,duration=revision.snapshot.duration_samples??0;
   const selectedTrack=revision.snapshot.tracks?.find(t=>t.id===trackId);
-  const scopeName=scope==='whole'?'全部声部':selectedTrack?trackName(selectedTrack):'全部声部';
+  const scopeName=(editing||scope!=='whole')&&selectedTrack?trackName(selectedTrack):'全部声部';
   const a=scope==='whole'?0:Math.round(start*rate),b=scope==='whole'?duration:Math.round(end*rate);
   const refresh=useCallback(async()=>{
     const [items,messages]=await Promise.all([call<DialogueTurn[]>('dialogue.list',{project_id:revision.project_id,session_id:sessionId,limit:1000}),
@@ -103,13 +103,19 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
     }catch(e){setError((e as Error).message);}
   }
   function reply(turn:DialogueTurn){return <MusicMarkdown text={turn.text} citations={turn.citations} onLocate={onLocate}/>;}
+  function turnTrackName(turn:DialogueTurn){
+    if(!turn.context.track_id)return '全部声部';
+    const stored=turn.context.selected_track as Track|undefined;
+    const track=stored??revision.snapshot.tracks?.find(t=>t.id===turn.context.track_id);
+    return track?trackName(track):'指定声部';
+  }
   return <div className="discussion" aria-label="工程讨论">
     <div className="discussion-heading"><h3>音乐助手</h3><button className="new-discussion" onClick={()=>void newSession()}>＋ 新会话</button><div className="chat-session-select"><select aria-label="会话" value={sessionId??''} onChange={e=>chooseSession(e.target.value||null)}><option value="">历史讨论</option>{sessions.map(s=><option key={s.id} value={s.id}>{s.title}</option>)}</select><select aria-label="对话模型" value={model} onFocus={()=>{if(!models.length)void loadModels();}} onChange={e=>{setModel(e.target.value);localStorage.setItem('discussion.model',e.target.value);}}><option value="">{modelsBusy?'读取模型中…':'默认模型'}</option>{model&&!models.some(m=>m.id===model)&&<option value={model}>{model}</option>}{models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select><button aria-label="刷新可用模型" disabled={modelsBusy} onClick={()=>void loadModels(true)}>↻</button></div><div className="discussion-toggle"><button aria-pressed={!showNotes} onClick={()=>setShowNotes(false)}>讨论 {turns.length}</button><button aria-pressed={showNotes} onClick={()=>setShowNotes(true)}>笔记 {notes.length}</button></div></div>
     <div className="discussion-history" style={{height:historyHeight,minHeight:historyHeight,maxHeight:historyHeight,flex:'none'}} ref={history} onScroll={e=>{const n=e.currentTarget;follow.current=n.scrollHeight-n.scrollTop-n.clientHeight<65;}} aria-live="polite">{showNotes?notes.map(note=><article className="discussion-note" key={note.id}><small>{note.context?.origin==='user'?'我的笔记':'AI 笔记'}</small><MusicMarkdown text={note.content}/></article>):<>
       {!turns.length&&<div className="discussion-empty"><strong>从这首歌开始</strong><p>选中一段音乐，或直接聊整曲。</p><div className="question-suggestions"><button onClick={()=>{setScope('whole');setText('请先查询整曲摘要，从和声、配器与节奏三个角度提出值得深入研究的问题，并给出工程引用。');}}>分析整曲结构</button><button onClick={()=>{setScope('selection');setText('请查询当前区间的和弦与声部，解释和声走向及各乐器的作用，并引用具体位置。');}}>聊选中片段</button><button onClick={()=>{setEditing(true);setScope('selection');setText('请为当前选中区间提出一个配器改编方案，保持旋律和范围不变，生成新版本试听。');}}>试一个改编</button></div></div>}
       {turns.map(turn=><article key={turn.id} className="discussion-turn" data-turn={turn.id} data-status={turn.status}>
         <div className="question-bubble">{String(turn.payload.text)}</div><div className="turn-meta"><i className={active(turn)?'pulsing':''}/><strong>{String((turn.context.provider as {model?:string}|undefined)?.model??turn.payload.model??'Codex')}</strong><span>{statusText[turn.status]}</span></div>
-        <small className="turn-range">{time(Number(turn.context.start_sample)/Number(turn.context.sample_rate))}–{time(Number(turn.context.end_sample)/Number(turn.context.sample_rate))} · {turn.context.track_id?'指定声部':'全部声部'}</small>
+        <small className="turn-range">{time(Number(turn.context.start_sample)/Number(turn.context.sample_rate))}–{time(Number(turn.context.end_sample)/Number(turn.context.sample_rate))} · {turnTrackName(turn)}</small>
         {turn.text&&<div className="discussion-reply">{reply(turn)}</div>}{turn.error&&<p className="discussion-error">{String(turn.error.code)} · {String(turn.error.message)}</p>}
         {!!turn.citations.length&&<div className="citation-list">{turn.citations.map(c=><button key={c.id} onClick={()=>onLocate(c)} title={c.revision_id}>{c.label} ↗</button>)}</div>}
         {!!turn.tools.length&&<ToolHistory tools={turn.tools}/>}
