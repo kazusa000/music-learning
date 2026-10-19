@@ -14,8 +14,7 @@ import webbrowser
 import httpx
 import psutil
 
-from music_learning.api import session_token
-from music_learning.database import Database
+from music_learning.session import session_token
 from music_learning.processes import OwnedProcess
 from music_learning.settings import ROOT, Settings
 
@@ -76,6 +75,8 @@ def start_lock(settings):
 
 
 def supervise(settings):
+    from music_learning.database import Database
+
     stop = settings.path("stop.request")
     stop.unlink(missing_ok=True)
     db = Database(settings)
@@ -140,6 +141,8 @@ def main():
         supervise(settings)
         return
     if args.command in ("migrate", "backup"):
+        from music_learning.database import Database
+
         db = Database(settings)
         db.migrate()
         print(

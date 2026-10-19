@@ -22,5 +22,9 @@ export async function connect() {
     const response = await fetch('/v1/session', {method: 'POST', headers: {Authorization: `Bearer ${token}`}});
     if (!response.ok) throw new Error('本机会话失效，请通过启动器重新打开。');
   }
-  return call('describe_capabilities');
+  // The UI uses generated contracts. Fetching every operation schema is for
+  // tool discovery, not a prerequisite for displaying the user's project.
+  const response=await fetch('/health');
+  if(!response.ok)throw new Error('本机服务尚未就绪。');
+  return response.json();
 }

@@ -100,7 +100,7 @@ class Service:
                     }
                 ).encode()
             ).hexdigest()
-            with self.database.transaction() as db:
+            with self.database.transaction(write=mutates) as db:
                 if mutates:
                     receipt = (
                         db.execute(
@@ -353,7 +353,7 @@ class Service:
                 "transports": {
                     "upload": "PUT /v1/uploads (streamed bytes)",
                     "asset_bytes": "GET /v1/assets/{sha}",
-                    "events": "GET /v1/events (SSE, Last-Event-ID or after)",
+                    "events": "GET /v1/events (SSE, Last-Event-ID or after; live_only=true skips initial backlog)",
                 },
                 "job_kinds": [
                     "instrument.capture",

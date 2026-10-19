@@ -1,15 +1,26 @@
-import {useEffect,useRef,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import type {Citation,Conversation,DialogueTurn,Job,Revision} from '../../../packages/contracts/types';
 import {call} from './api';
+import {subscribeDomain} from './events';
 
 const time=(s:number)=>`${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toFixed(1).padStart(4,'0')}`;
 const active=(t:DialogueTurn)=>['queued','running','cancel_requested'].includes(t.status);
 const statusText:Record<string,string>={queued:'等待讨论',running:'正在研究',cancel_requested:'正在停止',cancelled:'已停止',failed:'未完成',succeeded:'已完成'};
 export type InstrumentDraft={id:string;text:string;revisionId:string;trackId:string};
 
+function ToolHistory({tools}:{tools:DialogueTurn['tools']}){
+  const [open,setOpen]=useState(false),[expanded,setExpanded]=useState<number|null>(null);
+  return <details className="tool-history" onToggle={e=>setOpen(e.currentTarget.open)}><summary>{tools.length} 条工程查询 · 查看依据</summary>{open&&tools.map((tool,i)=><details key={i} onToggle={e=>{if(e.target===e.currentTarget)setExpanded(e.currentTarget.open?i:null);}}><summary>{String((tool.arguments as Record<string,unknown>)?.action??'summary')} · {tool.success?'完成':'失败'}</summary>{expanded===i&&<pre>{JSON.stringify(tool,null,2)}</pre>}</details>)}</details>;
+}
+
+const savedLogin=()=>{try{return localStorage.getItem('music-learning-login-mode')==='existing'?'existing':'isolated';}catch{return 'isolated';}};
+const mergeTurns=(current:DialogueTurn[],items:DialogueTurn[])=>items.map(item=>{
+  const previous=current.find(t=>t.id===item.id);return previous&&previous.updated_at>item.updated_at?previous:item;
+});
+
 export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCompare,instrumentDraft,onConsumeDraft}:{revision:Revision;headId:string;start:number;end:number;trackId:string|null;onLocate:(citation:Citation)=>void;jobs:Job[];onCompare:(id:string)=>void;instrumentDraft?:InstrumentDraft|null;onConsumeDraft?:()=>void}){
   const [turns,setTurns]=useState<DialogueTurn[]>([]),[notes,setNotes]=useState<Conversation[]>([]);
-  const [text,setText]=useState(''),[login,setLogin]=useState('isolated'),[scope,setScope]=useState('whole');
+  const [text,setText]=useState(''),[login,setLogin]=useState(savedLogin),[scope,setScope]=useState('whole');
   const [editing,setEditing]=useState(false),[structural,setStructural]=useState(false);
   const [error,setError]=useState(''),[busy,setBusy]=useState(false),[showNotes,setShowNotes]=useState(false);
   const [draftBinding,setDraftBinding]=useState<InstrumentDraft|null>(null);
@@ -20,16 +31,34 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
   useEffect(()=>{if(follow.current&&history.current)history.current.scrollTop=history.current.scrollHeight;},[last?.id,last?.text,last?.status,showNotes,notes.length]);
   const rate=revision.snapshot.sample_rate??44100,duration=revision.snapshot.duration_samples??0;
   const a=scope==='whole'?0:Math.round(start*rate),b=scope==='whole'?duration:Math.round(end*rate);
-  async function refresh(){
+  const refresh=useCallback(async()=>{
     const [items,messages]=await Promise.all([call<DialogueTurn[]>('dialogue.list',{project_id:revision.project_id,limit:1000}),
       call<Conversation[]>('conversations.list',{project_id:revision.project_id,limit:1000})]);
-    setTurns(items);setNotes(messages.filter(m=>m.role==='note'));
-  }
+    setTurns(current=>mergeTurns(current,items));setNotes(messages.filter(m=>m.role==='note'));
+  },[revision.project_id]);
   useEffect(()=>{let live=true;const update=async()=>{
     const [items,messages]=await Promise.all([call<DialogueTurn[]>('dialogue.list',{project_id:revision.project_id,limit:1000}),call<Conversation[]>('conversations.list',{project_id:revision.project_id,limit:1000})]);
-    if(live){setTurns(items);setNotes(messages.filter(m=>m.role==='note'));}
-  };void update().catch(e=>{if(live)setError(e.message);});const timer=setInterval(()=>void update().catch(()=>{}),900);
-    return()=>{live=false;clearInterval(timer);};},[revision.project_id]);
+    if(live){setTurns(current=>mergeTurns(current,items));setNotes(messages.filter(m=>m.role==='note'));}
+  };void update().catch(e=>{if(live)setError(e.message);});
+    let pending:ReturnType<typeof setTimeout>|undefined;
+    const unsubscribe=subscribeDomain(event=>{if(event.type==='connection.ready'||event.project_id===revision.project_id&&(event.type.startsWith('dialogue.')||event.type==='note.saved')){
+      clearTimeout(pending);pending=setTimeout(()=>void update().catch(()=>{}),80);
+    }});
+    const timer=setInterval(()=>void update().catch(()=>{}),15000);
+    return()=>{live=false;clearInterval(timer);clearTimeout(pending);unsubscribe();};},[revision.project_id]);
+  const activeIds=turns.filter(active).map(t=>t.id).join(',');
+  useEffect(()=>{
+    if(!activeIds)return;
+    let live=true,running=false;
+    const update=async()=>{if(running)return;running=true;try{
+      const items=await Promise.all(activeIds.split(',').map(turn_id=>call<DialogueTurn>('dialogue.get',{project_id:revision.project_id,turn_id})));
+      if(live)setTurns(current=>current.map(turn=>{
+        const item=items.find(t=>t.id===turn.id);return item&&item.updated_at>=turn.updated_at?item:turn;
+      }));
+    }finally{running=false;}};
+    const timer=setInterval(()=>void update().catch(()=>{}),900);
+    return()=>{live=false;clearInterval(timer);};
+  },[revision.project_id,activeIds]);
   async function submit(){if(!text.trim())return;setBusy(true);setError('');try{
     if(draftBinding&&(draftBinding.revisionId!==revision.id||draftBinding.trackId!==trackId))throw new Error('乐器草稿绑定的版本或声部已改变，请重新选择乐器。');
     await call('dialogue.submit',{project_id:revision.project_id,revision_id:revision.id,text,start_sample:a,end_sample:b,
@@ -70,7 +99,7 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
         <small className="turn-range">{time(Number(turn.context.start_sample)/Number(turn.context.sample_rate))}–{time(Number(turn.context.end_sample)/Number(turn.context.sample_rate))} · {turn.context.track_id?'指定声部':'全部声部'}</small>
         {turn.text&&<div className="discussion-reply">{reply(turn)}</div>}{turn.error&&<p className="discussion-error">{String(turn.error.code)} · {String(turn.error.message)}</p>}
         {!!turn.citations.length&&<div className="citation-list">{turn.citations.map(c=><button key={c.id} onClick={()=>onLocate(c)} title={c.revision_id}>{c.label} ↗</button>)}</div>}
-        {!!turn.tools.length&&<details className="tool-history"><summary>{turn.tools.length} 条工程查询 · 查看依据</summary>{turn.tools.map((tool,i)=><details key={i}><summary>{String((tool.arguments as Record<string,unknown>)?.action??'summary')} · {tool.success?'完成':'失败'}</summary><pre>{JSON.stringify(tool,null,2)}</pre></details>)}</details>}
+        {!!turn.tools.length&&<ToolHistory tools={turn.tools}/>}
         <div className="turn-actions">{active(turn)?<button onClick={()=>void control(turn,'dialogue.cancel')}>停止</button>:turn.status==='succeeded'?<button onClick={()=>void save(turn)}>保存为研究笔记</button>:<button onClick={()=>void control(turn,'dialogue.retry')}>重试此问题</button>}</div>
         {!!turn.context.arrangement&&(()=>{const receipt=turn.context.arrangement as {revision_id:string;before_revision:string;render_job_id:string;diff:Record<string,{added?:string[];removed?:string[];changed?:string[]}>};
           const render=jobs.find(j=>j.id===receipt.render_job_id),exports=jobs.filter(j=>j.kind==='project.export'&&j.revision_id===receipt.revision_id);
@@ -82,7 +111,7 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
     <div className="discussion-compose"><div className="discussion-context"><select aria-label="讨论范围" value={scope} onChange={e=>setScope(e.target.value)}><option value="whole">整曲</option><option value="selection">循环区间 / 所选声部</option></select><code>{revision.id.slice(0,8)}</code></div><small>{time(a/rate)}–{time(b/rate)} · {(scope==='selection'||editing)&&trackId?'指定声部':'全部声部'} · 版本已固定</small>
       <div className="discussion-intent"><button aria-label="仅讨论模式" aria-pressed={!editing} onClick={()=>setEditing(false)}>讨论</button><button aria-label="允许改编模式" aria-pressed={editing} onClick={()=>{setEditing(true);setScope('selection');}}>改编</button>{editing&&<label><input type="checkbox" aria-label="允许整轨插件和自动化" checked={structural} onChange={e=>setStructural(e.target.checked)}/>允许整轨插件 / 自动化</label>}</div>
       <textarea aria-label="讨论问题" placeholder="研究和弦、配器、节奏……" value={text} onChange={e=>setText(e.target.value)} rows={3} maxLength={12000}/>
-      <div className="compose-actions"><select aria-label="Codex 登录方式" value={login} onChange={e=>setLogin(e.target.value)}><option value="isolated">应用独立登录</option><option value="existing">使用既有 Codex 登录</option></select><button disabled={!text.trim()||busy} onClick={()=>void save()}>记笔记</button><button className="send-discussion" disabled={!text.trim()||busy||turns.some(active)} onClick={()=>void submit()}>{busy?'保存中':editing?'改编 ↗':'发送 ↗'}</button></div>
+      <div className="compose-actions"><select aria-label="Codex 登录方式" value={login} onChange={e=>{setLogin(e.target.value);try{localStorage.setItem('music-learning-login-mode',e.target.value);}catch{/* preference storage is optional */}}}><option value="isolated">应用独立登录</option><option value="existing">使用既有 Codex 登录</option></select><button disabled={!text.trim()||busy} onClick={()=>void save()}>记笔记</button><button className="send-discussion" disabled={!text.trim()||busy||turns.some(active)} onClick={()=>void submit()}>{busy?'保存中':editing?'改编 ↗':'发送 ↗'}</button></div>
       <p className="discussion-footnote">使用 Codex 账户额度。基于事件与候选分析，未向模型发送音频。</p>{error&&<p className="discussion-error" role="alert">{error}</p>}
     </div>
   </div>;

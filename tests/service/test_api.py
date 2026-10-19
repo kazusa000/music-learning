@@ -110,6 +110,19 @@ def test_all_operations_discoverable_sdk_same_transport_batch_and_read_only_copy
     assert uploaded["bytes"] == before.st_size
 
 
+def test_live_only_events_skip_backlog_and_respect_reconnect_cursor(http, service, project):
+    cursor = invoke(service, "events.list", {"project_id": project["id"]})[-1]["cursor"]
+    params = {"project_id": project["id"], "follow": "false", "live_only": "true"}
+    response = http.get("/v1/events", params=params)
+    assert response.status_code == 200 and "event: domain" not in response.text
+    invoke(service, "projects.rename", {"project_id": project["id"], "title": "changed"}, project["current_revision"])
+    for query, headers in ((params, {"Last-Event-ID": str(cursor)}), ({**params, "after": cursor}, {})):
+        response = http.get("/v1/events", params=query, headers=headers)
+        assert response.status_code == 200
+        assert "revision.created" in response.text
+        assert f"id: {cursor}\n" not in response.text
+
+
 def test_durable_event_cursor_and_sse_reconnect(http, service, project):
     first = invoke(service, "events.list", {"project_id": project["id"]})
     cursor = first[-1]["cursor"]

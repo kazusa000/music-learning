@@ -47,10 +47,11 @@ class Database:
             command.upgrade(cfg, "head")
 
     @contextmanager
-    def transaction(self):
-        # Serialize read-check-write operations across API and worker processes.
+    def transaction(self, *, write=True):
+        # Writers retain atomic read-check-write semantics. WAL readers must not
+        # reserve the writer lock while loading a large immutable revision.
         with self.engine.connect() as c:
-            c.exec_driver_sql("BEGIN IMMEDIATE")
+            c.exec_driver_sql("BEGIN IMMEDIATE" if write else "BEGIN")
             try:
                 yield c
                 c.commit()

@@ -9,30 +9,19 @@ import hmac
 import json
 import logging
 import os
-import secrets
 import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import insert, select
+from sqlalchemy import func, insert, select
 
 from . import schema_v1 as t
 from .contracts import new_id
 from .database import Database
 from .service import DomainError, Service, canonical, row
 from .settings import ROOT, Settings
-
-
-def session_token(settings):
-    path = settings.path("session-token.local")
-    if not path.exists():
-        try:
-            with path.open("x", encoding="ascii") as stream:
-                stream.write(secrets.token_urlsafe(48))
-        except FileExistsError:
-            pass
-    return path.read_text(encoding="ascii").strip()
+from .session import session_token
 
 
 async def bounded_body(request, maximum):
@@ -214,10 +203,19 @@ def create_app(settings: Settings | None = None):
             raise DomainError("asset_corrupt", "Asset failed integrity validation", 409) from error
         return FileResponse(path, media_type=metadata["media_type"], filename=sha)
 
+    def event_head():
+        with database.transaction(write=False) as db:
+            return db.execute(select(func.max(t.events.c.cursor))).scalar() or 0
+
     @app.get("/v1/events")
-    async def events(request: Request, after: int = 0, project_id: str | None = None, follow: bool = True):
+    async def events(
+        request: Request, after: int = 0, project_id: str | None = None,
+        follow: bool = True, live_only: bool = False,
+    ):
         try:
             after = int(request.headers.get("last-event-id", after))
+            if live_only and "last-event-id" not in request.headers and after == 0:
+                after = await asyncio.to_thread(event_head)
             service.execute(
                 {"operation": "events.list", "arguments": {"after": after, "project_id": project_id}}
             )

@@ -31,6 +31,21 @@ def test_migration_backup_restart_and_foreign_keys(settings, service, project):
     reopened.close()
 
 
+def test_wal_project_read_does_not_wait_for_uncommitted_writer(service, project):
+    from sqlalchemy import update
+
+    executor = ThreadPoolExecutor(1)
+    try:
+        with service.database.transaction() as db:
+            db.execute(update(t.projects).where(t.projects.c.id == project["id"]).values(title="pending"))
+            result = executor.submit(invoke, service, "projects.get", {"project_id": project["id"]})
+            # A reader sees the committed snapshot without reserving SQLite's writer lock.
+            assert result.result(timeout=2)["title"] == project["title"]
+        assert invoke(service, "projects.get", {"project_id": project["id"]})["title"] == "pending"
+    finally:
+        executor.shutdown(wait=True)
+
+
 def test_atomic_receipt_concurrent_replay_and_changed_payload(service):
     def create(_):
         return invoke(service, "projects.create", {"title": "Same command"}, key="stable-key")

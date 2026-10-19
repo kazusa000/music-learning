@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import type {Project, Job, Revision, StageRecord, PreprocessingView, PreprocessingResult} from '../../../packages/contracts/types';
 import {call, connect, result} from './api';
 import {Workbench} from './Workbench';
+import {publishDomain} from './events';
 import './style.css';
 
 const connection = connect();
@@ -74,12 +75,17 @@ function App() {
     void connection.then(() => {
       if (!active) return;
       update();
-      stream = new EventSource('/v1/events');
-      stream.onopen = () => {setConnected(true); update();};
+      stream = new EventSource('/v1/events?live_only=true');
+      let opened=false;
+      stream.onopen = () => {setConnected(true);if(opened){update();publishDomain({type:'connection.ready',project_id:null,revision_id:null,job_id:null});}opened=true;};
       stream.onerror = () => setConnected(false);
-      stream.addEventListener('domain', () => {clearTimeout(debounce); debounce = setTimeout(update, 120);});
+      stream.addEventListener('domain', event => {
+        const domain=JSON.parse((event as MessageEvent).data);publishDomain(domain);
+        if(domain.type.startsWith('dialogue.')||domain.type.startsWith('audition.')||domain.type==='note.saved')return;
+        clearTimeout(debounce);debounce=setTimeout(update,120);
+      });
     }).catch(e => setError(e.message));
-    const timer = setInterval(update, 3000);
+    const timer = setInterval(update, 15000);
     return () => {active = false; clearInterval(timer); clearTimeout(debounce); stream?.close();};
   }, [refresh]);
 

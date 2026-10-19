@@ -9,6 +9,7 @@ import type {EditRequest} from './DawEditor';
 import {trackName as instrumentName} from './dawEditing';
 import {call} from './api';
 import {Transport} from './transport';
+import {subscribeDomain} from './events';
 import './workbench.css';
 import './daw.css';
 
@@ -116,8 +117,14 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
       setRevision(read);setPublication(full.at(-1)??preprocessed.publication);setVersions(list.slice().reverse());
     };
     void update().catch(e=>{if(active)setError(e.message);});
-    const timer=setInterval(()=>void update().catch(()=>{}),2500);
-    return()=>{active=false;clearInterval(timer);};
+    let pending:ReturnType<typeof setTimeout>|undefined;
+    const unsubscribe=subscribeDomain(event=>{
+      if(event.type==='connection.ready'||event.project_id===head.project_id&&['revision.created','preprocessing.completed','render.published'].includes(event.type)){
+        clearTimeout(pending);pending=setTimeout(()=>void update().catch(()=>{}),120);
+      }
+    });
+    const timer=setInterval(()=>void update().catch(()=>{}),15000);
+    return()=>{active=false;clearInterval(timer);clearTimeout(pending);unsubscribe();};
   },[versionId,head]);
 
   useEffect(()=>{if(localCommit.current&&head.id!==commitBefore.current)localCommit.current=null;
@@ -167,6 +174,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   },[publication?.manifest_asset_id]);
 
   useEffect(()=>{
+    if(inspector!=='plugins')return;
     let active=true;
     void Promise.all((snapshot.plugins??[]).map(async plugin=>{
       if(!plugin.descriptor_asset_id)return null;
@@ -174,7 +182,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
       return [plugin.id,raw.plugin??raw] as const;
     })).then(items=>{if(active)setPluginInfo(Object.fromEntries(items.filter((item):item is readonly [string,PluginInfo]=>item!==null)));}).catch(()=>{});
     return()=>{active=false;};
-  },[revision.id]);
+  },[revision.id,inspector]);
 
   useEffect(()=>{
     let active=true;setSourceIssues([]);
@@ -213,8 +221,14 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
         const status=applyingCue.current?'loading':player.current.playing?'playing':cue.desired.playing?(player.current.context?.state==='running'?'error':'needs_activation'):'paused';
         await call('audition.report',{project_id:head.project_id,sequence:cue.sequence,position_sample:Math.round(player.current.position*rate),status},head.id,true);
       }};
-    void poll().catch(()=>{});const timer=setInterval(()=>void poll().catch(()=>{}),1500);
-    return()=>{active=false;clearInterval(timer);};
+    let pending:ReturnType<typeof setTimeout>|undefined;
+    const unsubscribe=subscribeDomain(event=>{
+      if(event.type==='connection.ready'||event.project_id===head.project_id&&event.type==='audition.set'){
+        clearTimeout(pending);pending=setTimeout(()=>void poll().catch(()=>{}),50);
+      }
+    });
+    void poll().catch(()=>{});const timer=setInterval(()=>void poll().catch(()=>{}),5000);
+    return()=>{active=false;clearInterval(timer);clearTimeout(pending);unsubscribe();};
   },[head.project_id,head.id,revision.id,rate,applyCue]);
 
   function desired(patch:Partial<AuditionState>={}):AuditionState{
