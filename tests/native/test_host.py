@@ -195,6 +195,42 @@ def test_pickup_ppq_reaches_plugin_without_moving_samples(host, fixture_paramete
     assert channels[1][0] == -4  # VST3 carries the preceding bar's PPQ start, not a numeric bar count.
 
 
+@pytest.mark.parametrize("case",["automation","midi"])
+def test_serial_plugin_inputs_follow_upstream_latency(host,fixture_parameters,tmp_path,case):
+    source=tmp_path/"serial-source.wav"
+    source_wave(source)
+    first={"id":"first","path":str(FIXTURE),"parameters":{fixture_parameters["Gain"]:1}}
+    second={"id":"second","path":str(FIXTURE),"parameters":{fixture_parameters["Gain"]:.5 if case=="automation" else 1}}
+    track={"id":"serial","plugins":[first,second]}
+    if case=="automation":
+        track["audio_clips"]=[{"path":str(source),"sample":0}]
+        track["automation"]=[{"plugin_id":"second","parameter_id":fixture_parameters["Gain"],"points":[{"sample":123,"value":1}]}]
+    else:
+        second["parameters"][fixture_parameters["Mode"]]=.25
+        track["notes"]=[{"sample":37,"duration_samples":196,"note":60,"velocity":.8}]
+    result=render(host,project(track),tmp_path/(case+".wav"))
+    assert result["tracks"][0]["latency_removed_samples"]==256
+    for values in read_float_wave(Path(result["output_path"]))[1]:
+        expected=[(.125 if i<123 else .25) if case=="automation" else (.25 if 37<=i<233 else 0) for i in range(len(values))]
+        assert max(abs(a-b) for a,b in zip(values,expected))<1e-6
+
+
+def test_serial_effect_transport_uses_compensated_source_time(host,fixture_parameters,tmp_path):
+    source=tmp_path/"serial-clock.wav"
+    source_wave(source)
+    data=project({"id":"clock","plugins":[{"id":"first","path":str(FIXTURE),"parameters":{fixture_parameters["Gain"]:1}},
+        {"id":"clock","path":str(FIXTURE),"parameters":{fixture_parameters["Gain"]:1,fixture_parameters["Mode"]:.5}}],
+        "audio_clips":[{"path":str(source),"sample":0}]})
+    data["tempo"]=[{"sample":0,"bpm":120},{"sample":777,"bpm":90}]
+    data["meter"]=[{"sample":0,"numerator":4,"denominator":4},{"sample":1001,"numerator":3,"denominator":4}]
+    result=render(host,data,tmp_path/"clock-out.wav")
+    _,(left,right)=read_float_wave(Path(result["output_path"]))
+    assert max(abs(value-.12) for value in left[:777])<1e-6
+    assert max(abs(value-.09) for value in left[777:])<1e-6
+    assert max(abs(value-.04) for value in right[:1001])<1e-6
+    assert max(abs(value-.03) for value in right[1001:])<1e-6
+
+
 def test_invalid_parameter_publishes_no_audio(host, tmp_path):
     output = tmp_path / "invalid.wav"
     track = {"id": "bad", "plugins": [{"id": "fx", "path": str(FIXTURE), "parameters": {"missing": 0.5}}],

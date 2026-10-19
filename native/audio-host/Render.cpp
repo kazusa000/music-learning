@@ -352,14 +352,17 @@ var render(const var& request)
             require(index >= 0, "Automation plugin not found");
             auto* param = parameter(*plugins[static_cast<size_t>(index)], text(lane, "parameter_id"));
             require(param->isAutomatable(), "Parameter does not support automation");
+            int precedingLatency = 0;
+            for (int i = 0; i < index; ++i) precedingLatency += plugins[static_cast<size_t>(i)]->getLatencySamples();
             int64 previous = -1;
             float previousValue = 0.0f;
             for (const auto& point : array(lane, "points"))
             {
                 checkKeys(point, {"sample", "value"});
-                const auto sample = integer(point, "sample");
+                const auto sourceSample = integer(point, "sample");
+                const auto sample = sourceSample + precedingLatency;
                 const auto value = number(point, "value", -1);
-                require(sample >= 0 && sample <= duration && sample > previous && value >= 0 && value <= 1,
+                require(sourceSample >= 0 && sourceSample <= duration && sample > previous && value >= 0 && value <= 1,
                         "Invalid automation points");
                 if (interpolation == "linear" && previous >= 0 && previousValue != static_cast<float>(value))
                     ramps.push_back({previous, sample, param, previousValue, static_cast<float>(value)});
@@ -432,7 +435,8 @@ var render(const var& request)
         require(!events.empty() || !clips.empty() || static_cast<bool>(field(track, "allow_empty", false)), "Track has no MIDI or audio source");
         require(events.empty() || !plugins.empty(), "MIDI requires an instrument plugin");
         AudioBuffer<float> block(4, blockSize), source(2, blockSize);
-        size_t eventIndex = 0, automationIndex = 0;
+        size_t automationIndex = 0;
+        std::vector<size_t> eventIndices(plugins.size(), 0);
         int64 cursor = 0;
         int blocks = 0;
         while (cursor < total + latency)
@@ -444,6 +448,14 @@ var render(const var& request)
                 point.parameter->setValueNotifyingHost(point.value);
             }
             int64 end = timeline.nextBoundary(std::min(cursor + blockSize, total + latency));
+            int transportDelay = 0;
+            for (const auto& plugin : plugins)
+            {
+                timeline.cursor = cursor - transportDelay;
+                end = std::min(end, timeline.nextBoundary(end - transportDelay) + transportDelay);
+                transportDelay += plugin->getLatencySamples();
+            }
+            timeline.cursor = cursor;
             for (const auto& ramp : ramps)
             {
                 if (ramp.start <= cursor && cursor < ramp.end)
@@ -470,17 +482,19 @@ var render(const var& request)
                 for (int channel = 0; channel < 2; ++channel)
                     block.addFrom(channel, static_cast<int>(begin - cursor), source, channel, 0, n, clip.gain);
             }
-            MidiBuffer midi;
-            while (eventIndex < events.size() && events[eventIndex].sample < end)
-            {
-                const auto& event = events[eventIndex++];
-                require(event.sample >= cursor, "MIDI scheduler lost an event");
-                midi.addEvent(event.message, static_cast<int>(event.sample - cursor));
-            }
             int precedingLatency = 0;
             for (size_t pluginIndex = 0; pluginIndex < plugins.size(); ++pluginIndex)
             {
                 auto& plugin = plugins[pluginIndex];
+                timeline.cursor = cursor - precedingLatency;
+                MidiBuffer midi;
+                auto& eventIndex = eventIndices[pluginIndex];
+                while (eventIndex < events.size() && events[eventIndex].sample < end - precedingLatency)
+                {
+                    const auto& event = events[eventIndex++];
+                    require(event.sample >= cursor - precedingLatency, "MIDI scheduler lost an event");
+                    midi.addEvent(event.message, static_cast<int>(event.sample - cursor + precedingLatency));
+                }
                 block.clear(2, 0, count); block.clear(3, 0, count);
                 for (auto& entry : sidechains)
                 {

@@ -46,7 +46,7 @@ def audio_metadata(path):
             raise ValueError("non-finite audio samples")
         peak = max(peak, float(np.max(np.abs(block))))
         power += float(np.square(block.astype(np.float64)).sum())
-        clipped += int((np.abs(block) > 1).sum())
+        clipped += int((np.abs(block) >= 1).sum())
         count += block.size
     return {
         "sample_rate": info.samplerate,

@@ -303,7 +303,7 @@ class Service:
         if op == "describe_capabilities":
             return {
                 "schema_version": 1,
-                "phase": "P3-development",
+                "phase": "P3",
                 "operations": {
                     name: {
                         "mutates": write,
@@ -343,6 +343,7 @@ class Service:
                     "vendor_private_preset_browsers",
                     "physical_unit_parameter_input",
                     "midi_clip_audio_gain",
+                    "plugin_generated_midi_routing",
                 ],
                 "daw": {
                     "routing": "acyclic stereo graph; post-fader sends and stereo sidechains; dynamic latency changes reject the render",

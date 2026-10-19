@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import importlib.metadata
 import json
 import math
 from pathlib import Path
@@ -41,10 +42,20 @@ class Production:
         self.allowed = set(self.job["allowed_asset_ids"])
         self.code_paths = [
             Path(__file__),
-            ROOT / "src/music_learning/graph.py",
-            ROOT / "src/music_learning/contracts.py",
+            *sorted((ROOT / "src/music_learning").glob("*.py")),
+            *sorted(ROOT.glob("requirements*.lock")),
+            ROOT / "scripts/pipeline_adapter.py",
+            ROOT / "scripts/native_host.py",
+            ROOT / "scripts/media_runtime.py",
+            ROOT / "config/media-runtime.json",
             self.settings.native_host,
         ]
+        self.environment = dict(
+            python=sys.version,
+            packages={
+                name: importlib.metadata.version(name) for name in ("numpy", "soundfile", "mido", "pydantic")
+            },
+        )
         self.fingerprint = {
             str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else "native_host": digest(path)
             for path in self.code_paths
@@ -306,6 +317,7 @@ class Production:
             issues=issues,
             pre_roll_samples=start,
             implementation_sha256=self.fingerprint,
+            environment=self.environment,
         )
         report_path = self.directory / "report.json"
         write_json(report_path, report)
@@ -321,6 +333,7 @@ class Production:
                 end_sample=end,
                 tail_samples=tail,
                 implementation_sha256=self.fingerprint,
+                environment=self.environment,
             ),
         )
         manifest_sha = self.add(manifest)
