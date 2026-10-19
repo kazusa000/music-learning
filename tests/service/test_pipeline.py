@@ -255,8 +255,11 @@ def test_reanalysis_is_candidate_and_invalid_ready_publication_rolls_back(servic
         )
 
 
+@pytest.mark.parametrize(
+    "fault", ["fixture_model_failure", "cuda_oom_injected", "model_access_denied_injected"]
+)
 def test_partial_failure_retries_reuse_validated_checkpoints_and_reject_late_writer(
-    service, project, upload, monkeypatch
+    service, project, upload, monkeypatch, fault
 ):
     project = imported(service, project, upload)
     from music_learning import pipeline
@@ -271,7 +274,7 @@ def test_partial_failure_retries_reuse_validated_checkpoints_and_reject_late_wri
         if suffix == "muscriptor":
             return {
                 "ok": False,
-                "error": {"code": "fixture_model_failure", "message": "intentional failure"},
+                "error": {"code": fault, "message": "intentional bounded failure injection"},
             }, directory
         path = directory / "artifact.json"
         path.write_text(json.dumps({"stage": suffix}), encoding="utf-8")
@@ -297,6 +300,7 @@ def test_partial_failure_retries_reuse_validated_checkpoints_and_reject_late_wri
     first = queued(service, project)
     Worker(service.database).run_once()
     assert invoke(service, "jobs.get", {"job_id": first["id"]})["status"] == "failed"
+    assert invoke(service, "jobs.get", {"job_id": first["id"]})["error"]["code"] == fault
     retry = invoke(service, "jobs.retry", {"job_id": first["id"]}, project["current_revision"])
     Worker(service.database).run_once()
     assert calls == ["normalize", "demucs", "muscriptor", "muscriptor"]
