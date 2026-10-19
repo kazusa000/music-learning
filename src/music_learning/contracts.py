@@ -734,6 +734,14 @@ class PatchPlugin(Model):
     preset_plugin_id: Id | None = None
 
 
+class PatchNote(Model):
+    op: Literal["patch_note"]
+    id: Id
+    pitch: int | None = Field(default=None, ge=0, le=127)
+    velocity: float | None = Field(default=None, gt=0, le=1)
+    provenance: Provenance | None = None
+
+
 EditOperation = Annotated[
     PutEntity
     | DeleteEntity
@@ -742,7 +750,8 @@ EditOperation = Annotated[
     | SetTrackOrder
     | ArrangeClip
     | FreezeTrack
-    | PatchPlugin,
+    | PatchPlugin
+    | PatchNote,
     Field(discriminator="op"),
 ]
 

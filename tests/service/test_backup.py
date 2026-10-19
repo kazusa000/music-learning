@@ -106,6 +106,53 @@ def test_backup_and_restore_are_real_persistent_jobs(service, project, tmp_path)
         )
 
 
+def test_restore_preserves_terminal_pipeline_stage_history(service, project, tmp_path):
+    import time
+    import sqlite3
+    from sqlalchemy import insert
+    from music_learning import contracts as c, schema_v1 as t, schema_v2 as p
+
+    job_id = c.new_id()
+    now = time.time()
+    with service.database.transaction() as db:
+        db.execute(
+            insert(t.jobs).values(
+                id=job_id,
+                project_id=project["id"],
+                revision_id=project["current_revision"],
+                kind="project.preprocess",
+                status="cancelled",
+                payload={},
+                attempt=0,
+                max_attempts=1,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.execute(
+            insert(p.job_stages).values(
+                job_id=job_id,
+                stage="normalize",
+                ordinal=0,
+                status="pending",
+                cache_hit=False,
+                progress={},
+                updated_at=now,
+            )
+        )
+    task = tmp_path / "task"
+    task.mkdir()
+    archive = create_archive(service.settings, dict(destination=str(tmp_path / "archive")), task)
+    result = restore_archive(
+        service.settings, dict(archive=archive["archive_path"], destination=str(tmp_path / "restore")), task
+    )
+    with sqlite3.connect(Path(result["data_root"]) / "projects.sqlite3") as db:
+        assert (
+            db.execute("SELECT status FROM job_stages WHERE job_id=?", (job_id,)).fetchone()[0] == "pending"
+        )
+        assert db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()[0] == "cancelled"
+
+
 @pytest.mark.parametrize("corruption", ["extra_path", "object_data", "archive_hash"])
 def test_corruption_and_traversal_never_produce_a_ready_restore(service, project, tmp_path, corruption):
     sha = service.storage.put(b"immutable source")

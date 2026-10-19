@@ -43,6 +43,7 @@
                 "arrange_clip": "#/$defs/ArrangeClip",
                 "delete": "#/$defs/DeleteEntity",
                 "freeze": "#/$defs/FreezeTrack",
+                "patch_note": "#/$defs/PatchNote",
                 "patch_plugin": "#/$defs/PatchPlugin",
                 "put": "#/$defs/PutEntity",
                 "routing": "#/$defs/SetRouting",
@@ -75,6 +76,9 @@
               },
               {
                 "$ref": "#/$defs/PatchPlugin"
+              },
+              {
+                "$ref": "#/$defs/PatchNote"
               }
             ]
           },
@@ -316,6 +320,7 @@
                 "arrange_clip": "#/$defs/ArrangeClip",
                 "delete": "#/$defs/DeleteEntity",
                 "freeze": "#/$defs/FreezeTrack",
+                "patch_note": "#/$defs/PatchNote",
                 "patch_plugin": "#/$defs/PatchPlugin",
                 "put": "#/$defs/PutEntity",
                 "routing": "#/$defs/SetRouting",
@@ -348,6 +353,9 @@
               },
               {
                 "$ref": "#/$defs/PatchPlugin"
+              },
+              {
+                "$ref": "#/$defs/PatchNote"
               }
             ]
           },
@@ -1927,6 +1935,66 @@
         }
       },
       "title": "Page",
+      "type": "object"
+    },
+    "PatchNote": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "patch_note",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "pitch": {
+          "anyOf": [
+            {
+              "maximum": 127,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pitch"
+        },
+        "velocity": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Velocity"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "op",
+        "id"
+      ],
+      "title": "PatchNote",
       "type": "object"
     },
     "PatchPlugin": {

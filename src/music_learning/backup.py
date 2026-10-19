@@ -227,17 +227,25 @@ def restore_archive(settings, value, directory):
             "UPDATE jobs SET status='failed',error=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE status NOT IN ('succeeded','failed','cancelled')",
             (error, now),
         )
-        if version in ("0002", "0003", "0004", "0005"):
+        if active and version in ("0002", "0003", "0004", "0005"):
             database.execute(
-                "UPDATE job_stages SET status='failed',error=?,updated_at=? WHERE status IN ('pending','running')",
-                (error, now),
+                "UPDATE job_stages SET status='failed',error=?,updated_at=? WHERE status IN ('pending','running') AND job_id IN ("
+                + ",".join("?" for _ in active)
+                + ")",
+                (error, now, *active),
             )
         if version in ("0004", "0005"):
             database.execute(
                 "UPDATE dialogue_turns SET status='failed',error=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE status NOT IN ('succeeded','failed','cancelled')",
                 (error, now),
             )
-        database.execute("UPDATE projects SET status='failed' WHERE status IN ('queued','processing')")
+        if active:
+            database.execute(
+                "UPDATE projects SET status='failed' WHERE status IN ('queued','processing') AND id IN (SELECT project_id FROM jobs WHERE id IN ("
+                + ",".join("?" for _ in active)
+                + "))",
+                active,
+            )
         sql_check(database)
     config = asdict(settings)
     config.update(data_root=str(destination), port=payload["port"])

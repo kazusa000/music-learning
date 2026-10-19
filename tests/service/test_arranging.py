@@ -158,6 +158,65 @@ def test_enqueue_failure_rolls_back_edit_revision_and_receipt(service, project, 
     )
 
 
+def test_note_patch_preserves_timing_and_stamps_actual_actor(service, project):
+    rev, track, turn = editable(service, project)
+    old = rev["snapshot"]["notes"][0]
+    result = invoke(
+        service,
+        "arrangements.apply",
+        dict(
+            project_id=project["id"],
+            turn_id=turn["id"],
+            description="Compact note patch",
+            operations=[
+                dict(
+                    op="patch_note",
+                    id=old["id"],
+                    pitch=65,
+                    velocity=0.6,
+                    provenance=dict(origin="user", source_id="wrong-actor"),
+                )
+            ],
+        ),
+        rev["id"],
+    )
+    after = invoke(
+        service, "revisions.get", dict(project_id=project["id"], revision_id=result["revision_id"])
+    )["snapshot"]
+    note = next(n for n in after["notes"] if n["id"] == old["id"])
+    assert note["pitch"] == 65 and note["velocity"] == 0.6
+    assert all(
+        note[k] == old[k]
+        for k in (
+            "start_sample",
+            "end_sample",
+            "track_id",
+            "clip_id",
+            "timing_mode",
+            "notation_beat",
+            "notation_duration",
+        )
+    )
+    assert note["provenance"]["origin"] == "ai_edit" and note["provenance"]["source_id"] == turn["id"]
+
+
+def test_note_patch_cannot_bypass_sustained_boundary_or_change_timing(service, project):
+    rev, track, *_ = musical(service, project)
+    old = rev["snapshot"]["notes"][0]
+    args = dict(
+        project_id=project["id"],
+        scope=dict(track_ids=[track], start_sample=500, end_sample=2000),
+        description="Boundary protection",
+        operations=[dict(op="patch_note", id=old["id"], pitch=65)],
+    )
+    with pytest.raises(DomainError, match="authorized range"):
+        invoke(service, "edits.apply", args, rev["id"])
+    args["operations"][0]["start_sample"] = 500
+    with pytest.raises(DomainError):
+        invoke(service, "edits.apply", args, rev["id"])
+    assert invoke(service, "revisions.get", dict(project_id=project["id"])) == rev
+
+
 def test_structural_plugin_permission_does_not_expand_selected_notes(service, project):
     rev, track, *_ = musical(service, project)
     turn = invoke(

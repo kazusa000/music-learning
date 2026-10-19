@@ -102,6 +102,8 @@ def dispatch(service, db, op, args, request):
         description=args.description,
     )
     for operation in payload.operations:
+        if isinstance(operation, c.PatchNote):
+            operation.provenance = c.Provenance(origin="ai_edit", source_id=turn["id"])
         if isinstance(operation, c.PutEntity) and hasattr(operation.entity, "provenance"):
             operation.entity.provenance = c.Provenance(origin="ai_edit", source_id=turn["id"])
     snapshot = apply(service, db, before, payload)

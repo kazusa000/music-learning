@@ -96,6 +96,23 @@ def apply(service, db, revision, args):
     data = snapshot.model_dump(mode="json")
     data["frozen_tracks"] = {}
     for operation in args.operations:
+        if operation.op == "patch_note":
+            old = next((note for note in data["notes"] if note["id"] == operation.id), None)
+            if old is None:
+                raise ValueError("unknown note")
+            if operation.pitch is None and operation.velocity is None:
+                raise ValueError("note patch must change pitch or velocity")
+            value = copy.deepcopy(old)
+            if operation.pitch is not None:
+                if value["pitch"] != operation.pitch:
+                    value["spelling"] = None
+                value["pitch"] = operation.pitch
+            if operation.velocity is not None:
+                value["velocity"] = operation.velocity
+            value["provenance"] = (
+                operation.provenance or c.Provenance(origin="ai_edit", source_id="edit:" + revision["id"])
+            ).model_dump()
+            operation = c.PutEntity(op="put", collection="notes", entity=c.NoteEvent.model_validate(value))
         if operation.op == "patch_plugin":
             if (
                 not args.scope.structural
