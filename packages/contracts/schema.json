@@ -222,6 +222,135 @@
       "title": "AppendConversation",
       "type": "object"
     },
+    "ApplyEdit": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/EditScope"
+        },
+        "operations": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PutEntity"
+              },
+              {
+                "$ref": "#/$defs/DeleteEntity"
+              },
+              {
+                "$ref": "#/$defs/SetTiming"
+              },
+              {
+                "$ref": "#/$defs/SetRouting"
+              },
+              {
+                "$ref": "#/$defs/SetTrackOrder"
+              },
+              {
+                "$ref": "#/$defs/ArrangeClip"
+              },
+              {
+                "$ref": "#/$defs/FreezeTrack"
+              }
+            ]
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "title": "Operations",
+          "type": "array"
+        },
+        "author": {
+          "default": "agent",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Author",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "scope",
+        "operations",
+        "description"
+      ],
+      "title": "ApplyEdit",
+      "type": "object"
+    },
+    "ArrangeClip": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "arrange_clip",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "move",
+            "duplicate",
+            "split",
+            "trim"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "sample": {
+          "minimum": 0,
+          "title": "Sample",
+          "type": "integer"
+        },
+        "end_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Sample"
+        },
+        "new_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "New Id"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "action",
+        "sample"
+      ],
+      "title": "ArrangeClip",
+      "type": "object"
+    },
     "Asset": {
       "additionalProperties": false,
       "properties": {
@@ -272,6 +401,88 @@
       "title": "AssetRef",
       "type": "object"
     },
+    "AuditionState": {
+      "additionalProperties": false,
+      "properties": {
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "position_sample": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Position Sample",
+          "type": "integer"
+        },
+        "mode": {
+          "default": "original",
+          "enum": [
+            "original",
+            "mix",
+            "tracks",
+            "reference"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "reference_revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Revision Id"
+        },
+        "track_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "title": "Track Ids",
+          "type": "array"
+        },
+        "loop_start_sample": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Loop Start Sample",
+          "type": "integer"
+        },
+        "loop_end_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Loop End Sample"
+        },
+        "loop": {
+          "default": false,
+          "title": "Loop",
+          "type": "boolean"
+        },
+        "playing": {
+          "default": false,
+          "title": "Playing",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "revision_id"
+      ],
+      "title": "AuditionState",
+      "type": "object"
+    },
     "AutomationLane": {
       "additionalProperties": false,
       "properties": {
@@ -281,9 +492,30 @@
           "type": "string"
         },
         "plugin_id": {
-          "pattern": "^[a-f0-9]{32}$",
-          "title": "Plugin Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plugin Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Id"
         },
         "parameter_id": {
           "title": "Parameter Id",
@@ -311,7 +543,6 @@
       },
       "required": [
         "id",
-        "plugin_id",
         "parameter_id",
         "interpolation",
         "points",
@@ -409,6 +640,19 @@
           "title": "Loop",
           "type": "boolean"
         },
+        "content_samples": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Samples"
+        },
         "gain_db": {
           "default": 0,
           "maximum": 24,
@@ -461,6 +705,33 @@
         "description"
       ],
       "title": "CommitSnapshot",
+      "type": "object"
+    },
+    "CompareRevisions": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "before_revision": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Before Revision",
+          "type": "string"
+        },
+        "after_revision": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "After Revision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "before_revision",
+        "after_revision"
+      ],
+      "title": "CompareRevisions",
       "type": "object"
     },
     "ControlEvent": {
@@ -648,6 +919,75 @@
       "title": "CreateProject",
       "type": "object"
     },
+    "DeleteEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "delete",
+          "title": "Op",
+          "type": "string"
+        },
+        "collection": {
+          "enum": [
+            "tracks",
+            "clips",
+            "notes",
+            "controllers",
+            "plugins",
+            "automation",
+            "annotations"
+          ],
+          "title": "Collection",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "collection",
+        "id"
+      ],
+      "title": "DeleteEntity",
+      "type": "object"
+    },
+    "EditScope": {
+      "additionalProperties": false,
+      "properties": {
+        "track_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "title": "Track Ids",
+          "type": "array"
+        },
+        "start_sample": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Start Sample",
+          "type": "integer"
+        },
+        "end_sample": {
+          "minimum": 0,
+          "title": "End Sample",
+          "type": "integer"
+        },
+        "structural": {
+          "default": false,
+          "title": "Structural",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "end_sample"
+      ],
+      "title": "EditScope",
+      "type": "object"
+    },
     "Empty": {
       "additionalProperties": false,
       "properties": {},
@@ -775,6 +1115,75 @@
       "title": "EventRecord",
       "type": "object"
     },
+    "ForkProject": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "title": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "title"
+      ],
+      "title": "ForkProject",
+      "type": "object"
+    },
+    "FreezeTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "freeze",
+          "title": "Op",
+          "type": "string"
+        },
+        "track_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Track Id",
+          "type": "string"
+        },
+        "render_job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Render Job Id"
+        }
+      },
+      "required": [
+        "op",
+        "track_id"
+      ],
+      "title": "FreezeTrack",
+      "type": "object"
+    },
     "Job": {
       "additionalProperties": false,
       "properties": {
@@ -798,7 +1207,10 @@
             "asset.import",
             "plugin.inspect",
             "plugin.scan",
-            "project.preprocess"
+            "project.preprocess",
+            "project.render",
+            "audio.measure",
+            "project.export"
           ],
           "title": "Kind",
           "type": "string"
@@ -957,6 +1369,19 @@
           "title": "Track Id",
           "type": "string"
         },
+        "clip_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clip Id"
+        },
         "pitch": {
           "maximum": 127,
           "minimum": 0,
@@ -1008,6 +1433,26 @@
             }
           ],
           "default": null
+        },
+        "notation_duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Beat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timing_mode": {
+          "default": "sample",
+          "enum": [
+            "sample",
+            "beat"
+          ],
+          "title": "Timing Mode",
+          "type": "string"
         },
         "timing_map_id": {
           "anyOf": [
@@ -1436,6 +1881,62 @@
       "title": "Provenance",
       "type": "object"
     },
+    "PutEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "put",
+          "title": "Op",
+          "type": "string"
+        },
+        "collection": {
+          "enum": [
+            "tracks",
+            "clips",
+            "notes",
+            "controllers",
+            "plugins",
+            "automation",
+            "annotations"
+          ],
+          "title": "Collection",
+          "type": "string"
+        },
+        "entity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Track"
+            },
+            {
+              "$ref": "#/$defs/Clip"
+            },
+            {
+              "$ref": "#/$defs/NoteEvent"
+            },
+            {
+              "$ref": "#/$defs/ControlEvent"
+            },
+            {
+              "$ref": "#/$defs/PluginInstance"
+            },
+            {
+              "$ref": "#/$defs/AutomationLane"
+            },
+            {
+              "$ref": "#/$defs/Annotation"
+            }
+          ],
+          "title": "Entity"
+        }
+      },
+      "required": [
+        "op",
+        "collection",
+        "entity"
+      ],
+      "title": "PutEntity",
+      "type": "object"
+    },
     "QueryAnnotationsResult": {
       "additionalProperties": false,
       "properties": {
@@ -1631,6 +2132,45 @@
       "title": "RenameProject",
       "type": "object"
     },
+    "ReportAudition": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "sequence": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Sequence",
+          "type": "string"
+        },
+        "position_sample": {
+          "minimum": 0,
+          "title": "Position Sample",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "playing",
+            "paused",
+            "loading",
+            "needs_activation",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "sequence",
+        "position_sample",
+        "status"
+      ],
+      "title": "ReportAudition",
+      "type": "object"
+    },
     "Request": {
       "additionalProperties": false,
       "properties": {
@@ -1686,6 +2226,34 @@
         "operation"
       ],
       "title": "Request",
+      "type": "object"
+    },
+    "RestoreRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "description": {
+          "default": "Restore revision",
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "revision_id"
+      ],
+      "title": "RestoreRevision",
       "type": "object"
     },
     "Revision": {
@@ -1843,6 +2411,87 @@
       "title": "RoutingGraph",
       "type": "object"
     },
+    "SetAudition": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/AuditionState"
+        }
+      },
+      "required": [
+        "project_id",
+        "state"
+      ],
+      "title": "SetAudition",
+      "type": "object"
+    },
+    "SetRouting": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "routing",
+          "title": "Op",
+          "type": "string"
+        },
+        "routing": {
+          "$ref": "#/$defs/RoutingGraph"
+        }
+      },
+      "required": [
+        "op",
+        "routing"
+      ],
+      "title": "SetRouting",
+      "type": "object"
+    },
+    "SetTiming": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "timing",
+          "title": "Op",
+          "type": "string"
+        },
+        "timing_map": {
+          "$ref": "#/$defs/TimingMap"
+        }
+      },
+      "required": [
+        "op",
+        "timing_map"
+      ],
+      "title": "SetTiming",
+      "type": "object"
+    },
+    "SetTrackOrder": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "track_order",
+          "title": "Op",
+          "type": "string"
+        },
+        "track_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "title": "Track Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "track_ids"
+      ],
+      "title": "SetTrackOrder",
+      "type": "object"
+    },
     "Snapshot": {
       "additionalProperties": false,
       "properties": {
@@ -1963,6 +2612,24 @@
           },
           "title": "Controllers",
           "type": "array"
+        },
+        "track_order": {
+          "items": {
+            "pattern": "^[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "title": "Track Order",
+          "type": "array"
+        },
+        "frozen_tracks": {
+          "patternProperties": {
+            "^[a-f0-9]{32}$": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            }
+          },
+          "title": "Frozen Tracks",
+          "type": "object"
         }
       },
       "title": "Snapshot",
@@ -2130,7 +2797,10 @@
             "asset.import",
             "plugin.inspect",
             "plugin.scan",
-            "project.preprocess"
+            "project.preprocess",
+            "project.render",
+            "audio.measure",
+            "project.export"
           ],
           "title": "Kind",
           "type": "string"
@@ -2245,7 +2915,8 @@
           "enum": [
             "audio",
             "instrument",
-            "midi"
+            "midi",
+            "bus"
           ],
           "title": "Kind",
           "type": "string"
@@ -2282,6 +2953,16 @@
           "minimum": -1,
           "title": "Pan",
           "type": "number"
+        },
+        "mute": {
+          "default": false,
+          "title": "Mute",
+          "type": "boolean"
+        },
+        "solo": {
+          "default": false,
+          "title": "Solo",
+          "type": "boolean"
         },
         "stem_asset_ids": {
           "items": {
@@ -2468,6 +3149,64 @@
     },
     "projects.rename": {
       "arguments": "RenameProject",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "research",
+              "composition"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "empty",
+              "imported",
+              "queued",
+              "processing",
+              "ready",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "current_revision": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Current Revision",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "status",
+          "current_revision",
+          "created_at"
+        ],
+        "title": "Project",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "projects.fork": {
+      "arguments": "ForkProject",
       "result": {
         "additionalProperties": false,
         "properties": {
@@ -2721,6 +3460,14 @@
           "items"
         ],
         "title": "QueryAnnotationsResult",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "controllers.query": {
+      "arguments": "QueryEvents",
+      "result": {
+        "additionalProperties": true,
         "type": "object"
       },
       "mutates": false
@@ -3005,7 +3752,10 @@
               "asset.import",
               "plugin.inspect",
               "plugin.scan",
-              "project.preprocess"
+              "project.preprocess",
+              "project.render",
+              "audio.measure",
+              "project.export"
             ],
             "title": "Kind",
             "type": "string"
@@ -3124,7 +3874,10 @@
               "asset.import",
               "plugin.inspect",
               "plugin.scan",
-              "project.preprocess"
+              "project.preprocess",
+              "project.render",
+              "audio.measure",
+              "project.export"
             ],
             "title": "Kind",
             "type": "string"
@@ -3253,7 +4006,10 @@
               "asset.import",
               "plugin.inspect",
               "plugin.scan",
-              "project.preprocess"
+              "project.preprocess",
+              "project.render",
+              "audio.measure",
+              "project.export"
             ],
             "title": "Kind",
             "type": "string"
@@ -3372,7 +4128,10 @@
               "asset.import",
               "plugin.inspect",
               "plugin.scan",
-              "project.preprocess"
+              "project.preprocess",
+              "project.render",
+              "audio.measure",
+              "project.export"
             ],
             "title": "Kind",
             "type": "string"
@@ -3578,6 +4337,194 @@
         "type": "array"
       },
       "mutates": false
+    },
+    "edits.apply": {
+      "arguments": "ApplyEdit",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "snapshot_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Snapshot Sha256",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/$defs/Snapshot"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "parent_id",
+          "snapshot_sha256",
+          "snapshot",
+          "author",
+          "description",
+          "created_at"
+        ],
+        "title": "Revision",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "revisions.compare": {
+      "arguments": "CompareRevisions",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "revisions.restore": {
+      "arguments": "RestoreRevision",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "snapshot_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Snapshot Sha256",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/$defs/Snapshot"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "parent_id",
+          "snapshot_sha256",
+          "snapshot",
+          "author",
+          "description",
+          "created_at"
+        ],
+        "title": "Revision",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "graph.get": {
+      "arguments": "RevisionRef",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "renders.list": {
+      "arguments": "RevisionRef",
+      "result": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "plugins.presets": {
+      "arguments": "RevisionRef",
+      "result": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "audition.get": {
+      "arguments": "ProjectRef",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "audition.set": {
+      "arguments": "SetAudition",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "audition.report": {
+      "arguments": "ReportAudition",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
     }
   }
 }

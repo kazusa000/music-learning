@@ -12,9 +12,45 @@ from .settings import ROOT, Settings
 from .storage import Storage
 
 
+class AdapterError(RuntimeError):
+    def __init__(self, error):
+        super().__init__(error["message"])
+        self.public_error = error
+
+
 def execute(settings, job, directory=None):
     # Existing pinned P0 media/native adapters, isolated from the API process.
     sys.path.insert(0, str(ROOT / "scripts"))
+    if job["kind"] in ("project.render", "audio.measure", "project.export"):
+        from model_runtime import environment
+
+        env = environment(settings.model_runtime)
+        env["MUSIC_MODEL_RUNTIME"] = str(settings.model_runtime)
+        env["PYTHONPATH"] = str(ROOT / "src")
+        completed = subprocess.run(
+            [
+                str(settings.model_runtime / "envs/transcription/Scripts/python.exe"),
+                str(ROOT / "scripts/daw_adapter.py"),
+                str(directory),
+            ],
+            check=False,
+            env=env,
+            timeout=settings.pipeline_stage_timeout_seconds,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        result_path = directory / "daw-result.json"
+        if result_path.is_file():
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            if result.get("error"):
+                raise AdapterError(result["error"])
+            if completed.returncode == 0:
+                return result
+        raise AdapterError(
+            {
+                "code": "production_executor_failed",
+                "message": "Production executor stopped without a valid result",
+            }
+        )
     if job["kind"] == "pipeline.stage":
         from model_runtime import environment
 
@@ -152,7 +188,12 @@ def main():
     except Exception as error:
         # Raw stderr stays local. No credentials or arbitrary exception text in API errors.
         print(type(error).__name__ + ": " + str(error), file=sys.stderr)
-        response = {"ok": False, "error": {"code": "adapter_failed", "message": type(error).__name__}}
+        response = {
+            "ok": False,
+            "error": getattr(
+                error, "public_error", {"code": "adapter_failed", "message": type(error).__name__}
+            ),
+        }
     temporary = directory / "result.partial"
     with temporary.open("x", encoding="utf-8") as stream:
         json.dump(response, stream, ensure_ascii=False, allow_nan=False)

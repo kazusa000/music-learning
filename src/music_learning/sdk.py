@@ -117,6 +117,32 @@ class Client:
                 raise TimeoutError("Job still active; use the persisted job id to resume monitoring")
             time.sleep(interval)
 
+    def edit(self, project_id, *, expected_revision, scope, operations, description, idempotency_key=None):
+        return self.call(
+            "edits.apply",
+            dict(project_id=project_id, scope=scope, operations=operations, description=description),
+            expected_revision=expected_revision,
+            idempotency_key=idempotency_key,
+        )
+
+    def render(self, project_id, *, expected_revision, revision_id=None, **settings):
+        return self.call(
+            "jobs.submit",
+            dict(
+                project_id=project_id,
+                kind="project.render",
+                payload=dict(revision_id=revision_id, **settings),
+            ),
+            expected_revision=expected_revision,
+        )
+
+    def measure(self, project_id, asset_id, *, expected_revision, **interval):
+        return self.call(
+            "jobs.submit",
+            dict(project_id=project_id, kind="audio.measure", payload=dict(asset_id=asset_id, **interval)),
+            expected_revision=expected_revision,
+        )
+
     def events(self, *, after=0, project_id=None, follow=True):
         params = {"after": after, "follow": str(follow).lower()}
         if project_id:

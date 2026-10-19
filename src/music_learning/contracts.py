@@ -93,11 +93,13 @@ class TimingMap(Model):
 class Track(Model):
     id: Id
     name: str = Field(min_length=1, max_length=256)
-    kind: Literal["audio", "instrument", "midi"]
+    kind: Literal["audio", "instrument", "midi", "bus"]
     role: str | None = None
     instrument_candidates: list[str] = Field(default_factory=list)
     gain_db: float = Field(default=0, ge=-120, le=24)
     pan: float = Field(default=0, ge=-1, le=1)
+    mute: bool = False
+    solo: bool = False
     stem_asset_ids: list[Hash] = Field(default_factory=list)
     provenance: Provenance
 
@@ -110,6 +112,7 @@ class Clip(Model):
     duration_samples: int = Field(gt=0)
     source_offset_samples: Sample = 0
     loop: bool = False
+    content_samples: int | None = Field(default=None, gt=0)
     gain_db: float = Field(default=0, ge=-120, le=24)
     provenance: Provenance
 
@@ -117,6 +120,7 @@ class Clip(Model):
 class NoteEvent(Model):
     id: Id
     track_id: Id
+    clip_id: Id | None = None
     pitch: int = Field(ge=0, le=127)
     spelling: str | None = None
     start_sample: Sample
@@ -124,6 +128,8 @@ class NoteEvent(Model):
     velocity: float = Field(gt=0, le=1)
     channel: int = Field(default=1, ge=1, le=16)
     notation_beat: Beat | None = None
+    notation_duration: Beat | None = None
+    timing_mode: Literal["sample", "beat"] = "sample"
     timing_map_id: Id | None = None
     provenance: Provenance
 
@@ -133,6 +139,12 @@ class NoteEvent(Model):
             raise ValueError("note duration must be positive")
         if (self.notation_beat is None) != (self.timing_map_id is None):
             raise ValueError("notation beat requires its specific timing map")
+        if self.timing_mode == "beat" and (
+            self.notation_beat is None
+            or self.notation_duration is None
+            or self.notation_duration.fraction() <= 0
+        ):
+            raise ValueError("beat-timed notes require a positive notation duration and mapped start")
         return self
 
 
@@ -204,7 +216,8 @@ class AutomationPoint(Model):
 
 class AutomationLane(Model):
     id: Id
-    plugin_id: Id
+    plugin_id: Id | None = None
+    track_id: Id | None = None
     parameter_id: str
     interpolation: Literal["step", "linear"]
     points: list[AutomationPoint] = Field(min_length=1)
@@ -212,6 +225,10 @@ class AutomationLane(Model):
 
     @model_validator(mode="after")
     def ordered(self):
+        if (self.plugin_id is None) == (self.track_id is None):
+            raise ValueError("automation must target exactly one plugin or mixer track")
+        if self.track_id and self.parameter_id not in ("gain", "pan"):
+            raise ValueError("mixer automation supports normalized gain (-120..24 dB) or pan (-1..1)")
         if any(a.sample >= b.sample for a, b in zip(self.points, self.points[1:])):
             raise ValueError("automation points must increase strictly")
         return self
@@ -270,6 +287,8 @@ class Snapshot(Model):
     annotations: list[Annotation] = Field(default_factory=list)
     stems: list[Stem] = Field(default_factory=list)
     controllers: list[ControlEvent] = Field(default_factory=list)
+    track_order: list[Id] = Field(default_factory=list)
+    frozen_tracks: dict[Id, Hash] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def references(self):
@@ -287,14 +306,43 @@ class Snapshot(Model):
         if len(ids) != len(set(ids)):
             raise ValueError("entity identifiers must be unique")
         tracks, plugins = {x.id for x in self.tracks}, {x.id: x for x in self.plugins}
+        if self.track_order and (len(self.track_order) != len(tracks) or set(self.track_order) != tracks):
+            raise ValueError("track order must contain each track once")
+        if not set(self.frozen_tracks).issubset(tracks):
+            raise ValueError("unknown frozen track")
+        clips = {x.id: x for x in self.clips}
         for entity in [*self.clips, *self.notes, *self.plugins, *self.controllers]:
             if entity.track_id not in tracks:
                 raise ValueError("unknown track")
         for note in self.notes:
+            if note.clip_id and (note.clip_id not in clips or clips[note.clip_id].track_id != note.track_id):
+                raise ValueError("unknown note clip")
+            if note.clip_id:
+                clip = clips[note.clip_id]
+                if (
+                    note.start_sample < clip.start_sample
+                    or note.end_sample > clip.start_sample + clip.duration_samples
+                ):
+                    raise ValueError("owned note lies outside its clip")
             if note.end_sample > self.duration_samples:
                 raise ValueError("note outside project duration")
             if note.timing_map_id and (not self.timing_map or note.timing_map_id != self.timing_map.id):
                 raise ValueError("unknown notation timing map")
+            if note.timing_mode == "beat":
+                from .timing import convert
+
+                begin = convert(self.sample_rate, self.timing_map, "beat", note.notation_beat, "sample")[
+                    "rounded_sample"
+                ]
+                end = convert(
+                    self.sample_rate,
+                    self.timing_map,
+                    "beat",
+                    Beat.of(note.notation_beat.fraction() + note.notation_duration.fraction()),
+                    "sample",
+                )["rounded_sample"]
+                if (begin, end) != (note.start_sample, note.end_sample):
+                    raise ValueError("beat-timed note samples disagree with the bound timing map")
         for clip in self.clips:
             if clip.start_sample + clip.duration_samples > self.duration_samples:
                 raise ValueError("clip outside project duration")
@@ -314,9 +362,17 @@ class Snapshot(Model):
                 raise ValueError("timing map sample rate differs")
             if self.timing_map.anchors[-1].sample < self.duration_samples:
                 raise ValueError("timing map does not cover the project")
+        if len({(lane.plugin_id or lane.track_id, lane.parameter_id) for lane in self.automation}) != len(
+            self.automation
+        ):
+            raise ValueError("only one automation lane per plugin parameter is allowed")
         for lane in self.automation:
-            if lane.plugin_id not in plugins or lane.parameter_id not in plugins[lane.plugin_id].parameters:
+            if lane.plugin_id and (
+                lane.plugin_id not in plugins or lane.parameter_id not in plugins[lane.plugin_id].parameters
+            ):
                 raise ValueError("unknown automation parameter")
+            if lane.track_id and lane.track_id not in tracks:
+                raise ValueError("unknown mixer automation track")
             if lane.points[-1].sample > self.duration_samples:
                 raise ValueError("automation outside project duration")
         return self
@@ -367,7 +423,15 @@ class Job(Model):
     id: Id
     project_id: Id
     revision_id: Id
-    kind: Literal["asset.import", "plugin.inspect", "plugin.scan", "project.preprocess"]
+    kind: Literal[
+        "asset.import",
+        "plugin.inspect",
+        "plugin.scan",
+        "project.preprocess",
+        "project.render",
+        "audio.measure",
+        "project.export",
+    ]
     status: Literal["queued", "running", "cancel_requested", "cancelled", "succeeded", "failed"]
     payload: dict
     attempt: int
@@ -428,6 +492,10 @@ class RenameProject(ProjectRef):
     title: str = Field(min_length=1, max_length=256)
 
 
+class ForkProject(RevisionRef):
+    title: str = Field(min_length=1, max_length=256)
+
+
 class CommitSnapshot(ProjectRef):
     snapshot: Snapshot
     author: str = Field(min_length=1, max_length=128)
@@ -464,7 +532,15 @@ class ConvertTime(RevisionRef):
 
 
 class SubmitJob(ProjectRef):
-    kind: Literal["asset.import", "plugin.inspect", "plugin.scan", "project.preprocess"]
+    kind: Literal[
+        "asset.import",
+        "plugin.inspect",
+        "plugin.scan",
+        "project.preprocess",
+        "project.render",
+        "audio.measure",
+        "project.export",
+    ]
     payload: dict
     max_attempts: int = Field(default=3, ge=1, le=5)
 
@@ -574,17 +650,136 @@ class UploadResult(Model):
     bytes: int
 
 
+class EditScope(Model):
+    track_ids: list[Id] = Field(default_factory=list)
+    start_sample: Sample = 0
+    end_sample: Sample
+    structural: bool = False
+
+    @model_validator(mode="after")
+    def interval(self):
+        if self.end_sample <= self.start_sample:
+            raise ValueError("edit scope must be nonempty")
+        return self
+
+
+class PutEntity(Model):
+    op: Literal["put"]
+    collection: Literal["tracks", "clips", "notes", "controllers", "plugins", "automation", "annotations"]
+    entity: Track | Clip | NoteEvent | ControlEvent | PluginInstance | AutomationLane | Annotation
+
+
+class DeleteEntity(Model):
+    op: Literal["delete"]
+    collection: Literal["tracks", "clips", "notes", "controllers", "plugins", "automation", "annotations"]
+    id: Id
+
+
+class SetTiming(Model):
+    op: Literal["timing"]
+    timing_map: TimingMap
+
+
+class SetRouting(Model):
+    op: Literal["routing"]
+    routing: RoutingGraph
+
+
+class SetTrackOrder(Model):
+    op: Literal["track_order"]
+    track_ids: list[Id]
+
+
+class ArrangeClip(Model):
+    op: Literal["arrange_clip"]
+    id: Id
+    action: Literal["move", "duplicate", "split", "trim"]
+    sample: Sample
+    end_sample: Sample | None = None
+    new_id: Id | None = None
+
+
+class FreezeTrack(Model):
+    op: Literal["freeze"]
+    track_id: Id
+    render_job_id: Id | None = None
+
+
+EditOperation = PutEntity | DeleteEntity | SetTiming | SetRouting | SetTrackOrder | ArrangeClip | FreezeTrack
+
+
+class ApplyEdit(ProjectRef):
+    scope: EditScope
+    operations: list[EditOperation] = Field(min_length=1, max_length=10000)
+    author: str = Field(default="agent", min_length=1, max_length=128)
+    description: str = Field(min_length=1, max_length=2000)
+
+
+class CompareRevisions(ProjectRef):
+    before_revision: Id
+    after_revision: Id
+
+
+class RestoreRevision(ProjectRef):
+    revision_id: Id
+    description: str = Field(default="Restore revision", min_length=1, max_length=2000)
+
+
+class RenderPayload(Model):
+    revision_id: Id | None = None
+    tail_seconds: float = Field(default=2, ge=0, le=60)
+    block_size: int = Field(default=512, ge=16, le=8192)
+    start_sample: Sample = 0
+    end_sample: Sample | None = None
+
+
+class MeasurePayload(Model):
+    asset_id: Hash
+    start_sample: Sample = 0
+    end_sample: Sample | None = None
+
+
+class ExportPayload(Model):
+    revision_id: Id | None = None
+    format: Literal["midi", "wav"]
+    render_job_id: Id | None = None
+
+
+class AuditionState(Model):
+    revision_id: Id
+    position_sample: Sample = 0
+    mode: Literal["original", "mix", "tracks", "reference"] = "original"
+    reference_revision_id: Id | None = None
+    track_ids: list[Id] = Field(default_factory=list)
+    loop_start_sample: Sample = 0
+    loop_end_sample: Sample | None = None
+    loop: bool = False
+    playing: bool = False
+
+
+class SetAudition(ProjectRef):
+    state: AuditionState
+
+
+class ReportAudition(ProjectRef):
+    sequence: Id
+    position_sample: Sample
+    status: Literal["playing", "paused", "loading", "needs_activation", "error"]
+
+
 OPERATIONS = {
     "describe_capabilities": (Empty, False),
     "projects.list": (Page, False),
     "projects.create": (CreateProject, True),
     "projects.get": (ProjectRef, False),
     "projects.rename": (RenameProject, True),
+    "projects.fork": (ForkProject, True),
     "revisions.list": (ProjectPage, False),
     "revisions.get": (RevisionRef, False),
     "revisions.commit": (CommitSnapshot, True),
     "events.query": (QueryEvents, False),
     "annotations.query": (QueryEvents, False),
+    "controllers.query": (QueryEvents, False),
     "time.convert": (ConvertTime, False),
     "assets.list": (ProjectPage, False),
     "assets.get": (AssetRef, False),
@@ -602,6 +797,15 @@ OPERATIONS = {
     "preprocessing.get": (RevisionRef, False),
     "preprocessing.adopt": (AdoptPreprocessing, True),
     "events.list": (EventPage, False),
+    "edits.apply": (ApplyEdit, True),
+    "revisions.compare": (CompareRevisions, False),
+    "revisions.restore": (RestoreRevision, True),
+    "graph.get": (RevisionRef, False),
+    "renders.list": (RevisionRef, False),
+    "plugins.presets": (RevisionRef, False),
+    "audition.get": (ProjectRef, False),
+    "audition.set": (SetAudition, True),
+    "audition.report": (ReportAudition, True),
 }
 
 RESULT_TYPES = {
@@ -610,11 +814,13 @@ RESULT_TYPES = {
     "projects.create": Project,
     "projects.get": Project,
     "projects.rename": Project,
+    "projects.fork": Project,
     "revisions.list": list[dict],
     "revisions.get": Revision,
     "revisions.commit": Revision,
     "events.query": QueryNotesResult,
     "annotations.query": QueryAnnotationsResult,
+    "controllers.query": dict,
     "time.convert": dict,
     "assets.list": list[Asset],
     "assets.get": Asset,
@@ -632,4 +838,13 @@ RESULT_TYPES = {
     "preprocessing.get": PreprocessingView,
     "preprocessing.adopt": Project,
     "events.list": list[EventRecord],
+    "edits.apply": Revision,
+    "revisions.compare": dict,
+    "revisions.restore": Revision,
+    "graph.get": dict,
+    "renders.list": list[dict],
+    "plugins.presets": list[dict],
+    "audition.get": dict,
+    "audition.set": dict,
+    "audition.report": dict,
 }

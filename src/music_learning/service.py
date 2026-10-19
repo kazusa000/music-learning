@@ -209,6 +209,7 @@ class Service:
             if plugin.descriptor_asset_id:
                 asset_ids.add(plugin.descriptor_asset_id)
         asset_ids.update(stem.asset_id for stem in snapshot.stems)
+        asset_ids.update(snapshot.frozen_tracks.values())
         for sha in asset_ids:
             asset = self._asset(db, sha, project_id)
             if sha == snapshot.source_asset_id:
@@ -284,10 +285,25 @@ class Service:
         return revision
 
     def _dispatch(self, db, op, args, request):
+        if op.startswith("audition."):
+            from .audition import dispatch
+
+            return dispatch(self, db, op, args, request)
+        if op in (
+            "edits.apply",
+            "revisions.compare",
+            "revisions.restore",
+            "graph.get",
+            "renders.list",
+            "plugins.presets",
+        ):
+            from .daw import dispatch
+
+            return dispatch(self, db, op, args, request)
         if op == "describe_capabilities":
             return {
                 "schema_version": 1,
-                "phase": "P2",
+                "phase": "P3-development",
                 "operations": {
                     name: {
                         "mutates": write,
@@ -302,20 +318,49 @@ class Service:
                     "asset_bytes": "GET /v1/assets/{sha}",
                     "events": "GET /v1/events (SSE, Last-Event-ID or after)",
                 },
-                "job_kinds": ["asset.import", "plugin.inspect", "plugin.scan", "project.preprocess"],
+                "job_kinds": [
+                    "asset.import",
+                    "plugin.inspect",
+                    "plugin.scan",
+                    "project.preprocess",
+                    "project.render",
+                    "audio.measure",
+                    "project.export",
+                ],
                 "job_payload_schemas": {
                     "asset.import": c.ImportPayload.model_json_schema(),
                     "plugin.inspect": c.PluginPayload.model_json_schema(),
                     "plugin.scan": c.PluginPayload.model_json_schema(),
                     "project.preprocess": c.PreprocessPayload.model_json_schema(),
+                    "project.render": c.RenderPayload.model_json_schema(),
+                    "audio.measure": c.MeasurePayload.model_json_schema(),
+                    "project.export": c.ExportPayload.model_json_schema(),
                 },
                 "unsupported": [
-                    "native.render_project",
                     "live_plugin_edit",
-                    "routing_execution",
                     "codex.conversation",
                     "project_backup_bundle",
+                    "vendor_private_preset_browsers",
+                    "physical_unit_parameter_input",
+                    "midi_clip_audio_gain",
                 ],
+                "daw": {
+                    "routing": "acyclic stereo graph; post-fader sends and stereo sidechains; dynamic latency changes reject the render",
+                    "automation": "sample-aligned step/linear plugin points and mixer gain/pan points",
+                    "mixer_parameters": {
+                        "gain": {"normalized": True, "db_min": -120, "db_max": 24},
+                        "pan": {"normalized": True, "min": -1, "max": 1},
+                    },
+                    "presets": "host-managed captured opaque states with parameters, descriptors and resource maps",
+                    "clips": "sample-anchored owned notes; explicit content_samples for loops; ambiguous held-note split/trim rejects",
+                    "plugin_parameters": "normalized values; nonautomatable writes require a verified adapter",
+                    "transport": "persisted desired state and browser observations; initial playback requires browser activation",
+                    "limits": {
+                        "native_graph_nodes": 64,
+                        "content_seconds": self.settings.pipeline_max_duration_seconds,
+                        "tail_seconds": 60,
+                    },
+                },
                 "snapshot_storage": "validated data only; snapshot commit does not execute plugins or render",
                 "timing": "sample authority; rational beats; measured piecewise linear anchors",
             }
@@ -337,6 +382,40 @@ class Service:
             return project
         if op == "projects.get":
             return row(db, t.projects, "id", args.project_id)
+        if op == "projects.fork":
+            source = self._revision(db, args)
+            original = row(db, t.projects, "id", args.project_id)
+            pid = c.new_id()
+            db.execute(
+                insert(t.projects).values(
+                    id=pid,
+                    title=args.title,
+                    kind=original["kind"],
+                    status="empty",
+                    current_revision=c.new_id(),
+                    created_at=time.time(),
+                )
+            )
+            for asset in db.execute(
+                select(t.project_assets.c.asset_id).where(t.project_assets.c.project_id == args.project_id)
+            ):
+                db.execute(insert(t.project_assets).values(project_id=pid, asset_id=asset[0]))
+            snapshot = c.Snapshot.model_validate(source["snapshot"])
+            copied = []
+            for run_id in snapshot.analysis_run_ids:
+                original_run = row(db, t.analysis_runs, "id", run_id)
+                new_run = dict(original_run["payload"], id=c.new_id())
+                db.execute(
+                    insert(t.analysis_runs).values(
+                        id=new_run["id"], project_id=pid, payload=new_run, created_at=time.time()
+                    )
+                )
+                copied.append(new_run["id"])
+            snapshot.analysis_run_ids = copied
+            self.commit(
+                db, pid, None, snapshot, "user", f"Fork {args.project_id}/{source['id']}", request.request_id
+            )
+            return row(db, t.projects, "id", pid)
         if op == "projects.rename":
             project = row(db, t.projects, "id", args.project_id)
             head = row(db, t.revisions, "id", project["current_revision"])
@@ -372,6 +451,23 @@ class Service:
                 args.description,
                 request.request_id,
             )
+        if op == "controllers.query":
+            rev = self._revision(db, args)
+            end = args.end_sample if args.end_sample is not None else rev["snapshot"]["duration_samples"]
+            controls = sorted(
+                (
+                    e
+                    for e in rev["snapshot"].get("controllers", [])
+                    if args.start_sample <= e["sample"] < end
+                    and (not args.track_id or e["track_id"] == args.track_id)
+                ),
+                key=lambda e: (e["sample"], e["id"]),
+            )
+            return {
+                "revision_id": rev["id"],
+                "total": len(controls),
+                "items": controls[args.offset : args.offset + args.limit],
+            }
         if op in ("events.query", "annotations.query"):
             rev = self._revision(db, args)
             values = rev["snapshot"]["notes" if op == "events.query" else "annotations"]
@@ -480,6 +576,10 @@ class Service:
                 args,
             )
         if op == "jobs.submit":
+            if args.kind in ("project.render", "audio.measure", "project.export"):
+                from .rendering import submit
+
+                return submit(self, db, args, request)
             if args.kind == "project.preprocess":
                 from .pipeline import submit_pipeline
 
@@ -542,13 +642,16 @@ class Service:
                     previous["max_attempts"],
                     previous=previous,
                 )
+            retry_payload = dict(previous["payload"])
+            if previous["kind"] == "project.export":
+                retry_payload.pop("audio_asset_id", None)
             return self._dispatch(
                 db,
                 "jobs.submit",
                 c.SubmitJob(
                     project_id=previous["project_id"],
                     kind=previous["kind"],
-                    payload=previous["payload"],
+                    payload=retry_payload,
                     max_attempts=previous["max_attempts"],
                 ),
                 request,

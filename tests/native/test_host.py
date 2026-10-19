@@ -131,6 +131,70 @@ def test_restored_fixture_reproduces_output(host, fixture_parameters, tmp_path):
     assert Path(first["output_path"]).read_bytes() == Path(second["output_path"]).read_bytes()
 
 
+def test_linear_curve_is_sample_exact_after_latency(host, fixture_parameters, tmp_path):
+    source = tmp_path / "ramp-source.wav"
+    source_wave(source)
+    track = {"id":"ramp", "plugins":[{"id":"fx","path":str(FIXTURE)}],
+             "audio_clips":[{"path":str(source),"sample":0}],
+             "automation":[{"plugin_id":"fx","parameter_id":fixture_parameters["Gain"],
+                            "interpolation":"linear","points":[{"sample":0,"value":0},{"sample":257,"value":1}]}]}
+    result = render(host,project(track),tmp_path/"ramp.wav")
+    _, channels = read_float_wave(Path(result["output_path"]))
+    for values in channels:
+        assert max(abs(values[i] - .25*min(i/257,1)) for i in range(len(values))) < 1e-6
+
+
+def test_mixer_volume_and_pan_automation_follow_compensated_clock(host,fixture_parameters,tmp_path):
+    source=tmp_path/"mixer.wav"
+    source_wave(source)
+    track={"id":"mixer","plugins":[{"id":"delay","path":str(FIXTURE),"parameters":{fixture_parameters["Gain"]:1}}],
+           "audio_clips":[{"path":str(source),"sample":0}],"mix_automation":[
+             {"parameter_id":"gain","interpolation":"step","points":[{"sample":0,"value":120/144},{"sample":123,"value":(120-6.020599913279624)/144}]},
+             {"parameter_id":"pan","interpolation":"linear","points":[{"sample":0,"value":.5},{"sample":257,"value":1}]}]}
+    result=render(host,project(track),tmp_path/"mixer-out.wav")
+    _,(left,right)=read_float_wave(Path(result["output_path"]))
+    for i in range(len(left)):
+        gain=.25 if i<123 else .125
+        assert abs(right[i]-gain)<1e-6
+        assert abs(left[i]-gain*(1-min(i/257,1)))<1e-6
+
+
+def test_graph_sends_buses_sidechain_and_path_latency(host, fixture_parameters, tmp_path):
+    source = tmp_path/"graph-source.wav"
+    source_wave(source)
+    def effect(identifier, side=False):
+        return dict(id=identifier,path=str(FIXTURE),sidechain=side,parameters={fixture_parameters["Gain"]:1,
+                    fixture_parameters["Sidechain Gain"]:1 if side else 0})
+    data = project({"id":"source","audio_clips":[{"path":str(source),"sample":0}],"plugins":[effect("delay-a")]})
+    data["tracks"] += [{"id":"bus","plugins":[effect("delay-b")]},
+                       {"id":"detector","plugins":[effect("pre-side"),effect("side",True)]}, {"id":"master"}]
+    data["graph"] = {"master":"master","edges":[
+        {"source":"source","target":"bus","kind":"send","gain_db":-6.020599913279624},
+        {"source":"source","target":"detector","kind":"sidechain","plugin_id":"side","gain_db":0},
+        {"source":"bus","target":"master","kind":"main","gain_db":0},
+        {"source":"detector","target":"master","kind":"main","gain_db":0}]}
+    result = render(host,data,tmp_path/"graph.wav")
+    _,channels = read_float_wave(Path(result["output_path"]))
+    for values in channels:
+        assert max(abs(value-.375) for value in values) < 1e-6
+    second = render(host,result["snapshot"],tmp_path/"graph-restored.wav")
+    assert Path(result["output_path"]).read_bytes() == Path(second["output_path"]).read_bytes()
+    cycle = copy.deepcopy(data)
+    cycle["graph"]["edges"].append({"source":"bus","target":"source","kind":"main","gain_db":0})
+    with pytest.raises(NativeHostError,match="Routing cycle"):
+        render(host,cycle,tmp_path/"cycle.wav")
+
+
+def test_pickup_ppq_reaches_plugin_without_moving_samples(host, fixture_parameters, tmp_path):
+    data = project({"id":"pickup","plugins":[{"id":"clock","path":str(FIXTURE),
+        "parameters":{fixture_parameters["Gain"]:1,fixture_parameters["PPQ Probe"]:1}}],"allow_empty":True})
+    data["ppq_offset"] = -1
+    result = render(host,data,tmp_path/"pickup.wav")
+    _,channels = read_float_wave(Path(result["output_path"]))
+    assert abs(channels[0][0]+1) < 1e-7
+    assert channels[1][0] == -4  # VST3 carries the preceding bar's PPQ start, not a numeric bar count.
+
+
 def test_invalid_parameter_publishes_no_audio(host, tmp_path):
     output = tmp_path / "invalid.wav"
     track = {"id": "bad", "plugins": [{"id": "fx", "path": str(FIXTURE), "parameters": {"missing": 0.5}}],

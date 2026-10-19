@@ -396,10 +396,7 @@ class Adapter:
             # Native transport metadata is derived from candidate timing, while
             # performed notes remain anchored at original samples.
         if snapshot.timing_map:
-            if snapshot.timing_map.pickup.n:
-                issues.append(
-                    "Native VST3 transport PPQ starts at audio zero; pickup bar labels are candidate notation. Performed sample timing is preserved."
-                )
+            native["ppq_offset"] = -float(snapshot.timing_map.pickup.fraction())
             anchors = snapshot.timing_map.anchors
             native["tempo"] = [
                 {
@@ -415,12 +412,20 @@ class Adapter:
                     "sample": 0,
                     "numerator": snapshot.timing_map.meters[0].numerator,
                     "denominator": snapshot.timing_map.meters[0].denominator,
+                    "ppq": 0,
+                    "bar": 1,
                 }
             ]
             for meter in snapshot.timing_map.meters[1:]:
                 sample = next(a.sample for a in anchors if a.beat.fraction() == meter.beat.fraction())
                 native["meter"].append(
-                    {"sample": sample, "numerator": meter.numerator, "denominator": meter.denominator}
+                    {
+                        "sample": sample,
+                        "numerator": meter.numerator,
+                        "denominator": meter.denominator,
+                        "ppq": float(meter.beat.fraction()),
+                        "bar": meter.bar,
+                    }
                 )
         else:
             issues.append(

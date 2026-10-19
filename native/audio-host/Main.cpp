@@ -132,7 +132,7 @@ std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int bloc
     checkKeys(spec, {"id", "path", "identifier", "state_base64", "state_encoding", "state_sha256",
         "binary_sha256", "vst3_class_id", "version", "parameters", "preset_path", "sfizz_sfz_path",
         "name", "manufacturer", "format", "unique_id", "is_instrument", "inputs", "outputs",
-        "description_xml", "parameters_readback", "latency_samples", "tail_seconds", "buses"});
+        "description_xml", "parameters_readback", "latency_samples", "tail_seconds", "buses", "sidechain"});
     const auto description = selectDescription(spec);
     const auto expectedHash = field(spec, "binary_sha256").toString();
     if (expectedHash.isNotEmpty())
@@ -149,6 +149,12 @@ std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int bloc
     require(plugin != nullptr, "Cannot instantiate VST3: " + error);
     plugin->setNonRealtime(true);
     plugin->disableNonMainBuses();
+    if (static_cast<bool>(field(spec, "sidechain", false)))
+    {
+        auto* bus = plugin->getBus(true, 1);
+        require(bus != nullptr && bus->enable(true), "Plugin does not support an enabled sidechain bus");
+        require(bus->getNumberOfChannels() == 2, "Only stereo sidechains supported");
+    }
     const auto encoded = field(spec, "state_base64").toString();
     if (encoded.isNotEmpty())
     {
@@ -222,9 +228,13 @@ std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int bloc
             const float value = static_cast<float>(item.value);
             require(std::isfinite(value) && value >= 0.0f && value <= 1.0f, "Parameter value outside [0,1]");
             auto* p = parameter(*plugin, item.name.toString());
+            require(p->isAutomatable() || std::abs(p->getValue() - value) <= 1e-5f,
+                    "Nonautomatable parameter writes require a verified plugin adapter");
             p->beginChangeGesture();
             p->setValueNotifyingHost(value);
             p->endChangeGesture();
+            require(std::abs(p->getValue() - value) <= 1e-4f,
+                    "Plugin did not retain the requested normalized parameter value");
         }
     return plugin;
 }
@@ -269,9 +279,9 @@ var capabilities()
     return object({{"schema_version", 1}, {"host", "music-learning-native"},
         {"juce_version", SystemStats::getJUCEVersion()}, {"format", "VST3"}, {"editor_required", false},
         {"actions", var(Array<var>{"capabilities", "scan", "inspect", "render"})},
-        {"automation", "sample-aligned step points; linear curves unsupported"},
-        {"routing", "stereo serial track chains to summed output; no sends/sidechains yet"},
-        {"project_service", "P0 native primitive; domain revisions and database not implemented"},
+        {"automation", "sample-aligned step and linear points"},
+        {"routing", "offline acyclic stereo graph, post-fader sends, buses and stereo sidechains"},
+        {"project_service", "immutable revision input; publications owned by domain service"},
         {"state_encoding", "rfc4648-juce-vst3-state"}});
 }
 

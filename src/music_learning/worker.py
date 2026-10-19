@@ -115,6 +115,10 @@ class Worker:
             )
             if job["kind"] == "asset.import":
                 job["input_sha256"] = row(db, t.uploads, "id", job["payload"]["upload_id"])["sha256"]
+            elif job["kind"] in ("project.render", "audio.measure", "project.export"):
+                from .rendering import prepare
+
+                prepare(self.service, db, job)
             return job
 
     def heartbeat(self, job):
@@ -202,6 +206,10 @@ class Worker:
             return True
 
     def _publish(self, db, job, result):
+        if job["kind"] in ("project.render", "audio.measure", "project.export"):
+            from .rendering import publish
+
+            return publish(self.service, db, job, result)
         if job["kind"] == "project.preprocess":
             from .pipeline import publish_pipeline
 
@@ -268,6 +276,7 @@ class Worker:
                 db, job["project_id"], sha, len(state), "application/octet-stream", {}, provenance
             )
             published.update(state_asset_id=sha, plugin=plugin)
+            published["descriptor_asset_id"] = artifact
         else:
             published.update(plugins=result["plugins"])
         return published
@@ -359,7 +368,12 @@ class Worker:
 
             PipelineRunner(self, job).run()
             return True
-        response, _ = self.run_child(job)
+        response, _ = self.run_child(
+            job,
+            timeout=self.settings.pipeline_stage_timeout_seconds
+            if job["kind"] in ("project.render", "audio.measure", "project.export")
+            else None,
+        )
         try:
             self.finish(job, response)
         except Exception as error:
