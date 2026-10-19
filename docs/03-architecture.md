@@ -1,6 +1,6 @@
 # 第一阶段技术方案
 
-状态：2026-10-18，P0a/P0b 与 P1 已完成。JUCE 9.0.4 headless/MSVC、三模型与 Codex 探测已锁定；工程持久化和统一接口见 [P1 实现](14-project-service.md)。下图是第一阶段完整目标，模型流水线、制作与内置对话分别在 P2/P3/P4 接入。
+状态：2026-10-19，P0a/P0b、P1 与 P2 已完成。正式整曲流水线见 [P2 实现](15-preprocessing-pipeline.md)，工程持久化见 [P1 实现](14-project-service.md)。下图仍是第一阶段完整目标；任意制作操作和内置对话在 P3/P4 接入。
 
 ## 系统结构
 
@@ -47,7 +47,7 @@ flowchart TB
 | AI | Codex App Server + 应用领域工具，保留供应商适配器 | P0b 已用既有 ChatGPT 登录实测；正式服务/对话持久化后续接入，详见 docs/13-codex-integration.md |
 | 检查 | CTest/原生宿主夹具、pytest、Vitest、Playwright | 真实插件处理、全操作 API、恢复、整曲能力；浏览器检查展示与试听 |
 
-P1 使用 SQLAlchemy 2 Core 组织显式 SQLite 事务，Alembic 管理迁移。完整版本快照是权威，各实体表为同一事务生成的只读投影。23 个领域操作共用一个命令入口；独立 worker 的音频导入/插件扫描与检查已接通。其他模型/渲染/对话适配器仍在对应阶段接入，不能用空输出替代能力。
+使用 SQLAlchemy 2 Core 显式 SQLite 事务与 Alembic 迁移。完整版本快照是权威，实体表是事务内只读投影。当前 27 个领域操作共用一个命令入口；独立 worker 已接通音频导入、插件检查及七阶段整曲流水线。P2 默认初版重建有实际混音/逐轨产物；任意图制作与对话仍按 P3/P4 推进。
 
 ## 运行环境与隔离
 

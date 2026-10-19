@@ -1,6 +1,6 @@
 # 数据与 AI 操作约定
 
-状态：第一阶段契约设计，P1 已落地核心实体、Pydantic、JSON Schema、TS 类型、统一 API/SDK/CLI 与恢复验证。实际已实现接口见 [P1 运行与契约](14-project-service.md)；本文仍包括 P2～P6 的目标，未列入能力发现的操作尚未实现。全操作要求见[AI DAW 约定](09-agent-daw-contract.md)。
+状态：第一阶段契约设计。P1 已落地核心实体与统一接口，P2 补充 Stem、ControlEvent、资源/描述引用、阶段状态及精确版本绑定的重建清单。实际接口见 [P1](14-project-service.md)与 [P2](15-preprocessing-pipeline.md)；本文仍包含 P3～P6 目标，未列入能力发现的操作尚未实现。全操作要求见[AI DAW 约定](09-agent-daw-contract.md)。
 
 ## 数据实体
 

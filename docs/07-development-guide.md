@@ -53,7 +53,7 @@ Git 管理应用源码；音乐工程使用应用版本系统和独立备份。�
 
 ## 开发检查
 
-P1 提供 ruff lint/format、pytest、生成契约漂移检查、前端严格 TypeScript 检查/构建、Playwright 整曲主页检查和真实 CLI/SDK 重启验收脚本；命令见 README 与 docs/14。P0 27 项回归用 transcription 环境（含 mido），P1 26 项用 app 环境，不能混用成缺包的 tooling 环境全量运行。
+当前提供 ruff、pytest、契约漂移检查、TypeScript 严格检查/构建、Playwright 整曲工作台和真实 SDK 恢复探测；命令见 README、docs/14/15。P0 27 项用 transcription 环境（含 mido），P1/P2 合计 37 项用 app 环境，不能混用缺包的 tooling 环境全量运行。P2 增加 migrations/0002 与 pipeline_adapter，不修改 0001。
 
 优先测试具有明确失败风险的逻辑：全操作接口、插件扫描/崩溃、参数/状态/预设、路由/延迟/自动化、时间映射、任务恢复、编辑范围、原子发布、幂等、版本冲突和数据迁移。视觉文案等低影响调整以适当界面检查为主，不编写只重复实现的测试。
 
