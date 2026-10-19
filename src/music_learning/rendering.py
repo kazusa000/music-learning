@@ -18,6 +18,8 @@ PAYLOADS = {
 def submit(service, db, args, request):
     payload = PAYLOADS[args.kind].model_validate(args.payload).model_dump(mode="json")
     target = payload.get("revision_id") or request.expected_revision
+    if "revision_id" in payload:
+        payload["revision_id"] = target
     revision = service._revision(db, c.RevisionRef(project_id=args.project_id, revision_id=target))
     snapshot = c.Snapshot.model_validate(revision["snapshot"])
     if not snapshot.duration_samples:

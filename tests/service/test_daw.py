@@ -433,3 +433,21 @@ def test_mixer_cc_and_track_order_are_scoped_and_discoverable(service, project):
         edited["id"],
     )
     assert len(removed["snapshot"]["tracks"]) == 1
+
+
+def test_render_retry_keeps_original_target_after_head_changes(service, project):
+    revision, _, _, _, _ = musical(service, project)
+    queued = invoke(
+        service,
+        "jobs.submit",
+        dict(project_id=project["id"], kind="project.render", payload={}),
+        revision["id"],
+    )
+    assert queued["payload"]["revision_id"] == revision["id"]
+    invoke(service, "jobs.cancel", dict(job_id=queued["id"]), revision["id"])
+    renamed = invoke(
+        service, "projects.rename", dict(project_id=project["id"], title="New head"), revision["id"]
+    )
+    retried = invoke(service, "jobs.retry", dict(job_id=queued["id"]), renamed["current_revision"])
+    assert retried["revision_id"] == revision["id"]
+    assert retried["payload"]["revision_id"] == revision["id"]
