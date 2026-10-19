@@ -30,6 +30,8 @@ function App() {
   const refreshGeneration = useRef(0);
   const project = projects.find(p => p.id === selected);
 
+  useEffect(() => {if (selected) localStorage.setItem('selected-project', selected);}, [selected]);
+
   function selectProject(id: string) {
     activeSelection.current = id;
     setSelected(id); setRevision(null); setJobs([]); setVersionCount(0);
