@@ -122,3 +122,16 @@
 .workspace-page .track-card{margin:0;box-shadow:none}
 .workspace-page .track-actions{padding:0}
 .workspace-page .track-actions>span:last-child{display:none}
+
+.chat-session-select{width:100%;display:flex;gap:5px;align-items:center}
+.chat-session-select select{min-width:0;flex:1;background:#242d39;color:#c2d0e3;border:1px solid #4a5a70;padding:6px;font-size:11px;border-radius:4px}
+.new-discussion{font-size:11px!important;padding:5px 8px!important;background:#36475c;border:1px solid #586c87;border-radius:4px}
+.music-markdown{font-size:12px;line-height:1.8;overflow-wrap:anywhere;white-space:normal}
+.music-markdown>:first-child{margin-top:0}.music-markdown>:last-child{margin-bottom:0}
+.music-markdown h1,.music-markdown h2,.music-markdown h3{font-size:14px!important;line-height:1.6;margin:15px 0 7px;color:#d9e3f2}
+.music-markdown p{margin:8px 0}.music-markdown ul,.music-markdown ol{padding-left:20px;margin:8px 0}
+.music-markdown table{display:block;overflow:auto;border-collapse:collapse;max-width:100%;font-size:11px}
+.music-markdown th,.music-markdown td{border:1px solid #4c596c;padding:5px 8px;text-align:left;white-space:nowrap}
+.music-markdown pre{overflow:auto;background:#1c2430;padding:10px;border-radius:4px}.music-markdown code{font-family:Consolas,monospace;background:#222d3b;padding:1px 4px}
+.music-markdown pre code{padding:0}.music-markdown blockquote{border-left:3px solid #7b91b0;margin:10px 0;padding-left:10px;color:#9db0ca}
+.music-markdown a{color:#a9c9ef}.workspace-page .discussion-reply{white-space:normal}

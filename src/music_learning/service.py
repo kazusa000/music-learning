@@ -70,6 +70,11 @@ class Service:
             args = model.model_validate(request.arguments)
             if mutates and not request.idempotency_key:
                 raise DomainError("idempotency_required", "Writes require idempotency_key", 422)
+            if request.operation == "dialogue.models":
+                from .model_catalog import models
+                result = models(self.settings, args.login_mode, refresh=args.refresh)
+                TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
+                return {"schema_version": 1, "request_id": request.request_id, "ok": True, "result": result}
             hash_arguments = args.model_dump(mode="json")
             plugin_entities = list(hash_arguments.get("snapshot", {}).get("plugins", []))
             if request.operation in ("edits.apply", "arrangements.apply"):
@@ -90,6 +95,10 @@ class Service:
                 hash_arguments.pop("edit_scope", None)
             if isinstance(args, c.SetAudition) and args.state.hybrid_job_id is None:
                 hash_arguments["state"].pop("hybrid_job_id", None)
+            if isinstance(args, c.SubmitDialogue):
+                for optional in ("session_id", "model"):
+                    if hash_arguments.get(optional) is None:
+                        hash_arguments.pop(optional, None)
             payload_hash = hashlib.sha256(
                 canonical(
                     {

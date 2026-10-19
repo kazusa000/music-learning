@@ -45,7 +45,7 @@ def sql_check(database):
     ):
         raise ValueError("backup SQLite integrity check failed")
     version = database.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-    if version not in ("0001", "0002", "0003", "0004", "0005", "0006"):
+    if version not in ("0001", "0002", "0003", "0004", "0005", "0006", "0007"):
         raise ValueError("unknown/newer database schema; refusing an unsafe restore")
     return version
 
@@ -227,14 +227,14 @@ def restore_archive(settings, value, directory):
             "UPDATE jobs SET status='failed',error=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE status NOT IN ('succeeded','failed','cancelled')",
             (error, now),
         )
-        if active and version in ("0002", "0003", "0004", "0005", "0006"):
+        if active and version in ("0002", "0003", "0004", "0005", "0006", "0007"):
             database.execute(
                 "UPDATE job_stages SET status='failed',error=?,updated_at=? WHERE status IN ('pending','running') AND job_id IN ("
                 + ",".join("?" for _ in active)
                 + ")",
                 (error, now, *active),
             )
-        if version in ("0004", "0005", "0006"):
+        if version in ("0004", "0005", "0006", "0007"):
             database.execute(
                 "UPDATE dialogue_turns SET status='failed',error=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE status NOT IN ('succeeded','failed','cancelled')",
                 (error, now),

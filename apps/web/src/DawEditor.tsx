@@ -224,6 +224,6 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
     </div>;})}</div></>}
     <div hidden={view!=='overview'}>{overview}</div>
     </div>{view!=='piano'&&<PanelResize label="调整制作区域高度" axis="y" value={contentHeight} min={180} max={1200} onChange={setContentHeight} reset={480}/>}
-    <div className="daw-editor-footer"><span>{editable?'手动操作保存为新版本 · 修改后生成试听':'历史版本受保护 · 切回当前版本后编辑'}</span><span>{s.timing_map?'网格依据当前节拍候选':'无节拍图 · 使用源秒钟'} · 滚轮上下 · Alt+滚轮音高缩放 · Ctrl+滚轮时间缩放</span></div>
+    <div className="daw-editor-footer"><span>{editable?'手动操作保存为新版本 · 修改后生成试听':'历史版本受保护 · 切回当前版本后编辑'}</span><span>{s.timing_map?'网格跟随当前节拍':'无节拍图 · 使用源秒钟'} · 滚轮上下 · Alt+滚轮音高缩放 · Ctrl+滚轮时间缩放</span></div>
   </div>;
 }

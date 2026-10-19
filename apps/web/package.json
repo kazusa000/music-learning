@@ -11,9 +11,17 @@
     "test:p3": "node p3-e2e.mjs",
     "test:pulse": "node p3-pulse.mjs"
   },
-  "dependencies": {"react": "19.3.0", "react-dom": "19.3.0"},
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
   "devDependencies": {
-    "@types/react": "19.2.14", "@types/react-dom": "19.2.3",
-    "typescript": "5.9.3", "vite": "8.0.0", "playwright": "1.56.1"
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "playwright": "1.56.1",
+    "typescript": "5.9.3",
+    "vite": "8.0.0"
   }
 }

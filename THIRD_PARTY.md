@@ -32,3 +32,9 @@ P0b 模型依赖独立记录：
 六套采样库的官方仓库、固定 commit、下载 SHA-256 与许可标识见 `config/instrument-sources.json`；本机原许可保存在 H: 各库内，来源和用途见 [音源与映射](docs/21-instrument-library.md)。Salamander 为 CC BY 3.0；Shinyguitar/Swagbass 为 CC0；Naked Drums 为 CC BY 4.0；SSO 保存 CC Sampling Plus 1.0 原许可；jRhodes3d 按作者 LICENSE 区分音乐使用、控制文件和样本再分发，不把样本统称 CC0。库文件不随源码重新分发。
 
 宿主 Surge FXP 适配依据固定 [SurgeSynthesizerIO.cpp](https://github.com/surge-synthesizer/surge/blob/release_xt_1.3.4/src/common/SurgeSynthesizerIO.cpp) 的 loadPatchByPath/loadRaw 与 [SurgeSynthProcessor.cpp](https://github.com/surge-synthesizer/surge/blob/release_xt_1.3.4/src/surge-xt/SurgeSynthProcessor.cpp) 的组件状态入口实现。sfizz 仍固定 1.2.3；新库的格式/奏法兼容性仅按已执行用例记录，不宣称所有 SFZ/FXP 都经过实测。
+
+## 对话 Markdown
+
+- react-markdown 10.1.0，MIT，https://github.com/remarkjs/react-markdown 。用于 React Markdown 渲染。
+- remark-gfm 4.0.1，MIT，https://github.com/remarkjs/remark-gfm 。用于表格、列表等 GFM 语法。
+- 间接依赖版本与完整性记录在 apps/web/pnpm-lock.yaml，许可文件随安装包保留。

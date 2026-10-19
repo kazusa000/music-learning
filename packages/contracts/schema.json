@@ -692,6 +692,56 @@
       "title": "AutomationPoint",
       "type": "object"
     },
+    "AvailableModel": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "is_default": {
+          "title": "Is Default",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "is_default"
+      ],
+      "title": "AvailableModel",
+      "type": "object"
+    },
+    "AvailableModels": {
+      "additionalProperties": false,
+      "properties": {
+        "models": {
+          "items": {
+            "$ref": "#/$defs/AvailableModel"
+          },
+          "title": "Models",
+          "type": "array"
+        },
+        "login_mode": {
+          "enum": [
+            "isolated",
+            "existing"
+          ],
+          "title": "Login Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "models",
+        "login_mode"
+      ],
+      "title": "AvailableModels",
+      "type": "object"
+    },
     "Beat": {
       "additionalProperties": false,
       "properties": {
@@ -1087,6 +1137,28 @@
       "title": "ConvertTime",
       "type": "object"
     },
+    "CreateDialogueSession": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "title": {
+          "default": "新会话",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "CreateDialogueSession",
+      "type": "object"
+    },
     "CreateProject": {
       "additionalProperties": false,
       "properties": {
@@ -1147,6 +1219,47 @@
       "title": "DeleteEntity",
       "type": "object"
     },
+    "DialogueList": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "DialogueList",
+      "type": "object"
+    },
     "DialogueRef": {
       "additionalProperties": false,
       "properties": {
@@ -1168,9 +1281,53 @@
       "title": "DialogueRef",
       "type": "object"
     },
+    "DialogueSession": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "title",
+        "created_at"
+      ],
+      "title": "DialogueSession",
+      "type": "object"
+    },
     "DialogueTurn": {
       "additionalProperties": false,
       "properties": {
+        "session_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
         "id": {
           "pattern": "^[a-f0-9]{32}$",
           "title": "Id",
@@ -1815,6 +1972,27 @@
         "denominator"
       ],
       "title": "Meter",
+      "type": "object"
+    },
+    "ModelCatalog": {
+      "additionalProperties": false,
+      "properties": {
+        "refresh": {
+          "default": false,
+          "title": "Refresh",
+          "type": "boolean"
+        },
+        "login_mode": {
+          "default": "isolated",
+          "enum": [
+            "isolated",
+            "existing"
+          ],
+          "title": "Login Mode",
+          "type": "string"
+        }
+      },
+      "title": "ModelCatalog",
       "type": "object"
     },
     "MusicQuery": {
@@ -3848,6 +4026,33 @@
           "default": null,
           "title": "Revision Id"
         },
+        "session_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
         "text": {
           "maxLength": 12000,
           "minLength": 1,
@@ -5849,6 +6054,19 @@
       "result": {
         "additionalProperties": false,
         "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          },
           "id": {
             "pattern": "^[a-f0-9]{32}$",
             "title": "Id",
@@ -5950,6 +6168,19 @@
       "result": {
         "additionalProperties": false,
         "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          },
           "id": {
             "pattern": "^[a-f0-9]{32}$",
             "title": "Id",
@@ -6047,7 +6278,7 @@
       "mutates": false
     },
     "dialogue.list": {
-      "arguments": "ProjectPage",
+      "arguments": "DialogueList",
       "result": {
         "items": {
           "$ref": "#/$defs/DialogueTurn"
@@ -6056,11 +6287,99 @@
       },
       "mutates": false
     },
+    "dialogue.sessions.list": {
+      "arguments": "ProjectPage",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/DialogueSession"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "dialogue.sessions.create": {
+      "arguments": "CreateDialogueSession",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "title",
+          "created_at"
+        ],
+        "title": "DialogueSession",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "dialogue.models": {
+      "arguments": "ModelCatalog",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/$defs/AvailableModel"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "login_mode": {
+            "enum": [
+              "isolated",
+              "existing"
+            ],
+            "title": "Login Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "models",
+          "login_mode"
+        ],
+        "title": "AvailableModels",
+        "type": "object"
+      },
+      "mutates": false
+    },
     "dialogue.cancel": {
       "arguments": "DialogueRef",
       "result": {
         "additionalProperties": false,
         "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          },
           "id": {
             "pattern": "^[a-f0-9]{32}$",
             "title": "Id",
@@ -6162,6 +6481,19 @@
       "result": {
         "additionalProperties": false,
         "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          },
           "id": {
             "pattern": "^[a-f0-9]{32}$",
             "title": "Id",

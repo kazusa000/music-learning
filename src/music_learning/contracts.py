@@ -877,7 +877,40 @@ class MusicQuery(QueryEvents):
     annotation_kind: str | None = Field(default=None, min_length=1, max_length=80)
 
 
+class DialogueSession(Model):
+    id: Id
+    project_id: Id
+    title: str
+    created_at: float
+
+
+class AvailableModel(Model):
+    id: str
+    name: str
+    is_default: bool
+
+
+class AvailableModels(Model):
+    models: list[AvailableModel]
+    login_mode: Literal["isolated", "existing"]
+
+
+class CreateDialogueSession(ProjectRef):
+    title: str = Field(default="新会话", min_length=1, max_length=120)
+
+
+class DialogueList(ProjectPage):
+    session_id: Id | None = None
+
+
+class ModelCatalog(Model):
+    refresh: bool = False
+    login_mode: Literal["isolated", "existing"] = "isolated"
+
+
 class SubmitDialogue(RevisionRef):
+    session_id: Id | None = None
+    model: str | None = Field(default=None, min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=12000)
     start_sample: Sample = 0
     end_sample: Sample | None = None
@@ -927,6 +960,7 @@ class Citation(Model):
 
 
 class DialogueTurn(Model):
+    session_id: Id | None = None
     id: Id
     project_id: Id
     revision_id: Id
@@ -984,7 +1018,10 @@ OPERATIONS = {
     "music.query": (MusicQuery, False),
     "dialogue.submit": (SubmitDialogue, True),
     "dialogue.get": (DialogueRef, False),
-    "dialogue.list": (ProjectPage, False),
+    "dialogue.list": (DialogueList, False),
+    "dialogue.sessions.list": (ProjectPage, False),
+    "dialogue.sessions.create": (CreateDialogueSession, True),
+    "dialogue.models": (ModelCatalog, False),
     "dialogue.cancel": (DialogueRef, True),
     "dialogue.retry": (DialogueRef, True),
     "notes.save": (SaveNote, True),
@@ -1043,6 +1080,9 @@ RESULT_TYPES = {
     "dialogue.submit": DialogueTurn,
     "dialogue.get": DialogueTurn,
     "dialogue.list": list[DialogueTurn],
+    "dialogue.sessions.list": list[DialogueSession],
+    "dialogue.sessions.create": DialogueSession,
+    "dialogue.models": AvailableModels,
     "dialogue.cancel": DialogueTurn,
     "dialogue.retry": DialogueTurn,
     "notes.save": Conversation,

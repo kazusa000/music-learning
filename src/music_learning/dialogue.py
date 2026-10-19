@@ -10,7 +10,7 @@ from sqlalchemy import insert, select, update
 
 from . import contracts as c
 from . import schema_v1 as t
-from .schema_v4 import turns
+from .schema_v7 import turns
 from .service import DomainError, canonical, emit, paged, row
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
@@ -214,7 +214,6 @@ def music_query(service, db, args):
         "sample_rate": snapshot["sample_rate"],
         "evidence": result,
         "citations": citations,
-        "notice": "Model notes/chords/sections are candidates; preserve provenance.review. Statistical inference is not listening.",
     }
     if len(canonical(response)) > 45000:
         raise DomainError("context_too_large", "Narrow range or lower limit for this query", 422)
@@ -224,6 +223,11 @@ def music_query(service, db, args):
 def submit(service, db, args, request, *, retry_of=None):
     revision = service._revision(db, args)
     a, b = bounds(revision["snapshot"], args.start_sample, args.end_sample, args.track_id)
+    if args.session_id:
+        from .schema_v7 import sessions
+        session = row(db, sessions, "id", args.session_id)
+        if session["project_id"] != args.project_id:
+            raise DomainError("session_mismatch", "会话不属于此工程", 422)
     if args.edit_scope:
         scope = args.edit_scope
         bounds(revision["snapshot"], scope.start_sample, scope.end_sample, None)
@@ -245,6 +249,7 @@ def submit(service, db, args, request, *, retry_of=None):
         "sample_rate": revision["snapshot"]["sample_rate"],
         "retry_of": retry_of,
         "raw_audio_sent": False,
+        "session_id": args.session_id,
         "edit_scope": args.edit_scope.model_dump() if args.edit_scope else None,
     }
     payload = args.model_dump(mode="json")
@@ -254,6 +259,7 @@ def submit(service, db, args, request, *, retry_of=None):
         project_id=args.project_id,
         revision_id=revision["id"],
         status="queued",
+        session_id=args.session_id,
         payload=payload,
         context=context,
         text="",
@@ -289,6 +295,15 @@ def submit(service, db, args, request, *, retry_of=None):
 
 
 def dispatch(service, db, op, args, request):
+    if op in ("dialogue.sessions.create", "dialogue.sessions.list"):
+        from .schema_v7 import sessions
+        row(db, t.projects, "id", args.project_id)
+        if op.endswith(".list"):
+            return paged(db, select(sessions).where(sessions.c.project_id == args.project_id).order_by(sessions.c.created_at.desc()), args)
+        session = dict(id=c.new_id(), project_id=args.project_id, title=args.title, created_at=time.time())
+        db.execute(insert(sessions).values(**session))
+        emit(db, "dialogue.session_created", project_id=args.project_id, payload={"session_id": session["id"]})
+        return session
     if op == "music.query":
         return music_query(service, db, args)
     if op == "dialogue.submit":
@@ -300,7 +315,7 @@ def dispatch(service, db, op, args, request):
             for x in paged(
                 db,
                 select(turns)
-                .where(turns.c.project_id == args.project_id)
+                .where(turns.c.project_id == args.project_id, *([turns.c.session_id == args.session_id] if args.session_id else []))
                 .order_by(turns.c.created_at, turns.c.id),
                 args,
             )

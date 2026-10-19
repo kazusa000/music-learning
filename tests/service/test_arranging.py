@@ -297,6 +297,8 @@ def test_p4_receipt_hash_stays_compatible_for_new_empty_edit_permission(service,
     args = c.SubmitDialogue(project_id=project["id"], revision_id=rev["id"], text="Old queued request")
     normalized = args.model_dump(mode="json")
     normalized.pop("edit_scope")
+    normalized.pop("session_id")
+    normalized.pop("model")
     request_hash = hashlib.sha256(
         canonical(
             dict(

@@ -6,6 +6,8 @@
 
 当前入口已去掉宣传横幅和开发编号，验证工程归档，默认显示实际歌曲。start.cmd 打开独立应用窗口；空格播放/暂停，原曲/重建可切换，声部可独奏和编辑。界面与数据整理的实际验证、桌面技术边界和历史磁盘容量问题见[前端整改](docs/24-usable-studio.md)，本轮迁移、缩放与试听修正见[使用修正](docs/25-local-runtime-and-audition.md)。
 
+AI 讨论已支持独立会话、实际可用模型选择与 Markdown，日常回复不再反复显示审核声明，见[对话使用](docs/28-conversation-usability.md)。
+
 顶部工程栏和播放栏支持自动收起与锁定，侧栏和对话布局已整理，见[工具栏与侧栏](docs/27-toolbar-and-sidebars.md)。
 
 侧栏和制作区域现在支持拖动边界调整大小，卷帘可用普通滚轮上下移动、Alt＋滚轮纵向缩放；操作和验证见[可调整面板](docs/26-resizable-panels.md)。
