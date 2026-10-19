@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新前端（2026-10-19）按用户新要求扩展为FL风格制作界面，用户可手动操作卷帘与音轨，覆盖此前只读范围。先读docs/22-fl-workbench.md。DawEditor.tsx/dawEditing.ts提供单声部画入/拖动/改时值/力度/多选/复制删除、MIDI与音频片段编排、音轨增删排序命名与混音，全部写入仍走现有edits.apply/revisions.restore/Service；51操作/11任务无迁移。手动时间修改显式转sample锚定并清理旧记谱绑定，旧版本/源录音保留；拖动只是预览，取消不写入，历史只读，保存使旧音频失效，需实际离线渲染才可试听。撤销栈会话内有效，跨重启可用历史版本恢复。122项回归、独立真实sfizz夹具浏览器13组交互/重启重渲染与完整305秒9,378音符视图回归通过；正式音色工程head与snapshot不变。当前额度实查剩余43%，无重置卡；正式和夹具实例/自有浏览器已停止，NAS未访问，无音乐模型或新Codex provider调用，P6人工听辨仍未通过。
+
 最新专项（2026-10-19）：统一乐器目录已实现，乐器为主入口、库为后台来源。先读docs/21-instrument-library.md的统一目录段。instrument_taxonomy.py定义稳定ID/父类/别名和明确映射；catalog每条可多instrument_ids，跨库汇集、同库拆分、同名靠唯一preset_id区分，重复ID拒绝。旧catalog仅兼容读取、不覆盖；新build写出分类，未知标unclassified，不能按文件名硬猜。当前3031条中23精选明确映射+2914原库类别映射+94待分类，已发声验证仍28；52分类节点不等于52个已安装乐器。新增instruments.categories，instruments.list的instrument_id/audio_verified和production.query的instrument_id/include_instrument_categories共用Service/API/SDK/CLI，当前51操作/11任务。前端“乐器”先选乐器交给AI选音色，来源可展开；只生成绑定revision/track的改编草稿，发送后才执行。原范围/幂等/状态/资源捕获约束保留。本次122项回归（86后端+36原生/模型格式）、真实目录API/CLI/停启与浏览器通过，无新的真实provider推理或歌曲渲染；正式工程head不变，NAS未访问，所有自有实例/浏览器停止。P6听辨仍未通过。
 
 ## 任务入口

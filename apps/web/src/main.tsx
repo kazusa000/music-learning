@@ -116,7 +116,7 @@ function App() {
     {!workspace && <section className="intro"><div><p className="eyebrow">YOUR PERSONAL MUSIC STUDIO</p><h1>听见音乐。<br/><span>看见它的可能。</span></h1>
       <p>从一首喜欢的作品开始，探索和声、节奏与配器。<br/>让每一次理解，成为下一次创造的起点。</p><span className="hero-caption">ANALYZE <i/> ARRANGE <i/> CREATE</span></div><div className="hero-art" aria-hidden="true"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="hero-wave">{Array.from({length:55},(_,i)=><i key={i} style={{height:12+Math.abs(Math.sin(i*.77)*Math.cos(i*.19))*130+'px'}}/>)}</div><span>THE SHAPE OF SOUND</span></div></section>}
     {error && <div role="alert">{error}<button onClick={() => setError('')} aria-label="关闭提示">×</button></div>}
-    {workspace && project && revision ? <Workbench key={project.id} title={project.title} revision={revision} publication={publication} jobs={jobs}
+    {workspace && project && revision ? <Workbench key={project.id} title={project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh}
       onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout"><aside>
       <label className={'import ' + (busy ? 'disabled' : '')}><strong>{busy ? '正在导入…' : '＋ 选择音乐'}</strong>
         <span>FLAC / WAV / MP3 / OGG 等</span><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"

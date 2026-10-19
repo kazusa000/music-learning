@@ -1,5 +1,7 @@
 # 本地交付、完整备份与恢复
 
+前端后续扩展：已增加 FL 风格手动卷帘、音轨/片段操作与混音台，继续共用 Service/API/SDK/CLI，编辑后显式生成试听。运行方式和原数据目录不变，详见 docs/22-fl-workbench.md。
+
 应用为 Windows x64 本地预览版。源码在 `E:\Intrest\music-learning`，正式数据/隔离环境/模型在 `D:\music-learning-runtime`；原始 NAS 音乐只使用先前只读复制的本地副本。前端是查看、讨论和试听的工作台，AI 的制作操作继续通过统一 API/SDK/CLI 执行。
 
 ## 启动与诊断

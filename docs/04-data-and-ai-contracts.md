@@ -1,5 +1,7 @@
 # 数据与 AI 操作约定
 
+手动前端扩展不新增工程真相或数据库模型。前端与 Agent 同用 edits.apply/revisions.restore，实际操作者 author=user、直接编辑的音符来源 user；时间修改显式锚定源样本并清除旧记谱绑定，原版本保留。UI 范围、幂等、冲突与渲染失效规则见 docs/22-fl-workbench.md。
+
 状态：第一阶段契约设计。P1 已落地核心实体与统一接口，P2 补充 Stem、ControlEvent、资源/描述引用、阶段状态及精确版本绑定的重建清单。P3 增加范围编辑、冻结、制作任务及实际试听状态。实际接口见 [P1](14-project-service.md)、[P2](15-preprocessing-pipeline.md)与 [P3](17-daw-implementation.md)；本文仍包含 P4～P6 目标，未列入能力发现的操作尚未实现。全操作要求见[AI DAW 约定](09-agent-daw-contract.md)。
 
 ## 数据实体

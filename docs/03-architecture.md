@@ -26,6 +26,8 @@ flowchart TB
 
 ## 技术选择
 
+手动制作扩展：`DawEditor.tsx` 提供 SVG 卷帘、片段编排和混音台，`dawEditing.ts` 组装现有编辑契约；`Workbench` 持有服务端 revision 的视图与会话撤销栈，所有写入仍经 Service。旧 Canvas 保留在总览。保存与播放分开，只有新 revision 的实际渲染可作为其重建试听，见 docs/22-fl-workbench.md。
+
 统一乐器目录（2026-10-19 已接入）：乐器分类 → 跨库预设索引 → 原生插件/完整状态/资源。`instrument_taxonomy.py` 提供稳定乐器 ID、层级与别名；已安装 catalog 的每个预设可带多个 `instrument_ids`，库来源作为后台元数据。`instruments.categories/list` 与内置 Agent 的 production.query 使用同一视图。现有 v1 catalog 通过版本管理的明确映射兼容读取，不覆盖磁盘目录、原始预设或工程 revision；新建 catalog 写出分类字段。分类不等于发声验证，未知项集中待分类，不能凭名称/音区猜测后自动换成默认音色。具体契约与验证见 [统一乐器目录](21-instrument-library.md#统一乐器目录)。
 
 | 部分 | 选择 | 目的与约束 |
