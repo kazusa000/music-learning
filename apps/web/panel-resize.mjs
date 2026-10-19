@@ -16,7 +16,7 @@ try{
   await page.getByRole('button',{name:'打开工程',exact:true}).click();await page.getByLabel('制作编辑器',{exact:true}).waitFor();
   const ai=(await page.locator('.inspector').boundingBox()).width;await drag('调整 AI 侧栏宽度',-170,0);assert.ok((await page.locator('.inspector').boundingBox()).width>ai+150);
   await drag('调整声部栏宽度',60,0);assert.ok((await page.locator('.track-panel').boundingBox()).width>240);
-  const aiHeight=await height('.discussion-history');await drag('调整 AI 对话区高度',0,60);assert.ok(await height('.discussion-history')>=aiHeight+50);
+  const inputHeight=await height('.discussion-compose textarea'),replyHeight=await height('.discussion-history');await drag('调整输入框高度',0,-60);assert.ok(await height('.discussion-compose textarea')>=inputHeight+50);assert.ok(await height('.discussion-history')<replyHeight-45);
   const content=await height('.daw-view-content');await drag('调整制作区域高度',0,70);assert.ok(await height('.daw-view-content')>content+60);
   await page.getByRole('button',{name:'钢琴卷帘',exact:true}).click();await page.locator('.daw-piano-grid [data-note-id]').first().waitFor();
   const before=await height('.daw-piano-scroll');await drag('调整卷帘高度',0,100);assert.ok(await height('.daw-piano-scroll')>before+85);
@@ -39,5 +39,5 @@ try{
   await page.screenshot({path:path.join(output,'desktop.png'),fullPage:true});
   for(const width of [1000,390]){await page.setViewportSize({width,height:900});await page.waitForTimeout(200);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2));}
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);
-  const report={status:'succeeded',library_width:true,track_width:true,ai_width:true,ai_height:true,piano_height:true,content_height:true,velocity_height:true,pitch_scroll:true,alt_wheel_pitch_zoom:true,pitch_anchor:true,pitch_navigator:true,persist_reload:true,keyboard_resize:true,double_click_reset:true,responsive:true,page_errors:errors,musical_writes:writes};await writeFile(path.join(output,'summary.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+  const report={status:'succeeded',library_width:true,track_width:true,ai_width:true,input_height:true,piano_height:true,content_height:true,velocity_height:true,pitch_scroll:true,alt_wheel_pitch_zoom:true,pitch_anchor:true,pitch_navigator:true,persist_reload:true,keyboard_resize:true,double_click_reset:true,responsive:true,page_errors:errors,musical_writes:writes};await writeFile(path.join(output,'summary.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }catch(e){await page.screenshot({path:path.join(output,'failure.png'),fullPage:true});throw e;}finally{await browser.close();}

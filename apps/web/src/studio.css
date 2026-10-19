@@ -125,7 +125,7 @@
 
 .chat-session-select{width:100%;display:flex;gap:5px;align-items:center}
 .chat-session-select select{min-width:0;flex:1;background:#242d39;color:#c2d0e3;border:1px solid #4a5a70;padding:6px;font-size:11px;border-radius:4px}
-.new-discussion{font-size:11px!important;padding:5px 8px!important;background:#36475c;border:1px solid #586c87;border-radius:4px}
+.new-discussion{font-size:11px;padding:5px 8px;background:#36475c;border:1px solid #586c87;border-radius:4px}
 .music-markdown{font-size:12px;line-height:1.8;overflow-wrap:anywhere;white-space:normal}
 .music-markdown>:first-child{margin-top:0}.music-markdown>:last-child{margin-bottom:0}
 .music-markdown h1,.music-markdown h2,.music-markdown h3{font-size:14px!important;line-height:1.6;margin:15px 0 7px;color:#d9e3f2}

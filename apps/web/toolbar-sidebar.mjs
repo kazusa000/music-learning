@@ -8,6 +8,7 @@ const errors=[],writes=[];page.on('pageerror',e=>errors.push(String(e)));page.on
 const moveOut=()=>page.mouse.move(600,850);
 const expanded=()=>page.locator('.toolbar-dock').getAttribute('data-expanded');
 try{
+  await page.route('**/v1/commands',async route=>{if(route.request().postDataJSON().operation==='dialogue.list')await route.fulfill({json:{schema_version:1,ok:true,result:[]}});else await route.continue();});
   await page.goto(base+'/#token='+(await readFile(tokenFile,'ascii')).trim());await page.getByRole('button',{name:'打开工程',exact:true}).click();await page.getByLabel('制作编辑器',{exact:true}).waitFor();
   assert.equal(await page.locator('.studio-top').count(),0);assert.equal(await page.getByLabel('返回音乐库',{exact:true}).count(),1);await moveOut();assert.equal(await expanded(),'false');assert.ok((await page.locator('.toolbar-dock').boundingBox()).height<40);
   await page.locator('.toolbar-peek').hover();assert.equal(await expanded(),'true');assert.equal(await page.getByRole('button',{name:'生成重建试听',exact:true}).count(),1);assert.ok(await page.getByRole('button',{name:'播放',exact:true}).isVisible()||await page.getByRole('button',{name:'暂停',exact:true}).isVisible());

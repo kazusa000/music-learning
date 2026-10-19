@@ -21,7 +21,7 @@ try{
  await page.getByLabel('循环起点秒',{exact:true}).fill('60');await page.getByLabel('循环终点秒',{exact:true}).fill('90');
  const bassIndex=revision.snapshot.tracks.findIndex(t=>t.role==='bass'||t.instrument_candidates?.includes('GM:33'));
  assert.ok(bassIndex>=0);await page.locator('.track-select').nth(bassIndex).click();
- await page.getByLabel('讨论范围',{exact:true}).selectOption('selection');
+ await page.getByLabel('范围与设置',{exact:true}).click();await page.getByLabel('讨论范围',{exact:true}).selectOption('selection');
  await page.getByLabel('Codex 登录方式',{exact:true}).selectOption('existing');
  const rate=revision.snapshot.sample_rate;
  await page.getByLabel('讨论问题',{exact:true}).fill(`请只调用 compare 比较这个贝斯声部的60–75秒与75–90秒：start_sample=${60*rate}，end_sample=${75*rate}，compare_start_sample=${75*rate}，compare_end_sample=${90*rate}。解释两个区间的音符密度和音域差异，并说明这些统计不能直接等价为声音张力。引用两处真实工程位置，200字以内。`);

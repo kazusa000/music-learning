@@ -47,7 +47,7 @@ try{
   assert.ok((await draft.inputValue()).includes('instrument_id=electric-guitar'));
   assert.ok(!(await draft.inputValue()).includes('preset_id='));
   assert.equal(await page.getByRole('button',{name:'允许改编模式'}).getAttribute('aria-pressed'),'true');
-  assert.ok(await page.getByRole('checkbox',{name:'允许整轨插件和自动化'}).isChecked());
+  await page.getByLabel('范围与设置',{exact:true}).click();assert.ok(await page.getByRole('checkbox',{name:'允许整轨插件和自动化'}).isChecked());await page.getByLabel('范围与设置',{exact:true}).click();
   await page.locator('.track-select').nth(1).click();
   await page.getByRole('button',{name:'改编 ↗',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'乐器草稿绑定的版本或声部已改变'}).waitFor();
