@@ -74,13 +74,13 @@ try{
   await range.focus();await range.press('Home');
   await page.getByRole('tab',{name:'音色与效果',exact:true}).click();await page.getByLabel('音色与效果的音轨',{exact:true}).selectOption({index:1});await page.locator('.plugin-card').first().waitFor();
   assert.ok((await page.locator('.plugin-card').first().innerText()).includes('VST3'));
-  await page.getByRole('button',{name:'版本',exact:true}).click();
+  await page.getByRole('tab',{name:'版本',exact:true}).click();
   await page.getByLabel('工程版本',{exact:true}).waitFor();
   const options=await page.getByLabel('工程版本',{exact:true}).locator('option').evaluateAll(nodes=>nodes.map(n=>n.value));
   if(options.length>2){await page.getByLabel('工程版本',{exact:true}).selectOption(options[2]);await page.waitForFunction(id=>document.querySelector('.studio').dataset.revision===id,options[2]);}
   await page.getByLabel('工程版本',{exact:true}).selectOption('head');
   await page.waitForFunction(id=>document.querySelector('.studio').dataset.revision===id,project.current_revision);
-  await page.getByRole('button',{name:'分析',exact:true}).click();
+  await page.getByRole('tab',{name:'分析',exact:true}).click();
   await page.waitForFunction(()=>Number(document.querySelector('.piano-roll')?.dataset.waveformBuckets)>0);
   await page.screenshot({path:path.join(output,'workbench.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);

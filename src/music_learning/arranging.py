@@ -130,7 +130,7 @@ def dispatch(service, db, op, args, request):
         )
     if turn["status"] != "running" or not turn["lease_until"] or turn["lease_until"] <= time.time():
         raise DomainError("turn_not_active", "Only an active discussion can commit an edit", 409)
-    scope = turn["payload"].get("edit_scope")
+    scope = turn["context"].get("edit_scope") or turn["payload"].get("edit_scope")
     if not scope:
         raise DomainError("read_only_turn", "This discussion did not authorize any edits", 403)
     project = row(db, t.projects, "id", args.project_id)
@@ -151,10 +151,14 @@ def dispatch(service, db, op, args, request):
             operation.entity.provenance = c.Provenance(origin="ai_edit", source_id=turn["id"])
     snapshot = apply(service, db, before, payload)
     # Full-time plugin permission must not widen a selected passage's musical edits.
-    musical_scope = c.EditScope(
-        track_ids=payload.scope.track_ids,
-        start_sample=turn["context"]["start_sample"],
-        end_sample=turn["context"]["end_sample"],
+    musical_scope = (
+        payload.scope
+        if turn["context"].get("scope_policy") == "automatic"
+        else c.EditScope(
+            track_ids=payload.scope.track_ids,
+            start_sample=turn["context"]["start_sample"],
+            end_sample=turn["context"]["end_sample"],
+        )
     )
     after_data = snapshot.model_dump(mode="json")
     before_snapshot = c.Snapshot.model_validate(before["snapshot"])

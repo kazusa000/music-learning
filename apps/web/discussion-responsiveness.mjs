@@ -1,3 +1,4 @@
+import {sandboxAudition} from './audition-sandbox.mjs';
 // Browser transport simulation: exercises loading/stream/cancel/retry without provider spend.
 import {chromium} from 'playwright';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
@@ -20,7 +21,7 @@ try{
   if(b.operation==='dialogue.list')value=history;
   else if(b.operation==='conversations.list')value=[];
   else if(b.operation==='dialogue.submit'||b.operation==='dialogue.retry'){
-   current=makeTurn((b.operation==='dialogue.submit'?'b':'c').repeat(32),'queued','');history.push(current);polls=0;value=current;
+   current=makeTurn((history.length===1?'b':'c').repeat(32),'queued','');history.push(current);polls=0;value=current;
   }else if(b.operation==='dialogue.cancel'){
    current.status='cancelled';current.updated_at++;value=current;
   }else if(b.operation==='dialogue.get'){
@@ -31,7 +32,7 @@ try{
   }
   await route.fulfill({json:{schema_version:1,ok:true,result:value}});
  });
- await page.goto(base+`/?project=${projectId}&view=workbench#token=${token}`);
+ await sandboxAudition(page,base,token);await page.goto(base+`/?project=${projectId}&view=workbench#token=${token}`);
  await page.getByText('已保存的讨论',{exact:true}).waitFor();
  assert.equal(await page.locator('pre').filter({hasText:'LAZY_TOOL_EVIDENCE_MARKER'}).count(),0);
  await page.locator('.tool-history>summary').click();await page.locator('.tool-history details>summary').click();

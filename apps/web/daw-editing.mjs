@@ -89,7 +89,7 @@ try{
   await page.getByRole('button',{name:'应用音符属性',exact:true}).click();await page.getByRole('alert').filter({hasText:'Expected revision differs'}).waitFor();current=await read();assert.equal(current.snapshot.notes.find(n=>n.id===n1).pitch,old.pitch);assert.equal(current.snapshot.notes.find(n=>n.id===n1).velocity,.55);await page.unroute('**/v1/commands');steps.push('revision conflict refused');
   await page.waitForFunction(id=>document.querySelector('.daw-editor')?.dataset.editorRevision===id,current.id);
   await page.getByRole('button',{name:'关闭编辑提示',exact:true}).click();
-  await page.getByRole('button',{name:'版本',exact:true}).click();await page.getByLabel('工程版本',{exact:true}).selectOption(fixture.seed_revision);await page.waitForFunction(()=>document.querySelector('.daw-edit-state')?.textContent.includes('历史版本'));
+  await page.getByRole('tab',{name:'版本',exact:true}).click();await page.getByLabel('工程版本',{exact:true}).selectOption(fixture.seed_revision);await page.waitForFunction(()=>document.querySelector('.daw-edit-state')?.textContent.includes('历史版本'));
   assert.ok(await page.getByRole('button',{name:'应用音符属性',exact:true}).isDisabled());assert.equal((await read()).id,current.id);
   await page.getByLabel('工程版本',{exact:true}).selectOption('head');await page.waitForFunction(()=>document.querySelector('.daw-edit-state')?.textContent.includes('可编辑'));steps.push('cancel/clip-boundary/history protection');
   // A later head must also win when another client commits just AFTER our successful write.

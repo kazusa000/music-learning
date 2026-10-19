@@ -1,3 +1,4 @@
+import {sandboxAudition} from './audition-sandbox.mjs';
 // Complete existing song view regression. Never edits or renders the user's project.
 import {chromium} from 'playwright';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
@@ -11,7 +12,7 @@ const browser=await chromium.launch({headless:true}),errors=[],writes=[];
 try{
  const page=await browser.newPage({viewport:{width:1680,height:1120}});page.on('pageerror',e=>errors.push(String(e)));
  page.on('request',r=>{if(r.url().endsWith('/v1/commands')){const b=r.postDataJSON();if(['edits.apply','revisions.restore','jobs.submit','dialogue.submit'].includes(b.operation))writes.push(b.operation);}});
- await page.goto(base+`/?project=${projectId}&view=workbench#token=${token}`);await page.getByLabel('制作编辑器',{exact:true}).waitFor();
+ await sandboxAudition(page,base,token);await page.goto(base+`/?project=${projectId}&view=workbench#token=${token}`);await page.getByLabel('制作编辑器',{exact:true}).waitFor();
  assert.equal(await page.locator('.daw-playlist-row').count(),before.snapshot.tracks.length);
  assert.ok(await page.locator('.daw-playlist-ruler text').count()<45);
  await page.screenshot({path:path.join(output,'playlist.png'),fullPage:true});
@@ -22,11 +23,11 @@ try{
  await page.getByLabel('时间轴平移',{exact:true}).focus();await page.getByLabel('时间轴平移',{exact:true}).press('End');
  await page.screenshot({path:path.join(output,'piano-roll-ending.png'),fullPage:true});
  await page.getByLabel('循环起点秒',{exact:true}).fill('60');await page.getByLabel('循环终点秒',{exact:true}).fill('75');
- await page.getByRole('button',{name:'版本',exact:true}).click();const baseline=versions.find(v=>v.id!==before.id);
+ await page.getByRole('tab',{name:'版本',exact:true}).click();const baseline=versions.find(v=>v.id!==before.id);
  if(baseline){await page.getByLabel('工程版本',{exact:true}).selectOption(baseline.id);await page.waitForFunction(id=>document.querySelector('.studio')?.dataset.revision===id,baseline.id);}
  await page.getByLabel('工程版本',{exact:true}).selectOption('head');await page.waitForFunction(id=>document.querySelector('.studio')?.dataset.revision===id,before.id);
  assert.equal(await page.getByLabel('循环起点秒',{exact:true}).inputValue(),'60');assert.equal(await page.getByLabel('循环终点秒',{exact:true}).inputValue(),'75');
- await page.getByRole('button',{name:'讨论',exact:true}).click();await page.getByRole('button',{name:'允许改编模式',exact:true}).click();assert.match(await page.locator('.discussion-compose>small').innerText(),/01:00.0–01:15.0/);
+ await page.getByRole('tab',{name:'讨论',exact:true}).click();await page.getByLabel('上下文与设置',{exact:true}).click();await page.getByLabel('讨论上下文',{exact:true}).selectOption('selection');await page.getByLabel('上下文与设置',{exact:true}).click();assert.equal(await page.getByLabel('讨论上下文',{exact:true}).inputValue(),'selection');
  await page.getByRole('button',{name:'混音台',exact:true}).click();assert.equal(await page.locator('.daw-mixer-strip').count(),before.snapshot.tracks.length);
  await page.screenshot({path:path.join(output,'mixer.png'),fullPage:true});
  await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);

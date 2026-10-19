@@ -59,10 +59,10 @@ try{
  const bassIndex=revision.snapshot.tracks.findIndex(t=>t.instrument_candidates?.includes('GM:33'));assert.ok(bassIndex>=0);
  await page.locator('.track-select').nth(bassIndex).click();
  await page.getByLabel('循环起点秒',{exact:true}).fill('60');await page.getByLabel('循环终点秒',{exact:true}).fill('75');
- await page.getByRole('button',{name:'允许改编模式',exact:true}).click();
+ await page.getByLabel('上下文与设置',{exact:true}).click();await page.getByLabel('讨论上下文',{exact:true}).selectOption('selection');await page.getByLabel('上下文与设置',{exact:true}).click();
  await page.getByLabel('讨论问题',{exact:true}).fill('查询该贝斯声部选区内events（limit=12），只把按起音顺序最早三个完整位于60–75秒内的音符升一个半音、力度乘0.9，起音/时值和其他事件不动。提交一次编辑并回读，给出新版本实际引用，说明渲染排队状态。');
  const priorTurns=(await api('dialogue.list',{project_id:project.id,limit:1000})).length;
- await page.getByRole('button',{name:'改编 ↗',exact:true}).click();
+ await page.getByRole('button',{name:'发送 ↗',exact:true}).click();
  await page.waitForFunction(count=>document.querySelectorAll('.discussion-turn').length===count+1,priorTurns);
  const editId=await page.locator('.discussion-turn').last().getAttribute('data-turn');
  await page.waitForFunction(id=>['succeeded','failed','cancelled'].includes(document.querySelector(`[data-turn="${id}"]`)?.dataset.status),editId,{timeout:240000});

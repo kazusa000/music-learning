@@ -315,6 +315,7 @@ def test_p4_receipt_hash_stays_compatible_for_new_empty_edit_permission(service,
     normalized.pop("edit_scope")
     normalized.pop("session_id")
     normalized.pop("model")
+    normalized.pop("edit_mode")
     request_hash = hashlib.sha256(
         canonical(
             dict(
@@ -365,7 +366,10 @@ def test_failed_agent_edit_never_changes_head_or_queues_audio(service, project, 
             db.execute(
                 update(turns)
                 .where(turns.c.id == turn["id"])
-                .values(payload={**turn["payload"], "edit_scope": None})
+                .values(
+                    payload={**turn["payload"], "edit_scope": None, "edit_mode": "read_only"},
+                    context={**turn["context"], "edit_scope": None, "scope_policy": "read_only"},
+                )
             )
     args = dict(
         project_id=project["id"],
@@ -377,3 +381,31 @@ def test_failed_agent_edit_never_changes_head_or_queues_audio(service, project, 
         invoke(service, "arrangements.apply", args, head)
     assert invoke(service, "projects.get", dict(project_id=project["id"]))["current_revision"] == head
     assert not invoke(service, "jobs.list", dict(project_id=project["id"]))
+
+
+def test_automatic_actions_are_not_limited_by_discussion_excerpt(service, project):
+    rev, track, *_ = musical(service, project)
+    turn = invoke(
+        service,
+        "dialogue.submit",
+        dict(project_id=project["id"], text="修改整轨", start_sample=100, end_sample=2000, track_id=track),
+        rev["id"],
+    )
+    assert turn["payload"]["edit_scope"] is None
+    assert turn["context"]["scope_policy"] == "automatic"
+    assert turn["context"]["edit_scope"]["structural"] is True
+    assert turn["context"]["edit_scope"]["end_sample"] == 44100
+    DialogueWorker(service.database).claim()
+    note = rev["snapshot"]["notes"][1]
+    result = invoke(
+        service,
+        "arrangements.apply",
+        dict(
+            project_id=project["id"],
+            turn_id=turn["id"],
+            description="Whole track request with excerpt focus",
+            operations=[dict(op="patch_note", id=note["id"], pitch=note["pitch"] + 1)],
+        ),
+        rev["id"],
+    )
+    assert result["revision_id"] != rev["id"]

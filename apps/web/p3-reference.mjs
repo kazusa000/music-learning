@@ -34,7 +34,7 @@ try{
   await page.waitForFunction(()=>document.querySelector('.studio').dataset.playing==='true',null,{timeout:90000});
   await page.waitForTimeout(250);
   const before=Number(await page.locator('.studio').getAttribute('data-position'));
-  await page.getByRole('button',{name:'版本',exact:true}).click();
+  await page.getByRole('tab',{name:'版本',exact:true}).click();
   const reference=(await api('renders.list',{project_id:owner.project_id,revision_id:owner.initial_revision})).at(-1);
   await Promise.all([
     page.waitForRequest(request=>request.url().endsWith('/v1/assets/'+reference.mix_asset_id)),

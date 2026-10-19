@@ -18,7 +18,7 @@ TERMINAL = {"succeeded", "failed", "cancelled"}
 
 def public(turn, db=None):
     result = {k: v for k, v in turn.items() if k not in ("lease_token", "lease_until")}
-    if db is not None and turn["payload"].get("edit_scope"):
+    if db is not None and (turn["context"].get("edit_scope") or turn["payload"].get("edit_scope")):
         from .schema_v5 import arrangements
 
         receipt = db.execute(
@@ -229,8 +229,22 @@ def submit(service, db, args, request, *, retry_of=None):
         session = row(db, sessions, "id", args.session_id)
         if session["project_id"] != args.project_id:
             raise DomainError("session_mismatch", "会话不属于此工程", 422)
-    if args.edit_scope:
-        scope = args.edit_scope
+    automatic = (
+        args.edit_mode == "auto"
+        and args.edit_scope is None
+        and revision["id"] == row(db, t.projects, "id", args.project_id)["current_revision"]
+    )
+    if args.edit_mode == "read_only" and args.edit_scope:
+        raise DomainError("mode_conflict", "read_only mode cannot include an edit_scope", 422)
+    scope = args.edit_scope
+    if automatic:
+        scope = c.EditScope(
+            track_ids=[track["id"] for track in revision["snapshot"]["tracks"]],
+            start_sample=0,
+            end_sample=revision["snapshot"]["duration_samples"],
+            structural=True,
+        )
+    if scope:
         bounds(revision["snapshot"], scope.start_sample, scope.end_sample, None)
         if revision["id"] != row(db, t.projects, "id", args.project_id)["current_revision"]:
             raise DomainError(
@@ -254,7 +268,8 @@ def submit(service, db, args, request, *, retry_of=None):
         "retry_of": retry_of,
         "raw_audio_sent": False,
         "session_id": args.session_id,
-        "edit_scope": args.edit_scope.model_dump() if args.edit_scope else None,
+        "edit_scope": scope.model_dump() if scope else None,
+        "scope_policy": "automatic" if automatic else "explicit" if scope else "read_only",
     }
     payload = args.model_dump(mode="json")
     payload.update(revision_id=revision["id"], end_sample=b)

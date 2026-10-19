@@ -22,7 +22,7 @@ try{
  assert.equal(await page.locator('.studio').getAttribute('data-playing'),'false');
  await page.locator('.mode-switch button').filter({hasText:'原曲'}).click();
  await page.getByRole('button',{name:'生成重建试听',exact:true}).click();assert.equal(await mix.getAttribute('aria-pressed'),'true');
- await page.getByRole('button',{name:'分析',exact:true}).click();
+ await page.getByRole('tab',{name:'分析',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('[data-render-status]')?.getAttribute('data-render-status')==='succeeded',null,{timeout:60000});
  assert.equal(await mix.getAttribute('aria-pressed'),'true');
  const report={status:'succeeded',new_revision_targets_reconstruction:true,missing_render_does_not_play_original:true,render_button_selects_reconstruction:true,completed_render_keeps_reconstruction:true,source_unchanged:changed.snapshot.source_asset_id===before.snapshot.source_asset_id,provider_calls:0};

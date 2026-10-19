@@ -163,9 +163,7 @@ def test_stream_tools_citations_notes_survive_reopen_and_head_change(service, se
     reopened.close()
 
 
-@pytest.mark.parametrize(
-    "mode,code", [("badcitation", "invalid_citation"), ("disconnect", "provider_disconnected")]
-)
+@pytest.mark.parametrize("mode,code", [("disconnect", "provider_disconnected")])
 def test_provider_failure_is_not_success_and_retry_is_new_attempt(service, project, mode, code):
     turn, rev, _ = queued(service, project)
 
@@ -210,3 +208,45 @@ def test_cancel_interrupts_and_executor_loss_never_auto_spends_again(service, pr
         invoke(service, "dialogue.get", dict(project_id=project["id"], turn_id=retry["id"]))["error"]["code"]
         == "executor_lost"
     )
+
+
+def test_bad_citation_does_not_discard_a_useful_reply(service, project):
+    turn, rev, _ = queued(service, project)
+
+    class BadCitation(Provider):
+        mode = "badcitation"
+
+    worker = DialogueWorker(service.database, BadCitation)
+    asyncio.run(worker.execute(worker.claim()))
+    result = invoke(service, "dialogue.get", {"project_id": project["id"], "turn_id": turn["id"]})
+    assert result["status"] == "succeeded"
+    assert result["context"]["ignored_citation_ids"] == ["f" * 32]
+    assert result["text"]
+
+
+def test_plain_reply_does_not_require_a_music_citation_or_edit(service, project):
+    turn, rev, _ = queued(service, project)
+
+    class Plain(Provider):
+        async def request(self, method, params, **kwargs):
+            if method != "turn/start":
+                return await super().request(method, params, **kwargs)
+            await self.events.put(
+                {
+                    "method": "item/agentMessage/delta",
+                    "params": {"threadId": "thread", "turnId": "turn", "delta": "可以，直接告诉我想怎么改。"},
+                }
+            )
+            await self.events.put(
+                {
+                    "method": "turn/completed",
+                    "params": {"threadId": "thread", "turn": {"id": "turn", "status": "completed"}},
+                }
+            )
+            return {"turn": {"id": "turn"}}
+
+    worker = DialogueWorker(service.database, Plain)
+    asyncio.run(worker.execute(worker.claim()))
+    result = invoke(service, "dialogue.get", {"project_id": project["id"], "turn_id": turn["id"]})
+    assert result["status"] == "succeeded" and not result["citations"]
+    assert invoke(service, "revisions.get", {"project_id": project["id"]})["id"] == rev["id"]

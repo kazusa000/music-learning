@@ -101,7 +101,7 @@ def test_readonly_discussion_can_discover_presets_with_pinned_track(service, pro
     turn = invoke(
         service,
         "dialogue.submit",
-        dict(project_id=project["id"], text="有哪些音色", track_id=track),
+        dict(project_id=project["id"], text="有哪些音色", track_id=track, edit_mode="read_only"),
         rev["id"],
     )
     assert turn["context"]["selected_track"]["id"] == track
@@ -293,7 +293,9 @@ def test_agent_can_capture_then_apply_without_exposing_sample_inventory(service,
             project_id=project["id"],
             revision_id=rev["id"],
             text="选择已安装预设",
-            edit_scope=dict(track_ids=[track], start_sample=0, end_sample=44100, structural=True),
+            track_id=track,
+            start_sample=100,
+            end_sample=2000,
         ),
         rev["id"],
     )

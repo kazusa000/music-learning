@@ -308,10 +308,10 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   function locate(citation:Citation){
     player.current.pause();setPlaying(false);
     if(citation.revision_id!==revision.id){pendingCitation.current=citation;setVersionId(citation.revision_id);return;}
-    setSelected(citation.track_id??'all');setLoopStart(citation.start_sample/rate);setLoopEnd(citation.end_sample/rate);
+    setSelected(citation.track_id??'all');
     const nextZoom=Math.min(24,Math.max(1,duration/Math.max(1,(citation.end_sample-citation.start_sample)/rate)));
     setZoom(nextZoom);setViewStart(Math.min(citation.start_sample/rate,Math.max(0,duration-duration/nextZoom)));
-    void cue({position_sample:citation.start_sample,loop_start_sample:citation.start_sample,loop_end_sample:citation.end_sample,playing:false});
+    void cue({position_sample:citation.start_sample,playing:false});
   }
   useEffect(()=>{const citation=pendingCitation.current;if(citation?.revision_id===revision.id){pendingCitation.current=null;locate(citation);}},[revision.id]);
 

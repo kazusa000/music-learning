@@ -72,6 +72,7 @@ class Service:
                 raise DomainError("idempotency_required", "Writes require idempotency_key", 422)
             if request.operation == "dialogue.models":
                 from .model_catalog import models
+
                 result = models(self.settings, args.login_mode, refresh=args.refresh)
                 TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
                 return {"schema_version": 1, "request_id": request.request_id, "ok": True, "result": result}
@@ -96,6 +97,8 @@ class Service:
             if isinstance(args, c.SetAudition) and args.state.hybrid_job_id is None:
                 hash_arguments["state"].pop("hybrid_job_id", None)
             if isinstance(args, c.SubmitDialogue):
+                if args.edit_mode == "auto":
+                    hash_arguments.pop("edit_mode", None)
                 for optional in ("session_id", "model"):
                     if hash_arguments.get(optional) is None:
                         hash_arguments.pop(optional, None)
@@ -139,9 +142,16 @@ class Service:
                 result = self._dispatch(db, request.operation, args, request)
                 if c.RESULT_TYPES[request.operation] is c.Project:
                     from .schema_v6 import library
-                    metadata = db.execute(select(library).where(library.c.project_id == result["id"])).mappings().first()
+
+                    metadata = (
+                        db.execute(select(library).where(library.c.project_id == result["id"]))
+                        .mappings()
+                        .first()
+                    )
                     if metadata:
-                        result = dict(result, archived=metadata["archived"], display_title=metadata["display_title"])
+                        result = dict(
+                            result, archived=metadata["archived"], display_title=metadata["display_title"]
+                        )
                 # Validate read-back as well as input before committing a write.
                 try:
                     TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
@@ -423,6 +433,7 @@ class Service:
             }
         if op == "projects.list":
             from .schema_v6 import library
+
             statement = select(t.projects, library.c.archived, library.c.display_title).outerjoin(
                 library, library.c.project_id == t.projects.c.id
             )
@@ -436,6 +447,7 @@ class Service:
             return result
         if op == "projects.organize":
             from .schema_v6 import library
+
             project = row(db, t.projects, "id", args.project_id)
             values = dict(archived=args.archived, display_title=args.display_title)
             exists = db.execute(select(library).where(library.c.project_id == args.project_id)).first()

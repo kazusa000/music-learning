@@ -4039,6 +4039,15 @@
           "default": null,
           "title": "Revision Id"
         },
+        "edit_mode": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "read_only"
+          ],
+          "title": "Edit Mode",
+          "type": "string"
+        },
         "session_id": {
           "anyOf": [
             {

@@ -1,3 +1,4 @@
+import {sandboxAudition} from './audition-sandbox.mjs';
 import {chromium} from 'playwright';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
@@ -11,7 +12,7 @@ page.on('request',r=>{if(r.url().endsWith('/v1/commands')){const op=r.postDataJS
 async function drag(label,dx,dy){const handle=page.getByRole('separator',{name:label,exact:true});await handle.scrollIntoViewIfNeeded();const b=await handle.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2+dx,b.y+b.height/2+dy,{steps:8});await page.mouse.up();}
 const height=async selector=>(await page.locator(selector).boundingBox()).height;
 try{
-  await page.goto(base+'/#token='+(await readFile(tokenFile,'ascii')).trim());await page.getByRole('button',{name:'打开工程',exact:true}).waitFor();
+  await sandboxAudition(page,base,(await readFile(tokenFile,'ascii')).trim());await page.goto(base+'/#token='+(await readFile(tokenFile,'ascii')).trim());await page.getByRole('button',{name:'打开工程',exact:true}).waitFor();
   await drag('调整歌曲列表宽度',70,0);assert.ok((await page.locator('.layout>aside').boundingBox()).width>=320);
   await page.getByRole('button',{name:'打开工程',exact:true}).click();await page.getByLabel('制作编辑器',{exact:true}).waitFor();
   const ai=(await page.locator('.inspector').boundingBox()).width;await drag('调整 AI 侧栏宽度',-170,0);assert.ok((await page.locator('.inspector').boundingBox()).width>ai+150);

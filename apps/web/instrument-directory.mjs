@@ -1,3 +1,5 @@
+import {sandboxAudition} from './audition-sandbox.mjs';
+const base='http://127.0.0.1:8765';
 // Real local API and UI, no provider calls or musical edits.
 import {chromium} from 'playwright';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
@@ -12,7 +14,7 @@ try{
   page.on('pageerror',e=>errors.push(String(e)));
   page.on('request',request=>{if(!request.url().endsWith('/v1/commands'))return;
     const body=request.postDataJSON();if(['dialogue.submit','jobs.submit','edits.apply','arrangements.apply'].includes(body.operation))productionWrites.push(body.operation);});
-  await page.goto(`http://127.0.0.1:8765/?project=${projectId}&view=workbench#token=${token}`);
+  await sandboxAudition(page,base,token);await page.goto(`http://127.0.0.1:8765/?project=${projectId}&view=workbench#token=${token}`);
   await page.getByRole('region',{name:'音乐工作台'}).waitFor();
   assert.deepEqual(await page.getByRole('tablist',{name:'侧栏内容'}).getByRole('tab').allTextContents(),['讨论','音色与效果','版本','分析']);
   await page.getByRole('tab',{name:'讨论',exact:true}).focus();await page.keyboard.press('End');
@@ -46,10 +48,9 @@ try{
   await page.waitForFunction(()=>document.querySelector('textarea[aria-label="讨论问题"]')?.value.includes('instrument_id=electric-guitar'));
   assert.ok((await draft.inputValue()).includes('instrument_id=electric-guitar'));
   assert.ok(!(await draft.inputValue()).includes('preset_id='));
-  assert.equal(await page.getByRole('button',{name:'允许改编模式'}).getAttribute('aria-pressed'),'true');
-  await page.getByLabel('范围与设置',{exact:true}).click();assert.ok(await page.getByRole('checkbox',{name:'允许整轨插件和自动化'}).isChecked());await page.getByLabel('范围与设置',{exact:true}).click();
+  assert.equal(await page.getByRole('button',{name:'允许改编模式'}).count(),0);assert.equal(await page.locator('input[aria-label="允许整轨插件和自动化"]').count(),0);
   await page.locator('.track-select').nth(1).click();
-  await page.getByRole('button',{name:'改编 ↗',exact:true}).click();
+  await page.getByRole('button',{name:'发送 ↗',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'乐器草稿绑定的版本或声部已改变'}).waitFor();
   assert.deepEqual(productionWrites,[]);
   await page.getByRole('tab',{name:'音色与效果',exact:true}).click();

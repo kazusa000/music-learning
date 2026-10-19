@@ -909,6 +909,7 @@ class ModelCatalog(Model):
 
 
 class SubmitDialogue(RevisionRef):
+    edit_mode: Literal["auto", "read_only"] = "auto"
     session_id: Id | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
     text: str = Field(min_length=1, max_length=12000)
