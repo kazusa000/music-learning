@@ -2,7 +2,7 @@ import copy
 import json
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from music_learning import contracts as c, schema_v1 as t
 from music_learning.service import DomainError
@@ -451,3 +451,13 @@ def test_render_retry_keeps_original_target_after_head_changes(service, project)
     retried = invoke(service, "jobs.retry", dict(job_id=queued["id"]), renamed["current_revision"])
     assert retried["revision_id"] == revision["id"]
     assert retried["payload"]["revision_id"] == revision["id"]
+    # Older rows stored the implicit target as null; retry still uses their
+    # authoritative job.revision_id, never the newly advanced head.
+    with service.database.transaction() as db:
+        db.execute(
+            update(t.jobs)
+            .where(t.jobs.c.id == queued["id"])
+            .values(payload=dict(queued["payload"], revision_id=None))
+        )
+    legacy = invoke(service, "jobs.retry", dict(job_id=queued["id"]), renamed["current_revision"])
+    assert legacy["revision_id"] == revision["id"]

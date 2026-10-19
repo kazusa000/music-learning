@@ -644,6 +644,8 @@ class Service:
                     previous=previous,
                 )
             retry_payload = dict(previous["payload"])
+            if previous["kind"] in ("project.render", "project.export"):
+                retry_payload["revision_id"] = previous["revision_id"]
             if previous["kind"] == "project.export":
                 retry_payload.pop("audio_asset_id", None)
             return self._dispatch(

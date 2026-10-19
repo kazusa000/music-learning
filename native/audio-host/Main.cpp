@@ -62,7 +62,14 @@ void writeJson(const File& file, const var& value)
 {
     require(file.getParentDirectory().createDirectory().wasOk(), "Cannot create output directory");
     TemporaryFile temporary(file);
-    require(temporary.getFile().replaceWithText(JSON::toString(value)), "Cannot write JSON");
+    {
+        // replaceWithText creates another TemporaryFile internally. Avoid two
+        // appended suffixes overflowing Win32 paths in deeply nested jobs.
+        auto stream = temporary.getFile().createOutputStream();
+        require(stream != nullptr && stream->writeText(JSON::toString(value), false, false, "\n"), "Cannot write JSON");
+        stream->flush();
+        require(stream->getStatus().wasOk(), "Cannot flush JSON");
+    }
     require(temporary.overwriteTargetFileWithTemporary(), "Cannot publish JSON");
 }
 
