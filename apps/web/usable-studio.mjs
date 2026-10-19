@@ -1,0 +1,47 @@
+// Actual current-song UI/desktop acceptance; transport writes only, no musical edits/inference.
+import {chromium} from 'playwright';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const [tokenFile,output,cdp]=process.argv.slice(2),base='http://127.0.0.1:8765';
+await mkdir(output,{recursive:false});
+const token=(await readFile(tokenFile,'ascii')).trim(),browser=cdp?await chromium.connectOverCDP(cdp):await chromium.launch({headless:true});
+const page=cdp?browser.contexts()[0].pages().find(p=>p.url().startsWith(base)):await browser.newPage({viewport:{width:1600,height:980}});
+assert.ok(page);const errors=[],writes=[];
+page.on('pageerror',e=>errors.push(String(e)));
+page.on('request',r=>{if(r.url().endsWith('/v1/commands')){const op=r.postDataJSON().operation;if(['edits.apply','jobs.submit','dialogue.submit','revisions.restore'].includes(op))writes.push(op);}});
+try{
+ await page.goto(base+'/#token='+token);await page.getByRole('button',{name:'打开工程',exact:true}).waitFor();
+ assert.equal(await page.getByRole('navigation',{name:'工程列表'}).getByRole('button').count(),1);
+ await page.getByLabel('显示归档工程',{exact:true}).check();
+ await page.waitForFunction(()=>document.querySelectorAll('nav[aria-label="工程列表"] button').length===13);
+ await page.getByLabel('显示归档工程',{exact:true}).uncheck();
+ await page.waitForFunction(()=>document.querySelectorAll('nav[aria-label="工程列表"] button').length===1);
+ const home=await page.locator('body').innerText();assert.doesNotMatch(home,/听见音乐|看见它的可能|verification|diagnostics|\b[a-f0-9]{8}\b/i);
+ assert.ok(await page.locator('h1,h2,h3').evaluateAll(nodes=>nodes.every(n=>parseFloat(getComputedStyle(n).fontSize)<=18)));
+ await page.screenshot({path:path.join(output,'library.png'),fullPage:true});
+ await page.locator('body').click({position:{x:350,y:10}});await page.keyboard.press('Space');
+ await page.waitForFunction(()=>!document.querySelector('audio[aria-label="重建试听"]').paused&&document.querySelector('audio[aria-label="重建试听"]').currentTime>.1);
+ await page.keyboard.press('Space');assert.equal(await page.getByLabel('重建试听',{exact:true}).evaluate(a=>a.paused),true);
+ const homeSound=await page.getByLabel('重建试听',{exact:true}).elementHandle();await page.keyboard.press('Space');
+ await page.waitForFunction(()=>!document.querySelector('audio[aria-label="重建试听"]').paused);
+ await page.getByRole('button',{name:'打开工程',exact:true}).click();await page.getByLabel('制作编辑器',{exact:true}).waitFor();
+ assert.equal(await homeSound.evaluate(a=>a.paused),true);
+ await page.locator('.mode-switch button').filter({hasText:'重建'}).click();
+ await page.locator('body').click({position:{x:350,y:10}});const scroll=await page.evaluate(()=>scrollY);
+ await page.keyboard.press('Space');await page.waitForFunction(()=>document.querySelector('.studio')?.getAttribute('data-playing')==='true');
+ await page.keyboard.press('Space');await page.waitForFunction(()=>document.querySelector('.studio')?.getAttribute('data-playing')==='false');assert.equal(await page.evaluate(()=>scrollY),scroll);
+ await page.getByLabel('讨论问题',{exact:true}).fill('测试空格');await page.keyboard.press('Space');assert.match(await page.getByLabel('讨论问题',{exact:true}).inputValue(),/ $/);
+ assert.equal(await page.locator('.studio').getAttribute('data-playing'),'false');await page.getByLabel('讨论问题',{exact:true}).fill('');
+ await page.getByLabel('独奏 1',{exact:true}).click();await page.getByRole('button',{name:'播放',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('.studio')?.getAttribute('data-playing')==='true');await page.getByRole('button',{name:'暂停',exact:true}).click();
+ await page.getByRole('button',{name:'钢琴卷帘',exact:true}).click();
+ await page.locator('.daw-piano-grid g[data-note-id]').first().waitFor();
+ await page.getByRole('button',{name:'编排',exact:true}).click();
+ await page.locator('.track-select').first().dblclick();
+ assert.equal(await page.getByRole('button',{name:'钢琴卷帘',exact:true}).getAttribute('aria-pressed'),'true');
+ await page.screenshot({path:path.join(output,'studio.png'),fullPage:true});
+ assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);
+ const report={status:'succeeded',desktop:!!cdp,default_projects:1,archive_toggle:true,no_promotion_or_hashes:true,compact_headings:true,home_reconstruction_played:true,home_sound_stopped_on_navigation:true,space_play_pause:true,space_no_scroll:true,textarea_space_preserved:true,reconstruction_played:true,solo_played:true,page_errors:errors,production_writes:writes,provider_calls:0};
+ await writeFile(path.join(output,'summary.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+}finally{await browser.close();}

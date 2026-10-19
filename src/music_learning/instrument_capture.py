@@ -12,6 +12,13 @@ from .storage import digest
 from .instruments import resource_path
 
 
+class InstrumentSpaceError(ValueError):
+    public_error = {
+        "code": "insufficient_space",
+        "message": "制作磁盘空间不足，无法准备音色；请释放空间或将工程数据迁移到容量充足的本地磁盘。",
+    }
+
+
 def native_probe(host, spec, directory, key_range, drums=False):
     rate = 44100
     low, high = key_range
@@ -67,7 +74,7 @@ def capture(settings, job, directory):
     target_root.mkdir()
     required = sum(x["bytes"] for x in entry["resources"].values())
     if shutil.disk_usage(directory).free < required + settings.pipeline_min_free_bytes:
-        raise ValueError("Insufficient space for preset resources")
+        raise InstrumentSpaceError("Insufficient space for preset resources")
     files = []
 
     def add(path, media_type):

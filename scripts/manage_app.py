@@ -43,8 +43,33 @@ def ready(settings):
         return False
 
 
-def open_ui(settings):
-    webbrowser.open(f"http://127.0.0.1:{settings.port}/#token=" + session_token(settings))
+def open_ui(settings, *, browser=False):
+    if browser:
+        webbrowser.open(f"http://127.0.0.1:{settings.port}/#token=" + session_token(settings))
+        return
+    from desktop import existing, focus
+
+    if process := existing(settings):
+        if focus(process):
+            return
+        # Only our validated owner; a closed window must not strand reopening
+        # on an invisible Edge background process.
+        process.terminate()
+        process.wait(timeout=10)
+    with settings.path("desktop.log").open("ab") as log:
+        child = subprocess.Popen(
+            [sys.executable, str(ROOT / "scripts/desktop.py")], cwd=ROOT,
+            stdout=log, stderr=log, env=dict(os.environ, PYTHONPATH=str(ROOT / "src")),
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if existing(settings):
+            return
+        if child.poll() is not None:
+            break
+        time.sleep(.1)
+    raise SystemExit("Application window failed to start; inspect desktop.log or explicitly use --browser")
 
 
 @contextmanager
@@ -135,6 +160,7 @@ def main():
         "command", choices=["start", "stop", "status", "open", "supervise", "migrate", "backup"]
     )
     parser.add_argument("--open", action="store_true")
+    parser.add_argument("--browser", action="store_true", help="Explicitly use a browser tab instead of the application window")
     args = parser.parse_args()
     settings = Settings.load()
     if args.command == "supervise":
@@ -154,6 +180,11 @@ def main():
         return
     process = owned(settings)
     if args.command == "stop":
+        from desktop import existing
+
+        if desktop := existing(settings):
+            desktop.terminate()
+            desktop.wait(timeout=10)
         if process:
             settings.path("stop.request").touch()
             try:
@@ -177,7 +208,7 @@ def main():
     if args.command == "open":
         if not process or not ready(settings):
             raise SystemExit("Application is stopped; run start.cmd")
-        open_ui(settings)
+        open_ui(settings, browser=args.browser)
         return
     # An exclusive short-lived start lock prevents two callers racing the port.
     with start_lock(settings):
@@ -202,7 +233,7 @@ def main():
             while time.monotonic() < deadline:
                 if owned(settings) and ready(settings):
                     if args.open:
-                        open_ui(settings)
+                        open_ui(settings, browser=args.browser)
                     print(
                         json.dumps(
                             {

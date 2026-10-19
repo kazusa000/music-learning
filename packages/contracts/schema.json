@@ -2064,24 +2064,38 @@
       "title": "NoteEvent",
       "type": "object"
     },
-    "Page": {
+    "OrganizeProject": {
       "additionalProperties": false,
       "properties": {
-        "offset": {
-          "default": 0,
-          "minimum": 0,
-          "title": "Offset",
-          "type": "integer"
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
         },
-        "limit": {
-          "default": 100,
-          "maximum": 1000,
-          "minimum": 1,
-          "title": "Limit",
-          "type": "integer"
+        "archived": {
+          "default": false,
+          "title": "Archived",
+          "type": "boolean"
+        },
+        "display_title": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Title"
         }
       },
-      "title": "Page",
+      "required": [
+        "project_id"
+      ],
+      "title": "OrganizeProject",
       "type": "object"
     },
     "PatchNote": {
@@ -2612,6 +2626,23 @@
         "created_at": {
           "title": "Created At",
           "type": "number"
+        },
+        "archived": {
+          "default": false,
+          "title": "Archived",
+          "type": "boolean"
+        },
+        "display_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Title"
         }
       },
       "required": [
@@ -2623,6 +2654,31 @@
         "created_at"
       ],
       "title": "Project",
+      "type": "object"
+    },
+    "ProjectList": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "include_archived": {
+          "default": false,
+          "title": "Include Archived",
+          "type": "boolean"
+        }
+      },
+      "title": "ProjectList",
       "type": "object"
     },
     "ProjectPage": {
@@ -4095,7 +4151,7 @@
       "mutates": false
     },
     "projects.list": {
-      "arguments": "Page",
+      "arguments": "ProjectList",
       "result": {
         "items": {
           "$ref": "#/$defs/Project"
@@ -4103,6 +4159,81 @@
         "type": "array"
       },
       "mutates": false
+    },
+    "projects.organize": {
+      "arguments": "OrganizeProject",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "research",
+              "composition"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "empty",
+              "imported",
+              "queued",
+              "processing",
+              "ready",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "current_revision": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Current Revision",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "archived": {
+            "default": false,
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "display_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Title"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "status",
+          "current_revision",
+          "created_at"
+        ],
+        "title": "Project",
+        "type": "object"
+      },
+      "mutates": true
     },
     "projects.create": {
       "arguments": "CreateProject",
@@ -4147,6 +4278,23 @@
           "created_at": {
             "title": "Created At",
             "type": "number"
+          },
+          "archived": {
+            "default": false,
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "display_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Title"
           }
         },
         "required": [
@@ -4205,6 +4353,23 @@
           "created_at": {
             "title": "Created At",
             "type": "number"
+          },
+          "archived": {
+            "default": false,
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "display_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Title"
           }
         },
         "required": [
@@ -4263,6 +4428,23 @@
           "created_at": {
             "title": "Created At",
             "type": "number"
+          },
+          "archived": {
+            "default": false,
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "display_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Title"
           }
         },
         "required": [
@@ -4321,6 +4503,23 @@
           "created_at": {
             "title": "Created At",
             "type": "number"
+          },
+          "archived": {
+            "default": false,
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "display_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Title"
           }
         },
         "required": [
@@ -5402,6 +5601,23 @@
           "created_at": {
             "title": "Created At",
             "type": "number"
+          },
+          "archived": {
+            "default": false,
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "display_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Title"
           }
         },
         "required": [

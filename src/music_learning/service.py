@@ -128,6 +128,11 @@ class Service:
                                 {"current_revision": project["current_revision"]},
                             )
                 result = self._dispatch(db, request.operation, args, request)
+                if c.RESULT_TYPES[request.operation] is c.Project:
+                    from .schema_v6 import library
+                    metadata = db.execute(select(library).where(library.c.project_id == result["id"])).mappings().first()
+                    if metadata:
+                        result = dict(result, archived=metadata["archived"], display_title=metadata["display_title"])
                 # Validate read-back as well as input before committing a write.
                 try:
                     TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
@@ -408,7 +413,29 @@ class Service:
                 "timing": "sample authority; rational beats; measured piecewise linear anchors",
             }
         if op == "projects.list":
-            return paged(db, select(t.projects).order_by(t.projects.c.created_at, t.projects.c.id), args)
+            from .schema_v6 import library
+            statement = select(t.projects, library.c.archived, library.c.display_title).outerjoin(
+                library, library.c.project_id == t.projects.c.id
+            )
+            if not args.include_archived:
+                statement = statement.where((library.c.archived.is_(None)) | (library.c.archived.is_(False)))
+            result = paged(db, statement.order_by(t.projects.c.created_at, t.projects.c.id), args)
+            for project in result:
+                if project["archived"] is None:
+                    project.pop("archived")
+                    project.pop("display_title")
+            return result
+        if op == "projects.organize":
+            from .schema_v6 import library
+            project = row(db, t.projects, "id", args.project_id)
+            values = dict(archived=args.archived, display_title=args.display_title)
+            exists = db.execute(select(library).where(library.c.project_id == args.project_id)).first()
+            if exists:
+                db.execute(update(library).where(library.c.project_id == args.project_id).values(**values))
+            else:
+                db.execute(insert(library).values(project_id=args.project_id, **values))
+            emit(db, "library.updated", project_id=args.project_id, revision_id=project["current_revision"])
+            return dict(project, **values)
         if op == "projects.create":
             pid, initial = c.new_id(), c.new_id()
             project = dict(

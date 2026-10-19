@@ -89,7 +89,7 @@ def test_v1_database_migrates_with_backup_without_rewriting_old_snapshots(settin
     assert read["snapshot"] == old_snapshot and read["snapshot_sha256"] == sha
     assert len(list(settings.path("backups").glob("*.sqlite3"))) == 1
     with db.engine.connect() as connection:
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "0005"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "0006"
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
     db.close()
 

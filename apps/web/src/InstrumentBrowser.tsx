@@ -19,7 +19,7 @@ export function InstrumentBrowser({enabled,onChoose}:{enabled:boolean;onChoose:(
     return()=>{live=false;};},[instrument,search,verified,offset]);
   const pick=(preset?:Preset)=>{if(category)onChoose({id:instrument,name:category.name,presetId:preset?.id,presetName:preset?.name});};
   return <section className="instrument-browser inspector-section" aria-label="统一乐器目录">
-    <p className="eyebrow">INSTRUMENTS</p><h3>先选乐器，再找声音。</h3>
+    <h3>乐器与音色</h3>
     <p className="instrument-intro">各音源库的音色汇集在同一乐器下，由 AI 按编曲需要选择。</p>
     <label className="instrument-select">乐器<select aria-label="选择乐器" value={instrument} onChange={e=>{setInstrument(e.target.value);setOffset(0);setSearch('');}}>
       {directory?.items.filter(c=>!c.parent_id).map(group=><optgroup label={group.name} key={group.id}>

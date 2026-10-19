@@ -408,6 +408,8 @@ class Project(Model):
     status: Literal["empty", "imported", "queued", "processing", "ready", "failed", "cancelled"]
     current_revision: Id
     created_at: float
+    archived: bool = False
+    display_title: str | None = None
 
 
 class Revision(Model):
@@ -484,6 +486,15 @@ class CreateProject(Model):
 
 class ProjectRef(Model):
     project_id: Id
+
+
+class ProjectList(Page):
+    include_archived: bool = False
+
+
+class OrganizeProject(ProjectRef):
+    archived: bool = False
+    display_title: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class RevisionRef(ProjectRef):
@@ -931,7 +942,8 @@ class DialogueTurn(Model):
 
 OPERATIONS = {
     "describe_capabilities": (Empty, False),
-    "projects.list": (Page, False),
+    "projects.list": (ProjectList, False),
+    "projects.organize": (OrganizeProject, True),
     "projects.create": (CreateProject, True),
     "projects.get": (ProjectRef, False),
     "projects.rename": (RenameProject, True),
@@ -986,6 +998,7 @@ OPERATIONS = {
 RESULT_TYPES = {
     "describe_capabilities": dict,
     "projects.list": list[Project],
+    "projects.organize": Project,
     "projects.create": Project,
     "projects.get": Project,
     "projects.rename": Project,
