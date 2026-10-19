@@ -21,7 +21,7 @@ try{
  await page.getByRole('button',{name:'播放',exact:true}).click();await page.getByText('此版本还没有重建音频，请先生成重建试听。',{exact:false}).waitFor();
  assert.equal(await page.locator('.studio').getAttribute('data-playing'),'false');
  await page.locator('.mode-switch button').filter({hasText:'原曲'}).click();
- await page.getByRole('button',{name:'↗ 生成重建试听',exact:true}).click();assert.equal(await mix.getAttribute('aria-pressed'),'true');
+ await page.getByRole('button',{name:'生成重建试听',exact:true}).click();assert.equal(await mix.getAttribute('aria-pressed'),'true');
  await page.getByRole('button',{name:'分析',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('[data-render-status]')?.getAttribute('data-render-status')==='succeeded',null,{timeout:60000});
  assert.equal(await mix.getAttribute('aria-pressed'),'true');
