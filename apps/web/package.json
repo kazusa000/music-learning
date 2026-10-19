@@ -7,7 +7,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
-    "test:e2e": "node e2e.mjs"
+    "test:e2e": "node e2e.mjs",
+    "test:p3": "node p3-e2e.mjs",
+    "test:pulse": "node p3-pulse.mjs"
   },
   "dependencies": {"react": "19.3.0", "react-dom": "19.3.0"},
   "devDependencies": {
