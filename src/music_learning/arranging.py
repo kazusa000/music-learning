@@ -132,6 +132,12 @@ def dispatch(service, db, op, args, request):
     revision = service.commit(
         db, args.project_id, before["id"], snapshot, "codex", args.description, request.request_id
     )
+    if turn["lease_until"] <= time.time():
+        # Asset verification can outlast the executor lease. This exception
+        # rolls back the revision, head, projections and events together.
+        raise DomainError(
+            "turn_lease_expired", "Discussion lease expired during edit validation; nothing committed", 409
+        )
     from .rendering import submit
 
     job = submit(

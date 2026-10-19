@@ -158,6 +158,43 @@ def test_enqueue_failure_rolls_back_edit_revision_and_receipt(service, project, 
     )
 
 
+def test_edit_lease_expiring_during_validation_rolls_back_every_write(service, project, monkeypatch):
+    from types import SimpleNamespace
+    import time
+    from music_learning import arranging
+
+    rev, track, turn = editable(service, project)
+    clock = {"now": time.time()}
+    monkeypatch.setattr(arranging, "time", SimpleNamespace(time=lambda: clock["now"]))
+    original = arranging.apply
+
+    def slow_validation(*args):
+        result = original(*args)
+        clock["now"] += 1000
+        return result
+
+    monkeypatch.setattr(arranging, "apply", slow_validation)
+    note = rev["snapshot"]["notes"][0]
+    with pytest.raises(DomainError, match="lease expired"):
+        invoke(
+            service,
+            "arrangements.apply",
+            dict(
+                project_id=project["id"],
+                turn_id=turn["id"],
+                description="Must not publish late",
+                operations=[dict(op="patch_note", id=note["id"], pitch=65)],
+            ),
+            rev["id"],
+        )
+    assert invoke(service, "revisions.get", dict(project_id=project["id"])) == rev
+    assert not invoke(service, "jobs.list", dict(project_id=project["id"]))
+    assert (
+        invoke(service, "arrangements.get", dict(project_id=project["id"], turn_id=turn["id"]))["arrangement"]
+        is None
+    )
+
+
 def test_note_patch_preserves_timing_and_stamps_actual_actor(service, project):
     rev, track, turn = editable(service, project)
     old = rev["snapshot"]["notes"][0]
