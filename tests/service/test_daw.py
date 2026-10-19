@@ -28,7 +28,7 @@ def test_transport_is_version_bound_and_observations_cannot_overwrite_new_cues(s
     second = invoke(
         service,
         "audition.set",
-        dict(project_id=project["id"], state=dict(state, position_sample=200)),
+        dict(project_id=project["id"], state=dict(state, position_sample=200, level_match=False)),
         revision["id"],
     )
     with pytest.raises(DomainError, match="older transport"):
@@ -44,6 +44,8 @@ def test_transport_is_version_bound_and_observations_cannot_overwrite_new_cues(s
         dict(project_id=project["id"], sequence=second["sequence"], position_sample=210, status="paused"),
         revision["id"],
     )
+    assert first["desired"]["level_match"] is True
+    assert reported["desired"]["level_match"] is False
     assert reported["desired"]["position_sample"] == 200
     assert reported["observed"]["position_sample"] == 210
     assert invoke(service, "audition.get", dict(project_id=project["id"])) == reported

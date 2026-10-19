@@ -509,6 +509,11 @@
           "title": "Revision Id",
           "type": "string"
         },
+        "level_match": {
+          "default": true,
+          "title": "Level Match",
+          "type": "boolean"
+        },
         "position_sample": {
           "default": 0,
           "minimum": 0,

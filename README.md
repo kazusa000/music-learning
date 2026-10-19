@@ -4,7 +4,7 @@
 
 主要流程：**主页选择音乐 → 整曲预处理 → 专用工作台 → 全曲或局部讨论 → 修改与试听 → 保存经验 → 跨工程创作**。
 
-当前入口已去掉宣传横幅和开发编号，验证工程归档，默认显示实际歌曲。start.cmd 打开独立应用窗口；空格播放/暂停，原曲/重建可切换，声部可独奏和编辑。界面与数据整理的实际验证、桌面技术边界和磁盘容量问题见[前端整改](docs/24-usable-studio.md)。
+当前入口已去掉宣传横幅和开发编号，验证工程归档，默认显示实际歌曲。start.cmd 打开独立应用窗口；空格播放/暂停，原曲/重建可切换，声部可独奏和编辑。界面与数据整理的实际验证、桌面技术边界和历史磁盘容量问题见[前端整改](docs/24-usable-studio.md)，本轮迁移、缩放与试听修正见[使用修正](docs/25-local-runtime-and-audition.md)。
 
 最新前端采用 FL 风格的紧凑制作布局，已增加手动卷帘、片段编排与混音台，用户和 AI 共用同一编辑/版本接口。使用方式与验证见[制作工作台](docs/22-fl-workbench.md)；编辑后需生成该版本试听。
 
@@ -83,7 +83,7 @@ P4 已完成：真实 Codex 整曲/局部讨论、受限工具查询、有效引
 
 ## 运行应用
 
-双击 `start.cmd` 启动本机 API/worker 并打开主页；`stop.cmd` 停止。工程数据位于 `D:\music-learning-runtime\app-data`，不在 NAS。也可只启动服务给 AI 使用：
+双击 `start.cmd` 启动本机 API/worker 并打开主页；`stop.cmd` 停止。工程数据位于 `E:\Intrest\music-learning\data\app-data`，不在 NAS。也可只启动服务给 AI 使用：
 
 ```powershell
 & runtime/tooling/Scripts/python.exe scripts/app.py start
@@ -100,9 +100,9 @@ P4 已完成：真实 Codex 整曲/局部讨论、受限工具查询、有效引
 ```powershell
 & runtime/tooling/Scripts/python.exe -m pytest tests/native -q --basetemp=runtime/pytest-p0a
 & runtime/tooling/Scripts/python.exe scripts/make_native_demo.py
-& D:\music-learning-runtime\envs\app\Scripts\python.exe -m pytest tests/service -q --basetemp=D:\music-learning-runtime\tmp\pytest-p1
-& D:\music-learning-runtime\envs\transcription\Scripts\python.exe -m pytest tests/native tests/models -q --basetemp=D:\music-learning-runtime\tmp\pytest-p0-regression
-& D:\music-learning-runtime\envs\app\Scripts\python.exe scripts/export_contracts.py --check
+& E:\Intrest\music-learning\data\envs\app\Scripts\python.exe -m pytest tests/service -q --basetemp=E:\Intrest\music-learning\data\tmp\pytest-p1
+& E:\Intrest\music-learning\data\envs\transcription\Scripts\python.exe -m pytest tests/native tests/models -q --basetemp=E:\Intrest\music-learning\data\tmp\pytest-p0-regression
+& E:\Intrest\music-learning\data\envs\app\Scripts\python.exe scripts/export_contracts.py --check
 pnpm --dir apps/web typecheck
 pnpm --dir apps/web build
 ```
@@ -113,6 +113,6 @@ pnpm --dir apps/web build
 
 Git 管理源代码、开发文档、契约和小型测试数据。用户音乐、模型、分轨、渲染音频、数据库、对话与个人经验保存在被忽略的 `data/`、`models/`、`runtime/` 中，并由应用自己的工程版本与备份机制管理。
 
-本机大文件和应用数据配置到独立的 `D:\music-learning-runtime`，同样不进入源码 Git。P1 的 SQLite backup API 仅备份元数据；P6 已提供数据库与全部 CAS（包括音频、插件状态及采样资源）的完整备份和独立恢复，实际演练通过。模型、已安装插件与运行时由固定依赖清单另行恢复，详见[本地交付](docs/20-local-delivery.md)。
+本机大文件和应用数据现已迁回项目内的 `E:\Intrest\music-learning\data`，同样不进入源码 Git。P1 的 SQLite backup API 仅备份元数据；P6 已提供数据库与全部 CAS（包括音频、插件状态及采样资源）的完整备份和独立恢复，实际演练通过。模型、已安装插件与运行时由固定依赖清单另行恢复，详见[本地交付](docs/20-local-delivery.md)。
 
 本地 Git 仓库不等于远程备份；音乐工程也不依赖 Git 提交来保存。

@@ -5,6 +5,7 @@ import {call, connect, result} from './api';
 import {Workbench} from './Workbench';
 import {publishDomain} from './events';
 import {AudioPreview} from './AudioPreview';
+import {matchedLevels} from './listeningLevel';
 import './style.css';
 
 const connection = connect();
@@ -44,6 +45,7 @@ function App() {
   const refreshGeneration = useRef(0);
   const [showArchived,setShowArchived]=useState(false);
   const project = projects.find(p => p.id === selected);
+  const gains=matchedLevels(jobs,[revision?.snapshot.source_asset_id,publication?.mix_asset_id].filter((id):id is string=>!!id));
 
   useEffect(() => {if (selected) localStorage.setItem('selected-project', selected);}, [selected]);
 
@@ -158,8 +160,8 @@ function App() {
         <div className="facts"><div><span>版本</span><b>{versionCount}</b></div>
           <div><span>原曲长度</span><b>{revision?.snapshot.duration_samples ? (revision.snapshot.duration_samples / (revision.snapshot.sample_rate ?? 44100)).toFixed(1) + ' 秒' : '—'}</b></div></div>
         {revision?.snapshot.source_asset_id && <section className="original"><h3>原曲试听</h3>
-          <AudioPreview key={'source-'+revision.id} label="原曲试听" assetId={revision.snapshot.source_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial={!publication} onSelect={a=>{homeAudio.current=a;}}/>
-          {publication&&<><h3>重建试听</h3><AudioPreview key={'mix-'+publication.mix_asset_id} label="重建试听" assetId={publication.mix_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial onSelect={a=>{homeAudio.current=a;}}/></>}
+          <AudioPreview key={'source-'+revision.id} label="原曲试听" previewGain={gains[revision.snapshot.source_asset_id]} assetId={revision.snapshot.source_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial={!publication} onSelect={a=>{homeAudio.current=a;}}/>
+          {publication&&<><h3>重建试听</h3><AudioPreview key={'mix-'+publication.mix_asset_id} label="重建试听" previewGain={gains[publication.mix_asset_id]} assetId={publication.mix_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial onSelect={a=>{homeAudio.current=a;}}/></>}
           <p className="muted">{publication ? '已可播放重建、独奏声部、编辑音符和与 AI 讨论。' : '正在准备可编辑的音乐工程。'}</p>
           {(publication || (revision.snapshot.tracks?.length ?? 0)>0) && <button className="primary-button" onClick={() => {setWorkspace(true); history.replaceState(null,'',`/?project=${project.id}&view=workbench`);}}>打开工程</button>}
           {!publication && !jobs.some(j => j.kind === 'project.preprocess' && ['queued','running','cancel_requested'].includes(j.status)) &&

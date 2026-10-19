@@ -9,6 +9,7 @@ import type {EditRequest} from './DawEditor';
 import {trackName as instrumentName} from './dawEditing';
 import {call} from './api';
 import {Transport} from './transport';
+import {matchedLevels} from './listeningLevel';
 import {subscribeDomain} from './events';
 import './workbench.css';
 import './daw.css';
@@ -46,8 +47,11 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const [loop,setLoop]=useState(false);
   const [loopStart,setLoopStart]=useState(0);
   const [loopEnd,setLoopEnd]=useState(0);
-  const [zoom,setZoom]=useState(1);
+  const [zoom,setZoom]=useState(1),[focusEditor,setFocusEditor]=useState(false);
   const [viewStart,setViewStart]=useState(0);
+  const [matched,setMatched]=useState(true),[prepared,setPrepared]=useState('');
+  const cueWrites=useRef<Promise<unknown>>(Promise.resolve());
+  const viewport=(nextZoom:number,anchor=.5)=>{const z=Math.max(1,Math.min(256,nextZoom)),at=viewStart+duration/zoom*anchor;setZoom(z);setViewStart(Math.max(0,Math.min(duration-duration/z,at-duration/z*anchor)));};
   const [width,setWidth]=useState(900);
   const [wave,setWave]=useState<Array<Array<[number,number]>>>([]);
   const [difference,setDifference]=useState<Difference|null>(null);
@@ -103,6 +107,16 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     frame=requestAnimationFrame(draw);
     return()=>{cancelAnimationFrame(frame);void transport.close();};
   },[head.project_id]);
+
+  useEffect(()=>{
+    if(!publication)return;
+    const transport=player.current,stems=tracks.map(track=>publication.track_renders[track.id]).filter((id):id is string=>typeof id==='string');
+    transport.family(publication.mix_asset_id,stems);
+    const ids=[publication.mix_asset_id,...stems,...(snapshot.source_asset_id?[snapshot.source_asset_id]:[])];
+    let active=true;const timer=setTimeout(()=>void transport.warm(ids).catch(()=>{}),750);
+    const progress=setInterval(()=>{if(active)setPrepared(`${stems.filter(id=>transport.buffers.has(id)).length}/${stems.length}`);},500);
+    return()=>{active=false;clearTimeout(timer);clearInterval(progress);++transport.warmGeneration;};
+  },[publication?.mix_asset_id,snapshot.source_asset_id]);
 
   useEffect(()=>{
     let active=true;
@@ -195,9 +209,11 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     return()=>{active=false;};
   },[revision.id,head.project_id]);
 
+  useEffect(()=>{player.current.matchedGains=matchedLevels(jobs,[snapshot.source_asset_id,publication?.mix_asset_id].filter((id):id is string=>!!id));player.current.route(player.current.activeIds);},[jobs,publication?.mix_asset_id,snapshot.source_asset_id]);
   const applyCue=useCallback(async(state:AuditionState,sequence:string|null,preserve=false)=>{
     if(state.revision_id!==revision.id){setVersionId(state.revision_id);return;}
     if(sequence)lastCue.current=sequence;
+    setMatched(state.level_match??true);player.current.setMatched(state.level_match??true);
     setMode(state.mode??'original');setTrackIds(state.track_ids??[]);setLoop(state.loop??false);
     setReferenceId(state.reference_revision_id??null);
     setHybridJobId(state.hybrid_job_id??null);
@@ -235,21 +251,29 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
 
   function desired(patch:Partial<AuditionState>={}):AuditionState{
     return{revision_id:revision.id,position_sample:Math.round(Math.min(duration,patch.playing===false?player.current.renderPosition:player.current.position)*rate),mode:mode as AuditionState['mode'],
-      track_ids:trackIds,reference_revision_id:referenceId,hybrid_job_id:hybridJobId,loop_start_sample:Math.round(loopStart*rate),loop_end_sample:Math.round((loopEnd||duration)*rate),loop,playing:player.current.playing,...patch};
+      track_ids:trackIds,level_match:matched,reference_revision_id:referenceId,hybrid_job_id:hybridJobId,loop_start_sample:Math.round(loopStart*rate),loop_end_sample:Math.round((loopEnd||duration)*rate),loop,playing:player.current.playing,...patch};
   }
   async function cue(patch:Partial<AuditionState>){
     const generation=++requestGeneration.current,state=desired(patch);
     localCuePending.current=true;
     if(patch.playing===false){player.current.pause();setPlaying(false);}
     if(patch.position_sample!==undefined){player.current.pause();player.current.offset=patch.position_sample/rate;setPosition(patch.position_sample/rate);}
-    try{const result=await call<Cue>('audition.set',{project_id:head.project_id,state},head.id,true);
+    // Local audio responds immediately; persistence remains ordered and failures
+    // stop the preview and recover the authoritative desired transport.
+    const local=applyCue(state,null,patch.position_sample===undefined&&state.playing===true);
+    const write=cueWrites.current.catch(()=>{}).then(()=>call<Cue>('audition.set',{project_id:head.project_id,state},head.id,true));
+    cueWrites.current=write;
+    try{const result=await write;await local;
       if(generation!==requestGeneration.current)return;
-      await applyCue(state,result.sequence,patch.position_sample===undefined&&state.playing===true);
+      lastCue.current=result.sequence;
       if(result.sequence)await call('audition.report',{project_id:head.project_id,sequence:result.sequence,
         position_sample:Math.round(player.current.position*rate),status:player.current.playing?'playing':state.playing?'needs_activation':'paused'},head.id,true);
-    }catch(e){setError((e as Error).message);}
+    }catch(e){if(generation===requestGeneration.current){player.current.pause();setPlaying(false);setError('试听状态保存失败：'+(e as Error).message);
+      try{const saved=await call<Cue>('audition.get',{project_id:head.project_id});if(saved.desired)await applyCue({...saved.desired,playing:false},saved.sequence);}catch{ /* preserve visible failure */ }
+    }}
     finally{if(generation===requestGeneration.current)localCuePending.current=false;}
   }
+
   async function playToggle(){
     if((mode==='mix'||mode==='tracks')&&!publication){setError('此版本还没有重建音频，请先生成重建试听。');return;}
     if(!player.current.playing)try{await player.current.activate();}catch(e){setError((e as Error).message);return;}
@@ -312,15 +336,15 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const chord=(snapshot.annotations??[]).filter(a=>a.kind==='chord'&&a.start_sample/rate<=position&&a.end_sample/rate>position).map(a=>a.text).join(' / ');
   const focused=selected==='all'?tracks:tracks.filter(t=>t.id===selected);
   useEffect(()=>{if(selected!=='all'&&!tracks.some(t=>t.id===selected))setSelected('all');},[tracks,selected]);
-  return <section className="studio" aria-label="音乐工作台" data-revision={revision.id} data-position={position.toFixed(5)} data-playing={playing}>
+  return <section className={'studio '+(focusEditor?'is-focused':'')} aria-label="音乐工作台" data-revision={revision.id} data-position={position.toFixed(5)} data-playing={playing}>
     <div className="studio-top"><div className="studio-title"><button className="back-icon" aria-label="返回音乐库" onClick={onBack}>‹</button><div><h2>{title}</h2></div></div><div className="studio-meta"><span className="revision-dot"/>{versionId==='head'?'当前版本':'历史版本'}<button className="soft-button" onClick={()=>void render()} disabled={loading||renderBusy||editingBusy}>↗ {renderBusy?'渲染中':'生成重建试听'}</button></div></div>
-    <div className="studio-toolbar"><div className="transport-buttons"><button className="icon-button" aria-label="回到开头" onClick={()=>void cue({position_sample:0})}>↤</button><button className="play-button" aria-label={playing?'暂停':'播放'} disabled={loading} onClick={()=>void playToggle()}>{loading?'···':playing?'Ⅱ':'▶'}</button><button className={'icon-button '+(loop?'is-active':'')} aria-label="循环" aria-pressed={loop} onClick={()=>void cue({loop:!loop})}>↻</button></div><div className="clock"><strong>{time(position)}</strong><span>/ {time(mode==='original'?duration:Math.max(duration,player.current.duration))}</span></div><span className="toolbar-divider"/><div className="mode-switch" aria-label="试听方式"><button aria-pressed={mode==='original'} disabled={!snapshot.source_asset_id} onClick={()=>void cue({mode:'original'})}>原曲</button>{referenceId&&<button aria-pressed={mode==='reference'} onClick={()=>void cue({mode:'reference'})}>参考 <span>A</span></button>}<button aria-pressed={mode==='mix'} disabled={!publication} onClick={()=>void cue({mode:'mix'})}>重建 <span>B</span></button>{hybridJob&&<button aria-pressed={mode==='hybrid'} onClick={()=>void cue({mode:'hybrid',hybrid_job_id:hybridJob.id})}>贝斯混合</button>}</div><span className="listening-label">{mode==='hybrid'?'播放：贝斯替换':mode==='tracks'?`播放：${trackIds.length} 条声部`:mode==='mix'?'播放：重建':mode==='reference'?'播放：参考版本':'播放：原曲'}</span><div className="zoom-control"><span>−</span><input aria-label="时间轴缩放" type="range" min={1} max={256} step={1} value={zoom} onChange={e=>{setZoom(+e.target.value);setViewStart(0);}}/><span>+</span></div></div>
+    <div className="studio-toolbar"><div className="transport-buttons"><button className="icon-button" aria-label="回到开头" onClick={()=>void cue({position_sample:0})}>↤</button><button className="play-button" aria-label={playing?'暂停':'播放'} disabled={loading} onClick={()=>void playToggle()}>{loading?'···':playing?'Ⅱ':'▶'}</button><button className={'icon-button '+(loop?'is-active':'')} aria-label="循环" aria-pressed={loop} onClick={()=>void cue({loop:!loop})}>↻</button></div><div className="clock"><strong>{time(position)}</strong><span>/ {time(mode==='original'?duration:Math.max(duration,player.current.duration))}</span></div><span className="toolbar-divider"/><div className="mode-switch" aria-label="试听方式"><button aria-pressed={mode==='original'} disabled={!snapshot.source_asset_id} onClick={()=>void cue({mode:'original'})}>原曲</button>{referenceId&&<button aria-pressed={mode==='reference'} onClick={()=>void cue({mode:'reference'})}>参考 <span>A</span></button>}<button aria-pressed={mode==='mix'} disabled={!publication} onClick={()=>void cue({mode:'mix'})}>重建 <span>B</span></button>{hybridJob&&<button aria-pressed={mode==='hybrid'} onClick={()=>void cue({mode:'hybrid',hybrid_job_id:hybridJob.id})}>贝斯混合</button>}</div><span className="listening-label">{mode==='hybrid'?'播放：贝斯替换':mode==='tracks'?`播放：${trackIds.length} 条声部`:mode==='mix'?'播放：重建':mode==='reference'?'播放：参考版本':'播放：原曲'}</span><label className="level-match"><input type="checkbox" aria-label="试听电平匹配" checked={matched} onChange={e=>void cue({level_match:e.target.checked})}/>电平匹配</label><small className="stem-preload">声部 {prepared||'准备中'}</small><button className="soft-button" aria-pressed={focusEditor} onClick={()=>setFocusEditor(!focusEditor)}>{focusEditor?'恢复侧栏':'专注编辑'}</button><div className="zoom-control"><button aria-label="缩小时间轴" onClick={()=>viewport(zoom/1.5)}>−</button><input aria-label="时间轴缩放" type="range" min={0} max={8} step={.05} value={Math.log2(zoom)} onChange={e=>viewport(2**+e.target.value)}/><button aria-label="放大时间轴" onClick={()=>viewport(zoom*1.5)}>+</button><button onClick={()=>{setZoom(1);setViewStart(0);}}>整曲</button><button onClick={()=>{const begin=loopStart,finish=loopEnd||duration;if(finish>begin){const z=Math.min(256,duration/(finish-begin));setZoom(z);setViewStart(Math.min(begin,duration-duration/z));}}}>选区</button></div></div>
     {error&&<div className="studio-message" role="status">{error}<button aria-label="关闭工作台提示" onClick={()=>setError('')}>×</button></div>}
     <div className="studio-body"><aside className="track-panel"><div className="panel-heading"><span>声部试听</span><span>{tracks.length.toString().padStart(2,'0')}</span></div><button className={'all-tracks '+(selected==='all'?'is-selected':'')} onClick={()=>setSelected('all')}>全部声部 <small>{(snapshot.notes??[]).length.toLocaleString()}</small></button>
-      <div className="track-cards">{tracks.map((track,i)=><div className={'track-card '+(selected===track.id?'is-selected':'')} key={track.id} style={{'--track-color':colors[i%colors.length]} as CSSProperties}><button className="track-select" onClick={()=>setSelected(track.id)} onDoubleClick={()=>{setSelected(track.id);setPianoRequest(n=>n+1);}}><span className="track-index">{(i+1).toString().padStart(2,'0')}</span><div><strong>{instrumentName(track)}</strong><small title="实际渲染预设">{(snapshot.plugins??[]).find(p=>p.track_id===track.id&&p.order===0)?.preset_name??(track.kind==='audio'?'音频素材':(snapshot.plugins??[]).some(p=>p.track_id===track.id)?'未记录明确预设':'尚未选择音色')}</small><small>{track.kind==='bus'?'BUS':track.kind==='audio'?'AUDIO':track.role??'MIDI'} · {(snapshot.notes??[]).filter(n=>n.track_id===track.id).length} notes</small></div></button><div className="track-actions"><span className="track-color-line"/><button aria-label={`独奏 ${i+1}`} aria-pressed={mode==='tracks'&&trackIds.length===1&&trackIds[0]===track.id} disabled={!publication?.track_renders[track.id]} onClick={()=>void cue({mode:'tracks',track_ids:[track.id]})}>独奏</button><button aria-label={`试听静音 ${i+1}`} aria-pressed={mode==='tracks'&&!trackIds.includes(track.id)} disabled={!publication} onClick={()=>{const ids=mode==='tracks'?trackIds:tracks.map(t=>t.id),next=ids.includes(track.id)?ids.filter(id=>id!==track.id):[...ids,track.id];if(next.length)void cue({mode:'tracks',track_ids:next});else void cue({playing:false});}}>静音</button><span>{track.gain_db??0} dB</span></div></div>)}</div>
+      <div className="track-cards">{tracks.map((track,i)=><div className={'track-card '+(selected===track.id?'is-selected':'')} key={track.id} style={{'--track-color':colors[i%colors.length]} as CSSProperties}><button className="track-select" onClick={()=>setSelected(track.id)} onDoubleClick={()=>{setSelected(track.id);setPianoRequest(n=>n+1);}}><span className="track-index">{(i+1).toString().padStart(2,'0')}</span><div><strong>{instrumentName(track)}</strong><small title="实际渲染预设">{(snapshot.plugins??[]).find(p=>p.track_id===track.id&&p.order===0)?.preset_name??(track.kind==='audio'?'音频素材':(snapshot.plugins??[]).some(p=>p.track_id===track.id)?'未记录明确预设':'尚未选择音色')}</small><small>{track.kind==='bus'?'BUS':track.kind==='audio'?'AUDIO':track.role??'MIDI'} · {(snapshot.notes??[]).filter(n=>n.track_id===track.id).length} notes</small></div></button><div className="track-actions"><span className="track-color-line"/><button aria-label={`独奏 ${i+1}`} aria-pressed={mode==='tracks'&&trackIds.length===1&&trackIds[0]===track.id} disabled={!publication?.track_renders[track.id]} onClick={()=>void cue(mode==='tracks'&&trackIds.length===1&&trackIds[0]===track.id?{mode:'mix',track_ids:[]}:{mode:'tracks',track_ids:[track.id]})}>独奏</button><button aria-label={`试听静音 ${i+1}`} aria-pressed={mode==='tracks'&&!trackIds.includes(track.id)} disabled={!publication} onClick={()=>{const ids=mode==='tracks'?trackIds:tracks.map(t=>t.id),next=ids.includes(track.id)?ids.filter(id=>id!==track.id):[...ids,track.id];if(next.length)void cue({mode:'tracks',track_ids:next});else void cue({playing:false});}}>静音</button><span>{track.gain_db??0} dB</span></div></div>)}</div>
       <div className="stem-heading">原曲分轨</div><div className="stem-chips">{(snapshot.stems??[]).map(stem=><a key={stem.id} download href={'/v1/assets/'+stem.asset_id}><i/> {stem.name} <span>↓</span></a>)}</div></aside>
-      <div className="arrangement"><div className="arrangement-heading"><div><h3>编排与制作</h3></div><span className="view-pill">{selected==='all'?'整曲总览':'声部聚焦'} · {zoom===1?'FIT':zoom+'×'}</span></div><div className="section-lane" aria-label="段落候选">{sections.map((section,i)=><button key={section.id} style={{flex:Math.max(1,section.end_sample-section.start_sample)}} onClick={()=>{setLoopStart(section.start_sample/rate);setLoopEnd(section.end_sample/rate);void cue({position_sample:section.start_sample,loop_start_sample:section.start_sample,loop_end_sample:section.end_sample});}}><i style={{background:colors[i%colors.length]}}/><strong>{section.text}</strong><span>{time(section.start_sample/rate)}</span></button>)}</div>
-        <DawEditor pianoRequest={pianoRequest} revision={revision} selected={selected} onSelect={setSelected} editable={versionId==='head'&&revision.id===head.id} busy={editingBusy} onEdit={manualEdit} onUndo={()=>manualRestore()} onRedo={()=>manualRestore(true)} canUndo={!!undoStack.length} canRedo={!!redoStack.length} start={Math.round(viewStart*rate)} end={Math.round(Math.min(duration,viewStart+duration/zoom)*rate)} position={Math.round(position*rate)} selectionStart={Math.round(loopStart*rate)} selectionEnd={Math.round((loopEnd||duration)*rate)} onSeek={sample=>void cue({position_sample:sample})} overview={<div className="roll-frame"><div className="roll-caption"><span>WAVEFORM</span><span>源样本时间 · 演奏时刻保留</span></div><canvas ref={canvas} data-waveform-buckets={wave.length} className="piano-roll" role="img" aria-label="整曲波形与钢琴卷帘" onClick={e=>{const b=e.currentTarget.getBoundingClientRect(),seconds=viewStart+Math.max(0,Math.min(1,(e.clientX-b.left-46)/(b.width-58)))*duration/zoom;void cue({position_sample:Math.round(Math.min(duration,seconds)*rate)});}}/><div className="roll-footer"><span>PIANO ROLL</span><span>{notes.length.toLocaleString()} NOTES <i/> {rate/1000} kHz</span></div></div>}/>
+      <div className="arrangement"><div className="arrangement-heading"><div><h3>编排与制作</h3></div><span className="view-pill">{selected==='all'?'整曲总览':'声部聚焦'} · {zoom===1?'FIT':zoom.toFixed(1)+'×'}</span></div><div className="section-lane" aria-label="段落候选">{sections.map((section,i)=><button key={section.id} style={{flex:Math.max(1,section.end_sample-section.start_sample)}} onClick={()=>{setLoopStart(section.start_sample/rate);setLoopEnd(section.end_sample/rate);void cue({position_sample:section.start_sample,loop_start_sample:section.start_sample,loop_end_sample:section.end_sample});}}><i style={{background:colors[i%colors.length]}}/><strong>{section.text}</strong><span>{time(section.start_sample/rate)}</span></button>)}</div>
+        <DawEditor onViewport={(factor,anchor,pan)=>{if(pan!==undefined)setViewStart(Math.max(0,Math.min(duration-duration/zoom,viewStart+pan*duration/zoom)));else viewport(zoom*factor,anchor);}} pianoRequest={pianoRequest} revision={revision} selected={selected} onSelect={setSelected} editable={versionId==='head'&&revision.id===head.id} busy={editingBusy} onEdit={manualEdit} onUndo={()=>manualRestore()} onRedo={()=>manualRestore(true)} canUndo={!!undoStack.length} canRedo={!!redoStack.length} start={Math.round(viewStart*rate)} end={Math.round(Math.min(duration,viewStart+duration/zoom)*rate)} position={Math.round(position*rate)} selectionStart={Math.round(loopStart*rate)} selectionEnd={Math.round((loopEnd||duration)*rate)} onSeek={sample=>void cue({position_sample:sample})} overview={<div className="roll-frame"><div className="roll-caption"><span>WAVEFORM</span><span>源样本时间 · 演奏时刻保留</span></div><canvas ref={canvas} data-waveform-buckets={wave.length} className="piano-roll" role="img" aria-label="整曲波形与钢琴卷帘" onClick={e=>{const b=e.currentTarget.getBoundingClientRect(),seconds=viewStart+Math.max(0,Math.min(1,(e.clientX-b.left-46)/(b.width-58)))*duration/zoom;void cue({position_sample:Math.round(Math.min(duration,seconds)*rate)});}}/><div className="roll-footer"><span>PIANO ROLL</span><span>{notes.length.toLocaleString()} NOTES <i/> {rate/1000} kHz</span></div></div>}/>
 
         <input className="timeline-pan" aria-label="时间轴平移" type="range" min={0} max={Math.max(0,duration-duration/zoom)} step={.05} value={viewStart} onChange={e=>setViewStart(+e.target.value)}/><div className="loop-editor"><label>循环起点 <input aria-label="循环起点秒" type="number" min={0} max={duration} step={.1} value={+loopStart.toFixed(2)} onChange={e=>setLoopStart(+e.target.value)}/></label><span>—</span><label>终点 <input aria-label="循环终点秒" type="number" min={0} max={duration} step={.1} value={+loopEnd.toFixed(2)} onChange={e=>setLoopEnd(+e.target.value)}/></label><button onClick={()=>void cue({loop_start_sample:Math.round(loopStart*rate),loop_end_sample:Math.round(loopEnd*rate),loop:true})}>应用循环</button></div><div className="context-strip"><div><span>当前和弦候选</span><strong>{chord||'—'}</strong></div><div><span>当前试听</span><strong className="context-mode">{mode==='original'?'原始录音':mode==='mix'?'整曲重建':mode==='reference'?'参考版本 A':mode==='hybrid'?'原曲 + 新贝斯':'选定声部'}</strong></div><p>模型分析待核对<br/>重建使用替代音色</p></div></div>
       <aside className="inspector"><div className="inspector-tabs">{[['discussion','讨论'],['analysis','分析'],['plugins','音源'],['instruments','乐器'],['versions','版本']].map(([id,label])=><button key={id} aria-pressed={inspector===id} onClick={()=>setInspector(id)}>{label}</button>)}</div>

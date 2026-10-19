@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {listeningGain,matchedLevels} from './src/listeningLevel.ts';
+assert.equal(listeningGain({rms:0,peak:0}),1);
+assert.ok(Math.abs(listeningGain({rms:.01,peak:.1})-4)<1e-9);
+assert.ok(listeningGain({rms:.001,peak:1})<=.794);
+const jobs=[['source',-10.85,-.79],['mix',-32.25,-10.82]].map(([asset_id,integrated_lufs,true_peak_dbtp])=>({kind:'audio.measure',status:'succeeded',payload:{end_sample:null},result:{asset_id,integrated_lufs,true_peak_dbtp,start_sample:0}}));
+const gains=matchedLevels(jobs,['source','mix']);
+const source=-10.85+20*Math.log10(gains.source),mix=-32.25+20*Math.log10(gains.mix);
+assert.ok(Math.abs(source-mix)<1e-9);assert.ok(-10.82+20*Math.log10(gains.mix)<=-2);
+assert.deepEqual(matchedLevels(jobs,['missing']),{});
+assert.deepEqual(matchedLevels(jobs.map(j=>({...j,payload:{end_sample:100}})),['source','mix']),{});
+console.log(JSON.stringify({matched_lufs:mix,source_gain_db:20*Math.log10(gains.source),mix_gain_db:20*Math.log10(gains.mix),true_peak_ceiling_dbtp:-2}));

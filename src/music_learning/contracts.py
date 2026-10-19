@@ -847,6 +847,7 @@ class ExportPayload(Model):
 
 class AuditionState(Model):
     revision_id: Id
+    level_match: bool = True
     position_sample: Sample = 0
     mode: Literal["original", "mix", "tracks", "reference", "hybrid"] = "original"
     hybrid_job_id: Id | None = None

@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新迁移与试听修正（2026-10-19）：先读 docs/25-local-runtime-and-audition.md。正式运行根目录为 E:\Intrest\music-learning\data（忽略入 Git）；旧 D 路径为历史证据位置，已不运行。保留硬链接与逐文件 SHA 校验后切换；D 旧目录与临时目录的删除被自动审批拒绝，仍有残留，不得声称已释放 D 空间。PowerShell Move-Item 曾沿缓存 junction 移走前端部分文件，418 文件已校验恢复、依赖按原锁重装、重新构建；以后禁止递归移动含 junction 的目录，任何清理先处理联接本身。当前正式用户手动音符修订已保留，8 dB 电平修正创建新版本并整曲真实渲染，不覆写旧版。P6 听辨仍未通过。
+
 最新用户整改（2026-10-19）：用户拒绝宣传大字、默认验证工程和绿色表面，要求检查真实使用流程。先读 docs/24-usable-studio.md。中性深灰/紧凑功能界面，主页原曲+重建自定义播放器、空格播放防滚动且输入框保留、离开主页暂停、卷帘无选轨时选择实际钢琴。52操作/11任务，新增冻结迁移0006 project_library；projects.organize/archive/display_title不改变音乐head，默认隐藏归档，SDK整理12个旧验证工程，当前音色项目显示实际歌曲名，全部原数据保留。start/open默认Edge app独立窗口和独立profile，并非原生桌面壳；stop关闭自有窗口，--browser显式调试。89项不同后端、真实应用窗口播放/快捷键、H盘独立sfizz与13组编辑渲染通过。D盘约3GiB导致新音色准备容量拒绝，H本机USB重做通过，未降低保护，未迁移正式数据；错误已可读。NAS未访问，音乐模型/provider未新调用，P6听辨未通过。
 
 上述专项最终额度剩余34%（已用66%），未触发停止条件，无重置卡。usable-desktop-v6和H:/ml-reconstruction-workflow-v2通过；修复新revision静默退回原曲的问题，已有音符默认重建，未渲染播放明确提示，生成完成继续重建。左侧声部双击进入卷帘。8767回归和临时调试窗口已停止；用户正式应用通过start.cmd可重开，后续先实查状态，不将历史停止记录当作当前状态。
@@ -39,7 +41,7 @@
 
 P0a/P0b、P1、P2、P3、P4 与 P5 已完成，P6 自动工程验收已完成，人工听辨及有限参考待反馈。先读 docs/16-continuous-goal.md、docs/20-local-delivery.md 与 docs/benchmarks/p6-delivery.md，再参考各阶段记录。当前后端 78 项 + 原生/模型格式 36 项通过；P3 的 305 秒真实 VST3 制作和 300 秒脉冲同步证据继续保留，P6 补充完整当前流程及独立备份恢复。
 
-代码在 src/music_learning（权威契约/领域服务、HTTP API、SDK/CLI、任务执行、pipeline/musical），scripts/pipeline_adapter.py（隔离模型/渲染阶段），services/api/migrations（冻结 0001 至 0005）、apps/web、packages/contracts。数据在 D:\music-learning-runtime\app-data，独立 Python 环境在 envs/app。通过 scripts/app.py start/open/status/stop 管理隐藏的服务及其归属。更新后先 stop/start，旧进程不会热更新。当前从源码 checkout + PYTHONPATH=src 运行。契约变更后运行 scripts/export_contracts.py，提交 schema/TS 并检查漂移。
+代码在 src/music_learning（权威契约/领域服务、HTTP API、SDK/CLI、任务执行、pipeline/musical），scripts/pipeline_adapter.py（隔离模型/渲染阶段），services/api/migrations（冻结 0001 至 0005）、apps/web、packages/contracts。数据在 E:\Intrest\music-learning\data\app-data，独立 Python 环境在 envs/app。通过 scripts/app.py start/open/status/stop 管理隐藏的服务及其归属。更新后先 stop/start，旧进程不会热更新。当前从源码 checkout + PYTHONPATH=src 运行。契约变更后运行 scripts/export_contracts.py，提交 schema/TS 并检查漂移。
 
 所有工程写入走 Service；worker 发布使用同一领域服务和 SQLite 事务。幂等键、expected_revision、素材 SHA、事件 cursor 和 attempt fencing 必须保留。快照及实体投影同时提交；素材先本地原子发布、后提交引用，孤儿文件不当成功，不自动清理。Windows Job Object/gate 用于强杀清理；不要退回只有内存的 BackgroundTasks 队列。
 
@@ -53,7 +55,7 @@ P3 代码在 daw/graph/rendering/audition/midi.py、scripts/daw_adapter.py 和�
 
 最终正式 P3 工程为 76d5a25824704f5192c3f72caaec44a6，head 60303a60cca2452e8a79695e59392b4b；源 P2 工程 bbcdc48bcf6841b6adf221a895473234 未改。P3 早期分叉 8087e500d22c4e38a0adbaa4484bfe77 专用于浏览器恢复测试，当前是新建的恢复版本，未冒用旧音频。所有正式任务终态；阶段收尾停止自有服务/浏览器，后续按需启动。
 
-本机模型环境/产物在 D:\music-learning-runtime，位置保存在被忽略的 runtime/model-runtime.json。不要把大模型再默认安装到空间不足的 E/C 盘。用户已完成 Hugging Face 许可/本机登录，三个模型均跑完 NAS 授权选取的 305 秒歌曲。NAS 只允许读取/复制，禁止写标签/封面/清单、移动、删除或在原目录生成产物；所有处理走本地 references 副本。源摘要/大小/mtime 已回读一致。
+本机模型环境/产物现已迁回 E:\Intrest\music-learning\data，位置保存在被忽略的 runtime/model-runtime.json。用户已清理 E 盘并明确要求迁回工作目录；后续先核对空间，不再默认写 D。用户已完成 Hugging Face 许可/本机登录，三个模型均跑完 NAS 授权选取的 305 秒歌曲。NAS 只允许读取/复制，禁止写标签/封面/清单、移动、删除或在原目录生成产物；所有处理走本地 references 副本。源摘要/大小/mtime 已回读一致。
 
 Codex App Server 已用既有 ChatGPT 登录验证；运行时固定 0.163.0-alpha.10.2 和四个组件，当前版本需要 code-mode host 路由动态工具。正式应用默认独立 codex-home（当前尚未独立登录），不提取或复制用户 Token；既有登录在 P4 已扩展为显式 login_mode=existing 的正式讨论模式；默认仍独立登录。shell/apps/MCP/多 Agent 等受控，不能把 P0 合成 music_probe 当成已存在完整音乐领域工具。
 
