@@ -7,6 +7,7 @@ from pathlib import PurePosixPath
 
 from . import contracts as c
 from .storage import digest
+from .instrument_taxonomy import INDEX, VERSION, classify, descendants, search_terms
 
 
 def catalog(settings):
@@ -18,7 +19,10 @@ def catalog(settings):
     data = json.loads(path.read_bytes())
     if data.get("schema_version") != 1:
         raise ValueError("Unsupported instrument catalog")
-    return data["presets"]
+    presets = [classify(entry) for entry in data["presets"]]
+    if len({p["id"] for p in presets}) != len(presets):
+        raise ValueError("Duplicate preset ids across installed libraries; use stable unique ids")
+    return presets
 
 
 def resource_path(root, relative):
@@ -38,20 +42,49 @@ def public(entry):
 
 
 def query(settings, args):
+    allowed = descendants(args.instrument_id) if args.instrument_id else None
     found = [
         p
         for p in catalog(settings)
         if (not args.family or p["family"] == args.family)
+        and (allowed is None or bool(allowed.intersection(p["instrument_ids"])))
+        and (args.audio_verified is None or p["audio_verified"] == args.audio_verified)
         and args.search.casefold()
         in (
-            p["name"] + " " + p["id"] + " " + p.get("usage", "") + " " + " ".join(p.get("tags", []))
+            p["name"]
+            + " "
+            + p["id"]
+            + " "
+            + p.get("usage", "")
+            + " "
+            + " ".join(p.get("tags", []))
+            + " "
+            + search_terms(p)
         ).casefold()
     ]
+    found.sort(key=lambda p: (not p["audio_verified"], not p.get("default"), p["name"].casefold(), p["id"]))
     return {
         "total": len(found),
         "items": [public(p) for p in found[args.offset : args.offset + args.limit]],
         "next_offset": args.offset + args.limit if args.offset + args.limit < len(found) else None,
     }
+
+
+def categories(settings):
+    presets = catalog(settings)
+    items = []
+    for id, node in INDEX.items():
+        allowed = descendants(id)
+        matches = [p for p in presets if allowed.intersection(p["instrument_ids"])]
+        items.append(
+            {
+                **node,
+                "preset_count": len(matches),
+                "verified_count": sum(bool(p["audio_verified"]) for p in matches),
+                "library_count": len({p["source"]["library_id"] for p in matches}),
+            }
+        )
+    return {"taxonomy_version": VERSION, "total_presets": len(presets), "items": items}
 
 
 def choose(presets, gm, drum, durations):

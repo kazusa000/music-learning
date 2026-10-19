@@ -16,6 +16,8 @@
 
 正式操作仍由 `describe_capabilities` 发现，48 项领域操作与 10 类持久任务共用 HTTP `/v1/commands`、SDK 和 CLI。项目根目录 `music.cmd` 使用固定 app 环境运行同一个 CLI，无需全局安装；`music.cmd call jobs.submit --args <本地JSON> --expected-revision <head>` 可调用下列任务。SDK 提供 backup、restore_backup、diagnose 便利方法，不维护另一份工程状态。
 
+后续音色与统一乐器目录专项已扩展至 51 项领域操作、11 类任务；`instruments.categories/list` 按乐器聚合音色，具体契约见 docs/21-instrument-library.md。旧点时刻备份不自动包含后续新增工程或外部安装库。
+
 | kind | payload | 结果 |
 | --- | --- | --- |
 | application.backup | destination：一个全新的本地目录 | archive_path、archive_sha256、对象数量、各工程 head |

@@ -5,12 +5,15 @@ import {call} from './api';
 const time=(s:number)=>`${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toFixed(1).padStart(4,'0')}`;
 const active=(t:DialogueTurn)=>['queued','running','cancel_requested'].includes(t.status);
 const statusText:Record<string,string>={queued:'等待讨论',running:'正在研究',cancel_requested:'正在停止',cancelled:'已停止',failed:'未完成',succeeded:'已完成'};
+export type InstrumentDraft={id:string;text:string;revisionId:string;trackId:string};
 
-export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCompare}:{revision:Revision;headId:string;start:number;end:number;trackId:string|null;onLocate:(citation:Citation)=>void;jobs:Job[];onCompare:(id:string)=>void}){
+export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCompare,instrumentDraft,onConsumeDraft}:{revision:Revision;headId:string;start:number;end:number;trackId:string|null;onLocate:(citation:Citation)=>void;jobs:Job[];onCompare:(id:string)=>void;instrumentDraft?:InstrumentDraft|null;onConsumeDraft?:()=>void}){
   const [turns,setTurns]=useState<DialogueTurn[]>([]),[notes,setNotes]=useState<Conversation[]>([]);
   const [text,setText]=useState(''),[login,setLogin]=useState('isolated'),[scope,setScope]=useState('whole');
   const [editing,setEditing]=useState(false),[structural,setStructural]=useState(false);
   const [error,setError]=useState(''),[busy,setBusy]=useState(false),[showNotes,setShowNotes]=useState(false);
+  const [draftBinding,setDraftBinding]=useState<InstrumentDraft|null>(null);
+  useEffect(()=>{if(!instrumentDraft)return;setText(instrumentDraft.text);setEditing(true);setStructural(true);setScope('whole');setDraftBinding(instrumentDraft);onConsumeDraft?.();},[instrumentDraft,onConsumeDraft]);
   const history=useRef<HTMLDivElement>(null),follow=useRef(true);
   const last=turns.at(-1);
   useEffect(()=>{follow.current=true;},[last?.id,showNotes]);
@@ -28,8 +31,9 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
   };void update().catch(e=>{if(live)setError(e.message);});const timer=setInterval(()=>void update().catch(()=>{}),900);
     return()=>{live=false;clearInterval(timer);};},[revision.project_id]);
   async function submit(){if(!text.trim())return;setBusy(true);setError('');try{
+    if(draftBinding&&(draftBinding.revisionId!==revision.id||draftBinding.trackId!==trackId))throw new Error('乐器草稿绑定的版本或声部已改变，请重新选择乐器。');
     await call('dialogue.submit',{project_id:revision.project_id,revision_id:revision.id,text,start_sample:a,end_sample:b,
-      track_id:editing?trackId:(scope==='whole'?null:trackId),login_mode:login,edit_scope:editing?{track_ids:trackId?[trackId]:revision.snapshot.tracks?.map(t=>t.id)??[],start_sample:structural?0:a,end_sample:structural?duration:b,structural}:null},headId,true);setText('');await refresh();
+      track_id:editing?trackId:(scope==='whole'?null:trackId),login_mode:login,edit_scope:editing?{track_ids:trackId?[trackId]:revision.snapshot.tracks?.map(t=>t.id)??[],start_sample:structural?0:a,end_sample:structural?duration:b,structural}:null},headId,true);setText('');setDraftBinding(null);await refresh();
     }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   async function control(turn:DialogueTurn,operation:'dialogue.cancel'|'dialogue.retry'){
     try{await call(operation,{project_id:revision.project_id,turn_id:turn.id},headId,true);await refresh();}catch(e){setError((e as Error).message);}}

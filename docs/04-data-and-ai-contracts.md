@@ -17,6 +17,8 @@
 | RoutingGraph | 轨道、插入效果、总线、发送、侧链与主输出的有向连接及布局 |
 | AutomationLane | 参数/混音目标、时间点、值、插值方式、参数元数据版本 |
 | PresetAsset | 插件/宿主管理预设或状态、外部采样依赖及加载方法，能力可为未支持 |
+| InstrumentCategory | 稳定乐器 id、中文名称、别名、parent_id；用于跨库归类，不代表一个插件或安装目录 |
+| InstalledPreset | 唯一预设 id、instrument_ids、分类依据/版本、library 来源、插件后端、独立 audio_verified 与完整资源清单；同名音色可跨库并存 |
 | NoteEvent | 稳定 id、track_id、音高、音名拼写、起止时间、力度、来源及核对状态 |
 | ControlEvent | 踏板、弯音等控制器事件；缺失时不假造原演奏细节 |
 | TimingMap | 原曲样本时间、拍点、下拍、小节、拍号、速度段、弱起信息 |

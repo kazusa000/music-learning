@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新专项（2026-10-19）：统一乐器目录已实现，乐器为主入口、库为后台来源。先读docs/21-instrument-library.md的统一目录段。instrument_taxonomy.py定义稳定ID/父类/别名和明确映射；catalog每条可多instrument_ids，跨库汇集、同库拆分、同名靠唯一preset_id区分，重复ID拒绝。旧catalog仅兼容读取、不覆盖；新build写出分类，未知标unclassified，不能按文件名硬猜。当前3031条中23精选明确映射+2914原库类别映射+94待分类，已发声验证仍28；52分类节点不等于52个已安装乐器。新增instruments.categories，instruments.list的instrument_id/audio_verified和production.query的instrument_id/include_instrument_categories共用Service/API/SDK/CLI，当前51操作/11任务。前端“乐器”先选乐器交给AI选音色，来源可展开；只生成绑定revision/track的改编草稿，发送后才执行。原范围/幂等/状态/资源捕获约束保留。本次122项回归（86后端+36原生/模型格式）、真实目录API/CLI/停启与浏览器通过，无新的真实provider推理或歌曲渲染；正式工程head不变，NAS未访问，所有自有实例/浏览器停止。P6听辨仍未通过。
+
 ## 任务入口
 
 先读 README、docs/01-product-plan.md、docs/05-development-plan.md。实现数据、编辑或播放前，再读 docs/03-architecture.md、docs/04-data-and-ai-contracts.md 与 docs/06-acceptance.md。
@@ -24,6 +26,8 @@
 - 依照功能风险运行检查；报告区分构建、夹具、真实模型、真实对话、浏览器播放和听辨证据。
 
 ## 当前阶段
+
+统一乐器目录专项收尾周额度实查剩余48%（已用52%，10080分钟窗口），未触发停止条件，未使用重置卡；所有自有实例/浏览器已停止。以下50%等数字为此前阶段记录。
 
 P0a/P0b、P1、P2、P3、P4 与 P5 已完成，P6 自动工程验收已完成，人工听辨及有限参考待反馈。先读 docs/16-continuous-goal.md、docs/20-local-delivery.md 与 docs/benchmarks/p6-delivery.md，再参考各阶段记录。当前后端 78 项 + 原生/模型格式 36 项通过；P3 的 305 秒真实 VST3 制作和 300 秒脉冲同步证据继续保留，P6 补充完整当前流程及独立备份恢复。
 

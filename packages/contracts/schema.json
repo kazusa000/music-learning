@@ -1490,6 +1490,87 @@
       "title": "FreezeTrack",
       "type": "object"
     },
+    "InstrumentCategories": {
+      "additionalProperties": false,
+      "properties": {
+        "taxonomy_version": {
+          "title": "Taxonomy Version",
+          "type": "integer"
+        },
+        "total_presets": {
+          "title": "Total Presets",
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/InstrumentCategory"
+          },
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "taxonomy_version",
+        "total_presets",
+        "items"
+      ],
+      "title": "InstrumentCategories",
+      "type": "object"
+    },
+    "InstrumentCategory": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent Id"
+        },
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "preset_count": {
+          "title": "Preset Count",
+          "type": "integer"
+        },
+        "verified_count": {
+          "title": "Verified Count",
+          "type": "integer"
+        },
+        "library_count": {
+          "title": "Library Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "parent_id",
+        "aliases",
+        "preset_count",
+        "verified_count",
+        "library_count"
+      ],
+      "title": "InstrumentCategory",
+      "type": "object"
+    },
     "InstrumentQuery": {
       "additionalProperties": false,
       "properties": {
@@ -1524,6 +1605,32 @@
           ],
           "default": null,
           "title": "Family"
+        },
+        "instrument_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instrument Id"
+        },
+        "audio_verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Verified"
         }
       },
       "title": "InstrumentQuery",
@@ -2424,6 +2531,25 @@
           ],
           "default": null,
           "title": "Preset Search"
+        },
+        "instrument_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instrument Id"
+        },
+        "include_instrument_categories": {
+          "default": false,
+          "title": "Include Instrument Categories",
+          "type": "boolean"
         },
         "capture_job_id": {
           "anyOf": [
@@ -5998,6 +6124,37 @@
       "arguments": "InstrumentQuery",
       "result": {
         "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.categories": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "taxonomy_version": {
+            "title": "Taxonomy Version",
+            "type": "integer"
+          },
+          "total_presets": {
+            "title": "Total Presets",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/$defs/InstrumentCategory"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "taxonomy_version",
+          "total_presets",
+          "items"
+        ],
+        "title": "InstrumentCategories",
         "type": "object"
       },
       "mutates": false

@@ -201,8 +201,23 @@ class Client:
             expected_revision=expected_revision,
         )
 
-    def instruments(self, search="", *, family=None, offset=0, limit=100):
-        return self.call("instruments.list", dict(search=search, family=family, offset=offset, limit=limit))
+    def instrument_categories(self):
+        return self.call("instruments.categories")
+
+    def instruments(
+        self, search="", *, instrument_id=None, audio_verified=None, family=None, offset=0, limit=100
+    ):
+        return self.call(
+            "instruments.list",
+            dict(
+                search=search,
+                instrument_id=instrument_id,
+                audio_verified=audio_verified,
+                family=family,
+                offset=offset,
+                limit=limit,
+            ),
+        )
 
     def recommend_instruments(self, project_id, *, revision_id=None, track_id=None):
         return self.call(

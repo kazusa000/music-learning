@@ -46,6 +46,8 @@ SDK 提供 instruments、recommend_instruments、capture_instrument；`music.cmd
 
 ## 选择规则
 
+后续统一目录增加 `instruments.categories`，目前共 51 项领域操作，任务种类仍为 11。完整乐器优先入口与归类契约见下一节。
+
 先确认用户意图与声部角色，再检查模型 GM 候选、音区、长短音比例、密度和上下文。GM 名称是候选，不是原曲配器真值；不确定时提供替代说明并保留待核对标记。
 
 - 钢琴/电钢采用对应键盘采样；吉他和贝斯分别选拨弦与低音采样，不能只凭低音区把吉他当贝斯。
@@ -57,6 +59,36 @@ SDK 提供 instruments、recommend_instruments、capture_instrument；`music.cmd
 新产品流水线要求已安装音色库，在 assemble 中按声部选择实际资源；catalog 摘要进入任务指纹，每个资源都校验摘要，状态和资源随 revision 保存。独立 P0 的通用音色重放仍作为诊断脚本保留，不能作为产品流水线的默认降级。
 
 当前工作台的轨道和音源区显示实际 preset_name/id，旧版本显示未记录明确预设，避免把模型的“吉他候选”误当成正在播放真实吉他预设。
+
+## 统一乐器目录
+
+用户确认：**乐器是入口，音源库是后台来源**。一个多乐器库内的钢琴、电钢、吉他等分别归类；同一乐器可包含多个库提供的多个音色。用户可以只选乐器，由 AI 根据编曲、音域与奏法选预设，也可展开详情指定具体音色。
+
+分类由 `src/music_learning/instrument_taxonomy.py` 统一管理，含 52 个节点（父类及待分类也计入），不是 52 件已安装/已验证的乐器。声学钢琴 `acoustic-piano`（别名木钢琴）、电钢琴 `electric-piano`、电吉他 `electric-guitar`、原声吉他 `acoustic-guitar` 独立；弦乐合奏、小提琴、大提琴及具体木管也分开，sustain/staccato/pizzicato 可在同一乐器下作为不同音色/奏法。合成模拟与明确的声学分类分开，不能把 Surge 的 Strings 文件夹直接当作真实弦乐采样。
+
+每条预设持有唯一 `id` 和一个或多个 `instrument_ids`。多标签仅表示叠层/复合音色的归类，不证明插件可分别控制其声部。`source.library_id/library_name/backend` 保存后台来源，实际加载继续使用既有固定插件、完整状态和依赖闭包。不同库的同名音色并存，以唯一预设 ID 区分；重复 ID 明确拒绝，不能悄悄选第一条。
+
+分类有三个依据：精选明确映射 `curated-registry`、原库分类标签 `source-category`、新 catalog 显式标注 `catalog-assignment`。未知项为 `unclassified`，不按名称、GM 标签或粗略 family 猜测细乐器。当前旧 catalog 不覆盖，读取时叠加版本管理的分类；未来构建 catalog 写出这些字段。后续用户给库后，须逐个可加载预设/乐器程序归类，填写稳定 ID 与来源；分类规则和接入代码进 Git，安装路径、音色与样本留本机数据目录。尚未提供通用格式的“一键导入任意商业库”；新的播放器或私有程序加载仍需实际适配。
+
+当前清单：23 个采样预设是明确精选映射；2,914 个 Surge 文件按原库的明确类别归入合成键盘、贝斯、主音、铺底、序列等，包含以前因第三方作者子目录漏掉的类别；94 个模板、MPE、分区等不能确定具体乐器的预设保留待分类。合计 3,031，已验证仍只有 28，分类数量不是已发声或听辨通过数量。Shiny 的麦克风分支在原声吉他下仍保留“同一空心吉他麦克风采样”的说明，不冒称专门尼龙/钢弦采样。
+
+统一接口：
+
+| 操作 | 结果 |
+| --- | --- |
+| `instruments.categories {}` | 稳定 ID/名称/别名/parent_id，每类含子类的预设数、已验证数、来源库数；复合预设在父类计数去重。 |
+| `instruments.list {instrument_id:"electric-guitar"}` | 该乐器的所有库音色；父类 ID 包含子类；`search` 支持中文别名与用途，`audio_verified` 可独立过滤，分页稳定优先已验证/默认。旧 `family` 过滤保留兼容。 |
+| `production.query {instrument_id:...,include_instrument_categories:true}` | 同一分类与分页结果供内置 Agent 使用；不请求时不额外塞入整个分类目录。 |
+
+SDK `Client.instrument_categories()`、`Client.instruments(instrument_id="electric-guitar")`；CLI `music.cmd call instruments.categories`，其他过滤通过既有 `--args <JSON文件>`。后续仍以具体 preset_id 捕获并应用，不能让分类 ID 冒充插件完整状态。
+
+工作台新增“乐器”页：先选乐器，默认不要求选择库；来源可在卡片详情展开。选择当前版本的一个声部后，“使用此乐器 · 交给 AI 选音色”会准备限定该版本/声部、整轨插件范围的改编草稿，发送后才执行。可选“指定此音色”。单纯浏览和准备草稿不会调用模型、捕获或修改工程；声部或版本改变后旧草稿阻止发送，要求重新选择。待分类条目可查看，不能作为已明确乐器一键应用。
+
+验证：86 项后端回归 + 36 项原生/模型格式回归，共 122 项通过；强化既有模拟 provider 测试，实际调用 instrument_id 查询 → 真实 sfizz 捕获 → 原子编辑/渲染排队。该条是模拟 provider 工具边界验证，没有新的真实 Codex 推理。测试覆盖同库拆分、跨库汇集、同名预设、多标签去重、别名、分页、来源隐藏/回读、未知分类/重复 ID 拒绝及旧 catalog 字节不变。Ruff、schema/TS 漂移和 TypeScript/Vite 构建通过。
+
+真实正式实例 API/SDK/CLI 目录结果一致，stop/start 后分类/预设结果一致，音色工程 head 仍为 `473651f138a34e42a5a7c27d8eecd1ed`。证据 `D:\music-learning-runtime\benchmarks\instrument-directory-api-v1\summary.json`。真实浏览器最终记录在 `instrument-directory-browser-v4`：乐器选择、可选预设、来源回读、跨页不重复、待分类禁用、旧声部草稿拦截、390px 无溢出均通过；模型调用和制作写入均为 0。脚本 `apps/web/instrument-directory.mjs` 使用本机已有 Playwright 浏览器；首轮未设置浏览器缓存路径而未启动，第二轮因未等 React 草稿 effect 的测试竞态失败，修正等待后完成，未将失败改标成功。
+
+本次未重跑三模型、重渲染歌曲或覆盖原始资源/工程；NAS 未访问。应用和自有浏览器已停止。P6 人工听辨仍待新版实际反馈。
 
 ## 验收与剩余边界
 

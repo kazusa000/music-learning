@@ -215,6 +215,8 @@ def test_agent_can_capture_then_apply_without_exposing_sample_inventory(service,
     from test_dialogue import Provider
 
     root, entry = installed(service.settings, tmp_path)
+    entry["instrument_ids"] = ["electric-piano"]
+    (root / "catalog.json").write_text(json.dumps(dict(schema_version=1, presets=[entry])))
     rev, track, *_ = musical(service, project)
     worker = Worker(service.database)
     initial = invoke(
@@ -253,6 +255,18 @@ def test_agent_can_capture_then_apply_without_exposing_sample_inventory(service,
         async def request(self, method, params, **kwargs):
             if method != "turn/start":
                 return await super().request(method, params, **kwargs)
+
+            choices = await self.handler(
+                {
+                    "tool": "production_query",
+                    "arguments": {"instrument_id": "electric-piano", "include_instrument_categories": True},
+                }
+            )
+            assert choices["success"]
+            choices = json.loads(choices["contentItems"][0]["text"])
+            assert choices["library"]["total"] == 1
+            assert choices["library"]["items"][0]["id"] == entry["id"]
+            assert "resources" not in choices["library"]["items"][0]
 
             async def run_capture():
                 await asyncio.sleep(0.1)

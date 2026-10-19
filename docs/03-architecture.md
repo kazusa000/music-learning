@@ -26,6 +26,8 @@ flowchart TB
 
 ## 技术选择
 
+统一乐器目录（2026-10-19 已接入）：乐器分类 → 跨库预设索引 → 原生插件/完整状态/资源。`instrument_taxonomy.py` 提供稳定乐器 ID、层级与别名；已安装 catalog 的每个预设可带多个 `instrument_ids`，库来源作为后台元数据。`instruments.categories/list` 与内置 Agent 的 production.query 使用同一视图。现有 v1 catalog 通过版本管理的明确映射兼容读取，不覆盖磁盘目录、原始预设或工程 revision；新建 catalog 写出分类字段。分类不等于发声验证，未知项集中待分类，不能凭名称/音区猜测后自动换成默认音色。具体契约与验证见 [统一乐器目录](21-instrument-library.md#统一乐器目录)。
+
 | 部分 | 选择 | 目的与约束 |
 | --- | --- | --- |
 | 前端 | React + TypeScript + Vite + pnpm | 呈现作品、讨论、状态、差异与试听；不要求 AI 操作界面 |

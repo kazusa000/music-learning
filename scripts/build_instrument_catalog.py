@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from music_learning.instrument_capture import native_probe  # noqa: E402
 from music_learning.storage import digest  # noqa: E402
+from music_learning.instrument_taxonomy import classify  # noqa: E402
 from native_host import NativeHost  # noqa: E402
 
 
@@ -406,7 +407,7 @@ def build(root, verify, validation_name):
             {
                 "schema_version": 1,
                 "native_host_sha256": digest(ROOT / "runtime/build/msvc/bin/ml_audio_host.exe"),
-                "presets": presets,
+                "presets": [classify(p) for p in presets],
             },
             ensure_ascii=False,
         ),

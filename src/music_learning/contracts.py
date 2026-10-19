@@ -627,6 +627,24 @@ class CaptureInstrument(Model):
 class InstrumentQuery(Page):
     search: str = Field(default="", max_length=200)
     family: str | None = Field(default=None, max_length=80)
+    instrument_id: str | None = Field(default=None, min_length=1, max_length=80)
+    audio_verified: bool | None = None
+
+
+class InstrumentCategory(Model):
+    id: str
+    name: str
+    parent_id: str | None
+    aliases: list[str]
+    preset_count: int
+    verified_count: int
+    library_count: int
+
+
+class InstrumentCategories(Model):
+    taxonomy_version: int
+    total_presets: int
+    items: list[InstrumentCategory]
 
 
 class RecommendInstruments(RevisionRef):
@@ -869,6 +887,8 @@ class ProductionQuery(RevisionRef, Page):
     plugin_id: Id | None = None
     parameter_search: str = Field(default="", max_length=200)
     preset_search: str | None = Field(default=None, max_length=200)
+    instrument_id: str | None = Field(default=None, min_length=1, max_length=80)
+    include_instrument_categories: bool = False
     capture_job_id: Id | None = None
     limit: int = Field(default=40, ge=1, le=100)
 
@@ -959,6 +979,7 @@ OPERATIONS = {
     "arrangements.get": (DialogueRef, False),
     "production.query": (ProductionQuery, False),
     "instruments.list": (InstrumentQuery, False),
+    "instruments.categories": (Empty, False),
     "instruments.recommend": (RecommendInstruments, False),
 }
 
@@ -999,6 +1020,7 @@ RESULT_TYPES = {
     "renders.list": list[dict],
     "plugins.presets": list[dict],
     "instruments.list": dict,
+    "instruments.categories": InstrumentCategories,
     "instruments.recommend": dict,
     "audition.get": dict,
     "audition.set": dict,

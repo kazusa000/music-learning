@@ -53,13 +53,20 @@ def production_query(service, db, args):
         ],
         "notice": "Use patch_plugin to change listed normalized parameters or copy an existing captured preset by preset_plugin_id. All plugin/automation edits require full-time structural scope.",
     }
-    from .instruments import query, recommend
+    from .instruments import categories, query, recommend
 
     result["instrument_advice"] = recommend(service.settings, s)
-    if args.preset_search is not None:
+    if args.include_instrument_categories:
+        result["instrument_categories"] = categories(service.settings)
+    if args.preset_search is not None or args.instrument_id is not None:
         result["library"] = query(
             service.settings,
-            c.InstrumentQuery(search=args.preset_search, offset=args.offset, limit=args.limit),
+            c.InstrumentQuery(
+                search=args.preset_search or "",
+                instrument_id=args.instrument_id,
+                offset=args.offset,
+                limit=args.limit,
+            ),
         )
     if args.capture_job_id:
         capture = row(db, t.jobs, "id", args.capture_job_id)
