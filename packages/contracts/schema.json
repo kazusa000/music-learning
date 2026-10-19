@@ -593,6 +593,80 @@
       "title": "Beat",
       "type": "object"
     },
+    "Citation": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "start_sample": {
+          "minimum": 0,
+          "title": "Start Sample",
+          "type": "integer"
+        },
+        "end_sample": {
+          "minimum": 0,
+          "title": "End Sample",
+          "type": "integer"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Id"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "entity_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "title": "Entity Ids",
+          "type": "array"
+        },
+        "source": {
+          "enum": [
+            "project_events_and_candidates",
+            "render_measurement"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "revision_id",
+        "start_sample",
+        "end_sample",
+        "label",
+        "source"
+      ],
+      "title": "Citation",
+      "type": "object"
+    },
     "Clip": {
       "additionalProperties": false,
       "properties": {
@@ -952,6 +1026,124 @@
         "id"
       ],
       "title": "DeleteEntity",
+      "type": "object"
+    },
+    "DialogueRef": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "turn_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Turn Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "turn_id"
+      ],
+      "title": "DialogueRef",
+      "type": "object"
+    },
+    "DialogueTurn": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "cancel_requested",
+            "cancelled",
+            "succeeded",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "context": {
+          "additionalProperties": true,
+          "title": "Context",
+          "type": "object"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "citations": {
+          "items": {
+            "$ref": "#/$defs/Citation"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        },
+        "updated_at": {
+          "title": "Updated At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "revision_id",
+        "status",
+        "payload",
+        "context",
+        "text",
+        "tools",
+        "citations",
+        "error",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "DialogueTurn",
       "type": "object"
     },
     "EditScope": {
@@ -1354,6 +1546,131 @@
         "denominator"
       ],
       "title": "Meter",
+      "type": "object"
+    },
+    "MusicQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 40,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Id"
+        },
+        "start_sample": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Start Sample",
+          "type": "integer"
+        },
+        "end_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Sample"
+        },
+        "action": {
+          "default": "summary",
+          "enum": [
+            "summary",
+            "events",
+            "annotations",
+            "compare",
+            "metrics"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "compare_start_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compare Start Sample"
+        },
+        "compare_end_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compare End Sample"
+        },
+        "annotation_kind": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annotation Kind"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "MusicQuery",
       "type": "object"
     },
     "NoteEvent": {
@@ -2411,6 +2728,96 @@
       "title": "RoutingGraph",
       "type": "object"
     },
+    "SaveNote": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "content": {
+          "maxLength": 12000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "start_sample": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Start Sample",
+          "type": "integer"
+        },
+        "end_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Sample"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Id"
+        },
+        "source_turn_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Turn Id"
+        },
+        "state": {
+          "default": "draft",
+          "enum": [
+            "draft",
+            "accepted",
+            "disputed"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "content"
+      ],
+      "title": "SaveNote",
+      "type": "object"
+    },
     "SetAudition": {
       "additionalProperties": false,
       "properties": {
@@ -2782,6 +3189,82 @@
         "provenance"
       ],
       "title": "Stem",
+      "type": "object"
+    },
+    "SubmitDialogue": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "text": {
+          "maxLength": 12000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "start_sample": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Start Sample",
+          "type": "integer"
+        },
+        "end_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Sample"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Id"
+        },
+        "login_mode": {
+          "default": "isolated",
+          "enum": [
+            "isolated",
+            "existing"
+          ],
+          "title": "Login Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "text"
+      ],
+      "title": "SubmitDialogue",
       "type": "object"
     },
     "SubmitJob": {
@@ -4522,6 +5005,487 @@
       "arguments": "ReportAudition",
       "result": {
         "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "music.query": {
+      "arguments": "MusicQuery",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "dialogue.submit": {
+      "arguments": "SubmitDialogue",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested",
+              "cancelled",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/$defs/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "revision_id",
+          "status",
+          "payload",
+          "context",
+          "text",
+          "tools",
+          "citations",
+          "error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DialogueTurn",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "dialogue.get": {
+      "arguments": "DialogueRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested",
+              "cancelled",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/$defs/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "revision_id",
+          "status",
+          "payload",
+          "context",
+          "text",
+          "tools",
+          "citations",
+          "error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DialogueTurn",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "dialogue.list": {
+      "arguments": "ProjectPage",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/DialogueTurn"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "dialogue.cancel": {
+      "arguments": "DialogueRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested",
+              "cancelled",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/$defs/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "revision_id",
+          "status",
+          "payload",
+          "context",
+          "text",
+          "tools",
+          "citations",
+          "error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DialogueTurn",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "dialogue.retry": {
+      "arguments": "DialogueRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested",
+              "cancelled",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/$defs/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "revision_id",
+          "status",
+          "payload",
+          "context",
+          "text",
+          "tools",
+          "citations",
+          "error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DialogueTurn",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "notes.save": {
+      "arguments": "SaveNote",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant",
+              "tool",
+              "note"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "content": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "context": {
+            "additionalProperties": true,
+            "title": "Context",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "revision_id",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "Conversation",
         "type": "object"
       },
       "mutates": true

@@ -285,6 +285,10 @@ class Service:
         return revision
 
     def _dispatch(self, db, op, args, request):
+        if op.startswith("dialogue.") or op in ("music.query", "notes.save"):
+            from .dialogue import dispatch
+
+            return dispatch(self, db, op, args, request)
         if op.startswith("audition."):
             from .audition import dispatch
 
@@ -303,7 +307,7 @@ class Service:
         if op == "describe_capabilities":
             return {
                 "schema_version": 1,
-                "phase": "P3",
+                "phase": "P4",
                 "operations": {
                     name: {
                         "mutates": write,
@@ -338,7 +342,6 @@ class Service:
                 },
                 "unsupported": [
                     "live_plugin_edit",
-                    "codex.conversation",
                     "project_backup_bundle",
                     "vendor_private_preset_browsers",
                     "physical_unit_parameter_input",

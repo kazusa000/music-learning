@@ -117,6 +117,31 @@ class Client:
                 raise TimeoutError("Job still active; use the persisted job id to resume monitoring")
             time.sleep(interval)
 
+    def discuss(
+        self, project_id, text, *, expected_revision, revision_id=None, login_mode="isolated", **selection
+    ):
+        return self.call(
+            "dialogue.submit",
+            {
+                "project_id": project_id,
+                "revision_id": revision_id,
+                "text": text,
+                "login_mode": login_mode,
+                **selection,
+            },
+            expected_revision=expected_revision,
+        )
+
+    def wait_dialogue(self, project_id, turn_id, *, timeout=240, interval=0.5):
+        deadline = time.monotonic() + timeout
+        while True:
+            turn = self.call("dialogue.get", {"project_id": project_id, "turn_id": turn_id})
+            if turn["status"] in ("succeeded", "failed", "cancelled"):
+                return turn
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Discussion still active; resume with its persisted turn id")
+            time.sleep(interval)
+
     def edit(self, project_id, *, expected_revision, scope, operations, description, idempotency_key=None):
         return self.call(
             "edits.apply",

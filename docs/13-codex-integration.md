@@ -1,3 +1,5 @@
+> P4 更新：正式工程讨论已实现，当前方案和登录模式见 [工程讨论](18-music-dialogue.md)，真实验收见 [P4 报告](benchmarks/p4-dialogue.md)。以下 P0 记录保持历史含义。
+
 # Codex 接入方案与当前探测
 
 已用真实 ChatGPT 登录验证 Codex App Server，可作为本应用的默认 Agent 接入方向，供应商适配边界保留。正式前端、工程工具和对话持久化在 P1～P5 接入；当前为可运行的 P0 stdio 客户端和探测工具。

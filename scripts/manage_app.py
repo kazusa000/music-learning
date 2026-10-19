@@ -39,7 +39,7 @@ def owned(settings):
 def ready(settings):
     try:
         response = httpx.get(f"http://127.0.0.1:{settings.port}/health", timeout=1, trust_env=False)
-        return response.status_code == 200 and response.json().get("phase") == "P3"
+        return response.status_code == 200 and response.json().get("phase") == "P4"
     except (httpx.HTTPError, ValueError):
         return False
 

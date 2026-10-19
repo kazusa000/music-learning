@@ -767,6 +767,62 @@ class ReportAudition(ProjectRef):
     status: Literal["playing", "paused", "loading", "needs_activation", "error"]
 
 
+class MusicQuery(QueryEvents):
+    action: Literal["summary", "events", "annotations", "compare", "metrics"] = "summary"
+    compare_start_sample: Sample | None = None
+    compare_end_sample: Sample | None = None
+    limit: int = Field(default=40, ge=1, le=100)
+    annotation_kind: str | None = Field(default=None, min_length=1, max_length=80)
+
+
+class SubmitDialogue(RevisionRef):
+    text: str = Field(min_length=1, max_length=12000)
+    start_sample: Sample = 0
+    end_sample: Sample | None = None
+    track_id: Id | None = None
+    login_mode: Literal["isolated", "existing"] = "isolated"
+
+
+class DialogueRef(ProjectRef):
+    turn_id: Id
+
+
+class SaveNote(RevisionRef):
+    content: str = Field(min_length=1, max_length=12000)
+    start_sample: Sample = 0
+    end_sample: Sample | None = None
+    track_id: Id | None = None
+    source_turn_id: Id | None = None
+    state: Literal["draft", "accepted", "disputed"] = "draft"
+
+
+class Citation(Model):
+    id: Id
+    project_id: Id
+    revision_id: Id
+    start_sample: Sample
+    end_sample: Sample
+    track_id: Id | None = None
+    label: str
+    entity_ids: list[Id] = Field(default_factory=list)
+    source: Literal["project_events_and_candidates", "render_measurement"]
+
+
+class DialogueTurn(Model):
+    id: Id
+    project_id: Id
+    revision_id: Id
+    status: Literal["queued", "running", "cancel_requested", "cancelled", "succeeded", "failed"]
+    payload: dict
+    context: dict
+    text: str
+    tools: list[dict]
+    citations: list[Citation]
+    error: dict | None
+    created_at: float
+    updated_at: float
+
+
 OPERATIONS = {
     "describe_capabilities": (Empty, False),
     "projects.list": (Page, False),
@@ -806,6 +862,13 @@ OPERATIONS = {
     "audition.get": (ProjectRef, False),
     "audition.set": (SetAudition, True),
     "audition.report": (ReportAudition, True),
+    "music.query": (MusicQuery, False),
+    "dialogue.submit": (SubmitDialogue, True),
+    "dialogue.get": (DialogueRef, False),
+    "dialogue.list": (ProjectPage, False),
+    "dialogue.cancel": (DialogueRef, True),
+    "dialogue.retry": (DialogueRef, True),
+    "notes.save": (SaveNote, True),
 }
 
 RESULT_TYPES = {
@@ -847,4 +910,11 @@ RESULT_TYPES = {
     "audition.get": dict,
     "audition.set": dict,
     "audition.report": dict,
+    "music.query": dict,
+    "dialogue.submit": DialogueTurn,
+    "dialogue.get": DialogueTurn,
+    "dialogue.list": list[DialogueTurn],
+    "dialogue.cancel": DialogueTurn,
+    "dialogue.retry": DialogueTurn,
+    "notes.save": Conversation,
 }

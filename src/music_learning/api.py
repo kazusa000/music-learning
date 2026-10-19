@@ -58,9 +58,19 @@ def create_app(settings: Settings | None = None):
 
     @asynccontextmanager
     async def lifespan(_):
+        from .dialogue_worker import DialogueWorker
+
+        dialogue = DialogueWorker(database)
+        runner = asyncio.create_task(dialogue.run())
         try:
             yield
         finally:
+            dialogue.stopping.set()
+            try:
+                await asyncio.wait_for(runner, 8)
+            except asyncio.TimeoutError:
+                runner.cancel()
+                await asyncio.gather(runner, return_exceptions=True)
             database.close()
 
     app = FastAPI(
@@ -121,7 +131,7 @@ def create_app(settings: Settings | None = None):
 
     @app.get("/health")
     def health():
-        return {"schema_version": 1, "phase": "P3", "status": "ok"}
+        return {"schema_version": 1, "phase": "P4", "status": "ok"}
 
     @app.post("/v1/session")
     def session():
