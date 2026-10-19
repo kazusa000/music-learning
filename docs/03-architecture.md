@@ -1,6 +1,6 @@
 # 第一阶段技术方案
 
-状态：2026-10-19，P0a/P0b、P1 与 P2 已完成。正式整曲流水线见 [P2 实现](15-preprocessing-pipeline.md)，工程持久化见 [P1 实现](14-project-service.md)。下图仍是第一阶段完整目标；任意制作操作和内置对话在 P3/P4 接入。
+状态：2026-10-19，P0a/P0b、P1、P2 与 P3 已完成。制作与试听见 [P3 实现](17-daw-implementation.md)。正式整曲流水线见 [P2 实现](15-preprocessing-pipeline.md)，工程持久化见 [P1 实现](14-project-service.md)。下图仍是第一阶段完整目标；制作已落地，内置讨论/改编在 P4/P5 接入。
 
 ## 系统结构
 
@@ -30,8 +30,8 @@ flowchart TB
 | --- | --- | --- |
 | 前端 | React + TypeScript + Vite + pnpm | 呈现作品、讨论、状态、差异与试听；不要求 AI 操作界面 |
 | 时间线 | Canvas 绘制波形/事件，DOM 提供交互控件与无障碍说明 | 避免大量音符 DOM 节点；视口裁剪和多级波形缓存 |
-| UI 状态 | P1 最小主页用 React state + SSE/轮询；P3 再按时间线需求引入 Zustand/TanStack Query | 工程版本以服务端为准，P1 不建立另一份工程状态权威 |
-| 音频引擎 | C++20 + CMake，JUCE 9.0.4 headless/MSVC 已验证 | Windows x64 VST3；P0a 支持受限处理图/阶跃自动化/补偿/渲染，复杂路由在 P3 |
+| UI 状态 | React state + 不可变 revision 缓存 + SSE/轮询；单一 Web Audio transport | 工程版本以服务端为准，P1 不建立另一份工程状态权威 |
+| 音频引擎 | C++20 + CMake，JUCE 9.0.4 headless/MSVC 已验证 | Windows x64 VST3；P3 支持离线 stereo DAG、发送/侧链、step/linear 自动化与延迟补偿 |
 | 试听 | Web Audio 播放原曲/已渲染产物 | 原生引擎拥有制作时间基准，前端只负责试听和位置显示；独奏/混合由引擎或受控 stems 提供 |
 | 后端 | Python 3.11 + FastAPI + Pydantic 2 + uv | 与音频生态衔接，接口和编辑参数显式校验 |
 | 元数据 | SQLite WAL + SQLAlchemy 2 + Alembic | 单机事务、迁移、工程和任务状态持久化 |
@@ -47,7 +47,7 @@ flowchart TB
 | AI | Codex App Server + 应用领域工具，保留供应商适配器 | P0b 已用既有 ChatGPT 登录实测；正式服务/对话持久化后续接入，详见 docs/13-codex-integration.md |
 | 检查 | CTest/原生宿主夹具、pytest、Vitest、Playwright | 真实插件处理、全操作 API、恢复、整曲能力；浏览器检查展示与试听 |
 
-使用 SQLAlchemy 2 Core 显式 SQLite 事务与 Alembic 迁移。完整版本快照是权威，实体表是事务内只读投影。当前 27 个领域操作共用一个命令入口；独立 worker 已接通音频导入、插件检查及七阶段整曲流水线。P2 默认初版重建有实际混音/逐轨产物；任意图制作与对话仍按 P3/P4 推进。
+使用 SQLAlchemy 2 Core 显式 SQLite 事务与 Alembic 迁移。完整版本快照是权威，实体表是事务内只读投影。当前 38 个领域操作共用一个命令入口；独立 worker 已接通音频导入、插件检查及七阶段整曲流水线。P2 初版与 P3 编辑版本各自保存实际混音/逐轨/总线产物；对话仍按 P4 推进。
 
 ## 运行环境与隔离
 

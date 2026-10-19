@@ -1,6 +1,6 @@
 # 数据与 AI 操作约定
 
-状态：第一阶段契约设计。P1 已落地核心实体与统一接口，P2 补充 Stem、ControlEvent、资源/描述引用、阶段状态及精确版本绑定的重建清单。实际接口见 [P1](14-project-service.md)与 [P2](15-preprocessing-pipeline.md)；本文仍包含 P3～P6 目标，未列入能力发现的操作尚未实现。全操作要求见[AI DAW 约定](09-agent-daw-contract.md)。
+状态：第一阶段契约设计。P1 已落地核心实体与统一接口，P2 补充 Stem、ControlEvent、资源/描述引用、阶段状态及精确版本绑定的重建清单。P3 增加范围编辑、冻结、制作任务及实际试听状态。实际接口见 [P1](14-project-service.md)、[P2](15-preprocessing-pipeline.md)与 [P3](17-daw-implementation.md)；本文仍包含 P4～P6 目标，未列入能力发现的操作尚未实现。全操作要求见[AI DAW 约定](09-agent-daw-contract.md)。
 
 ## 数据实体
 
@@ -132,7 +132,7 @@ SQLite 保存项目索引、任务、消息、版本关系与事务元数据；�
 
 ## HTTP 与事件流约定
 
-初步资源：`/api/capabilities`、`/api/plugins`、`/api/projects`、`/api/assets`、`/api/jobs`、`/api/projects/{id}/revisions`、`/api/projects/{id}/graph`、`/api/projects/{id}/conversations`、`/api/renders`、`/api/measurements`、`/api/events`。从同一契约生成 SDK/CLI 入口，Agent 可批量读取与操作，无需浏览器控制。
+实际统一资源为 `/v1/commands`、`/v1/uploads`、`/v1/assets/{sha}`、`/v1/events`；能力、参数和结果 schema 通过 describe_capabilities 返回。最初拟定的 /api 资源列表不作为已实现路由。从同一契约生成 SDK/CLI 入口，Agent 可批量读取与操作，无需浏览器控制。
 
 写入统一使用请求 id 与幂等键；长任务返回 `202 + job_id`。SSE 事件有持久递增 cursor、project_id、job/request_id、revision_id、type 和 payload，重连按 cursor 补发。聊天和任务失败独立呈现，避免渲染失败导致对话记录丢失。
 

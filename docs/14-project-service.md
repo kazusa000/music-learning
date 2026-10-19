@@ -1,6 +1,6 @@
 # P1 工程服务与统一接口
 
-2026-10-18 的 P1 基线，证据见 [P1 报告](benchmarks/p1-persistence.md)。2026-10-19 已增加 [P2 整曲流水线](15-preprocessing-pipeline.md)与只读工作台，下文 P1 的 23 个操作/0001 布局为历史基线；当前是 27 个操作与 0002 迁移。制作编辑和正式 Codex 对话仍在 P3/P4。
+2026-10-18 的 P1 基线，证据见 [P1 报告](benchmarks/p1-persistence.md)。2026-10-19 已增加 [P2 整曲流水线](15-preprocessing-pipeline.md)与只读工作台，下文 P1 的 23 个操作/0001 布局为历史基线；当前是 38 个操作与 0003 迁移；[P3](17-daw-implementation.md)已实现制作编辑与同步试听，正式 Codex 对话留在 P4。
 
 ## 环境与启动
 
@@ -41,7 +41,7 @@ React / Python SDK / CLI
 
 `packages/contracts/schema.json`、`types.ts` 由 `scripts/export_contracts.py` 生成；包含参数、结果及实体契约。后端同时校验输入与回读结果。`--check` 检查生成文件漂移。核心实体包括 Project、Asset、AnalysisRun、TimingMap、Track、Clip、NoteEvent、PluginInstance、RoutingGraph、AutomationLane、Revision、Job、Conversation，以及注释与事件。
 
-P1 的 `revisions.commit` 是完整结构化快照存储事务。它保存音乐数据和插件引用，**不会执行处理图、自动应用插件参数或生成声音**。独立音符编辑、语义编辑、处理图执行和工程渲染在 P3；能力发现明确列出尚未实现的操作。
+P1 的 `revisions.commit` 是完整结构化快照存储事务。它保存音乐数据和插件引用，**不会执行处理图、自动应用插件参数或生成声音**。范围编辑和处理图渲染已由 P3 的 edits.apply/project.render 接入；语义对话编辑仍在 P5。能力发现明确列出未支持的操作。
 
 ## API / SDK / CLI
 
@@ -114,7 +114,7 @@ API 默认要求本机随机 Bearer Token 或 HttpOnly / SameSite=Strict cookie�
 
 原始声音、模型原始输出、完整插件二进制状态作为独立素材。`assets.register` 只登记不透明文件；音频须经 `asset.import` 完整 ffmpeg 解码及 ffprobe 检查。音频解码后的技术元数据可补全先前不透明对象，但文件字节和摘要不变。插件状态另存 asset；不以参数列表代替完整状态。外部资源在 `resource_asset_ids` 中引用，P1 不自动搬移插件私有资源路径。
 
-每个 revision 保存完整快照及摘要、父版本、作者和说明，并在同一事务生成各实体只读投影。原曲一经导入不能移除/替换；分析 run 不可覆盖。新分析只有明确写入新 revision 才进入工程。讨论/笔记绑定明确的 revision，head 改变不会悄悄重定向旧引用。P1 当前原曲工程的 sample rate / duration 固定对应源；延长编曲等 P3 操作尚未开放。
+每个 revision 保存完整快照及摘要、父版本、作者和说明，并在同一事务生成各实体只读投影。原曲一经导入不能移除/替换；分析 run 不可覆盖。新分析只有明确写入新 revision 才进入工程。讨论/笔记绑定明确的 revision，head 改变不会悄悄重定向旧引用。P1 当前原曲工程的 sample rate / duration 固定对应源；当前研究工程仍以原曲正文为编排边界，渲染尾音单独记录；不把延长原曲源时钟当成已实现功能。
 
 ## 时间映射
 
