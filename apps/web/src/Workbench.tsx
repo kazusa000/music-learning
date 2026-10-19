@@ -115,7 +115,9 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   },[versionId,head]);
 
   useEffect(()=>{
-    player.current.pause();player.current.offset=0;setPosition(0);setLoopEnd(duration);
+    player.current.pause();player.current.offset=0;setPosition(0);
+    setLoopStart(previous=>Math.min(previous,Math.max(0,duration-1/rate)));
+    setLoopEnd(previous=>previous>0?Math.min(previous,duration):duration);
     setMode(snapshot.source_asset_id?'original':'mix');setViewStart(0);setZoom(1);
   },[revision.id,duration,snapshot.source_asset_id]);
 
