@@ -169,6 +169,17 @@ def voice_preset(settings, voice):
         raise ValueError(
             f"No verified preset mapping for voice {voice['id']} GM:{voice['program']}; explicit selection required"
         )
+    outside = sorted(
+        {
+            n["note"]
+            for n in voice.get("notes", [])
+            if not selected["key_range"][0] <= n["note"] <= selected["key_range"][1]
+        }
+    )
+    if outside:
+        raise ValueError(
+            f"Preset {selected['id']} does not cover pitches {outside}; explicit mapping required, notes were not transposed"
+        )
     return selected
 
 

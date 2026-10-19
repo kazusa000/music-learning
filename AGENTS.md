@@ -25,7 +25,7 @@
 
 ## 当前阶段
 
-P0a/P0b、P1、P2、P3、P4 与 P5 已完成，P6 自动工程验收已完成，人工听辨及有限参考待反馈。先读 docs/16-continuous-goal.md、docs/20-local-delivery.md 与 docs/benchmarks/p6-delivery.md，再参考各阶段记录。当前后端 77 项 + 原生/模型格式 36 项通过；P3 的 305 秒真实 VST3 制作和 300 秒脉冲同步证据继续保留，P6 补充完整当前流程及独立备份恢复。
+P0a/P0b、P1、P2、P3、P4 与 P5 已完成，P6 自动工程验收已完成，人工听辨及有限参考待反馈。先读 docs/16-continuous-goal.md、docs/20-local-delivery.md 与 docs/benchmarks/p6-delivery.md，再参考各阶段记录。当前后端 78 项 + 原生/模型格式 36 项通过；P3 的 305 秒真实 VST3 制作和 300 秒脉冲同步证据继续保留，P6 补充完整当前流程及独立备份恢复。
 
 代码在 src/music_learning（权威契约/领域服务、HTTP API、SDK/CLI、任务执行、pipeline/musical），scripts/pipeline_adapter.py（隔离模型/渲染阶段），services/api/migrations（冻结 0001 至 0005）、apps/web、packages/contracts。数据在 D:\music-learning-runtime\app-data，独立 Python 环境在 envs/app。通过 scripts/app.py start/open/status/stop 管理隐藏的服务及其归属。更新后先 stop/start，旧进程不会热更新。当前从源码 checkout + PYTHONPATH=src 运行。契约变更后运行 scripts/export_contracts.py，提交 schema/TS 并检查漂移。
 
@@ -60,3 +60,5 @@ P6完整备份 H:\music-learning-delivery\backups\p6-v1\music-learning.zip，174
 P6最后前端修正：版本变化保留并按源时钟夹紧选区，避免60–75秒被自动扩到整曲末尾；apps/web/p6-selection.mjs真实浏览器通过，不触发推理。最终UI截图 D:\music-learning-runtime\benchmarks\p6-selection-v1\workbench.png；试听页浏览器验证在p6-listening-browser-v1（仅媒体技术播放，非听辨）。Source当前自有服务停止；用户用start.cmd可打开正式D数据，music.cmd统一调用CLI。
 
 音色库更新：H:\music-learning-instruments\libraries 为本机新音色目录，六套下载固定commit/摘要/许可，资源不进Git。3,031条预设（含3,008个Surge FXP文件），28个精选预设从依赖副本验证。instruments.list/recommend、instrument.capture持久任务、patch_plugin.preset_capture_job_id共用API/SDK/CLI；内置对话可用preset_capture，禁止把资源清单塞进模型上下文。新预处理必须有库，未知映射明确失败，不回退INIT；旧P0诊断单独保留。所有改音色仍需全时段structural授权，同工程成功capture，保持音符/原工程不变。sfizz set_cc需初始化并状态回读后保存，SFZ同一行include/宏依赖必须收齐；Surge适配严格固定1.3.4。正式音色分叉4012a10f50574b2395d4ec4a9d8f27b5，head473651f138a34e42a5a7c27d8eecd1ed，整曲219822ad67bd44adb3b0822530b5708d；9,378音符未改，原head未动，新试听H:\music-learning-delivery\listening-instruments-v1\index.html。
+
+专项最终回归114项（78后端+36原生/模型格式）通过。Windows任务路径用单调attempt和短token提示，完整fencing仍存SQL/input.json；解码源临时名按排序索引缩短，旧任务路径不移动。未知音色或音域越界明确失败，不移调/删音掩盖。新组装/渲染适配器在H独立CAS回放既有模型原输出通过，没有重新跑三模型，也未发布新的预处理DB任务。正式音色版停启与60–64秒重开渲染通过，所有自有实例/浏览器已停止；额度最后实查剩余50%，无重置卡使用。

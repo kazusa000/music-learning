@@ -97,9 +97,13 @@ class Production:
         ):
             raise ValueError("insufficient local disk space for graph outputs and safety reserve")
         paths = {}
-        for sha in {clip.asset_id for clip in s.clips if clip.asset_id} | set(s.frozen_tracks.values()):
+        for index, sha in enumerate(
+            sorted({clip.asset_id for clip in s.clips if clip.asset_id} | set(s.frozen_tracks.values()))
+        ):
             # JUCE chooses decoders using file extension; CAS hashes have none.
-            target = self.directory / "sources" / (sha + ".wav")
+            # The SHA remains the dictionary identity. Short deterministic names
+            # leave room for the task path on Windows readers with MAX_PATH limits.
+            target = self.directory / "sources" / (str(index) + ".wav")
             target.parent.mkdir(exist_ok=True)
             subprocess.run(
                 [

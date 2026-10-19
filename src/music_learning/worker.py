@@ -288,7 +288,10 @@ class Worker:
         return published
 
     def run_child(self, job, *, child_job=None, suffix=None, timeout=None, progress_callback=None):
-        directory = self.settings.path("tasks", job["id"], str(job["attempt"]) + "-" + job["lease_token"])
+        # Attempts are monotonically allocated under the DB writer lock. Keep a
+        # short token hint for diagnostics; the complete token remains the fence
+        # in SQL/input.json. Native Windows readers need space below MAX_PATH.
+        directory = self.settings.path("tasks", job["id"], str(job["attempt"]) + "-" + job["lease_token"][:8])
         if suffix:
             directory = directory / suffix
         directory.mkdir(parents=True)

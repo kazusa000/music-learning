@@ -110,6 +110,16 @@ def test_capture_pins_inventory_and_failure_does_not_change_revision(service, pr
     )
 
 
+def test_pipeline_mapping_rejects_outside_range_instead_of_transposing(service, tmp_path):
+    root, entry = installed(service.settings, tmp_path)
+    entry["audio_verified"] = True
+    (root / "catalog.json").write_text(json.dumps(dict(schema_version=1, presets=[entry])))
+    voice = dict(id="piano", is_drum=False, program=0, notes=[dict(note=109, duration_samples=44100)])
+    with pytest.raises(ValueError, match="not transposed"):
+        voice_preset(service.settings, voice)
+    assert voice["notes"][0]["note"] == 109
+
+
 def test_real_capture_apply_render_preserves_notes_and_tracks(service, project, tmp_path):
     root, entry = installed(service.settings, tmp_path)
     rev, track, *_ = musical(service, project)
