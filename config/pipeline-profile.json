@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "profile": "p2-default-v1",
+  "profile": "p6-instrument-library-v1",
   "surge": "plugins/surge-xt-1.3.4/Surge Synth Team/Surge XT.vst3",
   "surge_binary_sha256": "49794ad99d899a869b97416024283d74baf2c517bac15db0fde511bc99624e20",
   "sfizz": "plugins/sfizz-1.2.3/commoncf/VST3/sfizz.vst3",
@@ -8,5 +8,5 @@
   "drum_map": "samples/diagnostic-kit-v1/drum-map.json",
   "tail_seconds": 2,
   "block_size": 512,
-  "timbre_note": "Surge initial patch and synthetic diagnostic sfizz kit; original timbres and singing are not restored"
+  "timbre_note": "Explicit installed and audio-verified per-voice presets; unresolved GM families require selection. Sampled and synth timbres remain substitutes; original timbres and singing are not restored."
 }

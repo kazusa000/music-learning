@@ -115,6 +115,9 @@ class Adapter:
                 )
         if digest(self.settings.native_host) != self.args["fingerprint"]["native_host_sha256"]:
             raise ValueError("native host changed during preprocessing")
+        library_sha = self.args["fingerprint"].get("instrument_catalog_sha256")
+        if library_sha and digest(self.settings.instrument_library / "catalog.json") != library_sha:
+            raise ValueError("instrument catalog changed during preprocessing")
 
     def add(self, path, *, audio=False):
         path = path.resolve()
@@ -330,6 +333,10 @@ class Adapter:
         }
 
     def assemble(self):
+        if not self.settings.instrument_library:
+            raise ValueError(
+                "Install and verify an instrument library before product preprocessing; diagnostic INIT mapping is not a production fallback"
+            )
         normalized = self.input_json("muscriptor", "normalized-midi.json")
         beats = [
             [float(a), int(b), int(n), int(d)]
@@ -380,12 +387,42 @@ class Adapter:
             target = resource_dir / item["path"]
             shutil.copyfile(mapping["sfz_path"].parent / item["path"], target)
             self.add(target)
-        native, assignments = to_project(normalized, self.frames, drum_mapping=mapping)
+        instrument_assignments = None
+        if self.settings.instrument_library:
+            from music_learning.instruments import materialize, voice_preset
+
+            instrument_assignments = {}
+            for voice in normalized["tracks"]:
+                if not voice["notes"]:
+                    continue
+                entry = voice_preset(self.settings, {**voice, "sample_rate": self.rate})
+                destination = self.out / "resources" / voice["id"]
+                target = materialize(self.settings, entry, destination)
+                for path in destination.rglob("*"):
+                    if path.is_file():
+                        self.add(path)
+                spec = dict(id="instrument", path=entry["plugin_path"], binary_sha256=entry["plugin_sha256"])
+                if entry.get("identifier"):
+                    spec["identifier"] = entry["identifier"]
+                spec["sfizz_sfz_path" if entry["backend"] == "sfz" else "surge_fxp_path"] = str(target)
+                instrument_assignments[voice["id"]] = dict(
+                    plugin=spec,
+                    usage=entry["usage"],
+                    preset_id=entry["id"],
+                    preset_name=entry["name"],
+                    resource_entrypoint=target.relative_to(destination).as_posix(),
+                    backend=entry["backend"],
+                )
+        native, assignments = to_project(
+            normalized, self.frames, drum_mapping=mapping, instrument_assignments=instrument_assignments
+        )
         native["revision_id"] = self.args["target_revision"]
         for track, candidate in zip(native["tracks"], snapshot.tracks):
             track["id"] = candidate.id
             track["plugins"][0]["path"] = str(self.settings.plugin_path(track["plugins"][0]["path"]))
-            if not next(
+            if instrument_assignments is not None:
+                pass  # Per-preset binary identity is already pinned above.
+            elif not next(
                 v["is_drum"]
                 for v in normalized["tracks"]
                 if stable(self.args["target_revision"], "track:" + v["id"]) == candidate.id
@@ -460,12 +497,27 @@ class Adapter:
             if item["name"].startswith("resources/"):
                 relative = Path(item["name"])
                 target = self.out / relative
-                target.parent.mkdir(exist_ok=True)
+                target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(self.store.verify(item["sha256"]), target)
-                resources[relative.name] = item["sha256"]
+                resources[relative.relative_to("resources").as_posix()] = item["sha256"]
         for track in project["tracks"]:
-            if "sfizz_sfz_path" in track["plugins"][0]:
-                track["plugins"][0]["sfizz_sfz_path"] = str(self.out / "resources/kit.sfz")
+            assignment = next(
+                a
+                for a in musical["assignments"]
+                if stable(self.args["target_revision"], "track:" + a["track_id"]) == track["id"]
+            )
+            for key in ("sfizz_sfz_path", "surge_fxp_path"):
+                if key in track["plugins"][0]:
+                    track["plugins"][0][key] = (
+                        str(
+                            self.out
+                            / "resources"
+                            / assignment["track_id"]
+                            / assignment["resource_entrypoint"]
+                        )
+                        if assignment.get("preset_id")
+                        else str(self.out / "resources/kit.sfz")
+                    )
         host = NativeHost(self.settings.native_host, self.out / "native-calls")
         mix = self.out / "mix.wav"
         result = host.call(
@@ -494,9 +546,20 @@ class Adapter:
                 write_json(descriptor, plugin)
                 descriptor_item = self.add(descriptor)
                 source_track = next(t for t in project["tracks"] if t["id"] == track.id)
+                assignment = next(
+                    a
+                    for a in musical["assignments"]
+                    if stable(self.args["target_revision"], "track:" + a["track_id"]) == track.id
+                )
+                prefix = assignment["track_id"] + "/"
+                owned_resources = (
+                    {k[len(prefix) :]: v for k, v in resources.items() if k.startswith(prefix)}
+                    if assignment.get("preset_id")
+                    else resources
+                )
                 uses_resources = "sfizz_sfz_path" in source_track["plugins"][index]
                 if uses_resources:
-                    plugin["sfizz_sfz_path"] = str(self.out / "resources/kit.sfz")
+                    plugin["sfizz_sfz_path"] = source_track["plugins"][index]["sfizz_sfz_path"]
                 snapshot.plugins.append(
                     c.PluginInstance(
                         id=plugin_id,
@@ -506,9 +569,13 @@ class Adapter:
                         binary_sha256=plugin["binary_sha256"],
                         state_asset_id=state_item["sha256"],
                         descriptor_asset_id=descriptor_item["sha256"],
-                        resource_asset_ids=list(resources.values()) if uses_resources else [],
-                        resource_paths=resources if uses_resources else {},
-                        resource_entrypoint="kit.sfz" if uses_resources else None,
+                        resource_asset_ids=list(set(owned_resources.values())) if uses_resources else [],
+                        resource_paths=owned_resources if uses_resources else {},
+                        resource_entrypoint=assignment.get("resource_entrypoint", "kit.sfz")
+                        if uses_resources
+                        else None,
+                        preset_id=assignment.get("preset_id"),
+                        preset_name=assignment.get("preset_name"),
                         parameters={p["id"]: p["value"] for p in plugin["parameters_readback"]},
                         order=index,
                     )

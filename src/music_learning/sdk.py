@@ -201,6 +201,26 @@ class Client:
             expected_revision=expected_revision,
         )
 
+    def instruments(self, search="", *, family=None, offset=0, limit=100):
+        return self.call("instruments.list", dict(search=search, family=family, offset=offset, limit=limit))
+
+    def recommend_instruments(self, project_id, *, revision_id=None, track_id=None):
+        return self.call(
+            "instruments.recommend", dict(project_id=project_id, revision_id=revision_id, track_id=track_id)
+        )
+
+    def capture_instrument(self, project_id, preset_id, *, expected_revision):
+        return self.call(
+            "jobs.submit",
+            dict(
+                project_id=project_id,
+                kind="instrument.capture",
+                payload=dict(preset_id=preset_id),
+                max_attempts=1,
+            ),
+            expected_revision=expected_revision,
+        )
+
     def measure(self, project_id, asset_id, *, expected_revision, **interval):
         return self.call(
             "jobs.submit",

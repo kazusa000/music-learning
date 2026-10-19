@@ -1,0 +1,30 @@
+import {chromium} from 'playwright';
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const [tokenFile,reportFile,packFile,output]=process.argv.slice(2);
+await mkdir(output,{recursive:false});
+const report=JSON.parse(await readFile(reportFile,'utf8')),token=(await readFile(tokenFile,'ascii')).trim();
+const browser=await chromium.launch({headless:true});const errors=[];
+try{
+ const page=await browser.newPage({viewport:{width:1600,height:1120}});page.on('pageerror',e=>errors.push(String(e)));
+ await page.goto(`http://127.0.0.1:8765/?project=${report.project_id}&view=workbench#token=${token}`);
+ await page.getByRole('region',{name:'音乐工作台'}).waitFor();
+ await page.getByRole('button',{name:'音源',exact:true}).click();
+ for(const name of ['Naked Drums Gm','Shiny Electric','Swag Finger Bass','Choir Mixed','Strings Sustain','Salamander Grand'])assert.ok((await page.locator('.plugin-card').allTextContents()).join(' ').includes(name));
+ assert.equal(await page.locator('.track-card small[title="实际渲染预设"]').count(),6);
+ await page.waitForFunction(()=>Number(document.querySelector('.piano-roll')?.dataset.waveformBuckets)>0);
+ await page.screenshot({path:path.join(output,'workbench.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.goto(new URL(packFile.startsWith('file:')?packFile:`file:///${packFile.replaceAll('\\','/')}`).href);
+ const controls=await page.locator('audio').count();assert.ok(controls>=8);
+ await page.locator('audio').first().evaluate(async a=>{await a.play()});
+ await page.waitForFunction(()=>document.querySelector('audio').currentTime>.05);
+ const duration=await page.locator('audio').first().evaluate(a=>{a.pause();return a.duration});assert.equal(duration,15);
+ await page.screenshot({path:path.join(output,'ending-listening.png'),fullPage:true});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ assert.deepEqual(errors,[]);
+ await writeFile(path.join(output,'summary.json'),JSON.stringify({status:'succeeded',preset_labels:6,audio_controls:controls,excerpt_duration:duration,model_calls:0,page_errors:errors,mobile_overflow:false},null,2));
+ console.log(JSON.stringify({status:'succeeded',preset_labels:6,model_calls:0}));
+}finally{await browser.close();}

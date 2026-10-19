@@ -19,6 +19,10 @@ class AdapterError(RuntimeError):
 
 
 def execute(settings, job, directory=None):
+    if job["kind"] == "instrument.capture":
+        from .instrument_capture import capture
+
+        return capture(settings, job, directory)
     if job["kind"] == "application.diagnose":
         from .diagnostics import collect
 

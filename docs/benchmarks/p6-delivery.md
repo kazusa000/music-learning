@@ -66,3 +66,5 @@ MuScriptor 原始 MIDI 与初始快照均有 9,378 个音符、6 个有音符声
 **已确认的产品缺口**：`scripts/midi_to_native.py:to_project` 把所有非鼓声部映射到 Surge XT initial patch，并未根据 GM 候选选择吉他/贝斯/合唱/弦乐/钢琴音色；初版原生快照中 5 个 Surge 状态 SHA 完全相同（f3d1894b…）。鼓也使用 synthetic diagnostic percussion fallback。因而当前试听是通用合成音色的事件重放，不能当作保留配器层次的工程还原。此映射会丢失音色区分，是用户所述听感的一个明确原因；不能据此断言其余模型漏音/错分不存在，也不能将其全部归因于模型。
 
 后续质量修复应先补可辨别的声部音色映射与逐轨对照，再核查此结尾的转录缺失、串部和力度/平衡。原始转录、历史工程及试听文件继续保留；该缺陷未修复、未听辨通过，P6 保持未完成。技术链路测试通过不等于音乐还原质量合格。
+
+后续音色修复：已完成采样库和固定 Surge FXP 适配，按六轨分别换成真实鼓组、干声电吉他、电贝斯、合唱、弦乐群及钢琴；新工程 `4012a10f50574b2395d4ec4a9d8f27b5`，revision `473651f138a34e42a5a7c27d8eecd1ed`，整曲 render `219822ad67bd44adb3b0822530b5708d`。9,378 音符、轨道和控制器与初版保持一致，原工程 head 未动。新版结尾三路比较及逐轨音频在 `H:\music-learning-delivery\listening-instruments-v1\index.html`。此项修复统一 INIT 的已确认缺陷，仍不能把它记为转录准确或人工听辨通过，详见 [音源与映射](../21-instrument-library.md)。

@@ -25,7 +25,7 @@
 
 ## 当前阶段
 
-P0a/P0b、P1、P2、P3、P4 与 P5 已完成，P6 自动工程验收已完成，人工听辨及有限参考待反馈。先读 docs/16-continuous-goal.md、docs/20-local-delivery.md 与 docs/benchmarks/p6-delivery.md，再参考各阶段记录。当前后端 70 项 + 原生/模型格式 35 项通过；P3 的 305 秒真实 VST3 制作和 300 秒脉冲同步证据继续保留，P6 补充完整当前流程及独立备份恢复。
+P0a/P0b、P1、P2、P3、P4 与 P5 已完成，P6 自动工程验收已完成，人工听辨及有限参考待反馈。先读 docs/16-continuous-goal.md、docs/20-local-delivery.md 与 docs/benchmarks/p6-delivery.md，再参考各阶段记录。当前后端 77 项 + 原生/模型格式 36 项通过；P3 的 305 秒真实 VST3 制作和 300 秒脉冲同步证据继续保留，P6 补充完整当前流程及独立备份恢复。
 
 代码在 src/music_learning（权威契约/领域服务、HTTP API、SDK/CLI、任务执行、pipeline/musical），scripts/pipeline_adapter.py（隔离模型/渲染阶段），services/api/migrations（冻结 0001 至 0005）、apps/web、packages/contracts。数据在 D:\music-learning-runtime\app-data，独立 Python 环境在 envs/app。通过 scripts/app.py start/open/status/stop 管理隐藏的服务及其归属。更新后先 stop/start，旧进程不会热更新。当前从源码 checkout + PYTHONPATH=src 运行。契约变更后运行 scripts/export_contracts.py，提交 schema/TS 并检查漂移。
 
@@ -53,8 +53,10 @@ P4 讨论在 dialogue.py/dialogue_worker.py/codex.py、冻结迁移 0004 和 Dis
 
 P5 已完成，先读 docs/19-conversation-arranging.md 与 docs/benchmarks/p5-arranging.md。48 项统一操作，冻结迁移 0005；arrangements.apply 原子保存限定范围的新版本和完整渲染 job，独立收据保留，模型失败不撤销已提交事务。P5 操作联合按 op 判别，生产查询提供真实参数和已有自动化 ID；patch_plugin 支持捕获音色和参数。59 项后端 + 35 项原生/模型格式通过。正式 P5 工程 75f51cbf82844ff4a1d1fc2f1ea5dda3，head 83979852227f4318a0a242644c67dd30，四组真实改编完成，最终 render 4cedd30f25bd4f50b58f3a79b7e262ab；9368 音符。hybrid export 79bc5a0f89f1423d821129e15970cac3，60–90 秒移除原 bass，加新贝斯，区间外 PCM 差 0；输出/原始报告均在 D 的 p5-production-v4。P5 restart 回读 8 轮讨论与收据、笔记、版本/渲染一致，所有自有服务停止。人工听辨未完成。
 
-P6 自动工程部分已完成；先读 docs/20-local-delivery.md 和 docs/benchmarks/p6-delivery.md。当前无独立开发/自动验收剩余，只待用户实际听辨及有限参考，第一阶段不要虚假标 complete。已通过105测试（70后端+35原生/模型格式），整曲393.263秒61/61块，P6工程 ab11b3e05e464363a7e1d8d358fe996f，head c7cfe0ddb9004b4e8e8816ab7343aa99，完整render34ee6304fa7045fa9b657c6fab68d1c1。首次unsupported patch_note被拒绝，正式新增compact patch_note并回归后在同一项目恢复通过；旧原输出未覆盖。
+P6 自动工程部分已完成；先读 docs/20-local-delivery.md 和 docs/benchmarks/p6-delivery.md。用户已反馈结尾配器缺失；按新授权补齐音色库和声部映射，仍须新版实际听辨，第一阶段不要虚假标 complete。已通过105测试（70后端+35原生/模型格式），整曲393.263秒61/61块，P6工程 ab11b3e05e464363a7e1d8d358fe996f，head c7cfe0ddb9004b4e8e8816ab7343aa99，完整render34ee6304fa7045fa9b657c6fab68d1c1。首次unsupported patch_note被拒绝，正式新增compact patch_note并回归后在同一项目恢复通过；旧原输出未覆盖。
 P6完整备份 H:\music-learning-delivery\backups\p6-v1\music-learning.zip，17404910458字节、639 CAS、12工程，SHA d227102e31143caf70e056d46403b9ec790dc73a152dad035582526cdf19d960。H是已核实USB本地盘，NAS未访问。独立恢复 H:\ml-restore-p6-v1（端口8766）元数据一致、全新会话、真实Surge/CHOW/sfizz资源重定位发声/停启通过；正式D和恢复H服务/自有浏览器都已停止。新application.backup/restore/diagnose任务共用jobs API/SDK/CLI，48领域操作/10job kinds；恢复只到新目录、不复制凭据，未完成任务标失败需显式重试，不能开备份自动消耗额度。
-人工听辨入口 H:\music-learning-delivery\listening-p6-v1\index.html，6完整音频+24片段，candidate-review.csv修正列为空。已经向用户发出异步听辨问题，尚未收到反馈；不要重复问账号/许可，不要把AI文字、客观测量或默认同意当听辨。后续goal回合先检查新用户反馈和既有额度停止规则；没有反馈时不能启动新模型/测试来伪造进展。当前是首次等待人工反馈的goal回合；相同阻塞连续3个goal回合后按工具规则设blocked，不能擅自设paused（额度阈值按用户明确条件立即paused）。禁止使用任何重置卡。
+人工听辨入口 H:\music-learning-delivery\listening-p6-v1\index.html，6完整音频+24片段，candidate-review.csv修正列为空。已收到用户对290–305秒配器缺失的负面听辨反馈，已定位统一INIT映射缺陷；用户明确要求先补齐免费音源/音色库、预设选择与声部映射，当前实现及验证见docs/21-instrument-library.md。不能把负面反馈或新版技术验证当听辨通过；不要重复问账号/许可。此前等待反馈的goal已blocked，当前按新的具体任务授权推进；额度停止条件继续有效，禁止使用任何重置卡。
 
 P6最后前端修正：版本变化保留并按源时钟夹紧选区，避免60–75秒被自动扩到整曲末尾；apps/web/p6-selection.mjs真实浏览器通过，不触发推理。最终UI截图 D:\music-learning-runtime\benchmarks\p6-selection-v1\workbench.png；试听页浏览器验证在p6-listening-browser-v1（仅媒体技术播放，非听辨）。Source当前自有服务停止；用户用start.cmd可打开正式D数据，music.cmd统一调用CLI。
+
+音色库更新：H:\music-learning-instruments\libraries 为本机新音色目录，六套下载固定commit/摘要/许可，资源不进Git。3,031条预设（含3,008个Surge FXP文件），28个精选预设从依赖副本验证。instruments.list/recommend、instrument.capture持久任务、patch_plugin.preset_capture_job_id共用API/SDK/CLI；内置对话可用preset_capture，禁止把资源清单塞进模型上下文。新预处理必须有库，未知映射明确失败，不回退INIT；旧P0诊断单独保留。所有改音色仍需全时段structural授权，同工程成功capture，保持音符/原工程不变。sfizz set_cc需初始化并状态回读后保存，SFZ同一行include/宏依赖必须收齐；Surge适配严格固定1.3.4。正式音色分叉4012a10f50574b2395d4ec4a9d8f27b5，head473651f138a34e42a5a7c27d8eecd1ed，整曲219822ad67bd44adb3b0822530b5708d；9,378音符未改，原head未动，新试听H:\music-learning-delivery\listening-instruments-v1\index.html。

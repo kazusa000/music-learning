@@ -71,6 +71,20 @@ class Service:
             if mutates and not request.idempotency_key:
                 raise DomainError("idempotency_required", "Writes require idempotency_key", 422)
             hash_arguments = args.model_dump(mode="json")
+            plugin_entities = list(hash_arguments.get("snapshot", {}).get("plugins", []))
+            if request.operation in ("edits.apply", "arrangements.apply"):
+                for operation in hash_arguments.get("operations", []):
+                    if operation.get("op") == "put" and operation.get("collection") == "plugins":
+                        plugin_entities.append(operation["entity"])
+                    if (
+                        operation.get("op") == "patch_plugin"
+                        and operation.get("preset_capture_job_id") is None
+                    ):
+                        operation.pop("preset_capture_job_id", None)
+            for plugin in plugin_entities:
+                for optional in ("preset_id", "preset_name"):
+                    if plugin.get(optional) is None:
+                        plugin.pop(optional, None)
             # New optional P5 permissions must not invalidate P3/P4 replay receipts.
             if isinstance(args, c.SubmitDialogue) and args.edit_scope is None:
                 hash_arguments.pop("edit_scope", None)
@@ -314,6 +328,13 @@ class Service:
             from .daw import dispatch
 
             return dispatch(self, db, op, args, request)
+        if op.startswith("instruments."):
+            from .instruments import query, recommend
+
+            if op == "instruments.list":
+                return query(self.settings, args)
+            revision = self._revision(db, args)
+            return recommend(self.settings, revision["snapshot"], args.track_id)
         if op == "describe_capabilities":
             return {
                 "schema_version": 1,
@@ -333,6 +354,7 @@ class Service:
                     "events": "GET /v1/events (SSE, Last-Event-ID or after)",
                 },
                 "job_kinds": [
+                    "instrument.capture",
                     "asset.import",
                     "plugin.inspect",
                     "plugin.scan",
@@ -611,11 +633,16 @@ class Service:
                     request.request_id,
                     args.max_attempts,
                 )
-            if args.kind == "asset.import":
+            if args.kind == "instrument.capture":
+                from .instruments import pin
+
+                payload = pin(self.settings, args.payload)
+            elif args.kind == "asset.import":
                 payload = c.ImportPayload.model_validate(args.payload).model_dump()
                 row(db, t.uploads, "id", payload["upload_id"])
             elif args.kind in ("application.backup", "application.restore"):
                 from .backup import validate_payload
+
                 payload = validate_payload(self.settings, args.kind, args.payload)
             elif args.kind == "application.diagnose":
                 payload = c.DiagnosePayload.model_validate(args.payload).model_dump()

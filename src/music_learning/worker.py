@@ -206,6 +206,10 @@ class Worker:
             return True
 
     def _publish(self, db, job, result):
+        if job["kind"] == "instrument.capture":
+            from .instruments import publish
+
+            return publish(self.service, db, job, result)
         if job["kind"] in ("project.render", "audio.measure", "project.export"):
             from .rendering import publish
 
@@ -380,6 +384,7 @@ class Worker:
                 "project.export",
                 "application.backup",
                 "application.restore",
+                "instrument.capture",
             )
             else None,
         )

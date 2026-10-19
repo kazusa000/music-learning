@@ -205,6 +205,9 @@ def runtime_fingerprint(settings):
         "plugin_sha256": plugin_hashes,
         "drum_map_sha256": digest(drum_map),
         "resources": resources,
+        "instrument_catalog_sha256": digest(settings.instrument_library / "catalog.json")
+        if settings.instrument_library
+        else None,
         "code": {str(path.relative_to(ROOT)): digest(path) for path in paths},
     }
 

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "salamander",
+      "repo": "sfzinstruments/SalamanderGrandPiano",
+      "revision": "3382bf9496bba2486f5ab0de55a264d1dfc38404",
+      "license": "CC-BY-3.0 (see downloaded LICENSE)",
+      "sha256": "4f64bc2dadf2eb893e7fb824c2982c03962025e1c82ab9e593e2f7269c50a476"
+    },
+    {
+      "id": "rhodes",
+      "repo": "sfzinstruments/jlearman.jRhodes3d",
+      "revision": "aea5b8d3e11e2f7102593789a4e0a0e41b30271a",
+      "license": "CC-BY-NC-4.0 samples; CC0 controls and music use per author LICENSE",
+      "sha256": "ad174154d2b3a1ce495f51772de7915831fc468dd4a2fd5cf283cf49ce5d9f21"
+    },
+    {
+      "id": "shinyguitar",
+      "repo": "sfzinstruments/karoryfer.shinyguitar",
+      "revision": "57243cca85277dbcc120ce17c6178032f93c80f3",
+      "license": "CC0-1.0",
+      "sha256": "33770fa740eb306dd8ef2cc863604e45c99dc296b135786a39563683ea8f10fa"
+    },
+    {
+      "id": "swagbass",
+      "repo": "sfzinstruments/karoryfer.swagbass",
+      "revision": "9d10fcae71af1975988ddecd5af1c95d372c7355",
+      "license": "CC0-1.0",
+      "sha256": "e09ca246b3328ad6e6e4ffde9824f5ed5c34e40f7d09537f01e43a1f94e26a3f"
+    },
+    {
+      "id": "sonatina",
+      "repo": "peastman/sso",
+      "revision": "64a66eda18c5cc1039a56c902d0555df56742300",
+      "license": "CC Sampling Plus 1.0 (see downloaded license)",
+      "sha256": "435b77622cf165256047a74202dcef3d927483eb2b0b7fa64e34deb7e00c4fed"
+    },
+    {
+      "id": "naked-drums",
+      "repo": "sfzinstruments/WilkinsonAudio.NakedDrums",
+      "revision": "407732a548606ac715ad8f3fbac63d9f4df77c0d",
+      "license": "CC-BY-4.0 (see downloaded LICENSE)",
+      "sha256": "a58f73d1c143f77809e45395965895b513890fa2cc7f902172e407862fcc7f11"
+    }
+  ]
+}

@@ -31,6 +31,8 @@ def production_query(service, db, args):
                 "bypass": p.bypass,
                 "order": p.order,
                 "captured_preset": True,
+                "preset_id": p.preset_id,
+                "preset_name": p.preset_name,
             }
         )
     result = {
@@ -51,6 +53,25 @@ def production_query(service, db, args):
         ],
         "notice": "Use patch_plugin to change listed normalized parameters or copy an existing captured preset by preset_plugin_id. All plugin/automation edits require full-time structural scope.",
     }
+    from .instruments import query, recommend
+
+    result["instrument_advice"] = recommend(service.settings, s)
+    if args.preset_search is not None:
+        result["library"] = query(
+            service.settings,
+            c.InstrumentQuery(search=args.preset_search, offset=args.offset, limit=args.limit),
+        )
+    if args.capture_job_id:
+        capture = row(db, t.jobs, "id", args.capture_job_id)
+        if capture["project_id"] != args.project_id or capture["kind"] != "instrument.capture":
+            raise ValueError("Preset capture belongs to another project or task kind")
+        result["capture"] = {
+            "job_id": capture["id"],
+            "status": capture["status"],
+            "error": capture["error"],
+            "preset": (capture["result"] or {}).get("preset"),
+            "metrics": (capture["result"] or {}).get("metrics"),
+        }
     if args.plugin_id:
         selected = next((p for p in s["plugins"] if p["id"] == args.plugin_id), None)
         if selected is None:

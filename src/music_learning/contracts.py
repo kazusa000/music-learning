@@ -162,6 +162,8 @@ class PluginInstance(Model):
     parameters: dict[str, float] = Field(default_factory=dict)
     bypass: bool = False
     order: int = Field(ge=0)
+    preset_id: str | None = Field(default=None, max_length=200)
+    preset_name: str | None = Field(default=None, max_length=256)
 
     @model_validator(mode="after")
     def normalized(self):
@@ -434,6 +436,7 @@ class Job(Model):
         "application.backup",
         "application.restore",
         "application.diagnose",
+        "instrument.capture",
     ]
     status: Literal["queued", "running", "cancel_requested", "cancelled", "succeeded", "failed"]
     payload: dict
@@ -546,6 +549,7 @@ class SubmitJob(ProjectRef):
         "application.backup",
         "application.restore",
         "application.diagnose",
+        "instrument.capture",
     ]
     payload: dict
     max_attempts: int = Field(default=3, ge=1, le=5)
@@ -614,6 +618,19 @@ class PreprocessingView(Model):
 class PluginPayload(Model):
     path: str = Field(min_length=1, max_length=4096)
     identifier: str | None = None
+
+
+class CaptureInstrument(Model):
+    preset_id: str = Field(min_length=1, max_length=200, pattern=r"^[a-zA-Z0-9_.-]+$")
+
+
+class InstrumentQuery(Page):
+    search: str = Field(default="", max_length=200)
+    family: str | None = Field(default=None, max_length=80)
+
+
+class RecommendInstruments(RevisionRef):
+    track_id: Id | None = None
 
 
 class JobRef(Model):
@@ -732,6 +749,7 @@ class PatchPlugin(Model):
     bypass: bool | None = None
     order: int | None = Field(default=None, ge=0)
     preset_plugin_id: Id | None = None
+    preset_capture_job_id: Id | None = None
 
 
 class PatchNote(Model):
@@ -850,6 +868,8 @@ class AgentEdit(DialogueRef):
 class ProductionQuery(RevisionRef, Page):
     plugin_id: Id | None = None
     parameter_search: str = Field(default="", max_length=200)
+    preset_search: str | None = Field(default=None, max_length=200)
+    capture_job_id: Id | None = None
     limit: int = Field(default=40, ge=1, le=100)
 
 
@@ -938,6 +958,8 @@ OPERATIONS = {
     "arrangements.apply": (AgentEdit, True),
     "arrangements.get": (DialogueRef, False),
     "production.query": (ProductionQuery, False),
+    "instruments.list": (InstrumentQuery, False),
+    "instruments.recommend": (RecommendInstruments, False),
 }
 
 RESULT_TYPES = {
@@ -976,6 +998,8 @@ RESULT_TYPES = {
     "graph.get": dict,
     "renders.list": list[dict],
     "plugins.presets": list[dict],
+    "instruments.list": dict,
+    "instruments.recommend": dict,
     "audition.get": dict,
     "audition.set": dict,
     "audition.report": dict,

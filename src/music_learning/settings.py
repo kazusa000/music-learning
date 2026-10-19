@@ -32,6 +32,7 @@ class Settings:
     pipeline_stage_timeout_seconds: float = 1800
     pipeline_max_duration_seconds: float = 600
     pipeline_min_free_bytes: int = 3 * 1024**3
+    instrument_library: Path | None = None
 
     def __post_init__(self):
         self.data_root = local_fixed(Path(self.data_root))
@@ -45,6 +46,8 @@ class Settings:
                 else self.data_root.parent
             )
         self.model_runtime = local_fixed(Path(self.model_runtime))
+        if self.instrument_library is not None:
+            self.instrument_library = local_fixed(Path(self.instrument_library))
         if self.host != "127.0.0.1":
             raise ValueError("P1 server only binds 127.0.0.1")
         if self.lease_seconds <= 0 or self.job_timeout_seconds <= 0 or self.max_upload_bytes <= 0:
@@ -55,7 +58,11 @@ class Settings:
     def load(cls, path: Path | None = None):
         path = path or Path(os.environ.get("MUSIC_APP_CONFIG", ROOT / "runtime/app.local.json"))
         if path.is_file():
-            return cls(**json.loads(path.read_text(encoding="utf-8")))
+            values = json.loads(path.read_text(encoding="utf-8"))
+            library = ROOT / "runtime/instrument-library.local.json"
+            if "instrument_library" not in values and library.is_file():
+                values["instrument_library"] = json.loads(library.read_text())["root"]
+            return cls(**values)
         profile = ROOT / "runtime/model-runtime.json"
         base = (
             Path(json.loads(profile.read_text(encoding="utf-8"))["runtime_root"])

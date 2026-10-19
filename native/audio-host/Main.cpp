@@ -137,7 +137,7 @@ var parameters(AudioPluginInstance& plugin)
 std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int blockSize)
 {
     checkKeys(spec, {"id", "path", "identifier", "state_base64", "state_encoding", "state_sha256",
-        "binary_sha256", "vst3_class_id", "version", "parameters", "preset_path", "sfizz_sfz_path",
+        "binary_sha256", "vst3_class_id", "version", "parameters", "preset_path", "sfizz_sfz_path", "surge_fxp_path",
         "name", "manufacturer", "format", "unique_id", "is_instrument", "inputs", "outputs",
         "description_xml", "parameters_readback", "latency_samples", "tail_seconds", "buses", "sidechain"});
     const auto description = selectDescription(spec);
@@ -179,6 +179,35 @@ std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int bloc
                 "Invalid JUCE VST3 component/controller state");
         plugin->setStateInformation(state.getData(), static_cast<int>(state.getSize()));
     }
+    const auto surgePath = field(spec, "surge_fxp_path").toString();
+    if (surgePath.isNotEmpty())
+    {
+        require(description.name == "Surge XT" && description.version == "1.3.4",
+                "FXP adapter is verified only for Surge XT 1.3.4");
+        MemoryBlock fxp;
+        require(File(surgePath).hasFileExtension("fxp") && File(surgePath).loadFileAsData(fxp)
+                && fxp.getSize() >= 64 && fxp.getSize() <= 64 * 1024 * 1024, "Invalid Surge FXP file");
+        const auto* bytes = static_cast<const char*>(fxp.getData());
+        require(std::memcmp(bytes, "CcnK", 4) == 0 && std::memcmp(bytes + 8, "FPCh", 4) == 0
+                && std::memcmp(bytes + 16, "cjs3", 4) == 0 && std::memcmp(bytes + 60, "sub3", 4) == 0,
+                "Not a Surge chunk preset");
+        const auto length = ByteOrder::bigEndianInt(bytes + 56);
+        require(length > 4 && static_cast<size_t>(length) == fxp.getSize() - 60, "Truncated Surge FXP chunk");
+        // Surge XT 1.3.4 loadPatchByPath strips fxChunkSetCustom (60 bytes), then loadRaw.
+        // Its JUCE VST3 component accepts those same raw patch bytes as processor state.
+        MemoryBlock binary;
+        plugin->getStateInformation(binary);
+        auto xml = AudioProcessor::getXmlFromBinary(binary.getData(), static_cast<int>(binary.getSize()));
+        require(xml != nullptr && xml->getChildByName("IComponent") != nullptr, "Missing Surge component state");
+        auto* component = xml->getChildByName("IComponent");
+        component->deleteAllChildElements();
+        component->addTextElement(MemoryBlock(bytes + 60, length).toBase64Encoding());
+        if (auto* controller = xml->getChildByName("IController"))
+            xml->removeChildElement(controller, true);
+        AudioProcessor::copyXmlToBinary(*xml, binary);
+        plugin->setStateInformation(binary.getData(), static_cast<int>(binary.getSize()));
+        MessageManager::getInstance()->runDispatchLoopUntil(10);
+    }
     const auto sfzPath = field(spec, "sfizz_sfz_path").toString();
     if (sfzPath.isNotEmpty())
     {
@@ -218,6 +247,23 @@ std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int bloc
         AudioProcessor::copyXmlToBinary(*xml, binary);
         plugin->setStateInformation(binary.getData(), static_cast<int>(binary.getSize()));
         MessageManager::getInstance()->runDispatchLoopUntil(2);
+        // SFZ set_cc defaults are delivered by sfizz on its first processing block.
+        // Settle them before capturing state or applying explicit host overrides,
+        // otherwise a saved zero CC snapshot can mute the restored instrument.
+        plugin->setRateAndBufferSizeDetails(rate, blockSize);
+        plugin->prepareToPlay(rate, blockSize);
+        AudioBuffer<float> initialization(jmax(2, plugin->getTotalNumOutputChannels()), blockSize);
+        initialization.clear();
+        MidiBuffer noMidi;
+        plugin->processBlock(initialization, noMidi);
+        MessageManager::getInstance()->runDispatchLoopUntil(10);
+        plugin->releaseResources();
+        // sfizz's controller receives the effective CC vector via component-state
+        // restoration; audio processing alone does not refresh host parameters.
+        MemoryBlock initializedState;
+        plugin->getStateInformation(initializedState);
+        plugin->setStateInformation(initializedState.getData(), static_cast<int>(initializedState.getSize()));
+        MessageManager::getInstance()->runDispatchLoopUntil(10);
     }
     const auto presetPath = field(spec, "preset_path").toString();
     if (presetPath.isNotEmpty())

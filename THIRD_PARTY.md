@@ -25,4 +25,10 @@ P0b 模型依赖独立记录：
 | FFmpeg 9.0 | 使用本机现有 Gyan full build CLI，整曲实际验证；共享库绑定未通过，不将系统安装冒充可移植发行包。 |
 | Codex App Server | 使用官方桌面安装中的固定运行组件，四文件 SHA-256 见 config/codex-runtime.json；自行实现 stdio 客户端，凭据交由官方 managed login，不解析/复制。官方入口见 [App Server](https://learn.chatgpt.com/docs/app-server)。当前仅本机复制运行，未来对外发行另核对组件许可与打包方式。 |
 
-完整原创夹具和 SFZ 采样由脚本合成，只作为工程诊断；用户素材和模型权重不进入 Git。以上不替代未来应用发布时逐项核对第三方依赖/权重/插件的分发方式。
+原有完整原创夹具和诊断 SFZ 采样由脚本合成，只作为工程诊断；用户素材和模型权重不进入 Git。以上不替代未来应用发布时逐项核对第三方依赖/权重/插件的分发方式。
+
+## 实际音色库补充
+
+六套采样库的官方仓库、固定 commit、下载 SHA-256 与许可标识见 `config/instrument-sources.json`；本机原许可保存在 H: 各库内，来源和用途见 [音源与映射](docs/21-instrument-library.md)。Salamander 为 CC BY 3.0；Shinyguitar/Swagbass 为 CC0；Naked Drums 为 CC BY 4.0；SSO 保存 CC Sampling Plus 1.0 原许可；jRhodes3d 按作者 LICENSE 区分音乐使用、控制文件和样本再分发，不把样本统称 CC0。库文件不随源码重新分发。
+
+宿主 Surge FXP 适配依据固定 [SurgeSynthesizerIO.cpp](https://github.com/surge-synthesizer/surge/blob/release_xt_1.3.4/src/common/SurgeSynthesizerIO.cpp) 的 loadPatchByPath/loadRaw 与 [SurgeSynthProcessor.cpp](https://github.com/surge-synthesizer/surge/blob/release_xt_1.3.4/src/surge-xt/SurgeSynthProcessor.cpp) 的组件状态入口实现。sfizz 仍固定 1.2.3；新库的格式/奏法兼容性仅按已执行用例记录，不宣称所有 SFZ/FXP 都经过实测。

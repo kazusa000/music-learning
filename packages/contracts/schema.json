@@ -1490,6 +1490,45 @@
       "title": "FreezeTrack",
       "type": "object"
     },
+    "InstrumentQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "search": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Search",
+          "type": "string"
+        },
+        "family": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Family"
+        }
+      },
+      "title": "InstrumentQuery",
+      "type": "object"
+    },
     "Job": {
       "additionalProperties": false,
       "properties": {
@@ -1519,7 +1558,8 @@
             "project.export",
             "application.backup",
             "application.restore",
-            "application.diagnose"
+            "application.diagnose",
+            "instrument.capture"
           ],
           "title": "Kind",
           "type": "string"
@@ -2054,6 +2094,19 @@
           ],
           "default": null,
           "title": "Preset Plugin Id"
+        },
+        "preset_capture_job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset Capture Job Id"
         }
       },
       "required": [
@@ -2151,6 +2204,32 @@
           "minimum": 0,
           "title": "Order",
           "type": "integer"
+        },
+        "preset_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset Id"
+        },
+        "preset_name": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset Name"
         }
       },
       "required": [
@@ -2332,6 +2411,32 @@
           "maxLength": 200,
           "title": "Parameter Search",
           "type": "string"
+        },
+        "preset_search": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset Search"
+        },
+        "capture_job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capture Job Id"
         }
       },
       "required": [
@@ -2684,6 +2789,47 @@
         "items"
       ],
       "title": "QueryNotesResult",
+      "type": "object"
+    },
+    "RecommendInstruments": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Id"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "RecommendInstruments",
       "type": "object"
     },
     "RegisterAnalysis": {
@@ -3600,7 +3746,8 @@
             "project.export",
             "application.backup",
             "application.restore",
-            "application.diagnose"
+            "application.diagnose",
+            "instrument.capture"
           ],
           "title": "Kind",
           "type": "string"
@@ -4558,7 +4705,8 @@
               "project.export",
               "application.backup",
               "application.restore",
-              "application.diagnose"
+              "application.diagnose",
+              "instrument.capture"
             ],
             "title": "Kind",
             "type": "string"
@@ -4683,7 +4831,8 @@
               "project.export",
               "application.backup",
               "application.restore",
-              "application.diagnose"
+              "application.diagnose",
+              "instrument.capture"
             ],
             "title": "Kind",
             "type": "string"
@@ -4818,7 +4967,8 @@
               "project.export",
               "application.backup",
               "application.restore",
-              "application.diagnose"
+              "application.diagnose",
+              "instrument.capture"
             ],
             "title": "Kind",
             "type": "string"
@@ -4943,7 +5093,8 @@
               "project.export",
               "application.backup",
               "application.restore",
-              "application.diagnose"
+              "application.diagnose",
+              "instrument.capture"
             ],
             "title": "Kind",
             "type": "string"
@@ -5837,6 +5988,22 @@
     },
     "production.query": {
       "arguments": "ProductionQuery",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.list": {
+      "arguments": "InstrumentQuery",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.recommend": {
+      "arguments": "RecommendInstruments",
       "result": {
         "additionalProperties": true,
         "type": "object"

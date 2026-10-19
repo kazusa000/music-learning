@@ -24,8 +24,11 @@ P4 已完成：真实 Codex 整曲/局部讨论、受限工具查询、有效引
 
 ## 文档入口
 
+音色库补齐更新：已安装六套免费采样库，并索引 3,008 份 Surge FXP；28 个精选预设从独立打包副本完成实际发声与状态恢复。新增预设查询、建议、持久 capture 与按声部应用，产品流水线不再统一使用 INIT；同曲另建音色分叉，9,378 音符保持不变。说明和接口见[音源与映射](docs/21-instrument-library.md)，新版试听在 `H:\music-learning-delivery\listening-instruments-v1\index.html`；音乐质量仍待实际听辨。
+
 | 文档 | 用途 |
 | --- | --- |
+| [音源与映射](docs/21-instrument-library.md) | 已安装采样库、预设查询/捕获、声部选择、实际音色版本与试听 |
 | [项目规划](docs/01-product-plan.md) | 产品定位、已确认需求、阶段边界、长期创作方向 |
 | [交互与工作流](docs/02-workflows.md) | 主页、预处理、音乐工作台、讨论、编辑与版本 |
 | [第一阶段技术方案](docs/03-architecture.md) | 技术选型、模型流水线、运行方式、音频播放与渲染 |

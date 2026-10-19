@@ -124,6 +124,19 @@ def apply(service, db, revision, args):
             if plugin is None:
                 raise ValueError("unknown plugin")
             check_scope(plugin, args.scope, snapshot, structural=True)
+            if operation.preset_capture_job_id:
+                from .instruments import captured_plugin
+
+                if operation.preset_plugin_id:
+                    raise ValueError("Choose one preset source")
+                source = captured_plugin(service, db, args.project_id, operation.preset_capture_job_id)
+                plugin.update(
+                    {
+                        k: copy.deepcopy(v)
+                        for k, v in source.items()
+                        if k not in ("id", "track_id", "order", "bypass")
+                    }
+                )
             if operation.preset_plugin_id:
                 source = next((p for p in data["plugins"] if p["id"] == operation.preset_plugin_id), None)
                 if source is None:
@@ -391,6 +404,8 @@ def dispatch(service, db, op, args, request):
                 "resource_paths": p.get("resource_paths", {}),
                 "resource_entrypoint": p.get("resource_entrypoint"),
                 "kind": "captured_state",
+                "preset_id": p.get("preset_id"),
+                "preset_name": p.get("preset_name"),
             }
             for p in revision["snapshot"]["plugins"]
         ]

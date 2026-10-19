@@ -6,6 +6,8 @@ Surge XT 1.3.4、CHOW Tape 2.11.4、sfizz 1.2.3 已通过 P0a 中的指定无界
 
 ## 乐器
 
+2026-10-19 实装更新：已补齐 Salamander、jRhodes3d、Shinyguitar、Swagbass、SSO 4.0、Naked Drums，通过现有 sfizz VST3 实际加载；Surge 增加 FXP 预设适配。28 个精选预设已验证，具体安装清单、许可、预设选择及声部映射见 [音源与映射](21-instrument-library.md)。下表中的 Dexed、BBC Discover 及额外效果器仍为候选，不能视为已安装。
+
 | 候选 | 用途 | 官方依据 | 本项目安排 |
 | --- | --- | --- | --- |
 | Surge XT | 通用合成器，贝斯、主音、铺底和合成打击乐 | [官网](https://surge-synthesizer.github.io/)、[Windows VST3 下载说明](https://surge-synthesizer.github.io/downloads/)、[源码](https://github.com/surge-synthesizer/surge)；免费开源 | 首个乐器宿主验证对象；验证音符、参数、状态与预设适配 |
@@ -15,7 +17,7 @@ Surge XT 1.3.4、CHOW Tape 2.11.4、sfizz 1.2.3 已通过 P0a 中的指定无界
 
 sfizz 是采样器，安装插件不会自动拥有所有乐器。音源库须单独记录来源、许可、文件摘要、SFZ opcode 兼容性和映射。
 
-钢琴候选可以考察 Salamander Grand Piano，但不能直接假定任意改编版适配 sfizz。[sfzinstruments 版本](https://github.com/sfzinstruments/SalamanderGrandPiano)明确使用 SFZ2/ARIA 扩展并提示其他引擎可能不兼容。因此先用自制、已知 opcode 的极小 SFZ 夹具验证加载，再选兼容版本做钢琴音色测试；该库尚未定为默认钢琴。
+钢琴候选可以考察 Salamander Grand Piano，但不能直接假定任意改编版适配 sfizz。[sfzinstruments 版本](https://github.com/sfzinstruments/SalamanderGrandPiano)明确使用 SFZ2/ARIA 扩展并提示其他引擎可能不兼容。因此先用自制、已知 opcode 的极小 SFZ 夹具验证加载，再选兼容版本做钢琴音色测试；原先未定为默认钢琴；2026-10-19 已安装固定 revision，并以 sfizz 通过完整依赖副本的发声/恢复验证，现作为精选钢琴预设，其他引擎或全部扩展仍不自动视为兼容。
 
 ## 效果器
 
