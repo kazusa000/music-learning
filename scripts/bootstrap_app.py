@@ -40,6 +40,7 @@ def main():
         example = json.loads((ROOT / "config/app.example.json").read_text(encoding="utf-8"))
         example.update(
             data_root=str(root / "app-data"),
+            model_runtime=str(root),
             native_host=str(ROOT / "runtime/build/msvc/bin/ml_audio_host.exe"),
             plugin_roots=[str(ROOT / "plugins"), str(ROOT / "runtime/build/msvc/MLFixture_artefacts")],
         )

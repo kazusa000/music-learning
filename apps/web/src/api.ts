@@ -15,7 +15,7 @@ export async function call<T>(operation: Operation, args: object = {}, expectedR
 export async function connect() {
   const token = new URLSearchParams(location.hash.slice(1)).get('token');
   if (token) {
-    history.replaceState(null, '', location.pathname);
+    history.replaceState(null, '', location.pathname + location.search);
     const response = await fetch('/v1/session', {method: 'POST', headers: {Authorization: `Bearer ${token}`}});
     if (!response.ok) throw new Error('本机会话失效，请通过启动器重新打开。');
   }

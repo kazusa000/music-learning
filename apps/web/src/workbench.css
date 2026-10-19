@@ -1,0 +1,29 @@
+.workbench {border:1px solid #303a36;border-radius:10px;background:#1a1e1f;padding:28px;margin-bottom:40px}
+.workbench-heading {display:flex;justify-content:space-between;align-items:center;gap:20px}
+.workbench-heading h2 {margin-top:16px}
+.text-button {background:none;border:0;padding:0;color:#b4c2b8;font-size:12px}
+.candidate-notice {border-left:2px solid #c3a378;padding:10px 14px;color:#bcb2a2;background:#24251f;font-size:12px;line-height:1.7;margin:22px 0}
+.workbench-grid {display:grid;grid-template-columns:200px minmax(0,1fr);gap:24px}
+.voice-list {padding-right:20px;border-right:1px solid #333e38}
+.voice-list>button {display:block;text-align:left;width:100%;border:1px solid #354139;background:#202823;color:#d0d9d2;padding:12px;margin-bottom:6px;border-radius:5px;font-size:12px}
+.voice-list>button[aria-pressed=true] {background:#3b4031;border-color:#a48a65}
+.voice-list strong {font-size:12px;font-weight:500;display:block}
+.voice-list button span {display:block;color:#9aaa9c;font-size:10px;margin-top:7px}
+.voice-list a {display:block;color:#b7c5b8;font-size:12px;padding:8px 0;text-decoration:none}
+.voice-list .muted {font-size:11px}
+.music-content {min-width:0}
+.audition {display:flex;align-items:center;justify-content:space-between;margin:15px 0;font-size:12px;color:#a8b7ad}
+.audition select {font:inherit;margin-left:10px;background:#252d29;border:1px solid #49594c;color:#e1e7df;border-radius:5px;padding:7px;max-width:65vw}
+.sections {display:flex;gap:6px;flex-wrap:wrap;margin-top:20px}
+.sections button {border:1px solid #3e4e44;background:#28352e;color:#c5d2c7;border-radius:4px;font-size:10px;padding:6px 8px}
+.piano-roll {width:100%;height:330px;display:block;border:1px solid #38413c;border-radius:5px;cursor:crosshair}
+.chord-readback {height:40px;font-size:22px;color:#e1bc8e}
+.analysis-issues {margin-top:20px;border-top:1px solid #37423a;padding-top:18px;font-size:12px;color:#aebaaf}
+.analysis-issues li {line-height:1.8;margin:9px 0;overflow-wrap:anywhere}
+.stage-list {flex-basis:100%;width:100%;list-style:none;padding:8px 0 0;margin:0;color:#9fac9f;font-size:11px}
+.stage-list li {display:flex;justify-content:space-between;gap:12px;padding:5px 0}
+.task {flex-wrap:wrap}
+.stage-list .succeeded {color:#a8c1ad}
+.stage-list .running {color:#dec295}
+.primary-button {background:#d5b18a;color:#20251f;padding:10px 17px;border:0;border-radius:5px;font-size:13px;margin-top:15px}
+@media(max-width:850px){.workbench{padding:18px}.workbench-grid{grid-template-columns:1fr}.voice-list{border-right:0;padding-right:0;display:flex;gap:6px;flex-wrap:wrap}.voice-list>button{width:auto;flex:1}.voice-list>h3{flex-basis:100%}.workbench-heading{align-items:flex-start}.workbench-heading .badge{display:none}}
