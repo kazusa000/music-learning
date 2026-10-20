@@ -633,4 +633,3 @@ def read_presets(path: str | os.PathLike[str]) -> list[dict[str, object]]:
         preset["classification"] = classify_preset(preset)
         result.append(preset)
     return result
-
