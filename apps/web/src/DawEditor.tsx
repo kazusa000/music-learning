@@ -34,6 +34,7 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
   const liveGesture=useRef<Gesture|null>(null),copyBuffer=useRef<NoteEvent[]>([]),frame=useRef<HTMLDivElement>(null),pianoScroll=useRef<HTMLDivElement>(null);
   const [width,setWidth]=useState(800),[error,setError]=useState(''),[localMix,setMix]=useState<Record<string,Partial<Track>>>({});
   const mix=liveMix??localMix;
+  const [pendingTrack,setPendingTrack]=useState<{id:string;name:string}|null>(null);
   const [fields,setFields]=useState({pitch:60,start:0,end:1,velocity:80});
   const [clipId,setClipId]=useState<string|null>(null),[clipPreview,setClipPreview]=useState<Clip|null>(null);
   const clipDrag=useRef<{clip:Clip;x:number;resize:boolean;revision:string;preview:Clip}|null>(null),dragTrack=useRef<string|null>(null);
@@ -189,7 +190,9 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
       if(masters.length!==1){setError('无法确定输出主总线，请先核对路由。');return;}
       ops.push({op:'routing',routing:{...s.routing,nodes:[...(s.routing.nodes??[]),id],edges:[...(s.routing.edges??[]),{source:id,target:masters[0],kind:'main',gain_db:0}]}});
     }
-    if(await submit(ops,'新增乐器轨道',true,[...tracks.map(t=>t.id),id]))onSelect(id);
+    setPendingTrack({id,name:'新乐器 '+(tracks.length+1)});
+    try{if(await submit(ops,'新增乐器轨道',true,[...tracks.map(t=>t.id),id]))onSelect(id);}
+    finally{setPendingTrack(null);}
   }
   async function reorder(from:string,to:string){if(from===to)return;const order=tracks.map(t=>t.id);const a=order.indexOf(from),b=order.indexOf(to);if(a<0||b<0)return;order.splice(a,1);order.splice(b,0,from);await submit([{op:'track_order',track_ids:order}],'调整轨道顺序',true,order);}
   async function deleteClip(){if(!chosenClip)return;const ops:EditOperation[]=(s.notes??[]).filter(n=>n.clip_id===chosenClip.id).map(n=>({op:'delete',collection:'notes',id:n.id}));ops.push({op:'delete',collection:'clips',id:chosenClip.id});if(await submit(ops,'删除片段及所属音符',true,[chosenClip.track_id]))setClipId(null);}
@@ -198,7 +201,7 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
   const previews=new Map((gesture?.preview??[]).map(n=>[n.id,n]));
   const displayNotes=visibleNotes.map(n=>previews.get(n.id)??n).concat(gesture?.kind==='draw'?(gesture.preview.length?gesture.preview:gesture.notes):[]);
   return <div className="daw-editor" ref={frame} tabIndex={0} onKeyDown={keyboard} data-editor-revision={revision.id} aria-label="制作编辑器">
-    <div className="daw-view-tabs">{(mixingOnly?[['mixer','混音台']]:[['playlist','编排'],['piano','钢琴卷帘'],['overview','总览']]).map(([id,name])=><button key={id} aria-pressed={view===id} onClick={()=>{if(id==='piano'&&!track){const first=tracks.find(t=>t.kind==='instrument'&&t.role!=='drums'&&t.instrument_candidates?.includes('GM:0'))??tracks.find(t=>t.kind==='instrument'&&t.role!=='drums')??tracks.find(t=>t.kind==='instrument');if(first)onSelect(first.id);}setView(id);}}><Icon name={id==='playlist'?'timeline':id==='piano'?'piano':id==='mixer'?'mixer':'wave'}/>{name}</button>)}<span className="daw-edit-state">{busy?'正在保存…':editable?'可编辑':'历史版本 · 只读'}</span></div>
+    <div className="daw-view-tabs">{(mixingOnly?[['mixer','混音台']]:[['playlist','编排'],['piano','钢琴卷帘'],['overview','总览']]).map(([id,name])=><button key={id} aria-pressed={view===id} onClick={()=>{if(id==='piano'&&!track){const first=tracks.find(t=>t.kind==='instrument'&&t.role!=='drums'&&t.instrument_candidates?.includes('GM:0'))??tracks.find(t=>t.kind==='instrument'&&t.role!=='drums')??tracks.find(t=>t.kind==='instrument');if(first)onSelect(first.id);}setView(id);}}><Icon name={id==='playlist'?'timeline':id==='piano'?'piano':id==='mixer'?'mixer':'wave'}/>{name}</button>)}<span className="daw-edit-state">{!busy&&(editable?'可编辑':'历史版本 · 只读')}</span></div>
     <div className="daw-edit-tools" hidden={mixingOnly}><select aria-label="编辑声部" value={selected} onChange={e=>onSelect(e.target.value)}><option value="all">选择声部</option>{tracks.map(t=><option key={t.id} value={t.id}>{trackName(t)}</option>)}</select>
       <label>吸附<select aria-label="网格吸附" value={division} onChange={e=>setDivision(+e.target.value)}><option value={0}>关闭</option>{s.timing_map?<><option value={1}>1/4 音符</option><option value={.5}>1/8 音符</option><option value={.25}>1/16 音符</option><option value={.125}>1/32 音符</option></>:<><option value={.25}>0.25 秒</option><option value={.1}>0.1 秒</option><option value={.01}>0.01 秒</option></>}</select></label>
       <button disabled={!editable||busy||!canUndo} onClick={()=>void onUndo().catch(e=>setError(e.message))}>撤销</button><button disabled={!editable||busy||!canRedo} onClick={()=>void onRedo().catch(e=>setError(e.message))}>重做</button>
@@ -230,6 +233,7 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
               <line x1={x(position)} x2={x(position)} y1={0} y2={66} stroke={canvasTheme.playhead} pointerEvents="none"/>
             </svg>
           </div>;})}
+        {pendingTrack&&!tracks.some(t=>t.id===pendingTrack.id)&&<div className="daw-playlist-row daw-pending-track" data-pending-track={pendingTrack.id} aria-label="新增乐器轨道" aria-busy="true"><div className="daw-lane-label"><i style={{background:palette[tracks.length%palette.length]}}/><strong>{pendingTrack.name}</strong><small>MIDI · 0 notes</small></div><div className="daw-pending-lane"/></div>}
       </div>
       {chosenClip&&<div className="daw-clip-actions"><span>{chosenClip.asset_id?'音频':'MIDI'}片段 · {(chosenClip.start_sample/rate).toFixed(3)}s</span><button disabled={!editable||busy} onClick={()=>void duplicateClip()}>复制到后方</button><button disabled={!editable||busy} onClick={()=>void submit([{op:'arrange_clip',id:chosenClip.id,action:'split',sample:Math.round(position),new_id:uuid()}],'在播放头分割片段',true,[chosenClip.track_id])}>播放头分割</button><button disabled={!editable||busy} onClick={()=>void deleteClip()}>删除片段</button></div>}
     </>}

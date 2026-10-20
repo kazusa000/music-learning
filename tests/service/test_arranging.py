@@ -109,6 +109,36 @@ def editable(service, project):
     return rev, track, turn
 
 
+def test_automatic_turn_can_continue_edits_and_does_not_stop_at_32_queries(service,project):
+    from test_dialogue import Provider
+    from music_learning.schema_v4 import turns
+    from music_learning.service import row
+    rev,track,*_=musical(service,project)
+    note=rev['snapshot']['notes'][0]
+    turn=invoke(service,'dialogue.submit',dict(project_id=project['id'],text='调整两次音高'),rev['id'])
+    worker=DialogueWorker(service.database)
+    worker.claim()
+    class ContinuingProvider(Provider):
+        async def request(self,method,params,**kwargs):
+            if method=='turn/start':
+                for _ in range(35):
+                    result=await self.handler({'tool':'production_query','arguments':{}})
+                    assert not result.get('isError')
+                for pitch in (62,64):
+                    result=await self.handler({'tool':'music_edit','arguments':dict(description='Continue editing',
+                        operations=[dict(op='patch_note',id=note['id'],pitch=pitch)])})
+                    assert not result.get('isError'),result
+            return await super().request(method,params,**kwargs)
+    with service.database.transaction() as db:
+        claimed=row(db,turns,'id',turn['id'])
+    asyncio.run(DialogueWorker(service.database,ContinuingProvider).execute(claimed))
+    result=invoke(service,'dialogue.get',dict(project_id=project['id'],turn_id=turn['id']))
+    assert result['status']=='succeeded',result['error']
+    assert len(result['tools'])>32
+    assert len(result['context']['arrangement']['batches'])==2
+    assert invoke(service,'revisions.get',dict(project_id=project['id']))['snapshot']['notes'][0]['pitch']==64
+
+
 def test_agent_edit_is_atomic_replayable_and_does_not_export(service, project):
     rev, track, turn = editable(service, project)
     note = copy.deepcopy(rev["snapshot"]["notes"][0])
@@ -141,8 +171,14 @@ def test_agent_edit_is_atomic_replayable_and_does_not_export(service, project):
         ]
         == result
     )
-    with pytest.raises(DomainError, match="one edit"):
+    with pytest.raises(DomainError, match="did not change"):
         invoke(service, "arrangements.apply", args, current["id"])
+    note['pitch'] += 1
+    following = invoke(service,'arrangements.apply',args,current['id'],key='following-edit')
+    assert following['before_revision']==current['id']
+    assert len(following['batches'])==2
+    assert following['batches'][0]['revision_id']==result['revision_id']
+    assert invoke(service,'arrangements.apply',args,current['id'],key='following-edit')==following
 
 
 def test_commit_failure_rolls_back_edit_revision_and_receipt(service, project, monkeypatch):
@@ -410,3 +446,28 @@ def test_automatic_actions_are_not_limited_by_discussion_excerpt(service, projec
         rev["id"],
     )
     assert result["revision_id"] != rev["id"]
+
+
+def test_automatic_turn_can_add_then_edit_new_track_but_rejects_external_head(service, project):
+    from music_learning.contracts import new_id
+
+    rev, _, *_ = musical(service, project)
+    turn = invoke(service, "dialogue.submit", dict(project_id=project["id"], text="新增乐器并写音符"), rev["id"])
+    DialogueWorker(service.database).claim()
+    track = dict(id=new_id(), name="New instrument", kind="instrument", provenance=dict(origin="ai_edit", source_id=turn["id"]))
+
+    def apply(operations, head):
+        return invoke(service, "arrangements.apply", dict(project_id=project["id"], turn_id=turn["id"],
+            description="Continue requested arrangement", operations=operations), head)
+
+    first = apply([dict(op="put", collection="tracks", entity=track)], rev["id"])
+    note = dict(id=new_id(), track_id=track["id"], pitch=60, velocity=0.8,
+        start_sample=100, end_sample=1100, provenance=dict(origin="ai_edit", source_id=turn["id"]))
+    second = apply([dict(op="put", collection="notes", entity=note)], first["revision_id"])
+    assert len(second["batches"]) == 2
+    current = invoke(service, "revisions.get", dict(project_id=project["id"], revision_id=second["revision_id"]))
+    external = invoke(service, "revisions.commit", dict(project_id=project["id"], snapshot=current["snapshot"],
+        author="user", description="Concurrent user edit"), current["id"])
+    with pytest.raises(DomainError, match="changed since"):
+        apply([dict(op="patch_note", id=note["id"], pitch=62)], external["id"])
+    assert invoke(service, "projects.get", dict(project_id=project["id"]))["current_revision"] == external["id"]

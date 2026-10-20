@@ -50,4 +50,17 @@ const tickReads=clockReads;context.currentTime+=.15;
 clocked.streams.get('track:a').tick();await new Promise(setImmediate);
 assert.ok(clockReads>tickReads);assert.equal(clocked.streams.get('track:a').timer,undefined);
 clocked.pause();await new Promise(setImmediate);
+// A half-second UI stall must not exhaust the bounded supply of future PCM.
+late=false;
+for(const ahead of [.24,1]){
+  const stalled=new Transport();stalled.context=context;stalled.matched=false;stalled.clock={};stalled.lookaheadSeconds=ahead;
+  stalled.configureChannels([{id:'a',assetId:'live:a:1',bakedGain:0,bakedPan:0,values:{},live}]);
+  stalled.liveBuffer=async(_live,_sample,frames)=>({duration:frames/44100,length:frames});
+  await stalled.play(['track:a'],5,loop);await new Promise(setImmediate);
+  context.currentTime+=.5;stalled.streams.get('track:a').tick();await new Promise(setImmediate);
+  const stream=stalled.streams.get('track:a');
+  if(ahead===1)assert.equal(stream.underruns,0,'background supply absorbs a 500 ms UI stall');
+  else assert.ok(stream.underruns>0,'the old buffer reproduces the failure');
+  stalled.pause();await new Promise(setImmediate);
+}
 console.log(JSON.stringify({status:'succeeded',coverage:'cached-resume/double-pause/slow-PCM-start/shared-clock/no-silent-retry-loop',reads,starts:starts.length}));

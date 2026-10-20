@@ -156,8 +156,11 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
     found = {}
     from .keyscape_presets import CLASS_ID
 
-    routed_tracks = {p["track_id"] for p in snapshot["plugins"]
-                     if p["class_id"] == CLASS_ID and p["version"] == "1.3.3d" and not p["bypass"]}
+    routed_tracks = {
+        p["track_id"]
+        for p in snapshot["plugins"]
+        if p["class_id"] == CLASS_ID and p["version"] == "1.3.3d" and not p["bypass"]
+    }
     routing_path = "src/music_learning/midi_input.py"
     routing_sha = digest(ROOT / routing_path) if routed_tracks else None
     host_sha = digest(service.settings.native_host) if exact_mixer else None
@@ -241,13 +244,17 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
 
 def plan(service, db, revision):
     tracks = sources(service, db, revision)
+    snapshot = revision["snapshot"]
+    audible = {e["track_id"] for name in ("notes", "clips", "plugins") for e in snapshot[name]}
+    audible.update(snapshot.get("frozen_tracks", {}))
+    required = [t["id"] for t in snapshot["tracks"] if t["id"] in audible]
     return {
         "revision_id": revision["id"],
-        "available": len(tracks) == len(revision["snapshot"]["tracks"]) and bool(tracks),
+        "available": bool(required) and all(id in tracks for id in required),
         "tracks": tracks,
-        "pending_track_ids": [t["id"] for t in revision["snapshot"]["tracks"] if t["id"] not in tracks],
+        "pending_track_ids": [id for id in required if id not in tracks],
         "reason": None
-        if independent(revision["snapshot"])
+        if independent(snapshot)
         else "该工程含总线、发送、侧链或混音自动化，需使用原生处理图试听。",
     }
 

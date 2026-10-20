@@ -1,6 +1,7 @@
 # 项目开发约定
 
 最新 Keyscape 失败重试（2026-10-20）：原435批次已全部结束（415通过、20失败，现有435可选），原监督进程退出并提交fe244c2。20份失败均是输出总线名称未初始化内容导致无效UTF-8，已修共享BusInfo读取并保留严格协议/发声/重开/身份校验；固定JUCE内容摘要的CMake补丁及C++回归见cmake/PatchJuceVst3.cmake、native/include/Vst3BusInfo.h。仅为原20项建独立新指纹重试，优先读docs/benchmarks/keyscape-failure-retry.md和runtime/keyscape-retry-job.local.json；存在活动重试就只读观察，不因原批完成重复开批。原批全库对比false含授权清理/用户编辑的外部变化，不能改旧基线。正式音乐和NAS不写，原批证据保留。
+最新连续供声与音色切换（2026-10-20）：先读 docs/40-preset-loading-and-streaming.md。浏览器提前供应1秒PCM但首块立即启动，记录缺声计数；空MIDI轨不启动静音原生进程。只在常驻PCM宿主中对Keyscape1.3.3d使用完成每块采样工作的模式，不改原离线宿主。instrument.capture复用当前/手动版本的原厂完整状态或库内已入库验证状态，不重跑两轮音频验证、不生成WAV；缺失完整状态仍走原首次捕获。AI取消每轮一次编辑/32次调用限制，批次顺序推进head并保存batches，自动scope包含新增轨道，外部head变化/SDK显式只读与范围/幂等/fencing/素材校验保留。70操作/11任务无迁移，187后端、真实Wurlitzer/C7和500ms停顿浏览器证据见文档。Keyscape全量批次已自行完成415通过/20失败，保护报告自动提交fe244c2，Pianoteq并发文档b19a906已保留。
 
 最新 Pianoteq 9.1.2 检查（2026-10-20）：先读 docs/benchmarks/pianoteq912-intake.md。用户新包已独立提取至 H:\music\Sound Library\Pianoteq 9.1.2，VST3 扫描9.1.2、797原厂预设完整导出成功；自带程序钢琴/电钢/吉他输出不同PCM，但当前VST3预设与IComponent加载仍回读同状态，未入库。实际模块均来自新H目录，不再要求用户换第三个包，下一步查共享加载兼容。未修改运行中的Keyscape验证或宿主。正式head/快照前后相同，任务19->20为并发instrument.capture，不能报全库一致。本次新目录临时文件清理亦被自动审批拒绝，未执行、禁止换工具绕过；与此前两处清理拒绝均保留真实记录。
 

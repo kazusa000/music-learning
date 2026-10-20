@@ -58,7 +58,7 @@ def production_query(service, db, args):
             or lane.get("track_id") == args.track_id
             or lane.get("plugin_id") in {plugin["id"] for plugin in plugins}
         ],
-        "notice": "Use patch_plugin to change listed normalized parameters or copy an existing captured preset by preset_plugin_id. All plugin/automation edits require full-time structural scope.",
+        "notice": "Use patch_plugin to change parameters or load a preset. Changes follow the user's requested musical extent.",
     }
     from .instruments import categories, query, recommend
 
@@ -124,19 +124,21 @@ def dispatch(service, db, op, args, request):
     prior = db.execute(select(arrangements.c.payload).where(arrangements.c.turn_id == turn["id"])).scalar()
     if op == "arrangements.get":
         return {"arrangement": prior}
-    if prior:
-        raise DomainError(
-            "edit_already_applied", "This turn already committed one edit; read its receipt", 409, prior
-        )
     if turn["status"] != "running" or not turn["lease_until"] or turn["lease_until"] <= time.time():
         raise DomainError("turn_not_active", "Only an active discussion can commit an edit", 409)
     scope = turn["context"].get("edit_scope") or turn["payload"].get("edit_scope")
     if not scope:
         raise DomainError("read_only_turn", "This discussion did not authorize any edits", 403)
     project = row(db, t.projects, "id", args.project_id)
-    if project["current_revision"] != turn["revision_id"]:
+    base_revision = prior['revision_id'] if prior else turn['revision_id']
+    if project["current_revision"] != base_revision:
         raise DomainError("revision_conflict", "Project changed since the question was submitted", 409)
-    before = row(db, t.revisions, "id", turn["revision_id"])
+    before = row(db, t.revisions, "id", base_revision)
+    if turn['context'].get('scope_policy') == 'automatic':
+        added = [op.entity.id for op in args.operations
+                 if isinstance(op,c.PutEntity) and op.collection == 'tracks']
+        scope = dict(scope,track_ids=sorted({t['id'] for t in before['snapshot']['tracks']} | set(added)),
+                     start_sample=0,end_sample=before['snapshot']['duration_samples'],structural=True)
     payload = c.ApplyEdit(
         project_id=args.project_id,
         scope=scope,
@@ -206,5 +208,9 @@ def dispatch(service, db, op, args, request):
         if not job
         else "Export queued.",
     }
-    db.execute(insert(arrangements).values(turn_id=turn["id"], payload=receipt))
+    if prior:
+        receipt['batches'] = prior.get('batches',[{k:v for k,v in prior.items() if k != 'batches'}]) + [dict(receipt)]
+        db.execute(update(arrangements).where(arrangements.c.turn_id == turn['id']).values(payload=receipt))
+    else:
+        db.execute(insert(arrangements).values(turn_id=turn["id"], payload=receipt))
     return receipt

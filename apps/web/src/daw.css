@@ -102,3 +102,5 @@
   .daw-note-properties input { width: 61px; }
   .daw-velocity-label small { max-width: 190px; text-align: right; }
 }
+
+.daw-pending-track{opacity:.65}.daw-pending-lane{min-height:66px;border:1px solid var(--border);background:var(--surface)}

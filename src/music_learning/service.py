@@ -740,6 +740,8 @@ class Service:
                 from .instruments import pin
 
                 payload = pin(self.settings, args.payload)
+                from .preset_import import attach_descriptor
+                payload = attach_descriptor(self, db, payload, row(db,t.revisions,'id',request.expected_revision))
             elif args.kind == "asset.import":
                 payload = c.ImportPayload.model_validate(args.payload).model_dump()
                 row(db, t.uploads, "id", payload["upload_id"])

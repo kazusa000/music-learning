@@ -14,7 +14,7 @@ export class Transport {
   onEnded:(()=>void)|null=null;
   liveClient=crypto.randomUUID().replaceAll('-','');
   liveSequence=0;referenceSequence=0;referenceClient=crypto.randomUUID().replaceAll('-','');
-  streams=new Map<string,{epoch:number;timer?:ReturnType<typeof setTimeout>;nodes:Set<AudioBufferSourceNode>;session:LiveTrack;tick?:()=>void;chunks?:number;lastSample?:number}>();
+  streams=new Map<string,{epoch:number;timer?:ReturnType<typeof setTimeout>;nodes:Set<AudioBufferSourceNode>;session:LiveTrack;tick?:()=>void;chunks?:number;lastSample?:number;underruns?:number;skippedFrames?:number;maxLatenessMs?:number}>();
   liveErrors:Record<string,string>={};
   primes=new Map<string,Promise<AudioBuffer>>();
   playLatencyMs=0;firstSoundLatencyMs=0;playRequestedAt=0;
@@ -43,16 +43,17 @@ export class Transport {
   stopStream(id:string,close=false){const stream=this.streams.get(id);if(!stream)return;this.streams.delete(id);clearTimeout(stream.timer);for(const source of stream.nodes){try{source.stop();}catch{/* ended */}}
     if(close)void call('playback.live.close',{session_id:stream.session.session_id}).catch(()=>{});
   }
+  lookaheadSeconds=1;
   liveVoice(id:string,live:LiveTrack,first?:{buffer:AudioBuffer;sample:number;when:number}){
     const prior=this.streams.get(id);if(prior?.session.session_id===live.session_id&&prior.session.generation===live.generation)return;
     // Existing audio stays connected until the replacement has its first PCM.
-    const context=this.context!,epoch=++this.streamEpoch,stream={epoch,nodes:new Set<AudioBufferSourceNode>(),session:live,timer:undefined as ReturnType<typeof setTimeout>|undefined,tick:undefined as (()=>void)|undefined,chunks:0,lastSample:0};
+    const context=this.context!,epoch=++this.streamEpoch,stream={epoch,nodes:new Set<AudioBufferSourceNode>(),session:live,timer:undefined as ReturnType<typeof setTimeout>|undefined,tick:undefined as (()=>void)|undefined,chunks:0,lastSample:0,underruns:0,skippedFrames:0,maxLatenessMs:0};
     this.streams.set(id,stream);let nextWhen=0,nextSample=0,connected=false;
     let gain:GainNode,left:GainNode,right:GainNode,meter:AnalyserNode;
     const pump=async()=>{
       if(!this.playing||this.disposed||this.streams.get(id)!==stream)return;
       try{
-        while(!connected||nextWhen<context.currentTime+.24){
+        while(!connected||nextWhen<context.currentTime+this.lookaheadSeconds){
           const when=first?first.when:connected?nextWhen:context.currentTime+.03;
           if(first){nextWhen=first.when;nextSample=first.sample;}
           if(!first&&!connected){nextSample=Math.round(this.at(when)*live.sample_rate);nextWhen=when;}
@@ -65,6 +66,7 @@ export class Transport {
           // Keep advancing through returned PCM. Re-seeking every late request
           // caused a permanent silent retry loop on the full-size project.
           const skip=Math.max(0,Math.ceil((context.currentTime+.008-nextWhen)*live.sample_rate));
+          if(connected&&skip>0){stream.underruns++;stream.skippedFrames+=Math.min(skip,buffer.length);stream.maxLatenessMs=Math.max(stream.maxLatenessMs,skip/live.sample_rate*1000);}
           if(skip>=buffer.length){nextWhen+=buffer.duration;nextSample+=buffer.length;continue;}
           const audibleWhen=nextWhen+skip/live.sample_rate;
           if(!connected){
