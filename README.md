@@ -1,5 +1,7 @@
 # Music Learning
 
+桌面入口现为无浏览器标题栏的 WebView2 窗口，工作台合并顶栏、固定标尺、隐藏原生滚动条，并支持右键擦除/中键平移。4K/250%缩放已修正为实际240 DPI、2.5倍像素渲染；已打开的旧窗口须关闭后重启。构建、操作与验证见[桌面工作区与鼠标](docs/43-desktop-workspace-and-mouse.md)。
+
 以音乐工程为共同上下文、由 AI 直接操作的 DAW，用于研究、改编、积累并创作音乐，支持 Windows x64 VST3 音源与效果器。
 
 Pianoteq 9.1.2 已接入：797 款完整状态已准备，34 款经真实 VST3 验证后可选、覆盖 22 类乐器，与 Keyscape 455 款共同按乐器查询。钢琴/电钢琴/吉他实际 SDK 切换和各 305 秒常驻供声通过，换音色不生成整曲 WAV。状态适配、剩余库存与证据见 [Pianoteq 接入](docs/41-pianoteq-integration.md)。
@@ -30,7 +32,7 @@ AI 讨论已支持独立会话、实际可用模型选择与 Markdown，日常�
 
 右侧按“讨论 → 音色与效果 → 版本 → 分析”排列。“音色与效果”合并原音源与乐器页，可选音轨、查看当前插件链，再按乐器选择新音色，见[侧栏说明](docs/27-toolbar-and-sidebars.md)。
 
-顶部工程栏和播放栏支持自动收起与锁定，侧栏和对话布局已整理，见[工具栏与侧栏](docs/27-toolbar-and-sidebars.md)。
+顶部现为固定的单行播放/制作栏；此前自动收起布局的历史说明见[工具栏与侧栏](docs/27-toolbar-and-sidebars.md)，当前布局以[桌面工作区](docs/43-desktop-workspace-and-mouse.md)为准。
 
 侧栏和制作区域现在支持拖动边界调整大小，卷帘可用普通滚轮上下移动、Alt＋滚轮纵向缩放；操作和验证见[可调整面板](docs/26-resizable-panels.md)。
 
@@ -119,7 +121,7 @@ P4 已完成：真实 Codex 整曲/局部讨论、受限工具查询、有效引
 & runtime/tooling/Scripts/python.exe scripts/app.py stop
 ```
 
-首次恢复环境运行 `scripts/bootstrap_app.py`，详细 SDK/CLI 和配置命令见 [P1 运行说明](docs/14-project-service.md)。
+首次恢复环境运行 `scripts/bootstrap_app.py`，再运行 `data/envs/app/Scripts/python.exe scripts/build_desktop.py` 构建本地桌面壳；系统需有 WebView2 Runtime。详细 SDK/CLI 和配置命令见 [P1 运行说明](docs/14-project-service.md)。
 
 ## 检查与 P0 探测
 

@@ -1,8 +1,6 @@
-"""Owned Windows application window using installed Edge app mode, not a native DAW shell."""
+"""Owned frameless Windows WebView2 shell; browser mode remains an explicit option."""
 import ctypes
 import json
-import os
-from pathlib import Path
 import time
 
 import psutil
@@ -51,22 +49,18 @@ def main():
     if previous := existing(settings):
         focus(previous)
         return
-    candidates = [Path(os.environ.get(key, "C:/Program Files")) / "Microsoft/Edge/Application/msedge.exe"
-                  for key in ("PROGRAMFILES(X86)", "PROGRAMFILES")]
-    edge = next((p for p in candidates if p.is_file()), None)
-    if edge is None:
-        raise SystemExit("Microsoft Edge is required for the application window; use --browser explicitly instead")
-    profile = settings.path("desktop-profile")
+    executable = ROOT / "runtime/desktop/bin/MusicLearning.exe"
+    if not executable.is_file():
+        raise SystemExit("Run scripts/build_desktop.py to build the native WebView2 shell; --browser is available for debugging")
+    profile = settings.path("desktop-webview2-profile")
     url = f"http://127.0.0.1:{settings.port}/#token=" + session_token(settings)
-    command = [str(edge), "--app=" + url, "--user-data-dir=" + str(profile), "--no-first-run", "--disable-background-mode", "--window-size=1520,980"]
-    if debug := os.environ.get("MUSIC_DESKTOP_DEBUG_PORT"):
-        command.append("--remote-debugging-port=" + str(int(debug)))
+    command = [str(executable), url, str(profile)]
     process = psutil.Process()
     with settings.path("desktop.log").open("ab") as log:
         with OwnedProcess(command, stdout=log, stderr=log, cwd=ROOT) as window:
             settings.path("desktop.local.json").write_text(json.dumps({
                 "pid": process.pid, "created_at": process.create_time(), "browser_pid": window.process.pid,
-                "repository": str(ROOT), "mode": "edge-app",
+                "repository": str(ROOT), "mode": "native-webview2",
             }))
             while window.process.poll() is None:
                 time.sleep(.3)

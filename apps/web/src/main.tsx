@@ -11,6 +11,8 @@ import {Workbench} from './Workbench';
 import {publishDomain} from './events';
 import {AudioPreview} from './AudioPreview';
 import {Icon} from './Icon';
+import {WindowControls,dragWindow} from './WindowChrome';
+import {useStudioMouse} from './useStudioMouse';
 
 const connection = connect();
 const statuses: Record<string, string> = {queued: '排队中', running: '正在处理', cancel_requested: '正在取消',
@@ -21,6 +23,7 @@ const stageNames: Record<string, string> = {normalize:'音频规范化', demucs:
 
 
 function App() {
+  useStudioMouse();
   const [settingsOpen,setSettingsOpen]=useState(new URLSearchParams(location.search).get('view')==='settings');
   const [libraryWidth,setLibraryWidth]=usePanelSize('library.sidebar-width',260,180,500);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -148,8 +151,8 @@ function App() {
   }
 
   return <main className={workspace ? 'workspace-page' : 'library-page'}>
-    <header><a className="brand" href="/" aria-label="Music Learning 音乐库"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><b>Music Learning</b><span className="brand-divider"/><small>{workspace?'Studio':'音乐库'}</small></a>
-      <div className="header-actions">{!workspace&&<button className="header-settings" onClick={()=>{homeAudio.current?.pause();setSettingsOpen(true);history.replaceState(null,'','/?view=settings');}}>设置</button>}<span className={'connection '+(connected?'is-connected':'')}><i/>{connected ? '本机已连接' : '正在连接'}</span></div></header>
+    <header hidden={workspace&&!settingsOpen&&!!project&&!!revision} onPointerDown={dragWindow}><a className="brand" href="/" aria-label="Music Learning 音乐库"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><b>Music Learning</b><span className="brand-divider"/><small>{workspace?'Studio':'音乐库'}</small></a>
+      <div className="header-actions">{!workspace&&<button className="header-settings" onClick={()=>{homeAudio.current?.pause();setSettingsOpen(true);history.replaceState(null,'','/?view=settings');}}>设置</button>}<span className={'connection '+(connected?'is-connected':'')}><i/>{connected ? '本机已连接' : '正在连接'}</span><WindowControls/></div></header>
     {error && <div role="alert">{error}<button onClick={() => setError('')} aria-label="关闭提示">×</button></div>}
     {settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh}
       onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>

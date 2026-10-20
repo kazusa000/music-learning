@@ -7,6 +7,7 @@
 | JUCE 9.0.4 | 模块为 AGPLv3/商业双许可，详见 [JUCE LICENSE](https://github.com/juce-framework/JUCE/blob/9.0.4/LICENSE.md)。本地原型使用其开源许可路径；未来对外发布方式可能需要商业 JUCE 许可，不能将其视为 MIT 依赖。 |
 | VST3 SDK | 使用 JUCE 包中附带版本，具体版本与第三方许可见该包的 JUCE.spdx.json 和 VST3_SDK/LICENSE.txt；不修改 SDK。 |
 | MSVC / Windows SDK | 从微软固定渠道清单获取，个人本地构建工具；不随本项目重新分发。 |
+| Microsoft.Web.WebView2 1.0.4258.31 / .NET Framework 4.8 | 桌面壳使用本机.NET编译器及微软[WebView2 NuGet包](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31)，下载SHA固定在scripts/build_desktop.py。SDK/DLL/EXE位于忽略的runtime/desktop；使用系统已有WebView2 Runtime，未把组件提交源码或系统安装包。包内许可随下载保留。 |
 | portable-msvc | [mmozeiko 原始脚本](https://gist.github.com/mmozeiko/7f3162ec2988e81e56d5c4e22cde9977)，锁定 revision 和摘要，运行前已审查，添加目录边界与清单固定包装；脚本本身不复制进源码仓库。 |
 | innoextract | [官方工具](https://constexpr.org/innoextract/)，用于提取安装包到项目目录，不运行插件系统安装。 |
 | Surge XT / CHOW Tape / sfizz | 仅下载各自官方二进制并在本地宿主加载；来源和摘要见 config/native-dependencies.json，插件列表见 docs/10-free-vst3-candidates.md。 |

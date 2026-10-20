@@ -130,3 +130,23 @@ nav strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; fon
   .original { padding: 16px; }
 }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+
+/* Native titlebar and quiet scroll surfaces. Scrolling remains available to wheel,
+   keyboard and middle-drag; timeline/pitch navigation are explicit DAW controls. */
+[hidden] { display: none !important; }
+* { scrollbar-width: none; }
+::-webkit-scrollbar { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-button { display: none; }
+.window-controls { display: flex; align-items: center; flex: none; margin-left: auto; gap: 0; }
+.window-controls button { width: 36px; height: 34px; padding: 10px; border: 0; border-radius: 3px; background: transparent; color: #c2bfbb; }
+.window-controls svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1; }
+.window-controls button:hover { background: #ffffff12; }
+.window-controls .window-close:hover { background: #ba3c36; color: white; }
+.header-actions { display: flex; align-items: center; gap: 12px; }
+.studio-context-menu { position: fixed; z-index: 500; min-width: 178px; padding: 5px; border: 1px solid #ffffff17; border-radius: 8px; background: #252426; box-shadow: 0 10px 35px #0009; }
+.studio-context-menu button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 24px; border: 0; border-radius: 4px; background: transparent; color: #e0dbd4; padding: 8px 10px; text-align: left; font-size: 11px; }
+.studio-context-menu button:hover,.studio-context-menu button:focus { outline: none; background: #ffffff0d; }
+.studio-context-menu small { color: #88848b; font-size: 9px; }
+.studio-context-menu .danger { color: #e8a59c; }
+
+[data-panning=true],[data-panning=true] * { cursor: grabbing !important; }

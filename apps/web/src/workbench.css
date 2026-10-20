@@ -253,3 +253,41 @@
 .sound-panel .sound-effects { flex: 0 0 auto; max-height: 32%; overflow: auto; }
 .sound-metadata-error { margin: 0 16px; font-size: 11px; color: #e2a697; }
 .sound-metadata-error button { font-size: 11px; }
+
+/* One persistent transport/titlebar; music editing is a viewport, not a page. */
+.workspace-page { display: flex; flex-direction: column; }
+.workspace-page .studio { flex: 1; height: auto; min-height: 0; }
+.studio > .studio-toolbar { flex: none; height: 48px; min-height: 48px; flex-wrap: nowrap; padding: 0 5px 0 9px; gap: 9px; border-bottom: 1px solid var(--line); background: #171719; }
+.studio-toolbar button { flex: none; }
+.studio-song-title { max-width: 170px; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #d5cec5; }
+.studio-back { width: 25px; padding: 4px; background: transparent; }
+.studio-toolbar .studio-stages { display: flex; flex: none; min-height: 0; border: 0; padding: 0; margin: 0; gap: 2px; background: #222225; border-radius: 6px; }
+.studio-toolbar .studio-stages > span { display: none; }
+.studio-toolbar .studio-stages button { min-height: 28px; padding: 5px 8px; font-size: 10px; }
+.studio-toolbar .clock { gap: 4px; white-space: nowrap; }
+.studio-toolbar .clock strong { font-size: 14px; }
+.studio-toolbar .play-button { width: 29px; height: 29px; }
+.studio-toolbar .icon-button { width: 25px; height: 28px; }
+.studio-toolbar .zoom-control { min-width: 145px; margin-left: auto; gap: 2px; }
+.studio-toolbar .zoom-control input { min-width: 40px; width: 60px; }
+.transport-popover { position: relative; flex: none; font-size: 10px; }
+.transport-popover > summary { cursor: pointer; padding: 7px 5px; color: #b5aca2; list-style: none; white-space: nowrap; }
+.transport-popover[open] > summary { color: #efb98d; }
+.transport-popover .loop-editor { position: absolute; top: 34px; left: -40px; margin: 0; z-index: 80; width: 290px; padding: 14px; background: #262427; border: 1px solid var(--line-strong); border-radius: 7px; box-shadow: 0 10px 25px #0008; }
+.transport-chord { display: flex; flex: none; gap: 5px; font-size: 10px; white-space: nowrap; }
+.transport-chord > span { color: #77717a; }
+.transport-chord > strong { font-weight: 500; color: #edc49e; min-width: 24px; }
+.workspace-page .arrangement { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.workspace-page .section-lane { flex: none; height: 39px; min-height: 39px; margin: 0; padding: 4px 7px; gap: 2px; }
+.workspace-page .section-lane button { border-radius: 3px; padding: 4px 5px; gap: 2px; }
+.workspace-page .section-lane strong { font-size: 9px; }
+.workspace-page .section-lane span { font-size: 8px; }
+.workspace-page .timeline-pan { flex: none; height: 13px; margin: 0; width: 100%; border: 0; padding: 0 10px; background: #19191b; }
+.track-panel .panel-heading { position: sticky; top: -4px; z-index: 3; padding: 8px 5px; margin-bottom: 4px; background: #161618; }
+.track-panel .panel-heading button { padding: 0 5px; height: 22px; font-size: 18px; background: transparent; }
+.track-card { position: relative; }
+.track-more { position: absolute; right: 4px; top: 5px; background: transparent; padding: 1px 5px; color: #88818a; }
+.track-select { padding-right: 22px; }
+.studio-bottom { display: none; }
+@media(max-width:1400px) { .studio-song-title { max-width: 105px; } .studio-toolbar { gap: 5px !important; } .studio-toolbar .soft-button { font-size: 0; width: 24px; padding: 4px; } .studio-toolbar .soft-button::after { content: '⛶'; font-size: 16px; } }
+@media(max-width:1150px) { .studio-toolbar .zoom-control input,.studio-toolbar .zoom-control > button:nth-last-child(1) { display: none; } .studio-toolbar .zoom-control { min-width: 88px; } .studio-song-title { max-width: 80px; } .transport-popover > summary { font-size: 0; } .transport-popover > summary::after { content:'起止'; font-size:10px; } .studio-toolbar .clock > span { display:none; } }

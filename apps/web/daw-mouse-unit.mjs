@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import ts from 'typescript';
+const text=await readFile(new URL('./src/dawMouse.ts',import.meta.url),'utf8');
+const {crossesRect}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(text,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64'));
+const note={x:10,y:20,width:5,height:4};
+assert(crossesRect({x:0,y:22},{x:40,y:22},note),'sparse movement still crosses a short note');
+assert(crossesRect({x:12,y:0},{x:12,y:50},note));
+assert(crossesRect({x:12,y:22},{x:12,y:22},note));
+assert(!crossesRect({x:0,y:0},{x:8,y:18},note));
+assert(!crossesRect({x:0,y:25},{x:40,y:25},note));
+assert(!crossesRect({x:0,y:0},{x:40,y:40},{x:10,y:30,width:4,height:4}),'bounding-box overlap alone is not an erase');
+console.log('Mouse stroke geometry passed');
