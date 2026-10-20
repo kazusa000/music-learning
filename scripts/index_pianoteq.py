@@ -236,7 +236,8 @@ def build(library, bank, exports, evidence, verify=False):
                 print("PROBE " + entry["name"], flush=True)
     retained = [p for p in previous["presets"] if p.get("library_id") != LIBRARY]
     # Only tested presets enter the selectable catalog; the full export is inventory.
-    admitted = [p for p in presets if p["audio_verified"]]
+    from music_learning.instrument_localization import prepare_entries
+    admitted = prepare_entries([p for p in presets if p['audio_verified']],bank)
     if not admitted:
         raise ValueError("No playable presets admitted; existing catalog was preserved")
     combined = retained + admitted

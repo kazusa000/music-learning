@@ -381,6 +381,10 @@ def build(root, verify, validation_name):
         }[family]
         selected.append(p)
     if verify:
+        from music_learning.instrument_localization import prepare_entries
+        prepared={p['id']:p for p in prepare_entries(selected,root)}
+        for p in selected:
+            p.update(prepared[p['id']])
         host = NativeHost(diagnostics=probes / "native")
         for p in selected:
             output = probes / p["id"]
@@ -402,12 +406,21 @@ def build(root, verify, validation_name):
             except Exception as e:
                 p["validation_error"] = str(e)[:1000]
                 print("FAIL " + p["id"] + " " + str(e)[:300], flush=True)
+    from music_learning.instrument_localization import prepare_import
+    labels_path=root/'labels.zh-CN.json'
+    label_overrides=json.loads(labels_path.read_bytes()) if labels_path.is_file() else {}
+    normalized=[]
+    for p in presets:
+        if p['id'] in label_overrides:
+            p={**p,'labels_zh':label_overrides[p['id']]}
+        item=classify(p)
+        normalized.append(prepare_import(item) if p.get('audio_verified') else item)
     (root / "catalog.json").write_text(
         json.dumps(
             {
                 "schema_version": 1,
                 "native_host_sha256": digest(ROOT / "runtime/build/msvc/bin/ml_audio_host.exe"),
-                "presets": [classify(p) for p in presets],
+                "presets": normalized,
             },
             ensure_ascii=False,
         ),

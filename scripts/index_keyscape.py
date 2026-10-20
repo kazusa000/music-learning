@@ -23,6 +23,7 @@ from music_learning.storage import digest  # noqa: E402
 from music_learning.preset_verification import library_lock  # noqa: E402
 from music_learning.instrument_models import keyscape_model  # noqa: E402
 from music_learning.instrument_taxonomy import classify  # noqa: E402
+from music_learning.instrument_localization import prepare_entries, prepare_import  # noqa: E402
 from native_host import NativeHost  # noqa: E402
 
 LIBRARY_ID = "spectrasonics-keyscape"
@@ -161,6 +162,7 @@ def _build(library, bank, plugin, baseline, copy_manifest, evidence, all_presets
             candidate = next((p for p in presets if p["instrument_ids"] == [kind]),
                              next(p for p in presets if kind in p["instrument_ids"]))
             selected[candidate["id"]] = candidate
+    selected = {p['id']:p for p in prepare_entries(selected.values(),bank)}
     host = NativeHost(diagnostics=evidence / "native")
     failures, admitted = [], []
     for entry in selected.values():
@@ -198,6 +200,7 @@ def _build(library, bank, plugin, baseline, copy_manifest, evidence, all_presets
     previous = json.loads(catalog.read_bytes()) if catalog.exists() else dict(schema_version=1, presets=[])
     if previous.get("schema_version") != 1:
         raise ValueError("Unsupported instrument catalog")
+    admitted = [prepare_import(classify(p)) for p in admitted]
     ids = {p["id"] for p in admitted}
     combined = [p for p in previous["presets"] if p["id"] not in ids] + admitted
     if len({p["id"] for p in combined}) != len(combined):

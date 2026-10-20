@@ -24,7 +24,7 @@ def catalog(settings):
         raise ValueError("Duplicate preset ids across installed libraries; use stable unique ids")
     models = {}
     for p in presets:
-        signature = (p["model"]["name"], p["model"]["kind"], p["source"])
+        signature = (p["model"]["name"], p["model"]["kind"], p["model"]["display_name"], p["source"])
         if models.setdefault(p["model"]["id"], signature) != signature:
             raise ValueError("Conflicting instrument model metadata: " + p["model"]["id"])
     return presets
@@ -88,6 +88,10 @@ def filtered(settings, args, presets):
             + " "
             + p["variant_name"]
             + " "
+            + p["display_name"]
+            + " "
+            + p["source"]["display_name"]
+            + " "
             + p["id"]
             + " "
             + p.get("usage", "")
@@ -121,9 +125,18 @@ def models(settings, args):
         model = p["model"]
         group = groups.setdefault(
             model["id"],
-            dict(**model, model_spec=p["model_spec"], source=p["source"], instrument_ids=[], variant_count=0),
+            dict(
+                **model,
+                model_spec=p["model_spec"],
+                source=p["source"],
+                instrument_ids=[],
+                variant_count=0,
+                preview_preset_id=None,
+            ),
         )
         group["variant_count"] += 1
+        if p.get("audio_verified") and (group["preview_preset_id"] is None or p.get("default")):
+            group["preview_preset_id"] = p["id"]
         group["instrument_ids"] = sorted(set(group["instrument_ids"]) | set(p["instrument_ids"]))
     values = sorted(
         [m for m in groups.values() if m["id"] in matching],
@@ -135,6 +148,18 @@ def models(settings, args):
         items=values[args.offset : args.offset + args.limit],
         next_offset=args.offset + args.limit if args.offset + args.limit < len(values) else None,
         current_model_id=current,
+    )
+
+
+def labels(settings, args):
+    from .instrument_localization import label
+
+    ids = set(args.preset_ids)
+    return dict(
+        presets={p["id"]: p["display_name"] for p in catalog(settings) if p["id"] in ids},
+        parameters={
+            name: label(name, fallback="参数 " + str(i + 1)) for i, name in enumerate(args.parameter_names)
+        },
     )
 
 

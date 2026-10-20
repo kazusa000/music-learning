@@ -55,11 +55,20 @@ def paged(db, statement, arguments):
 
 
 class Service:
+    def previews(self):
+        from .instrument_previews import InstrumentPreviews
+
+        with self.live_lock:
+            if self.instrument_previews is None:
+                self.instrument_previews = InstrumentPreviews(self.settings)
+            return self.instrument_previews
+
     def __init__(self, database: Database):
         self.database = database
         self.settings = database.settings
         self.storage = Storage(self.settings)
         self.live_playback = None
+        self.instrument_previews = None
         import threading
 
         self.live_lock = threading.Lock()
@@ -74,6 +83,10 @@ class Service:
             args = model.model_validate(request.arguments)
             if mutates and not request.idempotency_key:
                 raise DomainError("idempotency_required", "Writes require idempotency_key", 422)
+            if request.operation.startswith("instruments.preview."):
+                result = self.previews().dispatch(request.operation, args, request.idempotency_key)
+                TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
+                return {"schema_version": 1, "request_id": request.request_id, "ok": True, "result": result}
             if request.operation.startswith("playback.live."):
                 from .live_playback import LivePlayback
 
@@ -122,7 +135,7 @@ class Service:
                     if hash_arguments.get(optional) is None:
                         hash_arguments.pop(optional, None)
             if isinstance(args, c.SaveVersion) and args.track_levels is None:
-                hash_arguments.pop('track_levels',None)
+                hash_arguments.pop("track_levels", None)
             payload_hash = hashlib.sha256(
                 canonical(
                     {
@@ -153,7 +166,10 @@ class Service:
                         project_id = row(db, t.jobs, "id", args.job_id)["project_id"]
                     if project_id:
                         project = row(db, t.projects, "id", project_id)
-                        if request.operation != "mixing.save" and request.expected_revision != project["current_revision"]:
+                        if (
+                            request.operation != "mixing.save"
+                            and request.expected_revision != project["current_revision"]
+                        ):
                             raise DomainError(
                                 "revision_conflict",
                                 "Expected revision differs from project head",
@@ -162,11 +178,20 @@ class Service:
                             )
                 result = self._dispatch(db, request.operation, args, request)
                 if mutates and request.operation in (
-                    "projects.create", "projects.fork", "assets.register", "analysis.register",
-                    "revisions.commit", "revisions.restore", "edits.apply", "arrangements.apply",
-                    "versions.save", "jobs.cancel", "jobs.retry",
+                    "projects.create",
+                    "projects.fork",
+                    "assets.register",
+                    "analysis.register",
+                    "revisions.commit",
+                    "revisions.restore",
+                    "edits.apply",
+                    "arrangements.apply",
+                    "versions.save",
+                    "jobs.cancel",
+                    "jobs.retry",
                 ):
                     from .retention import request_collection
+
                     owner = getattr(args, "project_id", None) or result.get("project_id") or result.get("id")
                     if request.operation in ("jobs.cancel", "jobs.retry"):
                         owner = row(db, t.jobs, "id", args.job_id)["project_id"]
@@ -252,6 +277,7 @@ class Service:
         if not linked:
             db.execute(insert(t.project_assets).values(project_id=project_id, asset_id=sha))
         from .retention import touch_asset
+
         touch_asset(db, sha)
         return row(db, t.assets, "id", sha)
 
@@ -365,6 +391,7 @@ class Service:
     def _dispatch(self, db, op, args, request):
         if op.startswith("storage."):
             from .retention import dispatch
+
             return dispatch(self, db, op, args, request)
         if op.startswith("versions."):
             from .checkpoints import dispatch
@@ -372,6 +399,7 @@ class Service:
             return dispatch(self, db, op, args, request)
         if op in ("mixing.get", "mixing.save"):
             from .mixing import dispatch
+
             return dispatch(self, db, op, args, request)
         if op in ("playback.get", "mixer.set"):
             from .playback import dispatch
@@ -401,12 +429,14 @@ class Service:
 
             return dispatch(self, db, op, args, request)
         if op.startswith("instruments."):
-            from .instruments import categories, models, query, recommend
+            from .instruments import categories, labels, models, query, recommend
 
             if op == "instruments.list":
                 return query(self.settings, args)
             if op == "instruments.models":
                 return models(self.settings, args)
+            if op == "instruments.labels":
+                return labels(self.settings, args)
             if op == "instruments.categories":
                 return categories(self.settings)
             revision = self._revision(db, args)
@@ -423,6 +453,7 @@ class Service:
                     name: {
                         "mutates": write,
                         "requires_expected_revision": write
+                        and not name.startswith("instruments.preview.")
                         and name not in ("projects.create", "application.settings.set", "mixing.save"),
                         "arguments_schema": model.model_json_schema(),
                         "result_schema": TypeAdapter(c.RESULT_TYPES[name]).json_schema(),
@@ -743,7 +774,10 @@ class Service:
 
                 payload = pin(self.settings, args.payload)
                 from .preset_import import attach_descriptor
-                payload = attach_descriptor(self, db, payload, row(db,t.revisions,'id',request.expected_revision))
+
+                payload = attach_descriptor(
+                    self, db, payload, row(db, t.revisions, "id", request.expected_revision)
+                )
             elif args.kind == "asset.import":
                 payload = c.ImportPayload.model_validate(args.payload).model_dump()
                 row(db, t.uploads, "id", payload["upload_id"])

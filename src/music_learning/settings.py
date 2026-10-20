@@ -35,6 +35,8 @@ class Settings:
     pipeline_min_free_bytes: int = 3 * 1024**3
     instrument_min_free_bytes: int = 256 * 1024**2
     instrument_library: Path | None = None
+    instrument_preview_cache_bytes: int = 512 * 1024**2
+    instrument_preview_warm: bool = True
 
     def __post_init__(self):
         self.data_root = local_fixed(Path(self.data_root))

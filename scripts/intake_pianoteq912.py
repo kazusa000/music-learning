@@ -235,6 +235,8 @@ def intake(exports, all_presets=False, resume=None, output=None):
                 first = next(p for p in entries if p["family"] == family)
                 selected[first["id"]] = first
             entries = list(selected.values())
+        from music_learning.instrument_localization import prepare_entries
+        entries=prepare_entries(entries,bank)
         host = pinned_host(settings, bank, output / "native")
         implementation = implementation_fingerprint(host, [Path(__file__),
             ROOT / "src/music_learning/pianoteq_presets.py", ROOT / "src/music_learning/vst3_state.py"])
@@ -252,6 +254,8 @@ def intake(exports, all_presets=False, resume=None, output=None):
         with library_lock(settings.instrument_library):
             path = settings.instrument_library / "catalog.json"
             catalog = json.loads(path.read_bytes())
+            from music_learning.instrument_localization import prepare_import
+            admitted = [prepare_import(classify(p)) for p in admitted]
             ids = {p["id"] for p in admitted}
             combined = [p for p in catalog["presets"] if p["id"] not in ids] + admitted
             if len({p["id"] for p in combined}) != len(combined):

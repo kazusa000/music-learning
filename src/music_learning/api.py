@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, insert, select
 
 from . import schema_v1 as t
-from .contracts import new_id
+from .contracts import InstrumentPreviewRef, new_id
 from .database import Database
 from .service import DomainError, Service, canonical, row
 from .settings import ROOT, Settings
@@ -51,9 +51,12 @@ def create_app(settings: Settings | None = None):
 
         dialogue = DialogueWorker(database)
         runner = asyncio.create_task(dialogue.run())
+        previews = service.previews()
+        previews.start()
         try:
             yield
         finally:
+            await asyncio.to_thread(previews.close)
             dialogue.stopping.set()
             try:
                 await asyncio.wait_for(runner, 8)
@@ -204,6 +207,15 @@ def create_app(settings: Settings | None = None):
         except ValueError as error:
             raise DomainError("asset_corrupt", "Asset failed integrity validation", 409) from error
         return FileResponse(path, media_type=metadata["media_type"], filename=sha)
+
+    @app.get("/v1/instrument-previews/{preview_id}/audio")
+    def instrument_preview_audio(preview_id: str):
+        try:
+            args = InstrumentPreviewRef(preview_id=preview_id)
+            path = service.previews().audio(args.preview_id)
+        except (ValueError, OSError) as error:
+            raise DomainError("preview_unavailable", "音色试听不可用，请重新准备", 409) from error
+        return FileResponse(path, media_type="audio/wav")
 
     def event_head():
         with database.transaction(write=False) as db:

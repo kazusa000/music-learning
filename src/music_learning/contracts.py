@@ -656,12 +656,40 @@ class InstrumentModelQuery(InstrumentQuery):
 class InstrumentModelItem(Model):
     id: str
     name: str
+    display_name: str
     kind: Literal["instrument", "layer", "synth", "unspecified"]
     basis: str
     model_spec: InstrumentModelSpec
     source: dict[str, str]
     instrument_ids: list[str]
     variant_count: int
+    preview_preset_id: str | None
+
+
+class InstrumentLabels(Model):
+    preset_ids: list[str] = Field(default_factory=list, max_length=128)
+    parameter_names: list[str] = Field(default_factory=list, max_length=256)
+
+
+class PrepareInstrumentPreview(Model):
+    preset_id: str = Field(min_length=1, max_length=200)
+    retry: bool = False
+
+
+class InstrumentPreviewRef(Model):
+    preview_id: Hash
+
+
+class InstrumentPreview(Model):
+    id: Hash
+    preset_id: str
+    display_name: str
+    status: Literal["queued", "loading", "ready", "failed", "cancelled"]
+    audio_url: str | None = None
+    error: str | None = None
+    duration: float | None = None
+    phrase: str
+    cached: bool = False
 
 
 class InstrumentModels(Model):
@@ -1176,6 +1204,11 @@ OPERATIONS = {
     "production.query": (ProductionQuery, False),
     "instruments.list": (InstrumentQuery, False),
     "instruments.models": (InstrumentModelQuery, False),
+    "instruments.labels": (InstrumentLabels, False),
+    "instruments.preview.prepare": (PrepareInstrumentPreview, True),
+    "instruments.preview.get": (InstrumentPreviewRef, False),
+    "instruments.preview.cancel": (InstrumentPreviewRef, True),
+    "instruments.preview.stats": (Empty, False),
     "instruments.categories": (Empty, False),
     "instruments.recommend": (RecommendInstruments, False),
 }
@@ -1230,6 +1263,11 @@ RESULT_TYPES = {
     "plugins.presets": list[dict],
     "instruments.list": dict,
     "instruments.models": InstrumentModels,
+    "instruments.labels": dict,
+    "instruments.preview.prepare": InstrumentPreview,
+    "instruments.preview.get": InstrumentPreview,
+    "instruments.preview.cancel": InstrumentPreview,
+    "instruments.preview.stats": dict,
     "instruments.categories": InstrumentCategories,
     "instruments.recommend": dict,
     "audition.get": dict,

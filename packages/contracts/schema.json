@@ -1733,6 +1733,29 @@
       "title": "InstrumentCategory",
       "type": "object"
     },
+    "InstrumentLabels": {
+      "additionalProperties": false,
+      "properties": {
+        "preset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Preset Ids",
+          "type": "array"
+        },
+        "parameter_names": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "title": "Parameter Names",
+          "type": "array"
+        }
+      },
+      "title": "InstrumentLabels",
+      "type": "object"
+    },
     "InstrumentModelItem": {
       "additionalProperties": false,
       "properties": {
@@ -1742,6 +1765,10 @@
         },
         "name": {
           "title": "Name",
+          "type": "string"
+        },
+        "display_name": {
+          "title": "Display Name",
           "type": "string"
         },
         "kind": {
@@ -1778,17 +1805,30 @@
         "variant_count": {
           "title": "Variant Count",
           "type": "integer"
+        },
+        "preview_preset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Preview Preset Id"
         }
       },
       "required": [
         "id",
         "name",
+        "display_name",
         "kind",
         "basis",
         "model_spec",
         "source",
         "instrument_ids",
-        "variant_count"
+        "variant_count",
+        "preview_preset_id"
       ],
       "title": "InstrumentModelItem",
       "type": "object"
@@ -1966,6 +2006,104 @@
         "current_model_id"
       ],
       "title": "InstrumentModels",
+      "type": "object"
+    },
+    "InstrumentPreview": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "preset_id": {
+          "title": "Preset Id",
+          "type": "string"
+        },
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "loading",
+            "ready",
+            "failed",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "audio_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Url"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration"
+        },
+        "phrase": {
+          "title": "Phrase",
+          "type": "string"
+        },
+        "cached": {
+          "default": false,
+          "title": "Cached",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "preset_id",
+        "display_name",
+        "status",
+        "phrase"
+      ],
+      "title": "InstrumentPreview",
+      "type": "object"
+    },
+    "InstrumentPreviewRef": {
+      "additionalProperties": false,
+      "properties": {
+        "preview_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Preview Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "preview_id"
+      ],
+      "title": "InstrumentPreviewRef",
       "type": "object"
     },
     "InstrumentQuery": {
@@ -3197,6 +3335,27 @@
         }
       },
       "title": "PreferencesPatch",
+      "type": "object"
+    },
+    "PrepareInstrumentPreview": {
+      "additionalProperties": false,
+      "properties": {
+        "preset_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Preset Id",
+          "type": "string"
+        },
+        "retry": {
+          "default": false,
+          "title": "Retry",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "preset_id"
+      ],
+      "title": "PrepareInstrumentPreview",
       "type": "object"
     },
     "PreprocessingResult": {
@@ -7804,6 +7963,283 @@
           "current_model_id"
         ],
         "title": "InstrumentModels",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.labels": {
+      "arguments": "InstrumentLabels",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.preview.prepare": {
+      "arguments": "PrepareInstrumentPreview",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "preset_id": {
+            "title": "Preset Id",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "loading",
+              "ready",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "audio_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Audio Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration"
+          },
+          "phrase": {
+            "title": "Phrase",
+            "type": "string"
+          },
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "preset_id",
+          "display_name",
+          "status",
+          "phrase"
+        ],
+        "title": "InstrumentPreview",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.preview.get": {
+      "arguments": "InstrumentPreviewRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "preset_id": {
+            "title": "Preset Id",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "loading",
+              "ready",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "audio_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Audio Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration"
+          },
+          "phrase": {
+            "title": "Phrase",
+            "type": "string"
+          },
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "preset_id",
+          "display_name",
+          "status",
+          "phrase"
+        ],
+        "title": "InstrumentPreview",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.preview.cancel": {
+      "arguments": "InstrumentPreviewRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "preset_id": {
+            "title": "Preset Id",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "loading",
+              "ready",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "audio_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Audio Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration"
+          },
+          "phrase": {
+            "title": "Phrase",
+            "type": "string"
+          },
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "preset_id",
+          "display_name",
+          "status",
+          "phrase"
+        ],
+        "title": "InstrumentPreview",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.preview.stats": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
         "type": "object"
       },
       "mutates": false

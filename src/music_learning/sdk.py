@@ -204,6 +204,27 @@ class Client:
     def instrument_categories(self):
         return self.call("instruments.categories")
 
+    def prepare_instrument_preview(self, preset_id, *, retry=False, idempotency_key=None):
+        return self.call(
+            "instruments.preview.prepare",
+            dict(preset_id=preset_id, retry=retry),
+            idempotency_key=idempotency_key,
+        )
+
+    def instrument_preview(self, preview_id):
+        return self.call("instruments.preview.get", dict(preview_id=preview_id))
+
+    def cancel_instrument_preview(self, preview_id):
+        return self.call("instruments.preview.cancel", dict(preview_id=preview_id))
+
+    def instrument_preview_stats(self):
+        return self.call("instruments.preview.stats")
+
+    def instrument_labels(self, preset_ids=(), parameter_names=()):
+        return self.call(
+            "instruments.labels", dict(preset_ids=list(preset_ids), parameter_names=list(parameter_names))
+        )
+
     def instruments(
         self,
         search="",

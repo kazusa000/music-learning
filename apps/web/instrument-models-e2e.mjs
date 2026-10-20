@@ -7,18 +7,24 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 const [configFile,output]=process.argv.slice(2);
 const config=JSON.parse(await readFile(configFile,'utf8'));
-assert(config.port!==8765&&config.data_root.includes('instrument-models-20261020'));
+assert(config.port!==8765&&/instrument-(models-20261020|previews-20261021)/.test(config.data_root));
 const token=(await readFile(path.join(config.data_root,'session-token.local'),'ascii')).trim();
 const currentResult=await fetch(`http://127.0.0.1:${config.port}/v1/commands`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({operation:'instruments.list',arguments:{search:'LA Custom C7 - Natural'}})}).then(r=>r.json());
 const current=currentResult.result.items.find(p=>p.name==='LA Custom C7 - Natural');assert(current);
+const audition=process.env.INSTRUMENT_PREVIEW_ACCEPTANCE==='1';
 const fixture=`
 import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
 import {SoundPanel} from '/src/SoundPanel.tsx';
+import {Transport} from '/src/transport.ts';
 import '/src/style.css';import '/src/workbench.css';
 window.confirmed=[];
+window.__audioStarts=[];
+const NativeContext=window.AudioContext;
+window.AudioContext=class extends NativeContext{createBufferSource(){const source=super.createBufferSource(),start=source.start.bind(source);source.start=(...args)=>{window.__audioStarts.push({peak:source.buffer?source.buffer.getChannelData(0).reduce((a,b)=>Math.max(a,Math.abs(b)),0):0,at:this.currentTime});return start(...args);};return source;}};
+window.startMonitoring=async()=>{const t=new Transport();t.context=new AudioContext();await t.context.resume();t.attachMonitoring();t.output=t.context.createGain();t.output.gain.value=1;t.output.connect(t.context.destination);t.playing=true;t.channels.set('monitor',{gainDb:-6,pan:.2,mute:false,solo:false});const source=t.context.createBufferSource();source.buffer=t.context.createBuffer(1,44100,44100);const samples=source.buffer.getChannelData(0);for(let i=0;i<samples.length;i++)samples[i]=Math.sin(i*.1)*.02;source.loop=true;source.connect(t.output);source.start();window.__mainTransport=t;};
 const tracks=[{id:'piano',name:'钢琴轨',kind:'instrument'},{id:'second',name:'第二轨',kind:'instrument'}];
 const revision={id:'fixture',snapshot:{tracks,plugins:[{id:'slot',track_id:'piano',order:0,descriptor_asset_id:'descriptor',preset_id:${JSON.stringify(current.id)},preset_name:${JSON.stringify(current.name)}}]}};
-function App(){const [selected,setSelected]=useState('piano');return React.createElement(SoundPanel,{revision,selected,onSelect:setSelected,enabled:true,pluginInfo:{slot:{name:'Keyscape',is_instrument:true,metadata_asset_id:'descriptor',parameters_readback:[]}},change:null,onRetry:()=>{},metadataError:'',onReloadMetadata:()=>{},onChoose:(choice,target)=>window.confirmed.push({choice,target,track:selected})});}
+function App(){const [selected,setSelected]=useState('piano');return React.createElement(React.Fragment,null,${audition?"React.createElement('button',{id:'test-monitor',style:{position:'fixed',top:0,right:0},onClick:()=>window.startMonitoring()},'测试监听'),":""}React.createElement(SoundPanel,{revision,selected,onSelect:setSelected,enabled:true,pluginInfo:{slot:{name:'Keyscape',is_instrument:true,metadata_asset_id:'descriptor',parameters_readback:[]}},change:null,onRetry:()=>{},metadataError:'',onReloadMetadata:()=>{},onChoose:(choice,target)=>window.confirmed.push({choice,target,track:selected})}));}
 createRoot(document.getElementById('root')).render(React.createElement(App));
 `;
 const server=await createServer({root:process.cwd(),configFile:false,logLevel:'error',
@@ -29,7 +35,7 @@ const server=await createServer({root:process.cwd(),configFile:false,logLevel:'e
       res.setHeader('Content-Type','text/html');res.end(await vite.transformIndexHtml('/__models',`<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:12px}#root{width:min(420px,100%);height:720px}#root>.sound-panel{height:100%;display:flex;flex-direction:column}.instrument-browser{flex:1;min-height:0}</style></head><body><div id="root"></div><script type="module" src="/@id/__x00__virtual:models-fixture"></script></body></html>`));
     });}
   }],
-  server:{host:'127.0.0.1',port:0,proxy:{'/v1':{
+  server:{host:'127.0.0.1',port:0,hmr:false,watch:null,proxy:{'/v1':{
     target:`http://127.0.0.1:${config.port}`,changeOrigin:true,
     configure(proxy){proxy.on('proxyReq',req=>{req.setHeader('Authorization','Bearer '+token);req.removeHeader('Origin');});}
   }}}
@@ -45,7 +51,7 @@ const apply=()=>page.getByRole('button',{name:'确认应用',exact:true});
 page.setDefaultTimeout(10000);
 try{
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__models`);
-  const model=page.locator('.model-option').filter({hasText:'LA Custom C7 Grand Piano'});
+  const model=page.locator('.model-option[title="LA Custom C7 Grand Piano"]');
   await model.waitFor();check('current model is marked',await model.getAttribute('class').then(s=>s.includes('is-current')));await model.click();
   const first=page.locator('.variant-option:not(.is-current)').first();await first.waitFor();
   check('model navigation performs no application',(await confirmed()).length===0);
@@ -81,17 +87,58 @@ try{
   await page.screenshot({path:path.join(output,'narrow.png')});
   await page.getByLabel('选择乐器',{exact:true}).selectOption('electric-piano');await page.locator('.model-option').first().waitFor();
   check('changing category clears selection',await page.getByRole('radiogroup').count()===0&&(await confirmed()).length===1);
-  const mki=page.locator('.model-option').filter({hasText:'Vintage Tines MKI'}).filter({hasNotText:'MKII'});await mki.click();
+  const mki=page.locator('.model-option[title="Vintage Tines MKI"]');await mki.click();
   await page.getByRole('radio').first().waitFor();check('pianoteq variants share a model',await page.getByRole('radio').count()===2);
   await page.getByRole('radio').first().focus();await page.keyboard.press('ArrowDown');check('keyboard selects a variant',await page.getByRole('radio',{checked:true}).count()===1);
-  await page.getByRole('radio').filter({hasText:'MKI Amped'}).click();await apply().click();
-  check('new track receives the explicit choice',(await confirmed())[1].track==='second'&&(await confirmed())[1].choice.presetName==='MKI Amped');
+  await page.getByRole('radio').filter({hasText:'音箱效果'}).click();await apply().click();
+  check('new track receives the explicit choice',(await confirmed())[1].track==='second'&&(await confirmed())[1].choice.presetName.includes('音箱效果'));
+  check('Chinese visible names retain original English details',(await page.locator('.instrument-model-heading').innerText()).includes('一代簧片电钢琴')&&await page.locator('[title="MKI Amped"]').count()===1);
+  if(audition){
+    await page.getByRole('button',{name:'测试监听',exact:true}).click();
+    await page.waitForFunction(()=>window.__mainTransport?.playing);
+    const monitorBefore=await page.evaluate(()=>({time:window.__mainTransport.context.currentTime,channels:JSON.stringify([...window.__mainTransport.channels])}));
+    const baseline=(await confirmed()).length;
+    const basic=page.locator('.preset-row').filter({has:page.getByRole('radio').filter({hasText:'基础'})}).locator('.preset-listen');
+    await basic.click();await page.locator('.preset-listening-status.is-playing').waitFor();
+    check('preview starts actual nonzero decoded PCM',await page.evaluate(()=>window.__audioStarts.length>=2&&window.__audioStarts.at(-1).peak>.001));
+    check('preview ducks only the monitor output',await page.evaluate(()=>Math.abs(window.__mainTransport.output.gain.value-.16)<1e-6));
+    check('preview never selects or applies a variant',(await confirmed()).length===baseline&&await page.getByRole('radio',{checked:true}).count()===0);
+    await page.getByLabel('音色试听音量',{exact:true}).press('Home');
+    await page.getByLabel('音色试听音量',{exact:true}).press('ArrowRight');
+    check('preview volume has its own control',await page.getByLabel('音色试听音量',{exact:true}).inputValue()==='0.01');
+    await page.getByRole('button',{name:'停止试听',exact:true}).click();
+    check('stopping restores monitor gain',await page.evaluate(()=>window.__mainTransport.output.gain.value===1));
+    check('music clock and channel values preserved',await page.evaluate(before=>window.__mainTransport.context.currentTime>before.time&&JSON.stringify([...window.__mainTransport.channels])===before.channels&&window.__mainTransport.playing,monitorBefore));
+    // Fail only the first preview request; retry uses the genuine cached audio.
+    let failPreview=true;await page.route('**/v1/commands',async route=>{if(route.request().postDataJSON().operation==='instruments.preview.prepare'&&failPreview){failPreview=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({ok:false,error:{message:'试听测试失败'}})});}else await route.continue();});
+    await basic.click();await page.locator('.preset-listening-status.is-failed').waitFor();
+    await page.getByRole('button',{name:'重试试听',exact:true}).click();await page.locator('.preset-listening-status.is-playing').waitFor();
+    check('failed preview retries in place',(await confirmed()).length===baseline);
+    await page.waitForFunction(()=>!document.querySelector('.preset-listening-status'),{},{timeout:12000});
+    check('natural end restores monitor',await page.evaluate(()=>window.__mainTransport.output.gain.value===1));
+    await page.getByRole('button',{name:'返回型号列表'}).click();await mki.waitFor();
+    const wurl=page.locator('.preset-row').filter({has:page.locator('.model-option[title="Wurlitzer 200A"]')}).locator('.preset-listen');
+    const mkiListen=page.locator('.preset-row').filter({has:mki}).locator('.preset-listen');
+    let delayNext=true;await page.route('**/v1/commands',async route=>{if(route.request().postDataJSON().operation==='instruments.preview.prepare'&&delayNext){delayNext=false;await new Promise(r=>setTimeout(r,500));}await route.continue();});
+    const startsBefore=await page.evaluate(()=>window.__audioStarts.length);
+    await wurl.click();await mkiListen.click();await page.locator('.preset-listening-status.is-playing').waitFor();
+    await page.waitForTimeout(700);
+    check('model speaker does not navigate',await page.getByRole('radiogroup').count()===0);
+    check('rapid model preview switches keep one active sound',await page.locator('.preset-listen.is-active').count()===1);
+    check('late preview response never starts an obsolete sound',await page.evaluate(n=>window.__audioStarts.length===n+1,startsBefore));
+    await page.getByRole('button',{name:'停止试听',exact:true}).click();
+    delayNext=true;const stoppedAt=await page.evaluate(()=>window.__audioStarts.length);await mkiListen.click();
+    await page.getByRole('button',{name:'停止试听',exact:true}).click();await page.waitForTimeout(700);
+    check('stopping a pending preview prevents late playback',await page.evaluate(n=>window.__audioStarts.length===n&&window.__mainTransport.output.gain.value===1,stoppedAt));
+    check('all previews preserve confirmation count',(await confirmed()).length===baseline);
+    await page.evaluate(()=>window.__mainTransport.close());
+  }
   await page.setViewportSize({width:1000,height:800});await page.screenshot({path:path.join(output,'desktop.png')});
-  check('only read APIs used',commands.every(c=>['instruments.models','instruments.list','instruments.categories'].includes(c.operation)));
+  check('only library APIs used',commands.every(c=>['instruments.models','instruments.list','instruments.categories','instruments.labels',...(audition?['instruments.preview.prepare','instruments.preview.get']:[])].includes(c.operation)));
   check('no browser errors',errors.length===0);
   const report={status:'succeeded',checks,commands:commands.map(c=>({operation:c.operation,arguments:c.arguments})),confirmed:await confirmed(),errors};
   await writeFile(path.join(output,'browser.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({status:report.status,checks:checks.length}));
 }catch(error){
-  await writeFile(path.join(output,'browser-failure.json'),JSON.stringify({error:String(error),errors,commands,body:(await page.locator('body').innerText()).slice(0,3000)},null,2));
+  await writeFile(path.join(output,'browser-failure-'+Date.now()+'.json'),JSON.stringify({error:String(error),errors,commands,body:(await page.locator('body').innerText()).slice(0,3000)},null,2));
   console.error(JSON.stringify({errors,commands:commands.length,body:(await page.locator('body').innerText()).slice(0,1000)}));throw error;
 }finally{await browser.close();await server.close();}

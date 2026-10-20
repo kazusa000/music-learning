@@ -48,6 +48,8 @@ def verify(names=(), resume=None, force=False, retry_failed=False, limit=None, o
         output = Path(resume).resolve() if resume else (
             Path(output_path).resolve() if output_path else bank / "verification-runs" / (
                 time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]))
+        from music_learning.instrument_localization import prepare_entries
+        entries=prepare_entries(entries,bank)
         host = NativeHost(settings.native_host, output / "native")
         implementation = implementation_fingerprint(host, [
             ROOT / "src/music_learning/keyscape_presets.py", ROOT / "src/music_learning/vst3_state.py"])
@@ -78,6 +80,9 @@ def verify(names=(), resume=None, force=False, retry_failed=False, limit=None, o
                 known.setdefault(signature, entry)
         # A conflicting new result does not discard unrelated successes or the old catalog.
         rejected = {p["id"] for p in admitted} - {p["id"] for p in accepted}
+        from music_learning.instrument_localization import prepare_import
+        from music_learning.instrument_taxonomy import classify
+        accepted=[prepare_import(classify(p)) for p in accepted]
         combined = retained + [p for p in catalog["presets"] if p["id"] in rejected] + accepted
         if len({p["id"] for p in combined}) != len(combined):
             raise ValueError("Duplicate preset ids")

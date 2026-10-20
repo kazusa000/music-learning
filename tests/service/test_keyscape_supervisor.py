@@ -101,6 +101,8 @@ def test_conflicting_preset_is_recorded_without_discarding_other_successes(tmp_p
     bank.mkdir(parents=True)
     def entry(id, instrument, state, audio):
         return dict(id=id, name=id, library_id="spectrasonics-keyscape", instrument_ids=[instrument],
+            backend='vst3-preset',family=instrument,bank_root='Spectrasonics',
+            labels_zh=dict(model='测试型号',variant='测试音色',library='测试音源库'),
             audio_verified=True, default=False, state_sha256=state, probe_sha256=audio,
             installed_library={"manifest_sha256": "manifest"}, plugin_sha256="plugin",
             resources={}, expected_keyscape={})

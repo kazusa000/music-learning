@@ -22,13 +22,14 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     fixture = output / "http-fixture"
     config = output / "app.local.json"
-    settings = Settings(data_root=fixture, port=8776, instrument_library=Path(r"H:\music\Sound Library"))
+    settings = Settings(data_root=fixture, port=8776, instrument_library=Path(r"H:\music\Sound Library"),instrument_preview_warm=False)
     config.write_text(
         json.dumps(
             dict(
                 data_root=str(fixture),
                 port=settings.port,
                 instrument_library=str(settings.instrument_library),
+                instrument_preview_warm=False,
             )
         ),
         encoding="utf-8",

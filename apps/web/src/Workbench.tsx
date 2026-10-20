@@ -5,6 +5,7 @@ import {Discussion} from './Discussion';
 import {hasTrackContent,switchPreset} from './manualPreset';
 import type {PresetChoice,SoundChange,SoundPhase} from './manualPreset';
 import {SoundPanel} from './SoundPanel';
+import {useInstrumentLabels} from './useInstrumentLabels';
 import {DawEditor} from './DawEditor';
 import type {EditRequest} from './DawEditor';
 import {trackName as instrumentName,orderedTracks} from './dawEditing';
@@ -51,6 +52,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const leftWidth=Math.min(trackWidth,Math.max(140,bodyWidth-rightWidth-332));
   const [versionId,setVersionId]=useState('head');
   const [revision,setRevision]=useState(head);
+  const instrumentLabels=useInstrumentLabels((revision.snapshot.plugins??[]).flatMap(p=>p.preset_id?[p.preset_id]:[]));
   const revisionRef=useRef(revision);revisionRef.current=revision;
   const [publication,setPublication]=useState<Render|null>(initial);
   const [playback,setPlayback]=useState<PlaybackPlan|null>(null);
@@ -554,7 +556,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     ]}/>}
     <div className="studio-body resizable-studio" ref={body} style={{'--track-width':leftWidth+'px','--ai-width':rightWidth+'px'} as CSSProperties}><aside className="track-panel"><div className="panel-heading"><span>音轨</span><button aria-label="添加乐器轨道" disabled={!atHead||editingBusy} onClick={()=>requestTrack('add')}>＋</button></div><button className={'all-tracks '+(selected==='all'?'is-selected':'')} onClick={()=>setSelected('all')}>全部声部 <small>{(snapshot.notes??[]).length.toLocaleString()}</small></button>
       <div className="track-cards">{tracks.map((track,i)=>{const values=mixing?(mixProfile?.tracks??{}):mixDraft,state=audibility(tracks,values,track.id),gain=values[track.id]?.gain_db??track.gain_db??0;return <div className={'track-card '+(selected===track.id?'is-selected ':'')+(state.muted?'is-muted':'')} key={track.id} style={{'--track-color':colors[i%colors.length]} as CSSProperties} data-track={track.id} onContextMenu={e=>{if((e.target as Element).closest('input,textarea'))return;e.preventDefault();setTrackMenu({x:e.clientX,y:e.clientY,id:track.id});}} data-effective-muted={state.muted}>
-        <button className="track-select" title={instrumentName(track)+' · 双击打开卷帘'} onClick={()=>setSelected(track.id)} onDoubleClick={()=>{setSelected(track.id);setPianoRequest(n=>n+1);}}><span className="track-index">{(i+1).toString().padStart(2,'0')}</span><div><strong>{instrumentName(track)}</strong><small>{(snapshot.plugins??[]).find(p=>p.track_id===track.id&&p.order===0)?.preset_name??(track.kind==='audio'?'音频素材':'尚未选择音色')}</small></div></button>
+        <button className="track-select" title={instrumentName(track)+' · 双击打开卷帘'} onClick={()=>setSelected(track.id)} onDoubleClick={()=>{setSelected(track.id);setPianoRequest(n=>n+1);}}><span className="track-index">{(i+1).toString().padStart(2,'0')}</span><div><strong>{instrumentName(track)}</strong><small>{instrumentLabels.presets[(snapshot.plugins??[]).find(p=>p.track_id===track.id&&p.order===0)?.preset_id??'']??(track.kind==='audio'?'音频素材':'音色')}</small></div></button>
         <button className="track-more" aria-label={'轨道菜单 '+(i+1)} onClick={e=>{const r=e.currentTarget.getBoundingClientRect();setTrackMenu({x:r.left,y:r.bottom,id:track.id});}}>⋯</button><div className="track-actions"><small className="track-note-count">{state.soloMuted?'独奏排除':state.manualMute?'已静音':(snapshot.notes??[]).filter(n=>n.track_id===track.id).length.toLocaleString()+' 音符'}</small><span className="track-color-line"/><button aria-label={`独奏 ${i+1}`} aria-pressed={state.solo} disabled={versionId!=='head'} onClick={()=>changeMix(track.id,{solo:!state.solo})}>独奏</button><button aria-label={`试听静音 ${i+1}`} aria-pressed={state.muted} data-muted-by-solo={state.soloMuted} title={state.soloMuted?'其他轨道独奏时暂时静音；取消独奏恢复':'静音此轨'} disabled={versionId!=='head'} onClick={()=>changeMix(track.id,{mute:!state.manualMute})}>静音</button></div>
         <div className="track-volume"><label htmlFor={'volume-'+track.id}>音量</label><input id={'volume-'+track.id} aria-label={`音轨音量 ${i+1}`} type="range" min={-60} max={12} step={.1} value={Math.max(-60,Math.min(12,gain))} disabled={versionId!=='head'} onChange={e=>changeMix(track.id,{gain_db:+e.target.value})}/><input aria-label={`音轨音量数值 ${i+1}`} type="number" min={-120} max={24} step={.1} value={+gain.toFixed(1)} disabled={versionId!=='head'} onChange={e=>{if(Number.isFinite(e.target.valueAsNumber))changeMix(track.id,{gain_db:Math.max(-120,Math.min(24,e.target.valueAsNumber))});}}/><span>dB</span></div>
       </div>;})}</div>

@@ -21,6 +21,9 @@ def keyscape_model(models):
 
 
 def with_model(entry):
+    from .instrument_localization import localized
+    from .instrument_preview_audio import VERSION
+
     spec = entry.get("model_spec")
     basis = entry.get("model_basis", "import-assignment")
     if spec is None:
@@ -51,10 +54,13 @@ def with_model(entry):
     variant = entry.get("variant_name", entry["name"])
     if not isinstance(variant, str) or not variant.strip() or len(variant) > 512:
         raise ValueError("Invalid variant name for preset " + entry["id"])
-    return {
-        **entry,
-        "model_spec": spec,
-        "model_basis": basis,
-        "model": dict(id=model_id, name=spec["name"], kind=spec["kind"], basis=basis),
-        "variant_name": variant,
-    }
+    return localized(
+        {
+            **entry,
+            "model_spec": spec,
+            "model_basis": basis,
+            "model": dict(id=model_id, name=spec["name"], kind=spec["kind"], basis=basis),
+            "variant_name": variant,
+            "preview_spec": {"phrase_version":VERSION,"available":bool(entry.get("audio_verified"))},
+        }
+    )
