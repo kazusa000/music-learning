@@ -41,6 +41,7 @@ class Production:
         self.files = []
         self.allowed = set(self.job["allowed_asset_ids"])
         self.code_paths = [
+            ROOT / "src/music_learning/midi_input.py",
             Path(__file__),
             *sorted((ROOT / "src/music_learning").glob("*.py")),
             *sorted(ROOT.glob("requirements*.lock")),

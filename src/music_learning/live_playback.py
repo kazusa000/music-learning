@@ -19,6 +19,7 @@ from .graph import compile_project
 from .playback import independent, signature
 from .processes import OwnedProcess
 from .service import DomainError
+from .midi_input import instrument_channel
 
 
 class NativeSession:
@@ -38,6 +39,7 @@ class NativeSession:
         self.project = None
         self.audio_revision = None
         self.descriptors, self.resources = {}, {}
+        self.midi_channel = None
         self.directory = service.settings.path("live", self.id)
         self.signature = signature(revision["snapshot"], track_id)
 
@@ -184,6 +186,10 @@ class NativeSession:
                     raise ValueError("Missing plugin entrypoint")
                 resources[plugin.id]["entrypoint"] = str(target)
         self.descriptors, self.resources = descriptors, resources
+        self.midi_channel = instrument_channel(
+            s.plugins, descriptors, resources,
+            [e.channel for e in s.notes] + [e.channel for e in s.controllers],
+        )
         project = compile_project(s, revision["id"], descriptors, paths, resources, tail_seconds=0)
         project["tracks"] = [t for t in project["tracks"] if t["id"] == self.track_id]
         project.pop("graph")
@@ -225,6 +231,8 @@ class NativeSession:
             return False
         left = {n["id"]: n for n in before["notes"] if n["track_id"] == self.track_id}
         right = {n["id"]: n for n in after["notes"] if n["track_id"] == self.track_id}
+        if {n["channel"] for n in left.values()} != {n["channel"] for n in right.values()}:
+            return False  # Re-evaluate single/multi-part routing without reloading the plugin.
         changed = [n for id, n in right.items() if left.get(id) != n]
         notes = [
             dict(
@@ -232,7 +240,7 @@ class NativeSession:
                 sample=n["start_sample"],
                 duration_samples=n["end_sample"] - n["start_sample"],
                 note=n["pitch"],
-                channel=n["channel"],
+                channel=self.midi_channel or n["channel"],
                 velocity=n["velocity"],
             )
             for n in changed

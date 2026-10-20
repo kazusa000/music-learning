@@ -154,12 +154,19 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
         return {}
     signatures = {t["id"]: signature(snapshot, t["id"], exact_mixer) for t in snapshot["tracks"]}
     found = {}
+    from .keyscape_presets import CLASS_ID
+
+    routed_tracks = {p["track_id"] for p in snapshot["plugins"]
+                     if p["class_id"] == CLASS_ID and p["version"] == "1.3.3d" and not p["bypass"]}
+    routing_path = "src/music_learning/midi_input.py"
+    routing_sha = digest(ROOT / routing_path) if routed_tracks else None
     host_sha = digest(service.settings.native_host) if exact_mixer else None
     audio_code = (
         {
             str(path.relative_to(ROOT)): digest(path)
             for path in [
                 ROOT / "src/music_learning/graph.py",
+                ROOT / routing_path,
                 ROOT / "src/music_learning/timing.py",
                 ROOT / "src/music_learning/midi.py",
                 ROOT / "scripts/native_host.py",
@@ -172,6 +179,13 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
         else {}
     )
     for source_revision, rendered in publications(db, revision):
+        routing_current = False
+        if routing_sha and rendered.get("report_asset_id"):
+            try:
+                report = json.loads(service.storage.verify(rendered["report_asset_id"]).read_bytes())
+                routing_current = report.get("implementation_sha256", {}).get(routing_path) == routing_sha
+            except (ValueError, OSError):
+                pass
         if host_sha:
             report_id = rendered.get("report_asset_id")
             if not report_id:
@@ -198,6 +212,8 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
             asset = rendered["track_renders"].get(id)
             if id in found or not asset or id not in signatures:
                 continue
+            if id in routed_tracks and not routing_current:
+                continue  # Old silent channel routing is not a valid reusable sound.
             if signatures[id] != signature(old, id, exact_mixer):
                 continue
             if not exact_mixer and (

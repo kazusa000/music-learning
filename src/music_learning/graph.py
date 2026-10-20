@@ -5,6 +5,7 @@ from __future__ import annotations
 from fractions import Fraction
 from . import contracts as c
 from .timing import interpolate
+from .midi_input import instrument_channel
 
 MASTER = "0" * 32
 
@@ -221,6 +222,13 @@ def compile_project(snapshot, revision_id, descriptors, paths, resources, *, tai
             for e in s.controllers
             if e.track_id == track.id
         ]
+        channel = instrument_channel(
+            [p for p in s.plugins if p.track_id == track.id], descriptors, resources,
+            [e["channel"] for e in node["notes"] + node["controllers"]],
+        )
+        if channel is not None:
+            for event in node["notes"] + node["controllers"]:
+                event["channel"] = channel
         instrument_bypassed = any(
             p.bypass and descriptors.get(p.id, {}).get("is_instrument")
             for p in s.plugins
