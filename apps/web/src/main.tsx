@@ -33,6 +33,7 @@ function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [versionCount, setVersionCount] = useState(0);
   const [error, setError] = useState('');
+  const [refreshError,setRefreshError]=useState('');
   const [busy, setBusy] = useState(false);
   const [connected, setConnected] = useState(false);
   const [publication, setPublication] = useState<PreprocessingResult | null>(null);
@@ -91,15 +92,15 @@ function App() {
       setRevision(head); setPublication(media); setJobs(tasks); setVersionCount(versions.length);
       const details = await Promise.all(tasks.filter(j => j.kind === 'project.preprocess').map(async job =>
         [job.id, await call<StageRecord[]>('jobs.stages', {job_id:job.id})] as const));
-      if (activeSelection.current === selected && generation === refreshGeneration.current) setStages(Object.fromEntries(details));
-    } else {setRevision(null); setJobs([]); setVersionCount(0);}
+      if (activeSelection.current === selected && generation === refreshGeneration.current) {setStages(Object.fromEntries(details));setRefreshError('');}
+    } else {setRevision(null); setJobs([]); setVersionCount(0);setRefreshError('');}
   }, [selected,showArchived]);
 
   useEffect(() => {
     let active = true;
     let stream: EventSource | null = null;
     let debounce: ReturnType<typeof setTimeout> | undefined;
-    const update = () => {void refresh().catch(e => {if (active) setError(String(e.message));});};
+    const update = () => {void refresh().catch(e => {if (active) setRefreshError(String(e.message));});};
     void connection.then(() => {
       if (!active) return;
       update();
@@ -112,7 +113,7 @@ function App() {
         if(domain.type.startsWith('dialogue.')||domain.type.startsWith('audition.')||domain.type==='note.saved')return;
         clearTimeout(debounce);debounce=setTimeout(update,120);
       });
-    }).catch(e => setError(e.message));
+    }).catch(e => setRefreshError(e.message));
     const timer = setInterval(update, 15000);
     return () => {active = false; clearInterval(timer); clearTimeout(debounce); stream?.close();};
   }, [refresh]);
@@ -153,7 +154,7 @@ function App() {
   return <main className={workspace ? 'workspace-page' : 'library-page'}>
     <header hidden={workspace&&!settingsOpen&&!!project&&!!revision} onPointerDown={dragWindow}><a className="brand" href="/" aria-label="Music Learning 音乐库"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><b>Music Learning</b><span className="brand-divider"/><small>{workspace?'Studio':'音乐库'}</small></a>
       <div className="header-actions">{!workspace&&<button className="header-settings" onClick={()=>{homeAudio.current?.pause();setSettingsOpen(true);history.replaceState(null,'','/?view=settings');}}>设置</button>}<span className={'connection '+(connected?'is-connected':'')}><i/>{connected ? '本机已连接' : '正在连接'}</span><WindowControls/></div></header>
-    {error && <div role="alert">{error}<button onClick={() => setError('')} aria-label="关闭提示">×</button></div>}
+    {(error||refreshError) && <div role="alert">{error||refreshError}<button onClick={() => {setError('');setRefreshError('');}} aria-label="关闭提示">×</button></div>}
     {settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh}
       onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
       <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? '正在导入…' : '选择音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"

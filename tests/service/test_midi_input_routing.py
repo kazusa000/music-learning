@@ -102,7 +102,8 @@ def test_old_keyscape_audio_is_invalidated_without_discarding_other_tracks(monke
     monkeypatch.setattr(playback, 'publications', lambda *_: [(revision,publication)])
     service = SimpleNamespace(storage=SimpleNamespace(verify=lambda _:report, object_path=lambda _:report),
                               _asset=lambda *_:None)
-    assert set(playback.sources(service,None,revision)) == {other.id}
+    registered = SimpleNamespace(execute=lambda _:SimpleNamespace(scalars=lambda:iter(['a'*64,'b'*64,'c'*64])))
+    assert set(playback.sources(service,registered,revision)) == {other.id}
     key = 'src/music_learning/midi_input.py'
     report.write_text(json.dumps(dict(implementation_sha256={key:digest(ROOT/key)})))
-    assert set(playback.sources(service,None,revision)) == {piano,other.id}
+    assert set(playback.sources(service,registered,revision)) == {piano,other.id}

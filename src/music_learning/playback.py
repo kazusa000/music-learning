@@ -154,6 +154,7 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
         return {}
     signatures = {t["id"]: signature(snapshot, t["id"], exact_mixer) for t in snapshot["tracks"]}
     found = {}
+    verified = set()
     from .keyscape_presets import CLASS_ID
 
     routed_tracks = {
@@ -226,9 +227,23 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
                 and not track.get("solo")
             ):
                 continue
-            service._asset(db, asset, revision["project_id"])
-            if not service.storage.object_path(asset).is_file():
+            # Publications outlive disposable audio. An expired derived source
+            # is a cache miss, not a broken current snapshot. Check the mix too:
+            # the frontend uses it as the common loudness reference.
+            required = {asset, rendered["mix_asset_id"]}
+            registered = set(db.execute(
+                select(t.assets.c.id).join(t.project_assets).where(
+                    t.project_assets.c.project_id == revision["project_id"],
+                    t.assets.c.id.in_(required),
+                )
+            ).scalars())
+            if required - registered or any(
+                not service.storage.object_path(sha).is_file() for sha in required
+            ):
                 continue
+            for sha in required - verified:
+                service._asset(db, sha, revision["project_id"])
+                verified.add(sha)
             found[id] = dict(
                 asset_id=asset,
                 source_revision_id=source_revision["id"],

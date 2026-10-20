@@ -4,7 +4,7 @@ import wave
 import io
 
 import pytest
-from sqlalchemy import insert, update
+from sqlalchemy import delete, insert, update
 from conftest import invoke
 from music_learning import contracts as c, schema_v1 as t, schema_v3 as v3
 from music_learning.service import DomainError
@@ -62,7 +62,7 @@ def base(service, project):
     return commit(service, project, snapshot.model_dump(mode="json"), project["current_revision"])
 
 
-def publish_fixture(service, project, revision):
+def publish_fixture(service, project, revision, variant=0):
     """Domain fixture, not a claim that a real plugin rendered these samples."""
     files = {}
     with service.database.transaction() as db:
@@ -70,7 +70,7 @@ def publish_fixture(service, project, revision):
             output = io.BytesIO()
             with wave.open(output, "wb") as stream:
                 stream.setparams((2, 2, 44100, 44100, "NONE", "not compressed"))
-                stream.writeframes(bytes([i + 1, 0, i + 1, 0]) * 44100)
+                stream.writeframes(bytes([i + 1 + variant, 0, i + 1 + variant, 0]) * 44100)
             data = output.getvalue()
             sha = service.storage.put(data)
             service.register_asset(db, project["id"], sha, len(data), "audio/wav", {}, PROV)
@@ -103,6 +103,61 @@ def publish_fixture(service, project, revision):
             )
         )
     return value
+
+
+@pytest.mark.parametrize("expired", ["registration", "file", "project_link"])
+def test_expired_audio_falls_back_to_retained_ancestor(service, project, expired):
+    old = base(service, project)
+    retained = publish_fixture(service, project, old)
+    data = copy.deepcopy(old["snapshot"])
+    data["tracks"][0]["name"] = "Renamed"
+    new = commit(service, project, data, old["id"])
+    discarded = publish_fixture(service, project, new, variant=10)
+    # The mix is also the first track in this fixture. Track B's file is still
+    # valid, but cannot advertise a retired common loudness reference.
+    missing = discarded["mix_asset_id"]
+    if expired == "file":
+        service.storage.object_path(missing).unlink()
+    else:
+        with service.database.transaction() as db:
+            db.execute(delete(t.project_assets).where(t.project_assets.c.asset_id == missing))
+            if expired == "registration":
+                from music_learning.schema_v10 import activity
+
+                db.execute(delete(activity).where(activity.c.asset_id == missing))
+                db.execute(delete(t.assets).where(t.assets.c.id == missing))
+    jobs = invoke(service, "jobs.list", dict(project_id=project["id"]))
+    plan = invoke(service, "playback.get", dict(project_id=project["id"]))
+    assert plan["available"] and not plan["pending_track_ids"]
+    assert {v["source_revision_id"] for v in plan["tracks"].values()} == {old["id"]}
+    assert {v["mix_asset_id"] for v in plan["tracks"].values()} == {retained["mix_asset_id"]}
+    assert invoke(service, "projects.get", dict(project_id=project["id"]))["current_revision"] == new["id"]
+    assert invoke(service, "jobs.list", dict(project_id=project["id"])) == jobs
+
+
+def test_all_expired_sources_remain_pending_and_do_not_break_retention(service, project):
+    old = base(service, project)
+    media = publish_fixture(service, project, old)
+    data = copy.deepcopy(old["snapshot"])
+    data["tracks"][0]["name"] = "Current working track"
+    revision = commit(service, project, data, old["id"])
+    service.storage.object_path(media["mix_asset_id"]).unlink()
+    from music_learning.schema_v10 import activity
+
+    with service.database.transaction() as db:
+        db.execute(update(activity).values(registered_at=time.time() - 3600))
+    plan = invoke(service, "playback.get", dict(project_id=project["id"]))
+    assert not plan["available"] and not plan["tracks"]
+    assert set(plan["pending_track_ids"]) == {t["id"] for t in revision["snapshot"]["tracks"]}
+    assert invoke(service, "storage.plan", dict(project_id=project["id"]))["retained_assets"] == 0
+
+
+def test_retained_corrupt_audio_is_still_rejected(service, project):
+    revision = base(service, project)
+    media = publish_fixture(service, project, revision)
+    service.storage.object_path(media["mix_asset_id"]).write_bytes(b"corrupt retained audio")
+    with pytest.raises(DomainError, match="asset missing or corrupt"):
+        invoke(service, "playback.get", dict(project_id=project["id"]))
 
 
 def test_mix_saves_version_without_job_and_retargets_transport(service, project):
