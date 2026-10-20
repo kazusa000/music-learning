@@ -211,3 +211,13 @@
 }
 
 .save-version-row{display:flex;gap:7px;margin:12px 0}.save-version-row input{min-width:0;flex:1;padding:7px;background:#191919;border:1px solid #3c3c3c;border-radius:5px;color:#ddd}.save-version-row button{white-space:nowrap;padding:7px 10px;font-size:12px}.version-card>div span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.studio-stages { display:flex; align-items:center; flex:none; gap:6px; padding:5px 12px; border-bottom:1px solid var(--line); background:#151517; }
+.studio-stages button { min-height:26px; padding:3px 12px; font-size:12px; }
+.studio-stages button[aria-pressed=true] { background:#393331; color:#f2e9e0; }
+.studio-stages > span { flex:1; padding-left:10px; color:var(--muted); font-size:11px; }
+.studio.is-mixing .studio-body.resizable-studio { grid-template-columns:minmax(0,1fr); }
+.studio.is-mixing .track-panel,.studio.is-mixing .inspector,.studio.is-mixing .resizable-studio > .panel-splitter { display:none; }
+.studio.is-mixing .arrangement { display:block; }
+.studio.is-mixing .arrangement-header { display:none; }
+.studio.is-mixing .daw-edit-tools { display:none; }

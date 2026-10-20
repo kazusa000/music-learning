@@ -27,6 +27,9 @@ def ts(schema):
         return "Array<" + ts(schema["items"]) + ">"
     if kind == "object":
         if "properties" not in schema:
+            if schema.get("patternProperties"):
+                values = sorted({ts(value) for value in schema["patternProperties"].values()})
+                return "Record<string, " + " | ".join(values) + ">"
             additional = schema.get("additionalProperties", {})
             return "Record<string, " + (ts(additional) if isinstance(additional, dict) else "unknown") + ">"
         required = schema.get("required", [])

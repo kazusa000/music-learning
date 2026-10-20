@@ -14,6 +14,25 @@ export class Transport {
   liveSequence=0;referenceSequence=0;referenceClient=crypto.randomUUID().replaceAll('-','');
   streams=new Map<string,{epoch:number;timer?:ReturnType<typeof setTimeout>;nodes:Set<AudioBufferSourceNode>;session:LiveTrack}>();
   liveErrors:Record<string,string>={};
+  primes=new Map<string,Promise<AudioBuffer>>();
+  playLatencyMs=0;firstSoundLatencyMs=0;playRequestedAt=0;
+  primeKey(live:LiveTrack,sample:number,frames:number){return `${live.session_id}:${live.generation}:${sample}:${frames}`;}
+  async liveBuffer(live:LiveTrack,sample:number,frames:number){
+    const part=await call<{pcm_f32le:string;frames:number}>('playback.live.chunk',{session_id:live.session_id,generation:live.generation,sample,frames});
+    const raw=atob(part.pcm_f32le),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+    const values=new Float32Array(bytes.buffer),buffer=this.context!.createBuffer(2,part.frames,live.sample_rate);
+    for(let ch=0;ch<2;ch++){const data=buffer.getChannelData(ch);for(let i=0;i<part.frames;i++)data[i]=values[i*2+ch];}return buffer;
+  }
+  primeLive(ids:string[],offset:number,loop:{enabled:boolean;start:number;end:number}){
+    const keep=new Set<string>();
+    const requests=ids.flatMap(id=>{const live=this.channels.get(id)?.live;if(!live)return [];
+      const sample=Math.round(offset*live.sample_rate),boundary=loop.enabled?Math.round(loop.end*live.sample_rate):live.duration_samples,frames=Math.min(4096,boundary-sample);
+      if(frames<=0)return [];const key=this.primeKey(live,sample,frames);keep.add(key);
+      if(!this.primes.has(key)){const request=this.liveBuffer(live,sample,frames);this.primes.set(key,request);void request.catch(()=>{if(this.primes.get(key)===request)this.primes.delete(key);});}
+      return [this.primes.get(key)!.then(buffer=>({id,buffer,sample}))];});
+    for(const key of this.primes.keys())if(!keep.has(key))this.primes.delete(key);
+    return Promise.all(requests);
+  }
   async prepareLive(projectId:string,revisionId:string,trackId:string,sequence:number,clientId=this.liveClient):Promise<LiveTrack>{
     let live=await call<LiveTrack>('playback.live.open',{project_id:projectId,revision_id:revisionId,track_id:trackId,client_id:clientId,client_sequence:sequence});
     while(live.status==='loading'&&!this.disposed&&(clientId!==this.liveClient||sequence===this.liveSequence)){await new Promise(resolve=>setTimeout(resolve,30));live=await call<LiveTrack>('playback.live.status',{session_id:live.session_id});}
@@ -22,7 +41,7 @@ export class Transport {
   stopStream(id:string,close=false){const stream=this.streams.get(id);if(!stream)return;this.streams.delete(id);clearTimeout(stream.timer);for(const source of stream.nodes){try{source.stop();}catch{/* ended */}}
     if(close)void call('playback.live.close',{session_id:stream.session.session_id}).catch(()=>{});
   }
-  liveVoice(id:string,live:LiveTrack){
+  liveVoice(id:string,live:LiveTrack,first?:{buffer:AudioBuffer;sample:number;when:number}){
     const prior=this.streams.get(id);if(prior?.session.session_id===live.session_id&&prior.session.generation===live.generation)return;
     // Existing audio stays connected until the replacement has its first PCM.
     const context=this.context!,epoch=++this.streamEpoch,stream={epoch,nodes:new Set<AudioBufferSourceNode>(),session:live,timer:undefined as ReturnType<typeof setTimeout>|undefined};
@@ -32,17 +51,19 @@ export class Transport {
       if(!this.playing||this.disposed||this.streams.get(id)!==stream)return;
       try{
         while(!connected||nextWhen<context.currentTime+.12){
-          const when=connected?nextWhen:context.currentTime+.03;
-          if(!connected||when<context.currentTime+.015){nextSample=Math.round(this.at(Math.max(when,context.currentTime+.03))*live.sample_rate);nextWhen=Math.max(when,context.currentTime+.03);}
+          const when=first?first.when:connected?nextWhen:context.currentTime+.03;
+          if(first){nextWhen=first.when;nextSample=first.sample;}
+          if(!first&&!connected){nextSample=Math.round(this.at(when)*live.sample_rate);nextWhen=when;}
           const boundary=this.loop?Math.round(this.loopEnd*live.sample_rate):live.duration_samples;
           if(nextSample>=boundary){if(this.loop)nextSample=Math.round(this.loopStart*live.sample_rate);else return;}
           const frames=Math.min(4096,boundary-nextSample);
-          const part=await call<{pcm_f32le:string;frames:number;generation:number}>('playback.live.chunk',{session_id:live.session_id,generation:live.generation,sample:nextSample,frames});
+          const buffer=first?.buffer??await this.liveBuffer(live,nextSample,frames);first=undefined;
           if(!this.playing||this.streams.get(id)!==stream)return;
-          if(nextWhen<context.currentTime+.008){nextWhen=context.currentTime+.03;nextSample=Math.round(this.at(nextWhen)*live.sample_rate);continue;}
-          const raw=atob(part.pcm_f32le),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
-          const values=new Float32Array(bytes.buffer),buffer=context.createBuffer(2,part.frames,live.sample_rate);
-          for(let ch=0;ch<2;ch++){const data=buffer.getChannelData(ch);for(let i=0;i<part.frames;i++)data[i]=values[i*2+ch];}
+          // Keep advancing through returned PCM. Re-seeking every late request
+          // caused a permanent silent retry loop on the full-size project.
+          const skip=Math.max(0,Math.ceil((context.currentTime+.008-nextWhen)*live.sample_rate));
+          if(skip>=buffer.length){nextWhen+=buffer.duration;nextSample+=buffer.length;continue;}
+          const audibleWhen=nextWhen+skip/live.sample_rate;
           if(!connected){
             const old=this.voices.get(id);if(old){old.gain.gain.setTargetAtTime(0,nextWhen,.003);setTimeout(()=>{old.gain.disconnect();old.meter?.disconnect();},Math.max(0,(nextWhen-context.currentTime+.03)*1000));try{old.source.stop(nextWhen+.02);}catch{/* stream placeholder */}}
             if(prior){clearTimeout(prior.timer);for(const n of prior.nodes){try{n.stop(nextWhen+.02);}catch{/* ended */}}if(prior.session.session_id!==live.session_id)void call('playback.live.close',{session_id:prior.session.session_id}).catch(()=>{});}
@@ -52,8 +73,9 @@ export class Transport {
             this.voices.set(id,{source:context.createBufferSource(),gain,left,right,meter,assetId:this.channels.get(id)?.assetId});connected=true;delete this.liveErrors[id];this.route(this.activeIds);
           }
           const source=context.createBufferSource(),split=context.createChannelSplitter(2);source.buffer=buffer;source.connect(split);split.connect(left!,0);split.connect(right!,1);
-          source.start(nextWhen);stream.nodes.add(source);source.onended=()=>{stream.nodes.delete(source);source.disconnect();split.disconnect();};
-          nextWhen+=part.frames/live.sample_rate;nextSample+=part.frames;
+          source.start(audibleWhen,skip/live.sample_rate);if(!this.firstSoundLatencyMs)this.firstSoundLatencyMs=performance.now()-this.playRequestedAt+Math.max(0,audibleWhen-context.currentTime)*1000;
+          stream.nodes.add(source);source.onended=()=>{stream.nodes.delete(source);source.disconnect();split.disconnect();};
+          nextWhen+=buffer.duration;nextSample+=buffer.length;
         }
       }catch(error){if(this.streams.get(id)===stream){const e=error as Error&{code?:string};if(e.code==='live_superseded'||e.code==='live_not_ready')return;this.liveErrors[id]=e.message;return;}}
       if(this.streams.get(id)===stream)stream.timer=setTimeout(()=>void pump(),12);
@@ -109,11 +131,12 @@ export class Transport {
   async warm(ids:string[]){
     const generation=++this.warmGeneration,queue=[...new Set(ids)].filter(id=>!this.channels.get(id)?.live);
     // Two decoders; only this revision's source/mix/stems are retained.
-    for(const id of this.buffers.keys())if(!queue.includes(id)&&!this.voices.has(id)){this.buffers.delete(id);this.levels.delete(id);}
+    const keep=new Set(queue);for(const id of queue){const asset=this.channels.get(id)?.assetId;if(asset)keep.add(asset);const family=this.families.get(id);if(family)keep.add(family);}
+    for(const id of this.buffers.keys())if(!keep.has(id)&&!this.voices.has(id)){this.buffers.delete(id);this.levels.delete(id);}
     await Promise.all([0,1].map(async()=>{while(queue.length&&generation===this.warmGeneration&&!this.disposed){const id=queue.shift()!;try{await this.buffer(id);}catch(error){console.warn('Audio preload:',error);}}}));
   }
-  voice(id:string,when:number,position:number){
-    const live=this.channels.get(id)?.live;if(live){this.liveVoice(id,live);return;}
+  voice(id:string,when:number,position:number,first?:{buffer:AudioBuffer;sample:number}){
+    const live=this.channels.get(id)?.live;if(live){this.liveVoice(id,live,first?{...first,when}:undefined);return;}
     this.stopStream(id);
     const context=this.context!,buffer=this.buffers.get(id)!;
     const source=context.createBufferSource(),gain=context.createGain();source.buffer=buffer;
@@ -138,7 +161,7 @@ export class Transport {
   async activate() {
     this.context ??= new AudioContext({latencyHint:'interactive'});
     if(this.context.state!=='running'&&!navigator.userActivation.hasBeenActive)throw new Error('请点击播放以启用浏览器音频。');
-    await this.context.resume();
+    if(this.context.state!=='running')await this.context.resume();
     if (this.context.state !== 'running') throw new Error('请点击播放以启用浏览器音频。');
   }
   at(clock:number) {
@@ -169,7 +192,7 @@ export class Transport {
       if (!response.ok) throw new Error('音频读取失败');
       const buffer = await this.context.decodeAudioData(await response.arrayBuffer());
       if (!this.disposed) {
-        await this.measure(id,buffer);
+        if(this.matched)await this.measure(id,buffer);
         if(!this.disposed){
           const resident=new Set([...this.buffers.values(),buffer]);let bytes=Array.from(resident).reduce((n,b)=>n+b.length*b.numberOfChannels*4,0);
           for(const [key,existing] of this.buffers){if(bytes<=1024**3)break;if(!this.voices.has(key)){this.buffers.delete(key);if(!Array.from(this.buffers.values()).includes(existing))bytes-=existing.length*existing.numberOfChannels*4;}}
@@ -183,7 +206,10 @@ export class Transport {
   async play(ids:string[], offset:number, loop:{enabled:boolean;start:number;end:number}, preserve=false) {
     const generation = ++this.generation;
     if (!ids.length) {this.pause(); return;}
-    await this.activate();
+    const sameLoop=this.loop===loop.enabled&&this.loopStart===loop.start&&this.loopEnd===loop.end;
+    if(preserve&&this.playing&&sameLoop&&ids.length===this.activeIds.length&&ids.every(id=>this.activeIds.includes(id)&&this.voices.get(id)?.assetId===(this.channels.get(id)?.assetId??id))){this.route(ids);return;}
+    this.playRequestedAt=performance.now();this.firstSoundLatencyMs=0;
+    if(this.context?.state!=='running')await this.activate();
     // A live mix shares the level of its baked reference mix. Do not start
     // with per-stem normalization while the reference is still preloading:
     // otherwise the first play changes balance/loudness after cache warm-up.
@@ -193,8 +219,10 @@ export class Transport {
     }
     const buffers = await Promise.all(ids.map(id => {const live=this.channels.get(id)?.live;return live?Promise.resolve({duration:live.duration_samples/live.sample_rate}):this.buffer(id);}));
     if (generation !== this.generation || this.disposed) return;
-    const context = this.context!, when = context.currentTime+.01;
-    const sameLoop=this.loop===loop.enabled&&this.loopStart===loop.start&&this.loopEnd===loop.end;
+    const primed=!(preserve&&this.playing)?await this.primeLive(ids,loop.enabled&&offset>=loop.end?loop.start:offset,loop):[];
+    if(generation!==this.generation||this.disposed)return;
+    const context = this.context!, when = context.currentTime+.025;
+    this.playLatencyMs=performance.now()-this.playRequestedAt;
     if(preserve&&this.playing&&sameLoop){
       this.duration=Math.max(...buffers.map(buffer=>buffer.duration));
       for(const timeline of this.timelines)timeline.duration=this.duration;
@@ -213,7 +241,7 @@ export class Transport {
     // Publish the common clock before a live channel requests its first chunk.
     this.started=when;this.playing=true;
     this.timelines.push({when,offset:this.offset,loop:this.loop,start:this.loopStart,end:this.loopEnd,duration:this.duration});
-    for(const id of ids)this.voice(id,when,this.offset);
+    for(const id of ids)this.voice(id,when,this.offset,primed.find(part=>part.id===id));
     this.route(ids);this.switches.push({at:performance.now(),ids:[...ids],reused:false});
     this.started = when;this.playing = true;
     if(this.timelines.length>12)this.timelines.shift();
@@ -221,13 +249,16 @@ export class Transport {
     if (this.schedule.length>100) this.schedule.shift();
   }
   pause() {
+    const previousIds=[...this.activeIds];
     this.offset = this.renderPosition;this.playing = false;++this.generation;this.timelines=[];
     for (const source of this.sources) {try {source.stop();} catch { /* already ended */ }}
     for(const id of this.streams.keys())this.stopStream(id);
     for(const voice of this.voices.values()){voice.gain.disconnect();voice.meter?.disconnect();}
     this.sources = [];this.voices.clear();this.activeIds=[];
+    if(previousIds.length&&!this.disposed&&this.context)void this.primeLive(previousIds,this.offset,{enabled:this.loop,start:this.loopStart,end:this.loopEnd}).catch(()=>{});
   }
   async close() {
+    this.disposed=true;this.primes.clear();
     for(const channel of this.channels.values())if(channel.live)void call('playback.live.close',{session_id:channel.live.session_id}).catch(()=>{});
     this.pause();this.disposed = true;++this.warmGeneration;this.abort.abort();this.buffers.clear();this.analyzer?.terminate();
     for(const request of this.levelPending.values())request.reject(new Error('试听已关闭'));this.levelPending.clear();

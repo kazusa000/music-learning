@@ -18,7 +18,7 @@ def test_migration_backup_restart_and_foreign_keys(settings, service, project):
     with database.engine.connect() as db:
         assert db.exec_driver_sql("PRAGMA journal_mode").scalar() == "wal"
         assert db.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
-        assert db.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "0008"
+        assert db.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "0009"
         assert set(t.entities) <= set(x[0] for x in db.exec_driver_sql("SELECT name FROM sqlite_master"))
     backup = database.backup()
     with sqlite3.connect(backup) as db:

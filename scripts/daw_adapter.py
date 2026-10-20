@@ -519,9 +519,12 @@ class Production:
         else:
             path = self.directory / "export.mid"
             export_midi(c.Snapshot.model_validate(self.job["snapshot"]), path, self.job["revision_id"])
-        return dict(
+        result = dict(
             format=payload["format"], asset_id=self.add(path), snapshot_sha256=self.job["snapshot_sha256"]
         )
+        if "mixing_tracks" in payload:
+            result.update(mixing_version=payload["mixing_version"], arrangement_snapshot_sha256=self.job["arrangement_snapshot_sha256"])
+        return result
 
     def hybrid(self):
         from contextlib import ExitStack

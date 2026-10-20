@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新用户要求（2026-10-20）：先读 docs/37-arrangement-monitoring-and-mixing.md。编曲与混音隔离；编曲页仅临时独奏/静音，不提交mixer.set、不写音乐revision或混音配置。推子/声像仅独立混音页，mixing.get/save用独立version，手动保存；0009新增project_mix_settings。最终WAV显式固定mixing_version，冻结配置、单独制作快照，不发布为编曲Render。首页/工作台不自动电平匹配。播放首块预取后共同时钟启动，暂停缓存重用，不重复resume/不因慢块无限丢弃。旧SDK mixer.set兼容保留；新页面不调用。67操作/11任务，155完整后端+新增原生导出及浏览器305秒9378音符通过。Keyscape后台仍按既有保护继续，未改验证实现/库/固定宿主/报告。
+
 最新交互契约（2026-10-20）：先读 docs/36-settings-and-live-tracks.md。主页设置与讨论共用持久默认模型/登录/电平；0008仅新增偏好和手动快照。版本列表用versions.list/save，自动保存的内部revision仍不可变但不刷入用户保存版本。日常音符/音色/加轨/mixer/AI改编禁止自动排队整曲project.render；直达主输出音轨用独立常驻ml_track_host，小块PCM进入现有实时混音，普通音符用增量、资源变化只开该轨。整曲WAV留给显式导出。generation/当前head/幂等/fencing/素材和插件完整状态校验保留。A/B可直接播放无完整Render的快照。153项后端、305秒9378音符真实sfizz与浏览器连续流程通过，新增/修改文件Ruff及契约/前端构建通过。65操作/11任务；复杂总线/发送/侧链仍属离线图，不能伪称常驻支持。Keyscape全量批次仍运行，不改验证实现、分支名、固定宿主、报告或库文件，不开第二批；本专项sfizz/夹具验证不得被表述为Keyscape实时验收。详见新增文档及后续收尾证据。
 
 当前全量后台验证（2026-10-20）：用户明确授权跑完剩余435款、失败独立记录且不动正式工程。已启动独立监督进程 scripts/run_keyscape_full.py；请求定位在忽略的 runtime/keyscape-full-job.local.json。任务为 H:\music\Sound Library\Spectrasonics\verification-jobs\20261020-160728-full-4ae3f058，实际队列同名位于 verification-runs。不要再并行启动第二批。监督进程的 status.json 记录实际PID/creation_time/心跳，Windows Job Object拥有验证器和原生子进程；已复制原生宿主到该任务host目录固定SHA，禁止在运行时替换插件/样本或验证实现。20已验项目未重新加入，本批435。失败细节实时存queue逐项error，结束导出failures.json/csv；只读SQLite回读所有正式head/快照/任务数。结束自动更新并仅提交docs/benchmarks/keyscape-full-verification.md，分支或报告被用户改动时保留证据并记录Git阻塞，不覆盖用户修改。其他通过项不会被单项跨乐器相同音频拒绝连带丢弃。查询进度应读实际progress.json，不把目录可选总数20当本批处理进度。后续验收以最终status/report为准，目前运行中，不能声称435已完成。

@@ -2069,6 +2069,37 @@
       "title": "Meter",
       "type": "object"
     },
+    "MixValues": {
+      "additionalProperties": false,
+      "properties": {
+        "gain_db": {
+          "default": 0,
+          "maximum": 24,
+          "minimum": -120,
+          "title": "Gain Db",
+          "type": "number"
+        },
+        "pan": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Pan",
+          "type": "number"
+        },
+        "mute": {
+          "default": false,
+          "title": "Mute",
+          "type": "boolean"
+        },
+        "solo": {
+          "default": false,
+          "title": "Solo",
+          "type": "boolean"
+        }
+      },
+      "title": "MixValues",
+      "type": "object"
+    },
     "MixerPatch": {
       "additionalProperties": false,
       "properties": {
@@ -2178,6 +2209,30 @@
         "playback"
       ],
       "title": "MixerResult",
+      "type": "object"
+    },
+    "MixingState": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        },
+        "tracks": {
+          "patternProperties": {
+            "^[a-f0-9]{32}$": {
+              "$ref": "#/$defs/MixValues"
+            }
+          },
+          "title": "Tracks",
+          "type": "object"
+        }
+      },
+      "required": [
+        "version",
+        "tracks"
+      ],
+      "title": "MixingState",
       "type": "object"
     },
     "ModelCatalog": {
@@ -3900,6 +3955,38 @@
         "id"
       ],
       "title": "RoutingGraph",
+      "type": "object"
+    },
+    "SaveMixing": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "expected_version": {
+          "minimum": 0,
+          "title": "Expected Version",
+          "type": "integer"
+        },
+        "tracks": {
+          "maxProperties": 256,
+          "patternProperties": {
+            "^[a-f0-9]{32}$": {
+              "$ref": "#/$defs/MixValues"
+            }
+          },
+          "title": "Tracks",
+          "type": "object"
+        }
+      },
+      "required": [
+        "project_id",
+        "expected_version",
+        "tracks"
+      ],
+      "title": "SaveMixing",
       "type": "object"
     },
     "SaveNote": {
@@ -6630,6 +6717,62 @@
           "playback"
         ],
         "title": "MixerResult",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "mixing.get": {
+      "arguments": "ProjectRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "tracks": {
+            "patternProperties": {
+              "^[a-f0-9]{32}$": {
+                "$ref": "#/$defs/MixValues"
+              }
+            },
+            "title": "Tracks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "version",
+          "tracks"
+        ],
+        "title": "MixingState",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "mixing.save": {
+      "arguments": "SaveMixing",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "tracks": {
+            "patternProperties": {
+              "^[a-f0-9]{32}$": {
+                "$ref": "#/$defs/MixValues"
+              }
+            },
+            "title": "Tracks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "version",
+          "tracks"
+        ],
+        "title": "MixingState",
         "type": "object"
       },
       "mutates": true

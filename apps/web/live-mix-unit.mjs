@@ -13,13 +13,14 @@ assert.deepEqual(channelGains({...channel,bakedPan:.5,values:{gain_db:-12,pan:0}
 // Exercise actual transport routing, independent voices for identical PCM, and
 // source replacement with a deterministic Web Audio contract double.
 let sourceCode=await readFile(new URL('./src/transport.ts',import.meta.url),'utf8');
-for(const module of ['listeningLevel','liveMix'])sourceCode=sourceCode.replace(`'./${module}'`,JSON.stringify(new URL('./src/'+module+'.ts',import.meta.url).href));
+for(const module of ['listeningLevel','liveMix','api'])sourceCode=sourceCode.replace(`'./${module}'`,JSON.stringify(new URL('./src/'+module+'.ts',import.meta.url).href));
 const javascript=ts.transpileModule(sourceCode,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText;
 const {Transport}=await import('data:text/javascript;base64,'+Buffer.from(javascript).toString('base64'));
 const starts=[];
 const param=()=>({value:0,cancelScheduledValues(){},setTargetAtTime(value){this.value=value;}});
 const node=()=>({connect(){},disconnect(){},gain:param()});
-const context={state:'running',currentTime:0,destination:node(),resume:async()=>{},createGain:node,createChannelSplitter:node,createChannelMerger:node,
+let resumes=0;
+const context={state:'running',currentTime:0,destination:node(),resume:async()=>{resumes++;},createGain:node,createChannelSplitter:node,createChannelMerger:node,
   createAnalyser:()=>({...node(),fftSize:512,getFloatTimeDomainData(values){values.fill(0);}}),
   createBufferSource:()=>({...node(),start(when,offset){starts.push({when,offset});},stop(){}})};
 const transport=new Transport();transport.context=context;transport.matched=false;
@@ -55,6 +56,17 @@ assert.equal(transport.voices.get('track:b').right.gain.value,1);
 assert.equal(transport.voices.get('track:a').left.gain.value,1);
 assert.equal(starts.length,beforeMixerChanges);
 transport.pause();
+assert.equal(resumes,0,'already-running contexts must not resume again');
+// Background refresh retains the actual decoded asset as well as its alias.
+await transport.warm(['track:a','track:b']);
+assert.ok(transport.buffers.has('shared'));
+const beforeFast=starts.length;
+await transport.play(['track:a','track:b'],0,{enabled:true,start:0,end:2});
+const decode=transport.buffer.bind(transport);
+transport.buffer=async()=>{throw new Error('mixer route unexpectedly waited for decode');};
+await transport.play(['track:a','track:b'],0,{enabled:true,start:0,end:2},true);
+assert.equal(starts.length,beforeFast+2);transport.pause();
+transport.buffer=decode;
 const pausedStarts=starts.length;
 transport.configureChannels([{...channel,values:{gain_db:-6,mute:true}},{...channel,id:'b',values:{gain_db:-12,solo:true}}]);
 assert.equal(starts.length,pausedStarts);

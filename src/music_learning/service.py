@@ -151,7 +151,7 @@ class Service:
                         project_id = row(db, t.jobs, "id", args.job_id)["project_id"]
                     if project_id:
                         project = row(db, t.projects, "id", project_id)
-                        if request.expected_revision != project["current_revision"]:
+                        if request.operation != "mixing.save" and request.expected_revision != project["current_revision"]:
                             raise DomainError(
                                 "revision_conflict",
                                 "Expected revision differs from project head",
@@ -352,6 +352,9 @@ class Service:
             from .checkpoints import dispatch
 
             return dispatch(self, db, op, args, request)
+        if op in ("mixing.get", "mixing.save"):
+            from .mixing import dispatch
+            return dispatch(self, db, op, args, request)
         if op in ("playback.get", "mixer.set"):
             from .playback import dispatch
 
@@ -400,7 +403,7 @@ class Service:
                     name: {
                         "mutates": write,
                         "requires_expected_revision": write
-                        and name not in ("projects.create", "application.settings.set"),
+                        and name not in ("projects.create", "application.settings.set", "mixing.save"),
                         "arguments_schema": model.model_json_schema(),
                         "result_schema": TypeAdapter(c.RESULT_TYPES[name]).json_schema(),
                     }

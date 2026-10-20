@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import copy
+import hashlib
 import time
 from sqlalchemy import insert, select, update
 from . import contracts as c, schema_v1 as t, schema_v3 as v3
-from .service import emit, row
+from .service import emit, row, canonical
 
 PAYLOADS = {
     "project.render": c.RenderPayload,
@@ -54,7 +56,16 @@ def submit(service, db, args, request):
         if not 0 <= payload["start_sample"] < end <= snapshot.duration_samples:
             raise ValueError("invalid render interval")
         payload["end_sample"] = end
-    if args.kind == "project.export" and payload["format"] == "wav":
+    if payload.get("mixing_version") is not None:
+        from .mixing import view
+        if args.kind != "project.export" or payload["format"] != "wav" or payload["render_job_id"]:
+            raise ValueError("Independent mixing requires a WAV export without a render override")
+        profile = view(db, args.project_id, revision["snapshot"])
+        if profile["version"] != payload["mixing_version"]:
+            from .service import DomainError
+            raise DomainError("mixing_conflict", "混音设置已更新，请刷新后导出。", 409)
+        payload.update(mixing_tracks=profile["tracks"], prepare_mix=True)
+    if args.kind == "project.export" and payload["format"] == "wav" and payload.get("mixing_version") is None:
         if not payload["render_job_id"]:
             existing = db.execute(
                 select(v3.renders.c.payload)
@@ -193,6 +204,12 @@ def prepare(service, db, job):
     revision = row(db, t.revisions, "id", job["revision_id"])
     job["snapshot"] = revision["snapshot"]
     job["snapshot_sha256"] = revision["snapshot_sha256"]
+    if "mixing_tracks" in job["payload"]:
+        job["snapshot"] = copy.deepcopy(revision["snapshot"])
+        for track in job["snapshot"]["tracks"]:
+            track.update(job["payload"]["mixing_tracks"][track["id"]])
+        job["arrangement_snapshot_sha256"] = revision["snapshot_sha256"]
+        job["snapshot_sha256"] = hashlib.sha256(canonical(job["snapshot"]).encode()).hexdigest()
     if job["kind"] == "project.render" or job["payload"].get("prepare_mix"):
         from .playback import sources
 
@@ -209,7 +226,7 @@ def prepare(service, db, job):
                 exact_mixer=True,
                 tail_samples=round(payload["tail_seconds"] * revision["snapshot"]["sample_rate"]),
             )
-            if payload["start_sample"] == 0
+            if "mixing_tracks" not in job["payload"] and payload["start_sample"] == 0
             and payload["end_sample"] == revision["snapshot"]["duration_samples"]
             else {}
         )

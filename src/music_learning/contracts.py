@@ -844,6 +844,7 @@ class ExportPayload(Model):
     end_sample: Sample | None = None
     fade_seconds: float = Field(default=0.02, ge=0, le=1)
     replacement_gain_db: float = Field(default=0, ge=-120, le=24)
+    mixing_version: int | None = Field(default=None, ge=0, strict=True)
 
 
 class AuditionState(Model):
@@ -876,6 +877,23 @@ class MixerPatch(Model):
 class SetMixer(ProjectRef):
     tracks: list[MixerPatch] = Field(min_length=1, max_length=256)
     description: str = Field(default="调整音轨混音", min_length=1, max_length=2000)
+
+
+class MixValues(Model):
+    gain_db: float = Field(default=0, ge=-120, le=24)
+    pan: float = Field(default=0, ge=-1, le=1)
+    mute: bool = False
+    solo: bool = False
+
+
+class SaveMixing(ProjectRef):
+    expected_version: int = Field(ge=0, strict=True)
+    tracks: dict[Id, MixValues] = Field(max_length=256)
+
+
+class MixingState(Model):
+    version: int
+    tracks: dict[Id, MixValues]
 
 
 class PlaybackStem(Model):
@@ -1100,6 +1118,8 @@ OPERATIONS = {
     "audition.get": (ProjectRef, False),
     "playback.get": (RevisionRef, False),
     "mixer.set": (SetMixer, True),
+    "mixing.get": (ProjectRef, False),
+    "mixing.save": (SaveMixing, True),
     "audition.set": (SetAudition, True),
     "audition.report": (ReportAudition, True),
     "music.query": (MusicQuery, False),
@@ -1171,6 +1191,8 @@ RESULT_TYPES = {
     "audition.get": dict,
     "playback.get": PlaybackPlan,
     "mixer.set": MixerResult,
+    "mixing.get": MixingState,
+    "mixing.save": MixingState,
     "audition.set": dict,
     "audition.report": dict,
     "music.query": dict,
