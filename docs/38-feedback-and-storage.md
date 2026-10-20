@@ -21,6 +21,22 @@
 
 扫描期间仍有后台任务，数字是当时快照。原始审计在忽略目录 `data/benchmarks/storage-unique-20261020.json`；首次扫描 `storage-audit-20261020.json` 的 unique 字段因 Windows DirEntry inode 为零不可用，只可参考其目录明细。后续清理必须先核对活动任务、CAS 引用、原曲、模型原输出和备份依赖；本次没有删除文件，也未实现自动保留/回收策略。
 
+### 用户询问哪些可删后的清单
+
+再次只读核对，正式任务没有 queued/running/cancel_requested；Keyscape 原批次仍运行。以下精确路径记录在忽略的 `data/benchmarks/cleanup-whitelist-20261020.json`，没有执行删除：
+
+| 第一批候选 | 数量 | 目录大小 | 按候选内链接计数，最后链接对应的内容长度 |
+| --- | ---: | ---: | ---: |
+| data/tmp 下已结束的 pytest 目录 | 88 | 3.908 GiB | 3.677 GiB |
+| runtime/downloads 下 zip/exe 安装归档 | 6 | 0.512 GiB | 0.512 GiB |
+| data/app-data/backups 的旧数据库备份 | 8 | 1.402 GiB | 1.402 GiB |
+
+备份保留最近两份 `projects-1792514058396072800.sqlite3` 与 `projects-1792510122437148600.sqlite3`，不是删除 backups 整目录。第一批独立内容长度约 5.59 GiB，不是实测释放量。检查未发现候选路径出现在当前进程 cwd/参数中；实际清理前还须重查，并跳过重解析点。`data/tmp` 是 Codex/模型使用的临时根，不能整目录删除。
+
+已完成的 19 个 project.render 工作目录共 26.907 GiB，其中最后链接内容约 16.048 GiB，包括约 7.77 GiB 临时资源副本及多组未发布/重复音频；这是第二批可核验候选，不是整目录删除白名单。失败预处理目录也不能按 failed 标签就删：其已完成阶段可能有需要保留的原始模型产物。必须逐项确认 CAS 发布、内容一致及恢复依赖，保留日志/清单/原始输出后再列入清理。
+
+`data/benchmarks` 当前 6.25 GiB 包含原始模型验证、真值夹具和浏览器证据，不能全部当垃圾删除。`data/uv-cache` 的 7.36 GiB 大多与环境共享，按本次链接计数只有约 0.07 GiB 内容可单独回收，非优先目标。保留 objects、正式数据库/用户工程、模型和环境、H 音源库及正在运行的 Keyscape 验证目录。
+
 ## 音色准备误用了整曲预算
 
 正式失败任务 `2098b97767b6482bba83a65fad2d25a3` 的 LA Custom C7 - Natural 资源清单只有 195,753 字节；Keyscape 大采样由 H 盘安装库引用。失败原因是小型捕获任务沿用了整曲流水线默认 3 GiB 剩余空间门槛，不代表要复制整套 Keyscape 到 E 盘。
