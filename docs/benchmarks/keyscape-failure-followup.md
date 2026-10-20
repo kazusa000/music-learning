@@ -16,4 +16,4 @@
 
 `LA Custom C7 - Classical` 的首次探测：原生进程退出码 0，生成 `probe.wav`，但响应含非法 UTF-8，Python 严格解码失败。非法字节位于 `/result/tracks/0/plugin_readback_after/0/buses/0/name`，属于音频输出总线名称。原生诊断目录为原批次 `native/af3ab4b2953844dfafb8d9de018e4e88`。需检查插件字符串边界和宿主序列化路径；现有证据不代表音色损坏，也不代表重开验证已经通过。
 
-当前计划阶段未修改运行中的验证器，尚未执行失败重试。最终统计以批次结束后的实际记录为准。
+原批已完成，当前修复及重试进展见 [失败项重试](keyscape-failure-retry.md)。后续唤醒先检查 `runtime/keyscape-retry-job.local.json`，若该任务运行中只读检查，若已经完成则核对并收尾，不再新建重复队列。

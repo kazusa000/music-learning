@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新 Keyscape 失败重试（2026-10-20）：原435批次已全部结束（415通过、20失败，现有435可选），原监督进程退出并提交fe244c2。20份失败均是输出总线名称未初始化内容导致无效UTF-8，已修共享BusInfo读取并保留严格协议/发声/重开/身份校验；固定JUCE内容摘要的CMake补丁及C++回归见cmake/PatchJuceVst3.cmake、native/include/Vst3BusInfo.h。仅为原20项建独立新指纹重试，优先读docs/benchmarks/keyscape-failure-retry.md和runtime/keyscape-retry-job.local.json；存在活动重试就只读观察，不因原批完成重复开批。原批全库对比false含授权清理/用户编辑的外部变化，不能改旧基线。正式音乐和NAS不写，原批证据保留。
+
 最新 Pianoteq 9.1.2 检查（2026-10-20）：先读 docs/benchmarks/pianoteq912-intake.md。用户新包已独立提取至 H:\music\Sound Library\Pianoteq 9.1.2，VST3 扫描9.1.2、797原厂预设完整导出成功；自带程序钢琴/电钢/吉他输出不同PCM，但当前VST3预设与IComponent加载仍回读同状态，未入库。实际模块均来自新H目录，不再要求用户换第三个包，下一步查共享加载兼容。未修改运行中的Keyscape验证或宿主。正式head/快照前后相同，任务19->20为并发instrument.capture，不能报全库一致。本次新目录临时文件清理亦被自动审批拒绝，未执行、禁止换工具绕过；与此前两处清理拒绝均保留真实记录。
 
 最新即时音量与素材保留（2026-10-20）：先读 docs/39-current-project-retention.md。本次用户明确要求拖动音量不保存：编曲推子只改本地 gain，松手/失焦/离开不请求保存，不创建音频；仅手动 versions.save(track_levels) 原子记录音量与 checkpoint。独奏时其他轨有效静音按钮亮起，取消恢复手动静音。0010、70操作/11任务，storage.plan/collect/status 共用 Service/API/SDK/CLI；素材只按当前 head+手动 checkpoint 及其依赖保留，内部历史/回执不再永久保活旧音色/试听，活动工作阻止回收，短期未绑定素材到期复核。不得触碰 H 音源、NAS、Keyscape 受保护批次或此前清理被拒的两个目录。173后端及独立双轨真实浏览器通过，正式已部署0010，清掉860个旧CAS对象约3.66GiB，保留2830对象约2.57GiB并全部SHA通过；head/24内部修订/19任务/9378音符不变。Keyscape原PID及11项保护摘要不变。当前data/app-data/live下三个旧会话目录和data/t/u-b8lb7smo夹具删除也被自动审批拒绝，不得换工具绕过，详见docs/39。

@@ -9,6 +9,7 @@ if(NOT EXISTS "${JUCE_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR "JUCE is missing. Run scripts/bootstrap_native.py first.")
 endif()
 set(JUCE_MODULES_ONLY OFF CACHE BOOL "Build JUCE helpers for the VST3 test fixture" FORCE)
+include(cmake/PatchJuceVst3.cmake)
 if(MSVC)
     add_compile_options(/utf-8)
 endif()
@@ -26,6 +27,7 @@ target_compile_definitions(ml_audio_runtime PUBLIC
     JUCE_USE_MP3AUDIOFORMAT=0
     JUCE_USE_WINDOWS_MEDIA_FORMAT=0)
 target_include_directories(ml_audio_runtime PUBLIC "${JUCE_ROOT}/modules")
+target_include_directories(ml_audio_runtime PRIVATE "${CMAKE_SOURCE_DIR}/native/include")
 target_link_libraries(ml_audio_runtime PRIVATE
     juce::juce_audio_processors_headless
     juce::juce_audio_formats
@@ -39,6 +41,9 @@ endif()
 set_target_properties(ml_audio_host PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 enable_testing()
 add_test(NAME host_capabilities COMMAND ml_audio_host --capabilities)
+add_executable(ml_test_vst3_bus_info native/tests/Vst3BusInfo.cpp)
+target_include_directories(ml_test_vst3_bus_info PRIVATE "${CMAKE_SOURCE_DIR}/native/include")
+add_test(NAME vst3_bus_info COMMAND ml_test_vst3_bus_info)
 
 juce_add_plugin(MLFixture
     COMPANY_NAME "Music Learning"
