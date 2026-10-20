@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import ts from 'typescript';
+const source=await readFile(new URL('./src/manualPreset.ts',import.meta.url),'utf8');
+const {switchPreset,presetOperations,hasTrackContent}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText).toString('base64'));
+const clone=x=>structuredClone(x);
+const track={id:'track',kind:'instrument',name:'Guitar',gain_db:-12,pan:.2};
+const instrument={id:'instrument',track_id:'track',order:0,class_id:'old',state_asset_id:'old-state',parameters:{gain:.8},bypass:true};
+const effect={id:'effect',track_id:'track',order:1,class_id:'fx',state_asset_id:'fx-state',parameters:{mix:.2}};
+const base={id:'base',project_id:'project',snapshot:{duration_samples:44100,tracks:[track],plugins:[instrument,effect],notes:[{id:'note',pitch:60}],automation:[{id:'old-lane',plugin_id:'instrument',parameter_id:'gain'},{id:'effect-lane',plugin_id:'effect',parameter_id:'mix'}]}};
+const captured={class_id:'new',state_asset_id:'new-state',descriptor_asset_id:'descriptor',parameters:{volume:.5}};
+const choice={id:'piano',name:'Piano',presetId:'chosen',presetName:'Chosen'};
+let current=clone(base),operations,phases,commits,loads,calls,polls,failCapture,stop;
+function reset(){current=clone(base);operations=[];phases=[];commits=0;loads=0;calls=[];polls=0;failCapture=false;stop=false;}
+const api=async(op,args)=>{calls.push(op);if(op==='jobs.submit')return{id:'job',status:'queued'};if(op==='jobs.get')return failCapture?{id:'job',status:'failed',error:{message:'read failed'}}:{id:'job',status:++polls===1?'running':'succeeded',result:{plugin:captured}};if(op==='projects.get')return{current_revision:current.id};if(op==='revisions.get')return current;throw Error('Unexpected '+op);};
+const run=(overrides={})=>switchPreset({api,base,trackId:'track',targetId:'instrument',choice,progress:p=>phases.push(p),active:()=>!stop,sleep:async()=>{},commit:async(rev,ops)=>{commits++;assert.equal(rev.id,current.id);operations=ops;return{...rev,id:'changed'};},load:async()=>{loads++;},...overrides});
+reset();await run();assert.deepEqual(phases,['capture','apply','load','done']);assert.equal(commits,1);assert.equal(loads,1);assert.deepEqual(operations,[{op:'delete',collection:'automation',id:'old-lane'},{op:'patch_plugin',id:'instrument',preset_capture_job_id:'job',bypass:false}]);assert.equal(calls.filter(x=>x==='jobs.submit').length,1);assert.ok(calls.every(x=>!x.includes('dialogue')&&!x.includes('render')&&!x.includes('versions.save')));
+reset();current={...clone(base),id:'new-note'};current.snapshot.notes[0].pitch=64;await run();assert.equal(commits,1,'unrelated note edit rebases against current head');
+reset();current.snapshot.plugins[0].parameters.gain=.2;await assert.rejects(run(),/乐器已发生变化/);assert.equal(commits,0);
+reset();failCapture=true;await assert.rejects(run(),/read failed/);assert.equal(commits,0);assert.equal(loads,0);
+reset();await assert.rejects(run({load:async()=>{throw Error('load failed');}}),/load failed/);assert.equal(commits,1);assert.ok(!phases.includes('done'),'commit does not pretend ready');
+reset();await assert.rejects(run({sleep:async()=>{stop=true;}}),/操作已离开/);assert.equal(commits,0);
+reset();const empty={...clone(base),snapshot:{...clone(base.snapshot),plugins:[effect],automation:[]}};const add=presetOperations(empty,'track',null,captured,'job');assert.equal(add[0].id,'effect');assert.equal(add[0].order,2);assert.equal(add[1].entity.track_id,'track');assert.equal(add[1].entity.class_id,'new');assert.equal(add[1].entity.order,0);
+assert.deepEqual(base.snapshot.tracks[0],track);assert.equal(base.snapshot.plugins[1].state_asset_id,'fx-state');
+console.log(JSON.stringify({status:'succeeded',coverage:'manual-swap/new-instrument/effect-chain/compatible-scope/concurrent-edit/failure/no-AI/no-render/no-checkpoint'}));
+
+assert.equal(hasTrackContent({snapshot:{notes:[],clips:[],plugins:[captured]}},'track'),false);
+assert.equal(hasTrackContent({snapshot:{notes:[{track_id:'track'}]}},'track'),true);
+assert.equal(hasTrackContent({snapshot:{clips:[{track_id:'other'}]}},'track'),false);
+assert.equal(hasTrackContent({snapshot:{frozen_tracks:{track:'asset'}}},'track'),true);

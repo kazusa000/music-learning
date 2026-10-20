@@ -35,10 +35,20 @@ export class Transport {
     for(const key of this.primes.keys())if(!keep.has(key))this.primes.delete(key);
     return Promise.all(requests);
   }
+  liveRevisionId='';
+  liveLoads=new Map<string,Promise<LiveTrack>>();
+  sequenceForRevision(revision:string,force=false){if(force||revision!==this.liveRevisionId){this.liveRevisionId=revision;this.liveSequence++;}return this.liveSequence;}
   async prepareLive(projectId:string,revisionId:string,trackId:string,sequence:number,clientId=this.liveClient):Promise<LiveTrack>{
-    let live=await call<LiveTrack>('playback.live.open',{project_id:projectId,revision_id:revisionId,track_id:trackId,client_id:clientId,client_sequence:sequence});
-    while(live.status==='loading'&&!this.disposed&&(clientId!==this.liveClient||sequence===this.liveSequence)){await new Promise(resolve=>setTimeout(resolve,30));live=await call<LiveTrack>('playback.live.status',{session_id:live.session_id});}
-    if(live.status==='failed')throw new Error(live.error??'音轨音色载入失败');return live;
+    const key=[projectId,revisionId,trackId,clientId].join(':');
+    const existing=this.liveLoads.get(key);if(existing)return existing;
+    const request=(async()=>{
+      let live=await call<LiveTrack>('playback.live.open',{project_id:projectId,revision_id:revisionId,track_id:trackId,client_id:clientId,client_sequence:sequence});
+      while(live.status==='loading'&&!this.disposed){await new Promise(resolve=>setTimeout(resolve,120));live=await call<LiveTrack>('playback.live.status',{session_id:live.session_id});}
+      if(this.disposed){void call('playback.live.close',{session_id:live.session_id}).catch(()=>{});throw new Error('播放窗口已关闭');}
+      if(live.status==='failed')throw new Error(live.error??'音轨音色载入失败');return live;
+    })();
+    this.liveLoads.set(key,request);
+    try{return await request;}finally{if(this.liveLoads.get(key)===request)this.liveLoads.delete(key);}
   }
   stopStream(id:string,close=false){const stream=this.streams.get(id);if(!stream)return;this.streams.delete(id);clearTimeout(stream.timer);for(const source of stream.nodes){try{source.stop();}catch{/* ended */}}
     if(close)void call('playback.live.close',{session_id:stream.session.session_id}).catch(()=>{});
