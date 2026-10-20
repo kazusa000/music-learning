@@ -34,6 +34,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const [liveEpoch,setLiveEpoch]=useState(0);
   const [liveTracks,setLiveTracks]=useState<Record<string,LiveTrack>>({}),[liveLoading,setLiveLoading]=useState<string[]>([]);
   const liveBindings=useRef<Record<string,LiveTrack>>({});
+  const referenceSources=useRef<{revision:string;ids:string[]}|null>(null);
   const [trackWidth,setTrackWidth]=usePanelSize('studio.track-width',190,140,480);
   const [aiWidth,setAiWidth]=usePanelSize('studio.ai-width',340,260,900);
   const body=useRef<HTMLDivElement>(null),[bodyWidth,setBodyWidth]=useState(window.innerWidth);
@@ -112,10 +113,12 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     }
     if(state.mode==='reference'){
       if(!state.reference_revision_id)throw new Error('请选择参考版本。');
+      const cached=referenceSources.current;
+      if(cached?.revision===state.reference_revision_id&&cached.ids.every(id=>!id.startsWith('track:')||player.current.channels.has(id)))return cached.ids;
       const args={project_id:head.project_id,revision_id:state.reference_revision_id};
       const [view,renders,reference,referencePlan]=await Promise.all([call<PreprocessingView>('preprocessing.get',args),call<Render[]>('renders.list',args),call<Revision>('revisions.get',args),call<PlaybackPlan>('playback.get',args)]);
       const full=renders.filter(r=>(r.start_sample??0)===0&&(r.end_sample??reference.snapshot.duration_samples)===reference.snapshot.duration_samples).at(-1)??view.publication;
-      if(full)return [full.mix_asset_id];
+      if(full){referenceSources.current={revision:reference.id,ids:[full.mix_asset_id]};return [full.mix_asset_id];}
       if(referencePlan.reason)throw new Error(referencePlan.reason);
       const transport=player.current,sequence=++transport.referenceSequence;
       const channels=await Promise.all((reference.snapshot.tracks??[]).map(async track=>{
@@ -128,7 +131,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
       transport.configureChannels([...Array.from(transport.channels.values()).filter(c=>!c.id.startsWith('reference:')),...channels]);
       const anchor=Object.values(referencePlan.tracks)[0]?.mix_asset_id??initial?.mix_asset_id;
       if(anchor)transport.family(anchor,channels.map(c=>'track:'+c.id));
-      return channels.map(c=>'track:'+c.id);
+      const ids=channels.map(c=>'track:'+c.id);referenceSources.current={revision:reference.id,ids};return ids;
     }
     if(state.mode==='original')return snapshot.source_asset_id?[snapshot.source_asset_id]:[];
     if(playback?.revision_id===state.revision_id&&!playback.reason){return (state.mode==='tracks'?(state.track_ids??[]):tracks.map(t=>t.id)).filter(id=>player.current.channels.has('track:'+id)).map(id=>'track:'+id);}
@@ -138,6 +141,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     if(ids.length!==state.track_ids?.length)throw new Error('该声部暂无此版本的渲染。');
     return ids;
   },[snapshot,head.project_id,playback]);
+  useEffect(()=>{referenceSources.current=null;},[liveEpoch]);
 
   useEffect(()=>{
     player.current=new Transport();const transport=player.current;let frame=0;
@@ -355,7 +359,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
 
   function desired(patch:Partial<AuditionState>={}):AuditionState{
     return{revision_id:revision.id,position_sample:Math.round(Math.min(duration,patch.playing===false?player.current.renderPosition:player.current.position)*rate),mode:mode as AuditionState['mode'],
-      track_ids:trackIds,level_match:false,reference_revision_id:referenceId,hybrid_job_id:hybridJobId,loop_start_sample:Math.round(loopStart*rate),loop_end_sample:Math.round((loopEnd||duration)*rate),loop,playing:player.current.playing,...patch};
+      track_ids:trackIds,level_match:false,reference_revision_id:referenceId,hybrid_job_id:hybridJobId,loop_start_sample:Math.round(loopStart*rate),loop_end_sample:Math.round((loopEnd||duration)*rate),loop,playing:player.current.playing||wantsPlaying.current,...patch};
   }
   async function cue(patch:Partial<AuditionState>){
     const generation=++requestGeneration.current,state=desired(patch);
