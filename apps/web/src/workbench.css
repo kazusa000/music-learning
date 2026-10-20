@@ -221,3 +221,8 @@
 .studio.is-mixing .arrangement { display:block; }
 .studio.is-mixing .arrangement-header { display:none; }
 .studio.is-mixing .daw-edit-tools { display:none; }
+.track-volume {display:flex;align-items:center;gap:5px;padding:6px 10px 9px;font-size:10px;color:var(--muted);}
+.track-volume input[type=range] {min-width:24px;width:100%;height:14px;padding:0;accent-color:var(--track-color);}
+.track-volume input[type=number] {width:44px;min-width:44px;padding:3px 2px;font-size:11px;text-align:right;}
+.track-card.is-muted .track-select {opacity:.48;}
+.track-actions button[data-muted-by-solo=true],.daw-mute-solo button[data-muted-by-solo=true] {background:#34303b;color:#c7aecf;border-color:#65516e;}

@@ -121,6 +121,8 @@ class Service:
                 for optional in ("session_id", "model"):
                     if hash_arguments.get(optional) is None:
                         hash_arguments.pop(optional, None)
+            if isinstance(args, c.SaveVersion) and args.track_levels is None:
+                hash_arguments.pop('track_levels',None)
             payload_hash = hashlib.sha256(
                 canonical(
                     {
@@ -159,6 +161,16 @@ class Service:
                                 {"current_revision": project["current_revision"]},
                             )
                 result = self._dispatch(db, request.operation, args, request)
+                if mutates and request.operation in (
+                    "projects.create", "projects.fork", "assets.register", "analysis.register",
+                    "revisions.commit", "revisions.restore", "edits.apply", "arrangements.apply",
+                    "versions.save", "jobs.cancel", "jobs.retry",
+                ):
+                    from .retention import request_collection
+                    owner = getattr(args, "project_id", None) or result.get("project_id") or result.get("id")
+                    if request.operation in ("jobs.cancel", "jobs.retry"):
+                        owner = row(db, t.jobs, "id", args.job_id)["project_id"]
+                    request_collection(db, owner)
                 if c.RESULT_TYPES[request.operation] is c.Project:
                     from .schema_v6 import library
 
@@ -239,6 +251,8 @@ class Service:
         ).first()
         if not linked:
             db.execute(insert(t.project_assets).values(project_id=project_id, asset_id=sha))
+        from .retention import touch_asset
+        touch_asset(db, sha)
         return row(db, t.assets, "id", sha)
 
     def commit(
@@ -255,6 +269,7 @@ class Service:
         advance_head=True,
     ):
         snapshot = c.Snapshot.model_validate(snapshot)
+        previous = {}
         if parent:
             previous = row(db, t.revisions, "id", parent)["snapshot"]
             if previous["source_asset_id"] and snapshot.source_asset_id != previous["source_asset_id"]:
@@ -348,6 +363,9 @@ class Service:
         return revision
 
     def _dispatch(self, db, op, args, request):
+        if op.startswith("storage."):
+            from .retention import dispatch
+            return dispatch(self, db, op, args, request)
         if op.startswith("versions."):
             from .checkpoints import dispatch
 

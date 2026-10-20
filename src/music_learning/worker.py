@@ -203,6 +203,8 @@ class Worker:
                 job_id=job["id"],
                 payload={"error": error},
             )
+            from .retention import request_collection
+            request_collection(db, job["project_id"])
             return True
 
     def _publish(self, db, job, result):
@@ -407,4 +409,12 @@ class Worker:
         signal.signal(signal.SIGINT, stop)
         while not self.stopping:
             if not self.run_once():
+                from .retention import run_once
+                try:
+                    run_once(self.service)
+                except Exception as error:
+                    from .schema_v10 import maintenance
+                    with self.database.transaction() as db:
+                        db.execute(update(maintenance).values(next_at=time.time()+30,
+                            report={"error":str(error),"retry_at":time.time()+30}))
                 time.sleep(0.25)

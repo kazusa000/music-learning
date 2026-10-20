@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {audibility,channelGains} from './src/liveMix.ts';
+const tracks=[{id:'a'},{id:'b'},{id:'c'}];
+let values={a:{solo:true},b:{},c:{mute:true}};
+assert.deepEqual(tracks.map(t=>audibility(tracks,values,t.id).muted),[false,true,true]);
+assert.equal(channelGains({id:'b',assetId:'b',bakedGain:0,bakedPan:0,values:values.b},true)[0],0);
+values.a.solo=false;
+assert.deepEqual(tracks.map(t=>audibility(tracks,values,t.id).muted),[false,false,true]);
+values={a:{solo:true},b:{solo:true},c:{}};
+assert.deepEqual(tracks.map(t=>audibility(tracks,values,t.id).muted),[false,false,true]);
+assert.equal(audibility(tracks,{removed:{solo:true}},'a').muted,false);
+values={a:{mute:true},b:{solo:true},c:{}};
+assert.deepEqual(tracks.map(t=>audibility(tracks,values,t.id).muted),[true,false,true]);
+values.b.solo=false;
+assert.deepEqual(tracks.map(t=>audibility(tracks,values,t.id).muted),[true,false,false]);
+assert.deepEqual(channelGains({id:'a',assetId:'a',bakedGain:0,bakedPan:0,values:{gain_db:-20}},false),[.1,.1]);
+console.log(JSON.stringify({status:'succeeded',coverage:'effective-mute/multiple-solo/manual-mute-restore/deleted-track/fader-gain'}));

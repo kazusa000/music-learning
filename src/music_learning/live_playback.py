@@ -267,6 +267,16 @@ class NativeSession:
         # Kill only this session's job, including a stuck plugin. Never wait for its lock.
         if self.owner:
             self.close_owner()
+        def dispose():
+            if not self.initialized.wait(125):
+                return
+            from .retention import remove_tree
+            with self.lock:
+                remove_tree(self.directory,self.service.settings.path('live'))
+        if self.initialized.is_set():
+            dispose()
+        else:
+            threading.Thread(target=dispose,daemon=True).start()
 
 
 class LivePlayback:

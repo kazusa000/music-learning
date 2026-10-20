@@ -4106,6 +4106,23 @@
           "minLength": 1,
           "title": "Title",
           "type": "string"
+        },
+        "track_levels": {
+          "anyOf": [
+            {
+              "patternProperties": {
+                "^[a-f0-9]{32}$": {
+                  "$ref": "#/$defs/TrackLevel"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Levels"
         }
       },
       "required": [
@@ -4847,6 +4864,22 @@
       "title": "Track",
       "type": "object"
     },
+    "TrackLevel": {
+      "additionalProperties": false,
+      "properties": {
+        "gain_db": {
+          "maximum": 24,
+          "minimum": -120,
+          "title": "Gain Db",
+          "type": "number"
+        }
+      },
+      "required": [
+        "gain_db"
+      ],
+      "title": "TrackLevel",
+      "type": "object"
+    },
     "UpdateApplicationSettings": {
       "additionalProperties": false,
       "properties": {
@@ -4894,6 +4927,30 @@
     }
   },
   "operations": {
+    "storage.plan": {
+      "arguments": "ProjectRef",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "storage.collect": {
+      "arguments": "ProjectRef",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "storage.status": {
+      "arguments": "ProjectRef",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
     "versions.list": {
       "arguments": "ProjectPage",
       "result": {

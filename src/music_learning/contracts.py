@@ -1050,8 +1050,13 @@ class UpdateApplicationSettings(Model):
     preferences: PreferencesPatch
 
 
+class TrackLevel(Model):
+    gain_db: float = Field(ge=-120, le=24)
+
+
 class SaveVersion(RevisionRef):
     title: str = Field(default="保存版本", min_length=1, max_length=200)
+    track_levels: dict[Id, TrackLevel] | None = None
 
 
 class LiveOpen(RevisionRef):
@@ -1071,6 +1076,9 @@ class LiveChunk(LiveSession):
 
 
 OPERATIONS = {
+    "storage.plan": (ProjectRef, False),
+    "storage.collect": (ProjectRef, True),
+    "storage.status": (ProjectRef, False),
     "versions.list": (ProjectPage, False),
     "versions.save": (SaveVersion, True),
     "playback.live.open": (LiveOpen, False),
@@ -1141,6 +1149,9 @@ OPERATIONS = {
 }
 
 RESULT_TYPES = {
+    "storage.plan": dict,
+    "storage.collect": dict,
+    "storage.status": dict,
     "versions.list": list[dict],
     "versions.save": dict,
     "playback.live.open": dict,
