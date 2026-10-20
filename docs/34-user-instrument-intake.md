@@ -6,7 +6,7 @@
 
 | 来源 | 已完成 | 待补或未通过 |
 | --- | --- | --- |
-| Pianoteq 9 | 922 文件复制到新库下 `Pianoteq 9`，逐文件 SHA-256 比对一致；结束时重新核对源目录，0 文件变化。VST3 扫描、默认发声可用；内置 797 个标准 VST3 预设成功导出，分为 15 个乐器类。 | 当前提供包的 VST3 在本宿主中接受不同预设却保持同一钢琴状态和声音，需要可正常切换预设的 Windows x64 VST3 安装版。没有发布为可选音色。 |
+| Pianoteq 9 | 9.1.0 原包及 797 预设保留；用户补充的 9.1.2 已独立提取到 H 盘，扫描和原厂 797 预设导出成功，自带程序三种乐器输出不同音频。 | 9.1.2 在当前 VST3 加载链路仍接受不同预设却回读相同状态；未入库。已经有可用于排查的完整文件，先排查适配，不再让用户反复更换安装包。见 [9.1.2 对照](benchmarks/pianoteq912-intake.md)。 |
 | Keyscape / Spectrasonics | 用户已提供 Windows x64 VST3；150 文件、77,528,440,122 字节复制到指定 H 盘新库并逐文件校验。455 个原厂预设完成乐器分类，已通过的预设进入可选目录。 | 播放器后台加载采样需要宿主兼容等待；完整接入及各轮实际验证见 [Keyscape 接入](35-keyscape-integration.md)。未测试变体仍为库存。 |
 
 Keyscape 播放器与采样现已接入。原先缺播放器的记录保留在 Git 历史中，不再要求重复提供。官方说明：[Keyscape](https://www.spectrasonics.net/products/keyscape/)、[STEAM 文件夹](https://www.spectrasonics.net/support/knowledgebase/article/view/175/21)。没有索取账号、密码或授权码。
