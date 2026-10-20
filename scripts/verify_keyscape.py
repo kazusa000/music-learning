@@ -19,7 +19,7 @@ from index_keyscape import reconcile, LIBRARY_ID  # noqa: E402
 from native_host import NativeHost  # noqa: E402
 
 
-def verify(names=(), resume=None, force=False, retry_failed=False, limit=None):
+def verify(names=(), resume=None, force=False, retry_failed=False, limit=None, output_path=None):
     settings = Settings.load()
     bank = settings.instrument_library / "Spectrasonics"
     with library_lock(bank):
@@ -43,8 +43,11 @@ def verify(names=(), resume=None, force=False, retry_failed=False, limit=None):
         elif resume:
             ids = {e["id"] for e in json.loads((Path(resume) / "queue.json").read_bytes())["items"]}
             entries = [e for e in entries if e["id"] in ids]
-        output = Path(resume).resolve() if resume else bank / "verification-runs" / (
-            time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8])
+        if resume and output_path:
+            raise ValueError("An explicit new output cannot be combined with --resume")
+        output = Path(resume).resolve() if resume else (
+            Path(output_path).resolve() if output_path else bank / "verification-runs" / (
+                time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]))
         host = NativeHost(settings.native_host, output / "native")
         implementation = implementation_fingerprint(host, [
             ROOT / "src/music_learning/keyscape_presets.py", ROOT / "src/music_learning/vst3_state.py"])
@@ -54,19 +57,32 @@ def verify(names=(), resume=None, force=False, retry_failed=False, limit=None):
         # Re-read under the same library lock, preserving every unrelated library.
         catalog = json.loads(catalog_path.read_bytes())
         ids = {p["id"] for p in admitted}
-        combined = [p for p in catalog["presets"] if p["id"] not in ids] + admitted
-        if len({p["id"] for p in combined}) != len(combined):
-            raise ValueError("Duplicate preset ids")
+        retained = [p for p in catalog["presets"] if p["id"] not in ids]
         # Reject silent fallback across different instruments, including cache hits.
         known = {}
-        for entry in combined:
+        for entry in retained:
             if entry.get("library_id") != LIBRARY_ID:
                 continue
             for key in ("state_sha256", "probe_sha256"):
                 signature = (key, entry[key])
-                previous = known.setdefault(signature, entry)
-                if previous["instrument_ids"] != entry["instrument_ids"]:
-                    raise ValueError("Different instruments returned identical state/audio")
+                known.setdefault(signature, entry)
+        accepted = []
+        for entry in admitted:
+            signatures = [(key, entry[key]) for key in ("state_sha256", "probe_sha256")]
+            if any(s in known and known[s]["instrument_ids"] != entry["instrument_ids"] for s in signatures):
+                report["failures"].append(dict(id=entry["id"], name=entry["name"], stage="admission",
+                    error="Different instruments returned identical state/audio"))
+                continue
+            accepted.append(entry)
+            for signature in signatures:
+                known.setdefault(signature, entry)
+        # A conflicting new result does not discard unrelated successes or the old catalog.
+        rejected = {p["id"] for p in admitted} - {p["id"] for p in accepted}
+        combined = retained + [p for p in catalog["presets"] if p["id"] in rejected] + accepted
+        if len({p["id"] for p in combined}) != len(combined):
+            raise ValueError("Duplicate preset ids")
+        admitted = accepted
+        report["verified"] = len(admitted)
         if admitted:
             reconcile(inventory["presets"], combined, admitted[0]["installed_library"])
             atomic_json(catalog_path, dict(catalog, presets=combined))
@@ -85,5 +101,6 @@ if __name__ == "__main__":
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--output", type=Path, dest="output_path")
     result = verify(**vars(parser.parse_args()))
     sys.exit(1 if result["failures"] else 0)
