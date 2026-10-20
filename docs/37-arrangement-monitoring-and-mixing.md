@@ -50,7 +50,7 @@
 - 290–291.5 秒循环持续回绕、多轨声音及独奏有效，无 live 错误。重载网页后需点击一次启用浏览器音频，此项明确保留，未绕过浏览器策略。
 - TypeScript、生产构建、契约漂移、新增/修改 Python Ruff 检查通过。
 
-本地证据：`data/benchmarks/separate-mix-playback/browser.json`、`arrangement.png`、`mixing.png`；后端独立数据在 `separate-mix-regression-v1` 与 `separate-mix-export-tests-v3`。夹具不加入正式歌曲列表；没有音乐模型或真实对话推理，也没有 NAS 写入。P6 人工听辨仍未通过。
+本地证据：`data/benchmarks/separate-mix-playback/browser.json`、`arrangement.png`、后续 `worklet.json`；后端独立数据在 `separate-mix-regression-v1` 与 `separate-mix-export-tests-v3`。混音手动保存、返回编曲及声音隔离由浏览器操作/实际电平和持久化回读验证；窄窗口的抓图存在绘制滞后，不拿它替代状态和声音证据。夹具不加入正式歌曲列表；没有音乐模型或真实对话推理，也没有 NAS 写入。P6 人工听辨仍未通过。
 
 部署：正式服务已升级至 0009，升级前 SQLite 备份保留；HTTP SDK 回读 67 操作与独立混音成功。13 个正式工程 head/快照 SHA、63 个任务与部署前相同。10 个受保护验证代码/固定宿主/报告 SHA 相同，Keyscape 监督 PID 31420 / creation_time 仍一致、批次继续 running。独立浏览器首页实际媒体播放 readyState=4 / currentTime 前进，默认模型设置保留，已无电平匹配或准备整曲分析。代码主提交 `db37b84`；正式分支仍为 `feat/user-instrument-intake`。
 
