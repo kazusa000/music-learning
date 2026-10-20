@@ -46,7 +46,8 @@ def dispatch(service, db, op, args, request):
             not 0 <= state.position_sample <= snapshot.duration_samples
             or not 0 <= state.loop_start_sample < end <= snapshot.duration_samples
         ):
-            raise ValueError("transport range exceeds source clock")
+            raise DomainError("transport_range", "播放位置或循环区间超出了歌曲长度。", 422,
+                              {"duration_samples": snapshot.duration_samples})
         if not set(state.track_ids).issubset({t.id for t in snapshot.tracks}):
             raise ValueError("unknown audition track")
         if state.mode == "tracks" and not state.track_ids:

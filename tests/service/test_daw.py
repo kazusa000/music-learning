@@ -49,13 +49,14 @@ def test_transport_is_version_bound_and_observations_cannot_overwrite_new_cues(s
     assert reported["desired"]["position_sample"] == 200
     assert reported["observed"]["position_sample"] == 210
     assert invoke(service, "audition.get", dict(project_id=project["id"])) == reported
-    with pytest.raises(DomainError, match="exceeds"):
+    with pytest.raises(DomainError) as invalid_range:
         invoke(
             service,
             "audition.set",
             dict(project_id=project["id"], state=dict(state, loop_end_sample=50000)),
             revision["id"],
         )
+    assert invalid_range.value.code == "transport_range"
 
 
 def test_timing_changes_reposition_only_beat_anchored_notes(service, project):

@@ -33,6 +33,7 @@ class Settings:
     pipeline_stage_timeout_seconds: float = 1800
     pipeline_max_duration_seconds: float = 600
     pipeline_min_free_bytes: int = 3 * 1024**3
+    instrument_min_free_bytes: int = 256 * 1024**2
     instrument_library: Path | None = None
 
     def __post_init__(self):

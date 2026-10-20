@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新反馈与存储（2026-10-20）：先读 docs/38-feedback-and-storage.md。播放持久化用歌曲时钟，尾音不能作为源位置；换较短 head 时夹紧位置/循环。instrument.capture 调度采用独立小任务预算，实际依赖仍计数，不改后台 Keyscape 固定验证实现。对话结束不等于改音色成功。E 盘历史任务/CAS/环境/测试存在硬链接重复计数，本次只读审计、未清理迁移，自动保留回收策略仍未实现。
+
 最新用户要求（2026-10-20）：先读 docs/37-arrangement-monitoring-and-mixing.md。编曲与混音隔离；编曲页仅临时独奏/静音，不提交mixer.set、不写音乐revision或混音配置。推子/声像仅独立混音页，mixing.get/save用独立version，手动保存；0009新增project_mix_settings。最终WAV显式固定mixing_version，冻结配置、单独制作快照，不发布为编曲Render。首页/工作台不自动电平匹配。播放首块预取后共同时钟启动，暂停缓存重用，不重复resume/不因慢块无限丢弃。旧SDK mixer.set兼容保留；新页面不调用。67操作/11任务，155完整后端+新增原生导出及浏览器305秒9378音符通过。Keyscape后台仍按既有保护继续，未改验证实现/库/固定宿主/报告。
 
 播放后续修正：常驻PCM由独立AudioWorklet时钟唤醒，240ms预取，避免后台窗口timer限流；曲末停止和按钮状态不依赖requestAnimationFrame。参考源按不可变revision缓存、服务重连失效。真实浏览器模块加载/连续块进度/实际非零电平/A-B/暂停重播/305秒停止通过，见文档37及忽略的worklet.json。没有重新编译原生宿主，Keyscape保护不变；正式混音导出仍保留3GiB空间门槛。

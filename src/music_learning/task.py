@@ -20,9 +20,19 @@ class AdapterError(RuntimeError):
 
 def execute(settings, job, directory=None):
     if job["kind"] == "instrument.capture":
-        from .instrument_capture import capture
+        import shutil
+        from .instrument_capture import capture, InstrumentSpaceError
+        from .capture_budget import capture_settings
 
-        return capture(settings, job, directory)
+        bounded = capture_settings(settings)
+        try:
+            return capture(bounded, job, directory)
+        except InstrumentSpaceError as error:
+            required = sum(x["bytes"] for x in job["payload"]["preset"]["resources"].values())
+            free = shutil.disk_usage(directory).free
+            raise AdapterError({"code": "insufficient_space", "message":
+                f"音色准备未完成：需要写入约 {required / 1024**2:.1f} MiB 资源，当前可用 {free / 1024**2:.0f} MiB；还需保留 {bounded.pipeline_min_free_bytes / 1024**2:.0f} MiB 运行空间。",
+                "details": {"resource_bytes": required, "free_bytes": free, "reserve_bytes": bounded.pipeline_min_free_bytes}}) from error
     if job["kind"] == "application.diagnose":
         from .diagnostics import collect
 

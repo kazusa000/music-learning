@@ -7,10 +7,11 @@ import {call} from './api';
 import {MusicMarkdown} from './MusicMarkdown';
 import {trackName} from './dawEditing';
 import {subscribeDomain} from './events';
+import {turnStatus} from './turnStatus';
 
 const time=(s:number)=>`${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toFixed(1).padStart(4,'0')}`;
 const active=(t:DialogueTurn)=>['queued','running','cancel_requested'].includes(t.status);
-const statusText:Record<string,string>={queued:'等待讨论',running:'正在研究',cancel_requested:'正在停止',cancelled:'已停止',failed:'未完成',succeeded:'已完成'};
+const statusText:Record<string,string>={queued:'排队中',running:'处理中',cancel_requested:'正在停止',cancelled:'已停止',failed:'未完成',succeeded:'已完成'};
 export type InstrumentDraft={id:string;text:string;revisionId:string;trackId:string};
 
 function ToolHistory({tools}:{tools:DialogueTurn['tools']}){
@@ -134,7 +135,7 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
     <div className="discussion-history" ref={history} onScroll={e=>{const n=e.currentTarget;follow.current=n.scrollHeight-n.scrollTop-n.clientHeight<65;}} aria-live="polite">{showNotes?<>{!notes.length&&<p className="discussion-empty">还没有笔记。从回复下方保存，或在菜单中保存当前输入。</p>}{notes.map(note=><article className="discussion-note" key={note.id}><small>{note.context?.origin==='user'?'我的笔记':'AI 笔记'}</small><MusicMarkdown text={note.content}/></article>)}</>:<>
       {!turns.length&&<div className="discussion-empty"><strong>从这首歌开始</strong><p>选中一段音乐，或直接聊整曲。</p><div className="question-suggestions"><button onClick={()=>{setScope('whole');setText('请先查询整曲摘要，从和声、配器与节奏三个角度提出值得深入研究的问题，并给出工程引用。');}}>分析整曲结构</button><button onClick={()=>{setScope('selection');setText('请查询当前区间的和弦与声部，解释和声走向及各乐器的作用，并引用具体位置。');}}>聊选中片段</button><button onClick={()=>{setText('请保持旋律，试一个新的配器方案，应用到工程并实时试听。');}}>试一个改编</button></div></div>}
       {turns.map(turn=><article key={turn.id} className="discussion-turn" data-turn={turn.id} data-status={turn.status}>
-        <div className="question-bubble">{String(turn.payload.text)}</div><div className="turn-meta"><i className={active(turn)?'pulsing':''}/><strong>{String((turn.context.provider as {model?:string}|undefined)?.model??turn.payload.model??'Codex')}</strong><span>{turn.error?.code==='invalid_citation'?'回复已保留':statusText[turn.status]}</span></div>
+        <div className="question-bubble">{String(turn.payload.text)}</div><div className="turn-meta"><i className={active(turn)?'pulsing':''}/><strong>{String((turn.context.provider as {model?:string}|undefined)?.model??turn.payload.model??'Codex')}</strong><span>{turn.error?.code==='invalid_citation'?'回复已保留':turnStatus(turn,jobs)}</span></div>
         <small className="turn-range">{time(Number(turn.context.start_sample)/Number(turn.context.sample_rate))}–{time(Number(turn.context.end_sample)/Number(turn.context.sample_rate))} · {turnTrackName(turn)}</small>
         {turn.text&&<div className="discussion-reply">{reply(turn)}</div>}{turn.error&&<p className={turn.error.code==='invalid_citation'?'discussion-notice':'discussion-error'}>{turn.error.code==='invalid_citation'?'回复已保留，部分位置链接不可用。':turn.error.code==='edit_not_applied'?'这轮没有修改工程。现在可以直接发送修改要求。':String(turn.error.message)}</p>}
         {!!turn.citations.length&&<div className="citation-list">{turn.citations.map(c=><button key={c.id} onClick={()=>onLocate(c)} title={c.revision_id}>{c.label} ↗</button>)}</div>}
@@ -142,8 +143,8 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
         <div className="turn-actions">{active(turn)?<button onClick={()=>void control(turn,'dialogue.cancel')}>停止</button>:turn.status==='succeeded'?<button onClick={()=>void save(turn)}>保存为研究笔记</button>:<button onClick={()=>void control(turn,'dialogue.retry')}>重试此问题</button>}</div>
         {!!turn.context.arrangement&&(()=>{const receipt=turn.context.arrangement as {revision_id:string;before_revision:string;render_job_id:string|null;playback_available?:boolean;diff:Record<string,{added?:string[];removed?:string[];changed?:string[]}>};
           const render=jobs.find(j=>j.id===receipt.render_job_id),exports=jobs.filter(j=>j.kind==='project.export'&&j.revision_id===receipt.revision_id);
-          return <div className="arrangement-receipt" data-arrangement-revision={receipt.revision_id}><small>已更新工程</small><strong>{!receipt.render_job_id?'● 已接入逐轨实时播放':render?.status==='succeeded'?'● 已有导出音频':render?.status==='failed'?'× 导出失败':'◌ 正在导出'}</strong><p>{Object.entries(receipt.diff).filter(([key])=>key!=='settings').filter(([,v])=>(v.added?.length??0)+(v.removed?.length??0)+(v.changed?.length??0)>0).map(([key,v])=>`${key} +${v.added?.length??0} −${v.removed?.length??0} Δ${v.changed?.length??0}`).join(' · ')}</p>
-            {render?.error&&<p className="discussion-error">{String(render.error.code)}</p>}<div><button onClick={()=>onCompare(receipt.before_revision)}>对比修改</button><button onClick={()=>void exportVersion(turn,'midi')}>导出 MIDI</button><button onClick={()=>void exportVersion(turn,'wav')}>导出 WAV</button><button disabled={render?.status!=='succeeded'} onClick={()=>void exportVersion(turn,'hybrid')}>生成贝斯混合</button></div>
+          return <div className="arrangement-receipt" data-arrangement-revision={receipt.revision_id}><small>已更新工程</small><strong>{!receipt.render_job_id?'● 修改已保存':render?.status==='succeeded'?'● 已有导出音频':render?.status==='failed'?'× 导出失败':'◌ 正在导出'}</strong><p>{Object.entries(receipt.diff).filter(([key])=>key!=='settings').filter(([,v])=>(v.added?.length??0)+(v.removed?.length??0)+(v.changed?.length??0)>0).map(([key,v])=>`${key} +${v.added?.length??0} −${v.removed?.length??0} Δ${v.changed?.length??0}`).join(' · ')}</p>
+            {render?.error&&<p className="discussion-error">{String(render.error.message??'音频导出失败。')}</p>}<div><button onClick={()=>onCompare(receipt.before_revision)}>对比修改</button><button onClick={()=>void exportVersion(turn,'midi')}>导出 MIDI</button></div>
             {exports.slice(-4).map(job=><p key={job.id}>{String(job.payload.format).toUpperCase()} · {statusText[job.status]} {job.status==='succeeded'&&typeof job.result?.asset_id==='string'&&<a href={'/v1/assets/'+job.result.asset_id} download>下载 ↗</a>}{job.error&&<span className="discussion-error"> {String(job.error.code)}</span>}</p>)}</div>;})()}
       </article>)}</>}
     </div>
