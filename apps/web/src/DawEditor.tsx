@@ -297,6 +297,10 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
             </svg>
           </div>;})}
         {pendingTrack&&!tracks.some(t=>t.id===pendingTrack.id)&&<div className="daw-playlist-row daw-pending-track" data-pending-track={pendingTrack.id} aria-label="新增乐器轨道" aria-busy="true"><div className="daw-lane-label"><i style={{background:palette[tracks.length%palette.length]}}/><strong>{pendingTrack.name}</strong><small>MIDI · 0 notes</small></div><div className="daw-pending-lane"/></div>}
+        <div className="daw-playlist-fill" aria-hidden="true"><div className="daw-empty-lane-label"/><svg width={laneWidth} height="100%" viewBox={`0 0 ${laneWidth} 1`} preserveAspectRatio="none">
+          {displayLines.map(l=><line key={l.sample} x1={x(l.sample)} x2={x(l.sample)} y1={0} y2={1} stroke={l.major?canvasTheme.majorGrid:canvasTheme.grid}/>)}
+          <line x1={x(position)} x2={x(position)} y1={0} y2={1} stroke={canvasTheme.playhead}/>
+        </svg></div>
       </div>
       {chosenClip&&<div className="daw-clip-actions"><span>{chosenClip.asset_id?'音频':'MIDI'}片段 · {(chosenClip.start_sample/rate).toFixed(3)}s</span><button disabled={!editable||busy} onClick={()=>void duplicateClip()}>复制到后方</button><button disabled={!editable||busy} onClick={()=>void submit([{op:'arrange_clip',id:chosenClip.id,action:'split',sample:Math.round(position),new_id:uuid()}],'在播放头分割片段',true,[chosenClip.track_id])}>播放头分割</button><button disabled={!editable||busy} onClick={()=>void deleteClip()}>删除片段</button></div>}
     </>}
