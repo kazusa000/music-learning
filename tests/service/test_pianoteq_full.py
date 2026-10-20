@@ -1,10 +1,13 @@
 import json
+import os
+import sys
 from types import SimpleNamespace
 
+import psutil
 import pytest
 
 from intake_pianoteq912 import publish_verified, select_entries
-from run_pianoteq_full import check_pins, formal_snapshot
+from run_pianoteq_full import check_pins, formal_snapshot, verifier_process
 from music_learning.instrument_localization import prepare_import
 from music_learning.instrument_taxonomy import classify
 from music_learning.storage import digest
@@ -74,3 +77,10 @@ def test_supervisor_pins_detect_changes_and_snapshot_is_read_only(service, tmp_p
     before = formal_snapshot(service.database.path)
     assert before == formal_snapshot(service.database.path)
     assert before["jobs"]["count"] == 0
+
+
+def test_verifier_process_uses_shared_hidden_process_owner_without_duplicate_flags():
+    with verifier_process([sys.executable, "-c", "import time;time.sleep(.3)"]) as owner:
+        if os.name == "nt":
+            assert psutil.Process(owner.process.pid).nice() == psutil.BELOW_NORMAL_PRIORITY_CLASS
+        assert owner.process.wait(timeout=10) == 0

@@ -52,6 +52,23 @@ def check_pins(request):
             raise ValueError("Frozen validation input changed: " + name)
 
 
+def verifier_process(command, **kwargs):
+    # OwnedProcess supplies CREATE_NO_WINDOW itself; do not pass creationflags twice.
+    owner = OwnedProcess(command, **kwargs)
+    try:
+        if os.name == "nt":
+            process = psutil.Process(owner.process.pid)
+            for child in [process, *process.children(recursive=True)]:
+                try:
+                    child.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+                except psutil.NoSuchProcess:
+                    pass
+        return owner
+    except BaseException:
+        owner.close()
+        raise
+
+
 def start():
     from music_learning.instrument_localization import prepare_entries
     from intake_pianoteq912 import select_entries, LIBRARY
@@ -136,10 +153,8 @@ def supervise(request_path):
                 command += ["--resume", str(output)]
             else:
                 command += ["--output", str(output)]
-            with (directory / "worker.log").open("ab") as log, OwnedProcess(
+            with (directory / "worker.log").open("ab") as log, verifier_process(
                 command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
-                creationflags=(subprocess.CREATE_NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS)
-                if os.name == "nt" else 0,
             ) as owner:
                 state.update(worker_pid=owner.process.pid, recovery=attempt)
                 while owner.process.poll() is None:
