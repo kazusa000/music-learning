@@ -28,6 +28,7 @@ class Settings:
     job_timeout_seconds: float = 120
     plugin_roots: list[Path] = field(default_factory=list)
     native_host: Path = ROOT / "runtime/build/msvc/bin/ml_audio_host.exe"
+    live_host: Path = ROOT / "runtime/build/live-track/ml_track_host.exe"
     model_runtime: Path | None = None
     pipeline_stage_timeout_seconds: float = 1800
     pipeline_max_duration_seconds: float = 600
@@ -38,6 +39,7 @@ class Settings:
         self.data_root = local_fixed(Path(self.data_root))
         self.plugin_roots = [local_fixed(Path(p)) for p in self.plugin_roots]
         self.native_host = local_fixed(Path(self.native_host))
+        self.live_host = local_fixed(Path(self.live_host))
         if self.model_runtime is None:
             profile = ROOT / "runtime/model-runtime.json"
             self.model_runtime = (

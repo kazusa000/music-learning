@@ -1015,8 +1015,53 @@ class DialogueTurn(Model):
     updated_at: float
 
 
+class ApplicationPreferences(Model):
+    default_model: str | None = Field(default=None, min_length=1, max_length=128)
+    login_mode: Literal["isolated", "existing"] = "isolated"
+    level_match: bool = True
+
+
+class PreferencesPatch(Model):
+    default_model: str | None = Field(default=None, min_length=1, max_length=128)
+    login_mode: Literal["isolated", "existing"] | None = None
+    level_match: bool | None = None
+
+
+class UpdateApplicationSettings(Model):
+    expected_version: int = Field(ge=0)
+    preferences: PreferencesPatch
+
+
+class SaveVersion(RevisionRef):
+    title: str = Field(default="保存版本", min_length=1, max_length=200)
+
+
+class LiveOpen(RevisionRef):
+    track_id: Id
+    client_id: Id
+    client_sequence: int = Field(default=0, ge=0)
+
+
+class LiveSession(Model):
+    session_id: Id
+
+
+class LiveChunk(LiveSession):
+    generation: int = Field(ge=1)
+    sample: int = Field(ge=0)
+    frames: int = Field(default=8192, ge=1, le=16384)
+
+
 OPERATIONS = {
+    "versions.list": (ProjectPage, False),
+    "versions.save": (SaveVersion, True),
+    "playback.live.open": (LiveOpen, False),
+    "playback.live.status": (LiveSession, False),
+    "playback.live.chunk": (LiveChunk, False),
+    "playback.live.close": (LiveSession, False),
     "describe_capabilities": (Empty, False),
+    "application.settings.get": (Empty, False),
+    "application.settings.set": (UpdateApplicationSettings, True),
     "projects.list": (ProjectList, False),
     "projects.organize": (OrganizeProject, True),
     "projects.create": (CreateProject, True),
@@ -1076,7 +1121,15 @@ OPERATIONS = {
 }
 
 RESULT_TYPES = {
+    "versions.list": list[dict],
+    "versions.save": dict,
+    "playback.live.open": dict,
+    "playback.live.status": dict,
+    "playback.live.chunk": dict,
+    "playback.live.close": dict,
     "describe_capabilities": dict,
+    "application.settings.get": dict,
+    "application.settings.set": dict,
     "projects.list": list[Project],
     "projects.organize": Project,
     "projects.create": Project,

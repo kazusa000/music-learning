@@ -103,23 +103,49 @@ def signature(snapshot, track_id, mixer=False):
 
 def publications(db, revision):
     """Only this revision and its actual ancestors; no unrelated project/version scan."""
-    seen = set()
-    while revision and revision["id"] not in seen:
-        seen.add(revision["id"])
-        for payload in db.execute(
-            select(p3.renders.c.payload)
-            .where(
-                p3.renders.c.project_id == revision["project_id"], p3.renders.c.revision_id == revision["id"]
-            )
-            .order_by(p3.renders.c.created_at.desc())
-        ).scalars():
-            yield revision, payload
-        payload = db.execute(
-            select(p2.preprocessing.c.payload).where(p2.preprocessing.c.revision_id == revision["id"])
-        ).scalar()
-        if payload:
-            yield revision, payload
-        revision = row(db, t.revisions, "id", revision["parent_id"]) if revision["parent_id"] else None
+    from sqlalchemy import literal, union_all
+
+    # Ordinary edits don't publish audio. Walk only tiny ancestry columns in SQL,
+    # then load snapshots for ancestors that actually have an audio publication.
+    # Loading a 9,378-note snapshot at every autosave made a long session slower
+    # even though only one instrument had changed.
+    ancestry = (
+        select(t.revisions.c.id, t.revisions.c.parent_id, literal(0).label("depth"))
+        .where(t.revisions.c.id == revision["id"], t.revisions.c.project_id == revision["project_id"])
+        .cte("audio_ancestors", recursive=True)
+    )
+    parent = t.revisions.alias("audio_parent")
+    ancestry = ancestry.union_all(
+        select(parent.c.id, parent.c.parent_id, ancestry.c.depth + 1)
+        .join(ancestry, parent.c.id == ancestry.c.parent_id)
+        .where(parent.c.project_id == revision["project_id"])
+    )
+    records = union_all(
+        select(
+            p3.renders.c.revision_id.label("revision_id"),
+            p3.renders.c.payload.label("payload"),
+            ancestry.c.depth,
+            literal(0).label("kind"),
+            p3.renders.c.created_at.label("published"),
+        )
+        .join(ancestry, p3.renders.c.revision_id == ancestry.c.id)
+        .where(p3.renders.c.project_id == revision["project_id"]),
+        select(
+            p2.preprocessing.c.revision_id,
+            p2.preprocessing.c.payload,
+            ancestry.c.depth,
+            literal(1),
+            literal(0.0),
+        ).join(ancestry, p2.preprocessing.c.revision_id == ancestry.c.id),
+    ).subquery()
+    cached = {revision["id"]: revision}
+    for result in db.execute(
+        select(records).order_by(records.c.depth, records.c.kind, records.c.published.desc())
+    ).mappings():
+        id = result["revision_id"]
+        if id not in cached:
+            cached[id] = row(db, t.revisions, "id", id)
+        yield cached[id], result["payload"]
 
 
 def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
@@ -249,17 +275,4 @@ def dispatch(service, db, op, args, request):
     preparation = None
     if playback["available"]:
         db.execute(update(t.projects).where(t.projects.c.id == args.project_id).values(status="ready"))
-    elif updated["snapshot"]["duration_samples"]:
-        from .rendering import submit
-
-        preparation = submit(
-            service,
-            db,
-            c.SubmitJob(
-                project_id=args.project_id,
-                kind="project.render",
-                payload={"revision_id": updated["id"], "preview": True},
-            ),
-            request,
-        )["id"]
     return {"revision": updated, "playback": playback, "preparation_job_id": preparation}

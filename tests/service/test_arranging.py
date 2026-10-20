@@ -109,7 +109,7 @@ def editable(service, project):
     return rev, track, turn
 
 
-def test_agent_edit_and_render_are_atomic_and_replayable(service, project):
+def test_agent_edit_is_atomic_replayable_and_does_not_export(service, project):
     rev, track, turn = editable(service, project)
     note = copy.deepcopy(rev["snapshot"]["notes"][0])
     note["pitch"] += 2
@@ -121,7 +121,7 @@ def test_agent_edit_and_render_are_atomic_and_replayable(service, project):
     )
     result = invoke(service, "arrangements.apply", args, rev["id"], key="atomic-edit")
     assert invoke(service, "arrangements.apply", args, rev["id"], key="atomic-edit") == result
-    assert len(invoke(service, "jobs.list", dict(project_id=project["id"]))) == 1
+    assert not invoke(service, "jobs.list", dict(project_id=project["id"]))
     current = invoke(service, "revisions.get", dict(project_id=project["id"]))
     assert current["id"] == result["revision_id"]
     notes = {n["id"]: n for n in current["snapshot"]["notes"]}
@@ -129,8 +129,8 @@ def test_agent_edit_and_render_are_atomic_and_replayable(service, project):
     assert notes[note["id"]]["provenance"]["source_id"] == turn["id"]
     untouched = rev["snapshot"]["notes"][1]
     assert notes[untouched["id"]] == untouched
-    job = invoke(service, "jobs.get", dict(job_id=result["render_job_id"]))
-    assert job["status"] == "queued" and job["revision_id"] == current["id"]
+    assert result["render_job_id"] is None
+
     assert (
         invoke(service, "arrangements.get", dict(project_id=project["id"], turn_id=turn["id"]))["arrangement"]
         == result
@@ -145,17 +145,18 @@ def test_agent_edit_and_render_are_atomic_and_replayable(service, project):
         invoke(service, "arrangements.apply", args, current["id"])
 
 
-def test_enqueue_failure_rolls_back_edit_revision_and_receipt(service, project, monkeypatch):
+def test_commit_failure_rolls_back_edit_revision_and_receipt(service, project, monkeypatch):
     rev, track, turn = editable(service, project)
-    from music_learning import rendering
+    original_commit = service.commit
 
     def fail(*args, **kwargs):
-        raise ValueError("injected queue failure")
+        original_commit(*args, **kwargs)
+        raise ValueError("injected commit failure")
 
-    monkeypatch.setattr(rendering, "submit", fail)
+    monkeypatch.setattr(service, "commit", fail)
     note = copy.deepcopy(rev["snapshot"]["notes"][0])
     note["pitch"] += 2
-    with pytest.raises(DomainError, match="injected queue failure"):
+    with pytest.raises(DomainError, match="injected commit failure"):
         invoke(
             service,
             "arrangements.apply",

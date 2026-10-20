@@ -1,4 +1,6 @@
 import './style.css';
+import {PreferencesProvider} from './Preferences';
+import {SettingsPage} from './SettingsPage';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {CSSProperties} from 'react';
@@ -14,12 +16,13 @@ import {matchedLevels} from './listeningLevel';
 const connection = connect();
 const statuses: Record<string, string> = {queued: '排队中', running: '正在处理', cancel_requested: '正在取消',
   cancelled: '已取消', succeeded: '已完成', failed: '处理失败'};
-const kinds: Record<string, string> = {'asset.import': '原曲导入与检查', 'plugin.inspect': '读取插件状态', 'plugin.scan': '扫描插件', 'project.preprocess': '整曲预处理', 'project.render':'更新音轨声音', 'audio.measure':'音频测量', 'instrument.capture':'准备音色', 'project.export':'导出指定版本', 'application.backup':'完整工程备份', 'application.restore':'恢复到独立目录', 'application.diagnose':'本机环境诊断'};
+const kinds: Record<string, string> = {'asset.import': '原曲导入与检查', 'plugin.inspect': '读取插件状态', 'plugin.scan': '扫描插件', 'project.preprocess': '整曲预处理', 'project.render':'导出混音', 'audio.measure':'音频测量', 'instrument.capture':'准备音色', 'project.export':'导出指定版本', 'application.backup':'完整工程备份', 'application.restore':'恢复到独立目录', 'application.diagnose':'本机环境诊断'};
 const projectStatuses: Record<string, string> = {empty:'等待导入', imported:'原曲已保存', queued:'等待整曲处理', processing:'整曲处理中', ready:'可编辑 · 可试听', failed:'处理失败', cancelled:'处理已取消'};
 const stageNames: Record<string, string> = {normalize:'音频规范化', demucs:'音频分轨', muscriptor:'多声部转录', sheetsage:'节拍与和声结构', assemble:'事件对齐', render:'VST3 整曲与逐轨重建', validate:'完整性检查'};
 
 
 function App() {
+  const [settingsOpen,setSettingsOpen]=useState(new URLSearchParams(location.search).get('view')==='settings');
   const [libraryWidth,setLibraryWidth]=usePanelSize('library.sidebar-width',260,180,500);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelected] = useState<string | null>(new URLSearchParams(location.search).get('project') ?? localStorage.getItem('selected-project'));
@@ -37,7 +40,7 @@ function App() {
   const detailCache = useRef<{id:string; revision:Revision; publication:PreprocessingResult | null;playbackReady:boolean} | null>(null);
   const homeAudio=useRef<HTMLAudioElement|null>(null);
   useEffect(()=>{
-    if(workspace)return;
+    if(workspace||settingsOpen)return;
     const key=(event:KeyboardEvent)=>{
       const target=event.target as HTMLElement|null;
       if(event.code!=='Space'||event.repeat||event.ctrlKey||event.metaKey||event.altKey||target?.closest('input,textarea,select,[contenteditable="true"]'))return;
@@ -46,7 +49,7 @@ function App() {
       if(audio.paused)void audio.play().catch(e=>setError(e.message));else audio.pause();
     };
     window.addEventListener('keydown',key,true);return()=>window.removeEventListener('keydown',key,true);
-  },[workspace]);
+  },[workspace,settingsOpen]);
   const refreshGeneration = useRef(0);
   const [showArchived,setShowArchived]=useState(false);
   const project = projects.find(p => p.id === selected);
@@ -76,14 +79,14 @@ function App() {
         cached ? Promise.resolve(cached.revision) : call<Revision>('revisions.get', {project_id: selected, revision_id:headId}),
         cached ? Promise.resolve({publication:cached.publication}) : call<PreprocessingView>('preprocessing.get', {project_id:selected, revision_id:headId}),
         call<Job[]>('jobs.list', {project_id: selected, limit: 1000}),
-        call<unknown[]>('revisions.list', {project_id: selected, limit: 1000}),
+        call<unknown[]>('versions.list', {project_id: selected, limit: 1000}),
         call<Array<PreprocessingResult & {start_sample:number;end_sample:number}>>('renders.list', {project_id:selected,revision_id:headId}),
-        cached?Promise.resolve({available:cached.playbackReady}):call<PlaybackPlan>('playback.get',{project_id:selected,revision_id:headId}),
+        cached?Promise.resolve({available:cached.playbackReady,reason:null}):call<PlaybackPlan>('playback.get',{project_id:selected,revision_id:headId}),
       ]);
       if (activeSelection.current !== selected || generation !== refreshGeneration.current) return;
       const media = renders.filter(r => r.start_sample===0&&r.end_sample===head.snapshot.duration_samples).at(-1) ?? readiness.publication;
-      detailCache.current = {id:headId, revision:head, publication:media,playbackReady:plan.available};
-      setPlaybackReady(plan.available);
+      detailCache.current = {id:headId, revision:head, publication:media,playbackReady:plan.available||(!plan.reason&&(head.snapshot.tracks?.length??0)>0)};
+      setPlaybackReady(plan.available||(!plan.reason&&(head.snapshot.tracks?.length??0)>0));
       setRevision(head); setPublication(media); setJobs(tasks); setVersionCount(versions.length);
       const details = await Promise.all(tasks.filter(j => j.kind === 'project.preprocess').map(async job =>
         [job.id, await call<StageRecord[]>('jobs.stages', {job_id:job.id})] as const));
@@ -148,9 +151,9 @@ function App() {
 
   return <main className={workspace ? 'workspace-page' : 'library-page'}>
     <header><a className="brand" href="/" aria-label="Music Learning 音乐库"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><b>Music Learning</b><span className="brand-divider"/><small>{workspace?'Studio':'音乐库'}</small></a>
-      <span className={'connection '+(connected?'is-connected':'')}><i/>{connected ? '本机已连接' : '正在连接'}</span></header>
+      <div className="header-actions">{!workspace&&<button className="header-settings" onClick={()=>{homeAudio.current?.pause();setSettingsOpen(true);history.replaceState(null,'','/?view=settings');}}>设置</button>}<span className={'connection '+(connected?'is-connected':'')}><i/>{connected ? '本机已连接' : '正在连接'}</span></div></header>
     {error && <div role="alert">{error}<button onClick={() => setError('')} aria-label="关闭提示">×</button></div>}
-    {workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh}
+    {settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh}
       onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
       <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? '正在导入…' : '选择音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
           disabled={busy} onChange={e => {const file = e.target.files?.[0]; if (file) void importFile(file); e.target.value = '';}}/></label>
@@ -163,14 +166,14 @@ function App() {
       {!project ? <div className="welcome"><h2>选择歌曲</h2><p>导入音频，或打开左侧已有歌曲。</p></div> : <>
         <div className="project-heading"><div className="project-identity"><div className="project-art" aria-hidden="true"><Icon name="wave" size={29}/></div><div><p>音乐工程</p><h2>{project.display_title??project.title}</h2></div></div>
           <div className="library-actions"><span className="badge">{projectStatuses[project.status]}</span><button onClick={()=>void organize()}>{project.archived?'恢复到歌曲列表':'归档工程'}</button></div></div>
-        <div className="facts"><div><span>版本</span><b>{versionCount}</b></div>
+        <div className="facts"><div><span>保存版本</span><b>{versionCount}</b></div>
           <div><span>原曲长度</span><b>{revision?.snapshot.duration_samples ? (revision.snapshot.duration_samples / (revision.snapshot.sample_rate ?? 44100)).toFixed(1) + ' 秒' : '—'}</b></div></div>
         {revision?.snapshot.source_asset_id && <section className="original"><h3>原曲试听</h3>
           <AudioPreview key={'source-'+revision.id} label="原曲试听" previewGain={gains[revision.snapshot.source_asset_id]} assetId={revision.snapshot.source_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial={!publication} onSelect={a=>{homeAudio.current=a;}}/>
           {publication&&<><h3>重建试听</h3><AudioPreview key={'mix-'+publication.mix_asset_id} label="重建试听" previewGain={gains[publication.mix_asset_id]} assetId={publication.mix_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial onSelect={a=>{homeAudio.current=a;}}/></>}
           <p className="muted">{publication ? '已可播放重建、独奏声部、编辑音符和与 AI 讨论。' : playbackReady?'工程已可实时混音，打开工程即可试听。':'正在准备可编辑的音乐工程。'}</p>
           {(publication || (revision.snapshot.tracks?.length ?? 0)>0) && <button className="primary-button" onClick={() => {setWorkspace(true); history.replaceState(null,'',`/?project=${project.id}&view=workbench`);}}><span>打开工程</span><Icon name="arrow" size={15}/></button>}
-          {!publication && !jobs.some(j => j.kind === 'project.preprocess' && ['queued','running','cancel_requested'].includes(j.status)) &&
+          {!publication && !(revision.snapshot.tracks?.length??0) && !jobs.some(j => j.kind === 'project.preprocess' && ['queued','running','cancel_requested'].includes(j.status)) &&
             <button className="primary-button" onClick={() => void startPreprocessing()}>开始整曲分析</button>}
         </section>}
         <details className="tasks"><summary>处理记录 · {jobs.length}</summary>
@@ -193,4 +196,4 @@ function App() {
   </main>;
 }
 
-createRoot(document.getElementById('root')!).render(<App/>);
+createRoot(document.getElementById('root')!).render(<PreferencesProvider ready={connection}><App/></PreferencesProvider>);

@@ -1,3 +1,4 @@
+import {usePreferences} from './Preferences';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import type {CSSProperties} from 'react';
 import type {AuditionState, Citation, Job, PreprocessingResult, PreprocessingView, Revision, PlaybackPlan, MixerResult} from '../../../packages/contracts/types';
@@ -10,7 +11,7 @@ import {trackName as instrumentName} from './dawEditing';
 import {call} from './api';
 import {writeAudition} from './auditionSync';
 import {Transport} from './transport';
-import type {MixValues} from './liveMix';
+import type {MixValues,LiveTrack} from './liveMix';
 import {AutoHideToolbar} from './AutoHideToolbar';
 import {Icon} from './Icon';
 import {trackColors as colors,canvasTheme} from './visual';
@@ -24,13 +25,18 @@ import './discussion.css';
 const time=(s:number)=>`${Math.floor(s/60).toString().padStart(2,'0')}:${Math.floor(s%60).toString().padStart(2,'0')}`;
 type Render=PreprocessingResult&{start_sample?:number;end_sample?:number};
 type Cue={sequence:string|null;desired:AuditionState|null;observed:unknown};
-type Version={id:string;description:string;created_at:number;parent_id:string|null};
+type Version={id:string;revision_id:string;title:string;created_at:number};
 type Difference=Record<string,{added:string[];removed:string[];changed:string[]}>;
 type PluginInfo={name:string;manufacturer:string;parameters_readback:Array<{id:string;name:string;label:string;text:string}>};
 
 export function Workbench({title,revision:head,publication:initial,jobs=[],onBack,onCommitted}:{
   title:string;revision:Revision;publication:PreprocessingResult|null;jobs?:Job[];onBack:()=>void;onCommitted?:()=>Promise<void>;
 }){
+  const {prefs,view:preferences}=usePreferences();
+  const [savedTitle,setSavedTitle]=useState(''),[savingVersion,setSavingVersion]=useState(false);
+  const [liveEpoch,setLiveEpoch]=useState(0);
+  const [liveTracks,setLiveTracks]=useState<Record<string,LiveTrack>>({}),[liveLoading,setLiveLoading]=useState<string[]>([]);
+  const liveBindings=useRef<Record<string,LiveTrack>>({});
   const [trackWidth,setTrackWidth]=usePanelSize('studio.track-width',190,140,480);
   const [aiWidth,setAiWidth]=usePanelSize('studio.ai-width',340,260,900);
   const body=useRef<HTMLDivElement>(null),[bodyWidth,setBodyWidth]=useState(window.innerWidth);
@@ -82,9 +88,10 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const canvas=useRef<HTMLCanvasElement>(null);
   const player=useRef(new Transport());
   const lastCue=useRef<string|null>(null);
-  const requestGeneration=useRef(0);
+  const requestGeneration=useRef(0),applyGeneration=useRef(0);
   const localCuePending=useRef(false);
   const applyingCue=useRef(false);
+  const wantsPlaying=useRef(false);
   const playbackFinished=useRef(false),onPlaybackEnded=useRef(()=>{});
   const lastReportTime=useRef(0);
   const snapshot=revision.snapshot;
@@ -97,7 +104,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const notes=useMemo(()=>(snapshot.notes??[]).filter(n=>selected==='all'||n.track_id===selected),[snapshot,selected]);
   const sections=(snapshot.annotations??[]).filter(a=>a.kind==='section');
   const issues=[...(publication?.issues??[]),...sourceIssues];
-  const sourceIds=useCallback(async(state:AuditionState,render:Render|null)=>{
+  const sourceIds=useCallback(async(state:AuditionState,render:Render|null,active:()=>boolean=()=>true)=>{
     if(state.mode==='hybrid'){
       if(!state.hybrid_job_id)throw new Error('请选择已完成的贝斯混合试听。');
       const job=await call<Job>('jobs.get',{job_id:state.hybrid_job_id});
@@ -107,14 +114,26 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     if(state.mode==='reference'){
       if(!state.reference_revision_id)throw new Error('请选择参考版本。');
       const args={project_id:head.project_id,revision_id:state.reference_revision_id};
-      const [view,renders,reference]=await Promise.all([call<PreprocessingView>('preprocessing.get',args),call<Render[]>('renders.list',args),call<Revision>('revisions.get',args)]);
+      const [view,renders,reference,referencePlan]=await Promise.all([call<PreprocessingView>('preprocessing.get',args),call<Render[]>('renders.list',args),call<Revision>('revisions.get',args),call<PlaybackPlan>('playback.get',args)]);
       const full=renders.filter(r=>(r.start_sample??0)===0&&(r.end_sample??reference.snapshot.duration_samples)===reference.snapshot.duration_samples).at(-1)??view.publication;
-      if(!full)throw new Error('参考版本尚未完成渲染。');
-      return [full.mix_asset_id];
+      if(full)return [full.mix_asset_id];
+      if(referencePlan.reason)throw new Error(referencePlan.reason);
+      const transport=player.current,sequence=++transport.referenceSequence;
+      const channels=await Promise.all((reference.snapshot.tracks??[]).map(async track=>{
+        const stem=referencePlan.tracks[track.id],id='reference:'+reference.id+':'+track.id;
+        if(stem)return {id,assetId:stem.asset_id,bakedGain:stem.baked_gain_db,bakedPan:stem.baked_pan,values:track};
+        const live=await transport.prepareLive(head.project_id,reference.id,track.id,sequence,transport.referenceClient);
+        return {id,assetId:'live:'+live.session_id+':'+live.generation,bakedGain:0,bakedPan:0,values:track,live};
+      }));
+      if(!active())return [];
+      transport.configureChannels([...Array.from(transport.channels.values()).filter(c=>!c.id.startsWith('reference:')),...channels]);
+      const anchor=Object.values(referencePlan.tracks)[0]?.mix_asset_id??initial?.mix_asset_id;
+      if(anchor)transport.family(anchor,channels.map(c=>'track:'+c.id));
+      return channels.map(c=>'track:'+c.id);
     }
     if(state.mode==='original')return snapshot.source_asset_id?[snapshot.source_asset_id]:[];
-    if(playback?.revision_id===state.revision_id&&playback.available){return (state.mode==='tracks'?(state.track_ids??[]):tracks.map(t=>t.id)).map(id=>'track:'+id);}
-    if(!render)throw new Error(playback?.reason??'正在准备发生变化的音轨声音…');
+    if(playback?.revision_id===state.revision_id&&!playback.reason){return (state.mode==='tracks'?(state.track_ids??[]):tracks.map(t=>t.id)).filter(id=>player.current.channels.has('track:'+id)).map(id=>'track:'+id);}
+    if(!render){if(playback?.reason)throw new Error(playback.reason);return tracks.filter(t=>player.current.channels.has('track:'+t.id)).map(t=>'track:'+t.id);}
     if(state.mode==='mix')return[render.mix_asset_id];
     const ids=(state.track_ids??[]).map(id=>render.track_renders[id]).filter((id):id is string=>typeof id==='string');
     if(ids.length!==state.track_ids?.length)throw new Error('该声部暂无此版本的渲染。');
@@ -123,7 +142,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
 
   useEffect(()=>{
     player.current=new Transport();const transport=player.current;let frame=0;
-    let meterTime=0;const draw=()=>{setPosition(transport.position);setPlaying(transport.playing);if(performance.now()-meterTime>70){meterTime=performance.now();setLivePeaks(transport.meterLevels());}
+    let meterTime=0;const draw=()=>{setPosition(transport.position);setPlaying(transport.playing);if(performance.now()-meterTime>70){meterTime=performance.now();setLivePeaks(transport.meterLevels());const liveError=Object.values(transport.liveErrors)[0];if(liveError)setError(liveError);}
       if(transport.playing&&!transport.loop&&transport.position>=transport.duration){playbackFinished.current=true;transport.pause();onPlaybackEnded.current();}
       frame=requestAnimationFrame(draw);};
     frame=requestAnimationFrame(draw);
@@ -131,9 +150,10 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   },[head.project_id]);
 
   useEffect(()=>{
-    if(!publication&&!playback?.available)return;
-    const transport=player.current,anchor=publication?.mix_asset_id??Object.values(playback!.tracks)[0].mix_asset_id;
-    const stems=playback?.available?tracks.map(t=>'track:'+t.id):tracks.map(track=>publication!.track_renders[track.id]).filter((id):id is string=>typeof id==='string');
+    if(!publication&&!Object.keys(playback?.tracks??{}).length)return;
+    const transport=player.current,anchor=publication?.mix_asset_id??Object.values(playback!.tracks)[0]?.mix_asset_id;
+    if(!anchor)return;
+    const stems=playback&&!playback.reason?tracks.map(t=>'track:'+t.id):tracks.map(track=>publication!.track_renders[track.id]).filter((id):id is string=>typeof id==='string');
     transport.family(anchor,stems);
     const ids=[anchor,...stems,...(snapshot.source_asset_id?[snapshot.source_asset_id]:[])];
     let active=true;const timer=setTimeout(()=>void transport.warm(ids).catch(()=>{}),750);
@@ -149,17 +169,18 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
         id===head.id?Promise.resolve(head):call<Revision>('revisions.get',{project_id:head.project_id,revision_id:id}),
         call<PreprocessingView>('preprocessing.get',{project_id:head.project_id,revision_id:id}),
         call<Render[]>('renders.list',{project_id:head.project_id,revision_id:id}),
-        call<Version[]>('revisions.list',{project_id:head.project_id,limit:1000}),call<PlaybackPlan>('playback.get',{project_id:head.project_id,revision_id:id})]);
+        call<Version[]>('versions.list',{project_id:head.project_id,limit:1000}),call<PlaybackPlan>('playback.get',{project_id:head.project_id,revision_id:id})]);
       if(!active)return;
       if(localCommit.current&&read.id!==localCommit.current&&head.id===commitBefore.current)return;
       const full=renders.filter(r=>(r.start_sample??0)===0&&(r.end_sample??read.snapshot.duration_samples)===read.snapshot.duration_samples);
-      const prior=playbackState.current;if(prior?.available&&plan.available&&Object.keys(prior.tracks).length===Object.keys(plan.tracks).length&&Object.entries(prior.tracks).every(([id,stem])=>plan.tracks[id]?.asset_id===stem.asset_id))preserveMix.current=read.id;
+      if(versionId==='head'&&playbackState.current)preserveMix.current=read.id;
       if(!mixInFlight.current)mixRevision.current=read;setPlayback(plan);setRevision(read);setPublication(full.at(-1)??preprocessed.publication);setVersions(list.slice().reverse());
     };
     void update().catch(e=>{if(active)setError(e.message);});
     let pending:ReturnType<typeof setTimeout>|undefined;
     const unsubscribe=subscribeDomain(event=>{
-      if(event.type==='connection.ready'||event.project_id===head.project_id&&['revision.created','preprocessing.completed','render.published'].includes(event.type)){
+      if(event.type==='connection.ready')setLiveEpoch(value=>value+1);
+      if(event.type==='connection.ready'||event.project_id===head.project_id&&['revision.created','preprocessing.completed','render.published','version.saved'].includes(event.type)){
         clearTimeout(pending);pending=setTimeout(()=>void update().catch(()=>{}),120);
       }
     });
@@ -172,11 +193,11 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     if(historyHead.current&&head.id!==historyHead.current){setUndoStack([]);setRedoStack([]);historyHead.current=null;}
   },[head.id,editingBusy]);
   async function acceptManualRevision(next:Revision){
-    commitBefore.current=revision.id;localCommit.current=next.id;historyHead.current=next.id;player.current.pause();setPlaying(false);
-    setRevision(next);setPublication(null);setVersionId('head');setError('');
-    const plan=await call<PlaybackPlan>('playback.get',{project_id:head.project_id,revision_id:next.id});setPlayback(plan);
-    if(!plan.available)await call('jobs.submit',{project_id:head.project_id,kind:'project.render',payload:{revision_id:next.id,preview:true}},next.id,true);
-    try{await onCommitted?.();}catch(e){setError('版本已保存，但刷新失败：'+(e as Error).message);}
+    commitBefore.current=revision.id;localCommit.current=next.id;historyHead.current=next.id;preserveMix.current=next.id;currentHead.current=next.id;
+    const plan=await call<PlaybackPlan>('playback.get',{project_id:head.project_id,revision_id:next.id});
+    setPlayback(plan);setRevision(next);setPublication(null);setVersionId('head');setError('');
+
+    try{await onCommitted?.();}catch(e){setError('工程已保存，但刷新失败：'+(e as Error).message);}
   }
   async function manualEdit(request:EditRequest){
     if(editingLock.current)throw new Error('前一次编辑仍在保存。');
@@ -200,7 +221,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   }
 
   useEffect(()=>{
-    if(preserveMix.current===revision.id)return;
+    if(preserveMix.current===revision.id){mixRevision.current=revision;return;}
     mixRevision.current=revision;mixRef.current={};setMixDraft({});
     playbackFinished.current=false;
     player.current.pause();player.current.offset=0;setPosition(0);
@@ -239,11 +260,44 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   },[revision.id,head.project_id]);
 
   useEffect(()=>{player.current.matchedGains=matchedLevels(jobs,[snapshot.source_asset_id,publication?.mix_asset_id].filter((id):id is string=>!!id));player.current.route(player.current.activeIds);},[jobs,publication?.mix_asset_id,snapshot.source_asset_id]);
+  // Prepare only sources absent from the exact revision's reusable stem plan.
+  // Each track publishes independently; a large instrument never blocks the rest.
+  useEffect(()=>{
+    if(!playback||playback.reason||playback.revision_id!==revision.id)return;
+    const transport=player.current,sequence=++transport.liveSequence;let active=true;
+    const pending=playback.pending_track_ids??[];setLiveLoading(pending);
+    for(const trackId of pending)void transport.prepareLive(head.project_id,revision.id,trackId,sequence).then(live=>{
+      if(!active||sequence!==transport.liveSequence||live.status!=='ready')return;
+      liveBindings.current={...liveBindings.current,[trackId]:live};setLiveTracks(liveBindings.current);
+      setLiveLoading(ids=>ids.filter(id=>id!==trackId));
+    }).catch(e=>{if(active){setLiveLoading(ids=>ids.filter(id=>id!==trackId));setError(e.message);}});
+    return()=>{active=false;};
+  },[revision.id,playback?.revision_id,playback?.reason,liveEpoch]);
+  useEffect(()=>{if(preferences&&!lastCue.current){setMatched(prefs.level_match);player.current.setMatched(prefs.level_match);}},[preferences?.configured,prefs.level_match]);
+  useEffect(()=>{const timer=setInterval(()=>{for(const channel of player.current.channels.values())if(channel.live)void call('playback.live.status',{session_id:channel.live.session_id}).catch(()=>{});},30000);return()=>clearInterval(timer);},[]);
   const configureMix=useCallback((draft:Record<string,MixValues>)=>{
-    if(!playback?.available)return;
-    player.current.configureChannels(tracks.map(t=>({id:t.id,assetId:playback.tracks[t.id].asset_id,bakedGain:playback.tracks[t.id].baked_gain_db,bakedPan:playback.tracks[t.id].baked_pan,values:{...t,...draft[t.id]}})));
-  },[playback,tracks]);
-  useEffect(()=>configureMix(mixDraft),[configureMix,mixDraft]);
+    if(!playback||playback.reason)return;
+    const channels=tracks.flatMap(t=>{
+      const stem=playback.tracks[t.id],live=liveTracks[t.id];
+      if(stem)return [{id:t.id,assetId:stem.asset_id,bakedGain:stem.baked_gain_db,bakedPan:stem.baked_pan,values:{...t,...draft[t.id]}}];
+      if(live)return [{id:t.id,assetId:'live:'+live.session_id+':'+live.generation,bakedGain:0,bakedPan:0,values:{...t,...draft[t.id]},live}];
+      const prior=player.current.channels.get('track:'+t.id);return prior?[{...prior,values:{...t,...draft[t.id]}}]:[];
+    });
+    player.current.configureChannels([...channels,...Array.from(player.current.channels.values()).filter(c=>c.id.startsWith('reference:'))]);
+    // A shared reference gain preserves the existing mix balance; live tracks
+    // are pre-fader so channel controls apply exactly once.
+    const anchor=Object.values(playback.tracks)[0]?.mix_asset_id??initial?.mix_asset_id;
+    if(anchor)player.current.family(anchor,channels.map(c=>'track:'+c.id));
+  },[playback,tracks,liveTracks,mode]);
+  useEffect(()=>{configureMix(mixDraft);const transport=player.current;
+    if((transport.playing||wantsPlaying.current&&transport.context?.state==='running')&&(mode==='mix'||mode==='tracks'))void transport.play((mode==='tracks'?trackIds:tracks.map(t=>t.id)).filter(id=>transport.channels.has('track:'+id)).map(id=>'track:'+id),transport.position,{enabled:loop,start:loopStart,end:loopEnd||duration},true).catch(e=>setError(e.message));
+  },[configureMix,mixDraft,mode,trackIds]);
+  async function saveVersion(){setSavingVersion(true);try{
+    if(Object.keys(mixPending.current).length){if(mixTimer.current)clearTimeout(mixTimer.current);await saveMix();}
+    await cueWrites.current.catch(()=>{});
+    const saved=await call<Version>('versions.save',{project_id:head.project_id,revision_id:currentHead.current,title:savedTitle.trim()||'版本 '+(versions.length+1)},currentHead.current,true);
+    setVersions(items=>[saved,...items.filter(item=>item.id!==saved.id)]);setSavedTitle('');await onCommitted?.();
+  }catch(e){setError((e as Error).message);}finally{setSavingVersion(false);}}
   const mixFlush=useRef<()=>void>(()=>{});
   async function saveMix(){
     if(mixInFlight.current||!Object.keys(mixPending.current).length)return;
@@ -262,7 +316,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
       const result=await write;
       mixRevision.current=result.revision;preserveMix.current=result.revision.id;commitBefore.current=before.id;localCommit.current=result.revision.id;historyHead.current=result.revision.id;
       setUndoStack(stack=>[...stack,before.id]);setRedoStack([]);
-      setRevision(result.revision);setPlayback(result.playback);setPublication(null);if(!result.playback.available)setError(result.playback.reason??'正在更新相关声部的声音…');
+      setRevision(result.revision);setPlayback(result.playback);setPublication(null);if(result.playback.reason)setError(result.playback.reason);
       const remaining={...mixRef.current};for(const [id,fields] of Object.entries(batch)){const rest={...remaining[id]};for(const [field,value] of Object.entries(fields))if(rest[field as keyof MixValues]===value)delete rest[field as keyof MixValues];if(Object.keys(rest).length)remaining[id]=rest;else delete remaining[id];}
       mixRef.current=remaining;setMixDraft(remaining);await onCommitted?.();
     }catch(e){mixPending.current={};mixRef.current={};setMixDraft({});configureMix({});setError('混音未保存：'+(e as Error).message);}
@@ -276,6 +330,8 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   }
   useEffect(()=>()=>{if(mixTimer.current)clearTimeout(mixTimer.current);mixFlush.current();},[]);
   const applyCue=useCallback(async(state:AuditionState,sequence:string|null,preserve=false)=>{
+    const applying=++applyGeneration.current;
+    wantsPlaying.current=state.playing??false;
     if(state.revision_id!==revision.id){const project=await call<{current_revision:string}>('projects.get',{project_id:head.project_id});if(project.current_revision===state.revision_id){setVersionId('head');await onCommitted?.();}else setVersionId(state.revision_id);return;}
     if(sequence){if(sequence!==lastCue.current&&state.playing)playbackFinished.current=false;lastCue.current=sequence;}
     setMatched(state.level_match??true);player.current.setMatched(state.level_match??true);
@@ -288,7 +344,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     if(state.playing){
       applyingCue.current=true;
       setLoading(true);
-      try{await player.current.play(await sourceIds(state,publication),offset,{enabled:state.loop??false,start:(state.loop_start_sample??0)/rate,end:(state.loop_end_sample??snapshot.duration_samples??0)/rate},preserve);setError('');}
+      try{const ids=await sourceIds(state,publication,()=>applying===applyGeneration.current);if(applying!==applyGeneration.current||!ids.length)return;await player.current.play(ids,offset,{enabled:state.loop??false,start:(state.loop_start_sample??0)/rate,end:(state.loop_end_sample??snapshot.duration_samples??0)/rate},preserve);setError('');}
       catch(e){player.current.pause();setError((e as Error).message);}
       finally{applyingCue.current=false;setLoading(false);}
     }else{player.current.pause();player.current.offset=offset;setPosition(offset);}
@@ -298,7 +354,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     let active=true;
     const poll=async()=>{const cue=await call<Cue>('audition.get',{project_id:head.project_id});
       const changed=cue.sequence!==lastCue.current;
-      const readyNow=!playbackFinished.current&&cue.desired?.revision_id===revision.id&&cue.desired.playing&&!player.current.playing&&!!(publication||playback?.available)&&player.current.context?.state==='running';
+      const readyNow=!playbackFinished.current&&cue.desired?.revision_id===revision.id&&cue.desired.playing&&!player.current.playing&&!!(publication||(playback&&!playback.reason))&&player.current.context?.state==='running';
       if(active&&!localCuePending.current&&cue.sequence&&(changed||readyNow)&&cue.desired)await applyCue(cue.desired,cue.sequence,preserveMix.current===revision.id&&player.current.playing);
       if(active&&!localCuePending.current&&cue.sequence===lastCue.current&&cue.sequence&&cue.desired?.revision_id===revision.id&&(changed||Date.now()-lastReportTime.current>3000)){
         lastReportTime.current=Date.now();
@@ -345,7 +401,9 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   onPlaybackEnded.current=()=>{void cue({playing:false});};
 
   async function playToggle(){
-    if((mode==='mix'||mode==='tracks')&&!publication&&!playback?.available){setError(playback?.reason??'正在准备发生变化的音轨声音…');return;}
+    if(wantsPlaying.current&&!player.current.playing&&(loading||liveLoading.length)){await cue({playing:false});return;}
+    if((mode==='mix'||mode==='tracks')&&!publication&&(!playback||!!playback.reason)){setError(playback?.reason??'正在准备发生变化的音轨声音…');return;}
+    if(!player.current.playing){if(Object.keys(player.current.liveErrors).length){setLiveEpoch(value=>value+1);player.current.liveErrors={};}}
     if(!player.current.playing)try{await player.current.activate();}catch(e){setError((e as Error).message);return;}
     const restart=!player.current.playing&&(playbackFinished.current||player.current.position>=duration);
     if(restart)playbackFinished.current=false;
@@ -407,9 +465,9 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
 
   const chord=(snapshot.annotations??[]).filter(a=>a.kind==='chord'&&a.start_sample/rate<=position&&a.end_sample/rate>position).map(a=>a.text).join(' / ');
   useEffect(()=>{if(selected!=='all'&&!tracks.some(t=>t.id===selected))setSelected('all');},[tracks,selected]);
-  return <section className={'studio '+(focusEditor?'is-focused':'')+(chatFocused?' is-chat-focused':'')} aria-label="音乐工作台" data-revision={revision.id} data-position={position.toFixed(5)} data-playing={playing} data-audio-starts={player.current.schedule.length} data-live-voices={player.current.voices.size}>
-    <AutoHideToolbar title={title} position={time(position)} playing={playing} loading={loading} onPlay={()=>void playToggle()} onBack={onBack}>
-    <div className="studio-toolbar"><div className="transport-buttons"><button className="icon-button" aria-label="回到开头" onClick={()=>void cue({position_sample:0})}><Icon name="start"/></button><button className="play-button" aria-label={playing?'暂停':'播放'} disabled={loading} onClick={()=>void playToggle()}>{loading?'···':<Icon name={playing?'pause':'play'} size={16}/>}</button><button className={'icon-button '+(loop?'is-active':'')} aria-label="循环" aria-pressed={loop} onClick={()=>void cue({loop:!loop})}><Icon name="loop"/></button></div><div className="clock"><strong>{time(position)}</strong><span>/ {time(mode==='original'?duration:Math.max(duration,player.current.duration))}</span></div><span className="toolbar-divider"/><div className="mode-switch" aria-label="试听方式"><button aria-pressed={mode==='original'} disabled={!snapshot.source_asset_id} onClick={()=>void cue({mode:'original'})}>原曲</button>{referenceId&&<button aria-pressed={mode==='reference'} onClick={()=>void cue({mode:'reference'})}>参考 <span>A</span></button>}<button aria-pressed={mode==='mix'} disabled={!publication&&!playback?.available} onClick={()=>void cue({mode:'mix'})}>重建 <span>B</span></button>{hybridJob&&<button aria-pressed={mode==='hybrid'} onClick={()=>void cue({mode:'hybrid',hybrid_job_id:hybridJob.id})}>贝斯混合</button>}</div><span className="listening-label">{mode==='hybrid'?'播放：贝斯替换':mode==='tracks'?`播放：${trackIds.length} 条声部`:mode==='mix'?'播放：重建':mode==='reference'?'播放：参考版本':'播放：原曲'}</span><label className="level-match"><input type="checkbox" aria-label="试听电平匹配" checked={matched} onChange={e=>void cue({level_match:e.target.checked})}/>电平匹配</label><small className="stem-preload">声部 {prepared||'准备中'}</small><button className="soft-button" aria-pressed={focusEditor} onClick={()=>{setChatFocused(false);setFocusEditor(!focusEditor);}}>{focusEditor?'恢复侧栏':'专注编辑'}</button><button className="soft-button render-audition" onClick={()=>void render()} disabled={loading||renderBusy||editingBusy}>导出混音</button><div className="zoom-control"><button aria-label="缩小时间轴" onClick={()=>viewport(zoom/1.5)}>−</button><input aria-label="时间轴缩放" type="range" min={0} max={8} step={.05} value={Math.log2(zoom)} onChange={e=>viewport(2**+e.target.value)}/><button aria-label="放大时间轴" onClick={()=>viewport(zoom*1.5)}>+</button><button onClick={()=>{setZoom(1);setViewStart(0);}}>整曲</button><button onClick={()=>{const begin=loopStart,finish=loopEnd||duration;if(finish>begin){const z=Math.min(256,duration/(finish-begin));setZoom(z);setViewStart(Math.min(begin,duration-duration/z));}}}>选区</button></div></div>
+  return <section className={'studio '+(focusEditor?'is-focused':'')+(chatFocused?' is-chat-focused':'')} aria-label="音乐工作台" data-revision={revision.id} data-position={position.toFixed(5)} data-playing={playing} data-audio-starts={player.current.schedule.length} data-live-voices={player.current.voices.size} data-live-errors={Object.keys(player.current.liveErrors).length} data-live-levels={JSON.stringify(livePeaks)}>
+    <AutoHideToolbar title={title} position={time(position)} playing={playing||wantsPlaying.current&&(loading||!!liveLoading.length)} loading={loading||wantsPlaying.current&&!!liveLoading.length&&!playing} onPlay={()=>void playToggle()} onBack={onBack}>
+    <div className="studio-toolbar"><div className="transport-buttons"><button className="icon-button" aria-label="回到开头" onClick={()=>void cue({position_sample:0})}><Icon name="start"/></button><button className="play-button" aria-label={playing?'暂停':'播放'} disabled={loading} onClick={()=>void playToggle()}>{loading?'···':<Icon name={playing?'pause':'play'} size={16}/>}</button><button className={'icon-button '+(loop?'is-active':'')} aria-label="循环" aria-pressed={loop} onClick={()=>void cue({loop:!loop})}><Icon name="loop"/></button></div><div className="clock"><strong>{time(position)}</strong><span>/ {time(mode==='original'?duration:Math.max(duration,player.current.duration))}</span></div><span className="toolbar-divider"/><div className="mode-switch" aria-label="试听方式"><button aria-pressed={mode==='original'} disabled={!snapshot.source_asset_id} onClick={()=>void cue({mode:'original'})}>原曲</button>{referenceId&&<button aria-pressed={mode==='reference'} onClick={()=>void cue({mode:'reference'})}>参考 <span>A</span></button>}<button aria-pressed={mode==='mix'} disabled={!publication&&(!playback||!!playback.reason)} onClick={()=>void cue({mode:'mix'})}>重建 <span>B</span></button>{hybridJob&&<button aria-pressed={mode==='hybrid'} onClick={()=>void cue({mode:'hybrid',hybrid_job_id:hybridJob.id})}>贝斯混合</button>}</div><span className="listening-label">{mode==='hybrid'?'播放：贝斯替换':mode==='tracks'?`播放：${trackIds.length} 条声部`:mode==='mix'?'播放：重建':mode==='reference'?'播放：参考版本':'播放：原曲'}</span><label className="level-match"><input type="checkbox" aria-label="试听电平匹配" checked={matched} onChange={e=>void cue({level_match:e.target.checked})}/>电平匹配</label><small className="stem-preload">声部 {liveLoading.length?'载入 '+liveLoading.length+' 轨':playback&&!playback.reason?'实时混音':prepared||'就绪'}</small><button className="soft-button" aria-pressed={focusEditor} onClick={()=>{setChatFocused(false);setFocusEditor(!focusEditor);}}>{focusEditor?'恢复侧栏':'专注编辑'}</button><button className="soft-button render-audition" onClick={()=>void render()} disabled={loading||renderBusy||editingBusy}>导出混音</button><div className="zoom-control"><button aria-label="缩小时间轴" onClick={()=>viewport(zoom/1.5)}>−</button><input aria-label="时间轴缩放" type="range" min={0} max={8} step={.05} value={Math.log2(zoom)} onChange={e=>viewport(2**+e.target.value)}/><button aria-label="放大时间轴" onClick={()=>viewport(zoom*1.5)}>+</button><button onClick={()=>{setZoom(1);setViewStart(0);}}>整曲</button><button onClick={()=>{const begin=loopStart,finish=loopEnd||duration;if(finish>begin){const z=Math.min(256,duration/(finish-begin));setZoom(z);setViewStart(Math.min(begin,duration-duration/z));}}}>选区</button></div></div>
     </AutoHideToolbar>
     {error&&<div className="studio-message" role="status">{error}<button aria-label="关闭工作台提示" onClick={()=>setError('')}>×</button></div>}
     {mode==='tracks'&&<div className="audition-filter" role="status"><span>仅试听 {trackIds.length}/{tracks.length} 条声部{tracks.some(t=>!trackIds.includes(t.id))?' · 未播放：'+tracks.filter(t=>!trackIds.includes(t.id)).map(instrumentName).join('、'):''}</span><button onClick={()=>void cue({mode:'mix',track_ids:[]})}>返回完整混音</button></div>}
@@ -421,9 +479,9 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
 
         <input className="timeline-pan" aria-label="时间轴平移" type="range" min={0} max={Math.max(0,duration-duration/zoom)} step={.05} value={viewStart} onChange={e=>setViewStart(+e.target.value)}/><div className="loop-editor"><label>循环起点 <input aria-label="循环起点秒" type="number" min={0} max={duration} step={.1} value={+loopStart.toFixed(2)} onChange={e=>setLoopStart(+e.target.value)}/></label><span>—</span><label>终点 <input aria-label="循环终点秒" type="number" min={0} max={duration} step={.1} value={+loopEnd.toFixed(2)} onChange={e=>setLoopEnd(+e.target.value)}/></label><button onClick={()=>void cue({loop_start_sample:Math.round(loopStart*rate),loop_end_sample:Math.round(loopEnd*rate),loop:true})}>应用循环</button></div><div className="context-strip"><div><span>当前和弦</span><strong>{chord||'—'}</strong></div><div><span>当前试听</span><strong className="context-mode">{mode==='original'?'原始录音':mode==='mix'?'整曲重建':mode==='reference'?'参考版本 A':mode==='hybrid'?'原曲 + 新贝斯':'选定声部'}</strong></div></div></div>
       <PanelResize label="调整 AI 侧栏宽度" value={rightWidth} min={260} max={Math.min(900,Math.max(260,bodyWidth-leftWidth-332))} onChange={setAiWidth} reverse reset={340}/><aside className="inspector"><div className="inspector-tabs" role="tablist" aria-label="侧栏内容" onKeyDown={e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;const tabs=Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]')),index=tabs.indexOf(e.target as HTMLButtonElement);if(index<0)return;e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(index+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next].focus();tabs[next].click();}}>{[['discussion','讨论'],['sounds','音色与效果'],['versions','版本'],['analysis','分析']].map(([id,label])=><button role="tab" key={id} tabIndex={inspector===id?0:-1} aria-selected={inspector===id} aria-pressed={inspector===id} onClick={()=>{setInspector(id);if(id!=='discussion')setChatFocused(false);}}><Icon name={id==='discussion'?'chat':id==='sounds'?'mixer':id==='versions'?'history':'analysis'}/>{label}</button>)}</div>
-        <div className={'inspector-content '+(inspector==='discussion'?'has-discussion':'')}>{inspector==='discussion'?<Discussion expanded={chatFocused} onToggleExpand={()=>{setFocusEditor(false);setChatFocused(value=>!value);}} revision={revision} headId={head.id} instrumentDraft={instrumentDraft} onConsumeDraft={consumeInstrumentDraft} jobs={jobs} start={loopStart} end={loopEnd||duration} trackId={selected==='all'?null:selected} onLocate={locate} onCompare={id=>{void compare(id);setChatFocused(false);setInspector('versions');}}/>:inspector==='analysis'?<><div className="inspector-section"><h3>分析概览</h3><div className="stat-grid"><div><strong>{tracks.length}</strong><span>声部</span></div><div><strong>{(snapshot.annotations??[]).filter(a=>a.kind==='chord').length}</strong><span>和弦</span></div><div><strong>{sections.length}</strong><span>段落</span></div><div><strong>{versions.length}</strong><span>版本</span></div></div></div><details className="inspector-section issues"><summary>待核对与来源 <span>{issues.length}</span></summary><ul>{issues.map((issue,i)=><li key={i}>{issue}</li>)}</ul></details><div className="inspector-section"><span className="mini-label">重建音频</span><p className="render-ready" data-render-status={renderJob?.status??'none'}>{playback?.available?'● 实时混音已就绪':renderBusy?'◌ 正在生成此版本的音频':renderJob?.status==='failed'?'× 渲染失败 · '+String(renderJob.error?.code):publication?'● 此版本的音频已生成':'○ 此版本等待渲染'}</p><small>混音即时生效；更换音源或音符后自动更新相关声部。</small></div></>:
-        inspector==='sounds'?<SoundPanel revision={revision} selected={selected} onSelect={setSelected} pluginInfo={pluginInfo} enabled={selected!=='all'&&revision.id===head.id&&!editingBusy} onChoose={choice=>{setInstrumentDraft({id:crypto.randomUUID(),revisionId:revision.id,trackId:selected,text:'请为当前所选声部使用'+choice.name+'（instrument_id='+choice.id+'）。'+(choice.presetId?'指定音色 '+choice.presetName+'（preset_id='+choice.presetId+'）。':'请从该乐器下的跨库音色中，按编曲、音域与奏法选择合适音色。')+'保持音符、时间与其他声部不变；捕获验证通过后换音色并生成整曲试听。'});setInspector('discussion');}}/>:
-        <div className="inspector-section"><h3>版本历史</h3><label className="version-select">查看版本<select aria-label="工程版本" value={versionId} onChange={e=>setVersionId(e.target.value)}><option value="head">当前版本</option>{versions.map((v,i)=><option key={v.id} value={v.id}>版本 {versions.length-i} · {new Date(v.created_at*1000).toLocaleTimeString()}</option>)}</select></label>{versions.map((v,i)=><div className={'version-card '+(v.id===revision.id?'is-current':'')} key={v.id}><div><i/><span>版本 {versions.length-i}</span><small>{new Date(v.created_at*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</small></div><button onClick={()=>setVersionId(v.id)}>查看</button><button onClick={()=>void compare(v.id)}>比较差异</button><button onClick={()=>void cue({mode:'reference',reference_revision_id:v.id})}>设为 A</button></div>)}{difference&&<div className="version-diff">{Object.entries(difference).filter(([name])=>name!=='settings').map(([name,v])=><p key={name}>{name} <span>+{v.added.length} −{v.removed.length} Δ{v.changed.length}</span></p>)}</div>}</div>}
+        <div className={'inspector-content '+(inspector==='discussion'?'has-discussion':'')}>{inspector==='discussion'?<Discussion expanded={chatFocused} onToggleExpand={()=>{setFocusEditor(false);setChatFocused(value=>!value);}} revision={revision} headId={head.id} instrumentDraft={instrumentDraft} onConsumeDraft={consumeInstrumentDraft} jobs={jobs} start={loopStart} end={loopEnd||duration} trackId={selected==='all'?null:selected} onLocate={locate} onCompare={id=>{void compare(id);setChatFocused(false);setInspector('versions');}}/>:inspector==='analysis'?<><div className="inspector-section"><h3>分析概览</h3><div className="stat-grid"><div><strong>{tracks.length}</strong><span>声部</span></div><div><strong>{(snapshot.annotations??[]).filter(a=>a.kind==='chord').length}</strong><span>和弦</span></div><div><strong>{sections.length}</strong><span>段落</span></div><div><strong>{versions.length}</strong><span>版本</span></div></div></div><details className="inspector-section issues"><summary>待核对与来源 <span>{issues.length}</span></summary><ul>{issues.map((issue,i)=><li key={i}>{issue}</li>)}</ul></details><div className="inspector-section"><span className="mini-label">重建音频</span><p className="render-ready" data-render-status={renderJob?.status??'none'}>{liveLoading.length?'◌ 正在载入 '+liveLoading.map(id=>instrumentName(tracks.find(t=>t.id===id)!)).join('、'):playback&&!playback.reason?'● 逐轨实时播放':renderBusy?'◌ 正在生成此版本的音频':renderJob?.status==='failed'?'× 渲染失败 · '+String(renderJob.error?.code):publication?'● 此版本的音频已生成':'○ 此版本等待渲染'}</p><small>编辑只更新相关音轨；导出时才生成整曲混音。</small></div></>:
+        inspector==='sounds'?<SoundPanel revision={revision} selected={selected} onSelect={setSelected} pluginInfo={pluginInfo} enabled={selected!=='all'&&revision.id===head.id&&!editingBusy} onChoose={choice=>{setInstrumentDraft({id:crypto.randomUUID(),revisionId:revision.id,trackId:selected,text:'请为当前所选声部使用'+choice.name+'（instrument_id='+choice.id+'）。'+(choice.presetId?'指定音色 '+choice.presetName+'（preset_id='+choice.presetId+'）。':'请从该乐器下的跨库音色中，按编曲、音域与奏法选择合适音色。')+'保持音符、时间与其他声部不变；捕获音色后应用到当前音轨，直接实时试听。'});setInspector('discussion');}}/>:
+        <div className="inspector-section"><h3>已保存版本</h3><div className="save-version-row"><input aria-label="版本名称" placeholder="版本名称（可选）" value={savedTitle} onChange={e=>setSavedTitle(e.target.value)}/><button disabled={savingVersion||mixSaving||editingBusy} onClick={()=>void saveVersion()}>保存版本</button></div>{!versions.length&&<p className="muted">点击保存版本，记录此时的工程。平时的修改会自动保存。</p>}<label className="version-select">查看版本<select aria-label="工程版本" value={versionId} onChange={e=>setVersionId(e.target.value)}><option value="head">当前工程</option>{versions.map(v=><option key={v.id} value={v.revision_id}>{v.title} · {new Date(v.created_at*1000).toLocaleTimeString()}</option>)}</select></label>{versions.map(v=><div className={'version-card '+(v.revision_id===revision.id?'is-current':'')} key={v.id}><div><i/><span>{v.title}</span><small>{new Date(v.created_at*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</small></div><button onClick={()=>setVersionId(v.revision_id)}>查看</button><button onClick={()=>void compare(v.revision_id)}>比较差异</button><button onClick={()=>void cue({mode:'reference',reference_revision_id:v.revision_id})}>设为 A</button></div>)}{difference&&<div className="version-diff">{Object.entries(difference).filter(([name])=>name!=='settings').map(([name,v])=><p key={name}>{name} <span>+{v.added.length} −{v.removed.length} Δ{v.changed.length}</span></p>)}</div>}</div>}
       </div></aside></div><div className="studio-bottom"><span>空格：播放 / 暂停</span><span>双击声部进入钢琴卷帘 · 混音即时生效并自动保存</span></div>
   </section>;
 }

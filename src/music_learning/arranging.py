@@ -1,4 +1,4 @@
-"""One scoped edit transaction and its render job; receipts survive provider failure."""
+"""One scoped edit transaction; playback is independent of offline export."""
 
 from __future__ import annotations
 
@@ -185,27 +185,13 @@ def dispatch(service, db, op, args, request):
         raise DomainError(
             "turn_lease_expired", "Discussion lease expired during edit validation; nothing committed", 409
         )
-    from .rendering import submit
     from .playback import plan, retarget
 
     retarget(service, db, before["id"], revision, request)
     playback = plan(service, db, revision)
     if playback["available"]:
         db.execute(update(t.projects).where(t.projects.c.id == args.project_id).values(status="ready"))
-    job = (
-        None
-        if playback["available"]
-        else submit(
-            service,
-            db,
-            c.SubmitJob(
-                project_id=args.project_id,
-                kind="project.render",
-                payload={"revision_id": revision["id"], "preview": True},
-            ),
-            request,
-        )
-    )
+    job = None  # Editing publishes working state; live VST3 playback is independent of export.
     receipt = {
         "turn_id": turn["id"],
         "project_id": args.project_id,
@@ -216,9 +202,9 @@ def dispatch(service, db, op, args, request):
         "render_job_id": job["id"] if job else None,
         "playback_available": playback["available"],
         "created_at": time.time(),
-        "notice": "Mix updated; immediately playable from revision-bound stems."
+        "notice": "Working state updated; changed tracks are played by the live VST3 engine. No export queued."
         if not job
-        else "Changed tracks queued; unchanged track audio will be reused where compatible.",
+        else "Export queued.",
     }
     db.execute(insert(arrangements).values(turn_id=turn["id"], payload=receipt))
     return receipt

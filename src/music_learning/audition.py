@@ -19,6 +19,10 @@ def dispatch(service, db, op, args, request):
         )
         snapshot = c.Snapshot.model_validate(revision["snapshot"])
         state = args.state
+        if "level_match" not in state.model_fields_set:
+            from .application_settings import defaults
+
+            state = state.model_copy(update={"level_match": defaults(db)["preferences"]["level_match"]})
         if state.mode == "hybrid":
             if not state.hybrid_job_id:
                 raise ValueError("hybrid audition requires a specific completed job")

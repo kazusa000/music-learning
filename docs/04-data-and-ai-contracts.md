@@ -1,5 +1,7 @@
 # 数据与 AI 操作约定
 
+2026-10-20 最新覆盖：普通编辑仅自动保存工作状态，用户版本由显式保存；换音色/改音符走常驻逐轨播放，整曲混音仅显式导出。设置、65统一操作及实际限制见 [设置与常驻音轨](36-settings-and-live-tracks.md)，此约定替代下文每次编辑需整曲渲染的旧前提。
+
 2026-10-20混音契约更新：`mixer.set`原子创建混音版本并返回`playback`与可选`preparation_job_id`；`playback.get`提供目标revision可验证的逐轨来源和烘焙增益/声像。可播放的派生混音不伪装成新Render，最终WAV由`project.export`生成。统一API/SDK/CLI共57操作、11任务，无迁移；见[即时混音](33-live-mixing.md)。
 
 2026-10-20更新：dialogue.submit默认edit_mode=auto，当前工程的制作scope由Service自动计算，无前端权限开关；音轨与片段是讨论上下文，引用可选且不影响轮次成功。显式SDK只读/范围约束和版本/幂等/事务/租约校验保留，见[自动对话操作](31-automatic-actions.md)。

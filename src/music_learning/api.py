@@ -60,6 +60,8 @@ def create_app(settings: Settings | None = None):
             except asyncio.TimeoutError:
                 runner.cancel()
                 await asyncio.gather(runner, return_exceptions=True)
+            if service.live_playback is not None:
+                service.live_playback.close()
             database.close()
 
     app = FastAPI(
@@ -209,8 +211,11 @@ def create_app(settings: Settings | None = None):
 
     @app.get("/v1/events")
     async def events(
-        request: Request, after: int = 0, project_id: str | None = None,
-        follow: bool = True, live_only: bool = False,
+        request: Request,
+        after: int = 0,
+        project_id: str | None = None,
+        follow: bool = True,
+        live_only: bool = False,
     ):
         try:
             after = int(request.headers.get("last-event-id", after))

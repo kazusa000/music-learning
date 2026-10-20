@@ -59,6 +59,10 @@ class Service:
         self.database = database
         self.settings = database.settings
         self.storage = Storage(self.settings)
+        self.live_playback = None
+        import threading
+
+        self.live_lock = threading.Lock()
 
     def execute(self, request: c.Request | dict):
         try:
@@ -70,10 +74,25 @@ class Service:
             args = model.model_validate(request.arguments)
             if mutates and not request.idempotency_key:
                 raise DomainError("idempotency_required", "Writes require idempotency_key", 422)
+            if request.operation.startswith("playback.live."):
+                from .live_playback import LivePlayback
+
+                with self.live_lock:
+                    if self.live_playback is None:
+                        self.live_playback = LivePlayback(self)
+                result = self.live_playback.dispatch(request.operation, args)
+                TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
+                return {"schema_version": 1, "request_id": request.request_id, "ok": True, "result": result}
             if request.operation == "dialogue.models":
                 from .model_catalog import models
 
-                result = models(self.settings, args.login_mode, refresh=args.refresh)
+                login = args.login_mode
+                if "login_mode" not in args.model_fields_set:
+                    from .application_settings import defaults
+
+                    with self.database.transaction(write=False) as db:
+                        login = defaults(db)["preferences"]["login_mode"]
+                result = models(self.settings, login, refresh=args.refresh)
                 TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
                 return {"schema_version": 1, "request_id": request.request_id, "ok": True, "result": result}
             hash_arguments = args.model_dump(mode="json")
@@ -329,6 +348,10 @@ class Service:
         return revision
 
     def _dispatch(self, db, op, args, request):
+        if op.startswith("versions."):
+            from .checkpoints import dispatch
+
+            return dispatch(self, db, op, args, request)
         if op in ("playback.get", "mixer.set"):
             from .playback import dispatch
 
@@ -365,6 +388,10 @@ class Service:
                 return categories(self.settings)
             revision = self._revision(db, args)
             return recommend(self.settings, revision["snapshot"], args.track_id)
+        if op in ("application.settings.get", "application.settings.set"):
+            from .application_settings import dispatch
+
+            return dispatch(self, db, op, args, request)
         if op == "describe_capabilities":
             return {
                 "schema_version": 1,
@@ -372,7 +399,8 @@ class Service:
                 "operations": {
                     name: {
                         "mutates": write,
-                        "requires_expected_revision": write and name != "projects.create",
+                        "requires_expected_revision": write
+                        and name not in ("projects.create", "application.settings.set"),
                         "arguments_schema": model.model_json_schema(),
                         "result_schema": TypeAdapter(c.RESULT_TYPES[name]).json_schema(),
                     }

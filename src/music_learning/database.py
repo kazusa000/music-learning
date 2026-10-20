@@ -35,9 +35,9 @@ class Database:
                 version = (
                     c.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() if exists else None
                 )
-                if version == "0007":
+                if version == "0008":
                     return
-                if version not in (None, "0001", "0002", "0003", "0004", "0005", "0006"):
+                if version not in (None, "0001", "0002", "0003", "0004", "0005", "0006", "0007"):
                     raise RuntimeError("Database schema is newer or unknown; refusing downgrade")
             self.backup()
         with self.transaction() as c:

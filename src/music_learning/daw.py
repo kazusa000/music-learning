@@ -417,9 +417,13 @@ def dispatch(service, db, op, args, request):
         else:
             snapshot = service._revision(db, args)["snapshot"]
             author = "user"
-        return service.commit(
+        updated = service.commit(
             db, args.project_id, head["id"], snapshot, author, args.description, request.request_id
         )
+        from .playback import retarget
+
+        retarget(service, db, head["id"], updated, request)
+        return updated
     revision = service._revision(db, args)
     return {
         "revision_id": revision["id"],

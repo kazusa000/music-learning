@@ -14,6 +14,10 @@ def settings(tmp_path):
     return Settings(
         data_root=tmp_path / "application",
         lease_seconds=3,
+        # These independent short fixtures produce small bounded outputs. Keep
+        # a fixture reserve without requiring production's 3 GiB on the test drive.
+        # The application's default and production config are unchanged.
+        pipeline_min_free_bytes=128 * 1024**2,
         plugin_roots=[ROOT / "plugins", ROOT / "runtime/build/msvc/MLFixture_artefacts"],
     )
 

@@ -221,6 +221,16 @@ def music_query(service, db, args):
 
 
 def submit(service, db, args, request, *, retry_of=None):
+    from .application_settings import defaults
+
+    prefs = defaults(db)["preferences"]
+    changes = {}
+    if args.model is None:
+        changes["model"] = prefs["default_model"]
+    if "login_mode" not in args.model_fields_set:
+        changes["login_mode"] = prefs["login_mode"]
+    if changes:
+        args = args.model_copy(update=changes)
     revision = service._revision(db, args)
     a, b = bounds(revision["snapshot"], args.start_sample, args.end_sample, args.track_id)
     if args.session_id:

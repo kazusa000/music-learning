@@ -209,3 +209,5 @@
   .zoom-control { margin-left: 0; }
   .studio-toolbar { padding: 9px; }
 }
+
+.save-version-row{display:flex;gap:7px;margin:12px 0}.save-version-row input{min-width:0;flex:1;padding:7px;background:#191919;border:1px solid #3c3c3c;border-radius:5px;color:#ddd}.save-version-row button{white-space:nowrap;padding:7px 10px;font-size:12px}.version-card>div span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

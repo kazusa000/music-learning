@@ -1,15 +1,19 @@
+import {usePreferences} from './Preferences';
 import {useEffect,useRef,useState} from 'react';
 import {Transport} from './transport';
 import {Icon} from './Icon';
 const time=(n:number)=>`${Math.floor(n/60)}:${Math.floor(n%60).toString().padStart(2,'0')}`;
 export function AudioPreview({label,assetId,duration,onSelect,initial=false,previewGain}:{label:string;assetId:string;duration:number;onSelect:(audio:HTMLAudioElement)=>void;initial?:boolean;previewGain?:number}){
+  const {prefs,view}=usePreferences(),appliedDefaults=useRef(false);
   const preview=useRef<Transport|null>(null),gain=useRef<GainNode|null>(null),media=useRef<MediaElementAudioSourceNode|null>(null);
-  const [matched,setMatched]=useState(true),[preparing,setPreparing]=useState(false);
-  useEffect(()=>{const transport=new Transport();preview.current=transport;const timer=setTimeout(()=>{if(previewGain===undefined)void transport.buffer(assetId).catch(()=>{});},750);return()=>{clearTimeout(timer);void transport.close();preview.current=null;media.current=null;gain.current=null;};},[assetId]);
+  const [matched,setMatched]=useState(prefs.level_match),[preparing,setPreparing]=useState(false);
+  const matchedRef=useRef(matched);matchedRef.current=matched;
+  useEffect(()=>{if(view&&!appliedDefaults.current){setMatched(prefs.level_match);appliedDefaults.current=true;}},[view,prefs.level_match]);
+  useEffect(()=>{const transport=new Transport();preview.current=transport;const timer=setTimeout(()=>{if(previewGain===undefined&&matchedRef.current)void transport.buffer(assetId).catch(()=>{});},750);return()=>{clearTimeout(timer);void transport.close();preview.current=null;media.current=null;gain.current=null;};},[assetId]);
   useEffect(()=>{const transport=preview.current;if(gain.current&&transport?.context&&previewGain!==undefined)gain.current.gain.setTargetAtTime(matched?previewGain:1,transport.context.currentTime,.01);},[previewGain,matched]);
   async function level(){const transport=preview.current;if(!transport||!audio.current)return;setPreparing(true);
     try{await transport.activate();if(!media.current){media.current=transport.context!.createMediaElementSource(audio.current);gain.current=transport.context!.createGain();gain.current.gain.value=0;media.current.connect(gain.current);gain.current.connect(transport.context!.destination);}
-      if(previewGain===undefined)await transport.buffer(assetId);gain.current!.gain.setTargetAtTime(matched?(previewGain??transport.gain(assetId)):1,transport.context!.currentTime,.01);
+      if(previewGain===undefined&&matched)await transport.buffer(assetId);gain.current!.gain.setTargetAtTime(matched?(previewGain??transport.gain(assetId)):1,transport.context!.currentTime,.01);
     }catch(e){audio.current.pause();setError((e as Error).message);}finally{setPreparing(false);}
   }
   const audio=useRef<HTMLAudioElement>(null),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(duration),[error,setError]=useState('');

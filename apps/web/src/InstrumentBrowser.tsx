@@ -42,6 +42,6 @@ export function InstrumentBrowser({enabled,onChoose}:{enabled:boolean;onChoose:(
       {!presets.total&&<p className="instrument-hint">暂无符合条件的音色。后续音源库会继续归入这里。</p>}
       <div className="instrument-pages"><button disabled={!offset||loading} onClick={()=>setOffset(Math.max(0,offset-20))}>上一页</button><span>{presets.total?offset+1:0}–{offset+presets.items.length} / {presets.total}</span><button disabled={presets.next_offset===null||loading} onClick={()=>setOffset(presets.next_offset!)}>下一页</button></div>
     </>}
-    <p className="instrument-hint">选好后会填入 AI 对话，发送后更换并生成试听。</p>
+    <p className="instrument-hint">选好后会填入 AI 对话，发送后更换该音轨的音色。</p>
   </section>;
 }

@@ -1935,6 +1935,101 @@
       "title": "JobRef",
       "type": "object"
     },
+    "LiveChunk": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "generation": {
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "sample": {
+          "minimum": 0,
+          "title": "Sample",
+          "type": "integer"
+        },
+        "frames": {
+          "default": 8192,
+          "maximum": 16384,
+          "minimum": 1,
+          "title": "Frames",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_id",
+        "generation",
+        "sample"
+      ],
+      "title": "LiveChunk",
+      "type": "object"
+    },
+    "LiveOpen": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "track_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Track Id",
+          "type": "string"
+        },
+        "client_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Client Id",
+          "type": "string"
+        },
+        "client_sequence": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Client Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "project_id",
+        "track_id",
+        "client_id"
+      ],
+      "title": "LiveOpen",
+      "type": "object"
+    },
+    "LiveSession": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "title": "LiveSession",
+      "type": "object"
+    },
     "Meter": {
       "additionalProperties": false,
       "properties": {
@@ -2749,6 +2844,55 @@
         "order"
       ],
       "title": "PluginInstance",
+      "type": "object"
+    },
+    "PreferencesPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "default_model": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Model"
+        },
+        "login_mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "isolated",
+                "existing"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Login Mode"
+        },
+        "level_match": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Level Match"
+        }
+      },
+      "title": "PreferencesPatch",
       "type": "object"
     },
     "PreprocessingResult": {
@@ -3848,6 +3992,41 @@
       "title": "SaveNote",
       "type": "object"
     },
+    "SaveVersion": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "title": {
+          "default": "保存版本",
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "SaveVersion",
+      "type": "object"
+    },
     "SetAudition": {
       "additionalProperties": false,
       "properties": {
@@ -4581,6 +4760,25 @@
       "title": "Track",
       "type": "object"
     },
+    "UpdateApplicationSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_version": {
+          "minimum": 0,
+          "title": "Expected Version",
+          "type": "integer"
+        },
+        "preferences": {
+          "$ref": "#/$defs/PreferencesPatch"
+        }
+      },
+      "required": [
+        "expected_version",
+        "preferences"
+      ],
+      "title": "UpdateApplicationSettings",
+      "type": "object"
+    },
     "UploadResult": {
       "additionalProperties": false,
       "properties": {
@@ -4609,6 +4807,57 @@
     }
   },
   "operations": {
+    "versions.list": {
+      "arguments": "ProjectPage",
+      "result": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "versions.save": {
+      "arguments": "SaveVersion",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "playback.live.open": {
+      "arguments": "LiveOpen",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "playback.live.status": {
+      "arguments": "LiveSession",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "playback.live.chunk": {
+      "arguments": "LiveChunk",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "playback.live.close": {
+      "arguments": "LiveSession",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
     "describe_capabilities": {
       "arguments": "Empty",
       "result": {
@@ -4616,6 +4865,22 @@
         "type": "object"
       },
       "mutates": false
+    },
+    "application.settings.get": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "application.settings.set": {
+      "arguments": "UpdateApplicationSettings",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
     },
     "projects.list": {
       "arguments": "ProjectList",
