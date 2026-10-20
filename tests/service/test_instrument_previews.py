@@ -56,6 +56,9 @@ def test_preview_is_library_scoped_deduplicated_and_cached(service, previews):
     hit = invoke(service, "instruments.preview.prepare", request, key="preview-three")
     assert hit["cached"] and hit["id"] == a["id"]
     assert invoke(service, "instruments.preview.stats")["counts"]["ready"] == 1
+    labels = invoke(service, "instruments.labels", dict(preset_ids=[entry["id"]], parameter_names=["Gain"]))
+    assert labels["parameters"]["Gain"] == "增益（Gain）"
+    assert labels["presets"][entry["id"]].endswith("（" + entry["name"] + "）")
     assert invoke(service, "projects.list") == []
     with service.database.transaction(write=False) as db:
         from sqlalchemy import text
@@ -171,6 +174,7 @@ def test_import_localization_preserves_identity_and_supports_new_libraries():
     entry = dict(
         id="new",
         name="Future Maker Space",
+        library_name="Future Keys",
         backend="sfz",
         bank_root="new",
         family="piano",
@@ -180,7 +184,15 @@ def test_import_localization_preserves_identity_and_supports_new_libraries():
     )
     result = prepare_import(classify(entry))
     assert result["name"] == entry["name"] and result["id"] == "new"
-    assert result["display_variant_name"] == "太空" and result["preview_spec"]["phrase_version"]
+    assert result["display_variant_name"] == "太空（Future Maker Space）"
+    assert result["model"]["display_name"] == "新款钢琴（Future Piano）"
+    assert result["source"]["display_name"] == "Future Keys"
+    assert result["preview_spec"]["phrase_version"]
+    assert prepare_import(classify(result))["display_name"] == result["display_name"]
+    assert result["labels_zh"]["variant"] == "太空"
+    # Product names never require a Chinese alias, including future imports.
+    without_source_alias = {**entry, "labels_zh": {"model": "新款钢琴", "variant": "太空"}}
+    assert prepare_import(classify(without_source_alias))["source"]["display_name"] == "Future Keys"
     assert not translate("LA Custom C7 Grand Piano")[1]
     with pytest.raises(ValueError, match="labels_zh"):
         prepare_import(classify(dict(entry, labels_zh={})))

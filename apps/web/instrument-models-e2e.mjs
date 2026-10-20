@@ -52,8 +52,12 @@ page.setDefaultTimeout(10000);
 try{
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__models`);
   const model=page.locator('.model-option[title="LA Custom C7 Grand Piano"]');
-  await model.waitFor();check('current model is marked',await model.getAttribute('class').then(s=>s.includes('is-current')));await model.click();
+  await model.waitFor();check('current model is marked',await model.getAttribute('class').then(s=>s.includes('is-current')));
+  check('model shows Chinese and parenthesized original',(await model.locator('strong').innerText()).includes('（LA Custom C7 Grand Piano）'));
+  check('product retains its factory name',(await model.locator('small').innerText()).includes('Keyscape')&&!(await model.locator('small').innerText()).includes('珍藏'));
+  await model.click();
   const first=page.locator('.variant-option:not(.is-current)').first();await first.waitFor();
+  check('variant shows Chinese and exact parenthesized original',(await first.innerText()).includes('（'+await first.getAttribute('title')+'）'));
   check('model navigation performs no application',(await confirmed()).length===0);
   check('confirmation requires a variant',await apply().isDisabled());
   await page.locator('.variant-option.is-current').click();check('current preset cannot be applied again',await apply().isDisabled());
@@ -92,7 +96,7 @@ try{
   await page.getByRole('radio').first().focus();await page.keyboard.press('ArrowDown');check('keyboard selects a variant',await page.getByRole('radio',{checked:true}).count()===1);
   await page.getByRole('radio').filter({hasText:'音箱效果'}).click();await apply().click();
   check('new track receives the explicit choice',(await confirmed())[1].track==='second'&&(await confirmed())[1].choice.presetName.includes('音箱效果'));
-  check('Chinese visible names retain original English details',(await page.locator('.instrument-model-heading').innerText()).includes('一代簧片电钢琴')&&await page.locator('[title="MKI Amped"]').count()===1);
+  check('Pianoteq model and variant visibly retain original names',(await page.locator('.instrument-model-heading').innerText()).includes('一代簧片电钢琴（Vintage Tines MKI）')&&(await page.locator('[title="MKI Amped"]').innerText()).includes('音箱效果（MKI Amped）'));
   if(audition){
     await page.getByRole('button',{name:'测试监听',exact:true}).click();
     await page.waitForFunction(()=>window.__mainTransport?.playing);

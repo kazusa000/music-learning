@@ -1,6 +1,6 @@
 # 中文音色目录与独立试听
 
-2026-10-21。型号、变体、来源与音色参数用中文显示；型号和变体各有独立试听按钮。目录选择仍为「乐器类别 → 型号 → 变体 → 确认应用」。
+2026-10-21。型号、变体与音色参数显示「中文名（英文原名）」；Keyscape、Pianoteq 等产品/来源库名称保持原名。型号和变体各有独立试听按钮。目录选择仍为「乐器类别 → 型号 → 变体 → 确认应用」。
 
 ## 使用
 
@@ -11,9 +11,9 @@
 
 ## 中文与后续导入
 
-`instrument_localization.py` 提供统一中文词表和原厂型号映射。当前 489 个可选预设、53 型号组的型号及变体名称都能完整解释为中文，不以英文原名作为列表回退。C7、D6、W1 等型号编号仍保留。原始 `name`、`variant_name`、型号、插件参数 ID/值及 `preset_id` 不改；原英文放入悬停详情并参与搜索，中文也可搜索。
+`instrument_localization.py` 提供统一中文词表和原厂型号映射。当前 489 个可选预设、53 型号组显示中文并直接附上括号内的原厂名称，例如「一代簧片电钢琴（Vintage Tines MKI）」、「音箱效果（MKI Amped）」。原英文直接可见，不必悬停查看；中英文均可搜索。原始 `name`、`variant_name`、型号、插件参数 ID/值及 `preset_id` 不改。
 
-API 增加 `display_name`、`display_variant_name`、`model.display_name` 与 `source.display_name`。当前音色、音轨副标题、选择确认、加载状态和参数面板使用中文显示。`instruments.labels` 只批量查询当前使用的预设和参数名，不要求前端先下载整库。
+API 的 `display_name`、`display_variant_name`、`model.display_name` 和 `instruments.labels` 统一提供双语显示，覆盖当前音色、音轨副标题、选择确认、加载状态和参数面板。`source.display_name` 始终取原始 `library_name`，旧 `labels_zh.library` 不再用于替换品牌名称，新来源也无需提供中文产品别名。`instruments.labels` 只批量查询当前使用的预设和参数名，不要求前端先下载整库。
 
 所有导入条目保留统一 `model_spec`，并由 `classify/with_model` 加入中文视图及版本化 `preview_spec`。Keyscape 索引/增量验证、Pianoteq 9.1.2 接入、旧 Pianoteq 适配和通用采样/合成器目录共用中文准备函数。新库可提供：
 
@@ -21,13 +21,12 @@ API 增加 `display_name`、`display_variant_name`、`model.display_name` 与 `s
 {
   "labels_zh": {
     "model": "新型号的中文名称",
-    "variant": "自然",
-    "library": "来源库的中文名称"
+    "variant": "自然"
   }
 }
 ```
 
-导入目录下可选的 `labels.zh-CN.json` 使用「预设 ID → labels_zh」结构。词表无法完整解释的新名称，先由导入适配工作补齐中文映射，再发布；不会靠中文占位名把新音色塞进选择器。已验证条目的中文信息会持久保存。通用目录仍兼容保存未验证库存，前端型号/变体列表仅查询已入库验证的音色，不新增筛选开关。
+导入目录下可选的 `labels.zh-CN.json` 使用「预设 ID → labels_zh」结构。词表无法完整解释的新型号/变体，先由导入适配工作补齐中文映射，再发布；不会靠中文占位名把新音色塞进选择器。持久保存的映射仅含翻译文本，括号原名在共享显示层组装，反复导入/读取不会嵌套括号。通用目录仍兼容保存未验证库存，前端型号/变体列表仅查询已入库验证的音色，不新增筛选开关。
 
 后台观察发布目录的变动，自动为新入库条目加入同一个试听队列：先预热各型号代表，再准备其余变体。实际点击优先于后台预热。音源资源始终从用户指定的 H 库读取，本次不改写现有目录、插件、样本或原验证报告。
 
@@ -66,3 +65,11 @@ SDK 对应 `instrument_labels`、`prepare_instrument_preview`、`instrument_prev
 小型报告在忽略目录 `data/maintenance/instrument-previews-20261021`。已核对 6 款缓存的来源、内容指纹和音频 SHA，并把这份约 7.4 MB 的独立验收缓存移入正式运行的试听缓存目录，仅保留一份成品；原报告的 ID/SHA 仍有效。其余音色在用户应用运行期间后台预热，不能称为已经全部生成。
 
 本次正式只读基线为 head `2667f2a5b96f483c8c616e3cf00e33ac`、1 工程/32 修订/23 任务；部署后 projects/revisions/jobs 全行摘要一致。与更早文档的 head 差异在本次开始前已存在。无正式整曲制作、音乐模型或对话推理；NAS 未访问，固定原生宿主没有重建。这里证明技术发声与播放，未作逐款人耳音质精选。
+
+## 名称显示修订
+
+同日按用户补充要求，产品/来源库名恢复原名，其余音色名称和参数改为中文加括号原名。由共享显示规则统一 API 和前端，未修改 H 库清单、原厂状态或试听内容指纹。后续新库沿用同规则，不必再为产品名提供中文别名。
+
+18 项目录/试听后端回归通过，涵盖新库产品名、旧中文来源别名兼容、反复入库不嵌套括号、参数双语及改名命中旧音频缓存。独立 HTTP/SDK/CLI 回读 53 型号/489 唯一变体，真实 Edge 26 项目录操作通过，包含直接可见的中英文、原名来源、窄栏、换轨、重试、键盘和确认应用。TypeScript/Vite 构建、Ruff、差异检查通过；本次只改显示，没有重跑真实插件发声验证。
+
+正式服务更新后 HTTP 回读 `Keyscape`、`自然（LA Custom C7 - Natural）` 和 `增益（Gain）` 正常。停启前 223 款就绪试听 ID 全部仍为就绪，未因改名重新准备；其余队列继续恢复。正式 projects/revisions/jobs 全表摘要与本轮开始一致，未写正式音乐、调用正式整曲制作或访问 NAS。独立证据在 `data/maintenance/instrument-names-20261021` 和 `data/maintenance/instrument-models-20261020-names-20261021`。

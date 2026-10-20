@@ -559,7 +559,12 @@ def label(text, explicit=None, fallback="音色"):
     return translated if not missing else fallback
 
 
-def localized(entry):
+def bilingual(chinese, original):
+    """Present translated names alongside their unchanged factory spelling."""
+    return chinese if chinese == original else f"{chinese}（{original}）"
+
+
+def translated_names(entry):
     names = entry.get("labels_zh", {})
     model = entry["model"]
     variant = entry["variant_name"]
@@ -579,33 +584,24 @@ def localized(entry):
             variant = "Original"
         elif variant.startswith(prefix + " "):
             variant = variant[len(prefix) :].strip(" -")
-    library = entry["source"]["library_id"]
-    source_name = {
-        "spectrasonics-keyscape": "键盘珍藏音色库",
-        "modartt-pianoteq-9": "物理建模键盘音源",
-        "salamander": "蝾螈钢琴采样库",
-        "rhodes": "罗兹电钢琴采样库",
-        "shinyguitar": "闪亮吉他采样库",
-        "sonatina": "小奏鸣曲管弦乐采样库",
-        "swagbass": "律动电贝斯采样库",
-        "naked-drums": "原声鼓组采样库",
-        "surge": "涌浪合成器音色库",
-    }.get(library)
     translated_model = label(model["name"], names.get("model"), "乐器型号")
     translated_variant = label(variant, names.get("variant"))
+    return translated_model, translated_variant
+
+
+def localized(entry):
+    model = entry["model"]
+    translated_model, translated_variant = translated_names(entry)
     return {
         **entry,
-        "display_name": translated_model + " · " + translated_variant,
-        "display_variant_name": translated_variant,
-        "model": {**model, "display_name": translated_model},
+        "display_name": bilingual(translated_model + " · " + translated_variant, entry["name"]),
+        "display_variant_name": bilingual(translated_variant, entry["variant_name"]),
+        "model": {**model, "display_name": bilingual(translated_model, model["name"])},
         "source": {
             **entry["source"],
-            "display_name": (
-                label(entry["source"]["library_name"], names["library"])
-                if names.get("library")
-                else source_name
-            )
-            or label(entry["source"]["library_name"], fallback="音源库"),
+            # Product/library names are proper names, including for future imports.
+            # Ignore legacy translated source labels without rewriting the catalog.
+            "display_name": entry["source"]["library_name"],
         },
     }
 
@@ -626,15 +622,12 @@ def prepare_import(entry, overrides=None):
         raise ValueError(
             "Provide labels_zh for untranslated instrument names: " + ", ".join(sorted(set(missing)))
         )
-    if result["source"]["display_name"] == "音源库" and not entry.get("labels_zh", {}).get("library"):
-        raise ValueError("Provide labels_zh.library for the new instrument library")
+    # Persist only the translation, not the formatted bilingual display value:
+    # imports can be classified again on every read without nesting parentheses.
+    model, variant = translated_names(entry)
     return {
         **result,
-        "labels_zh": dict(
-            model=result["model"]["display_name"],
-            variant=result["display_variant_name"],
-            library=result["source"]["display_name"],
-        ),
+        "labels_zh": {**entry.get("labels_zh", {}), "model": model, "variant": variant},
     }
 
 

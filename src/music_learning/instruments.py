@@ -152,13 +152,14 @@ def models(settings, args):
 
 
 def labels(settings, args):
-    from .instrument_localization import label
+    from .instrument_localization import bilingual, label
 
     ids = set(args.preset_ids)
     return dict(
         presets={p["id"]: p["display_name"] for p in catalog(settings) if p["id"] in ids},
         parameters={
-            name: label(name, fallback="参数 " + str(i + 1)) for i, name in enumerate(args.parameter_names)
+            name: bilingual(label(name, fallback="参数 " + str(i + 1)), name)
+            for i, name in enumerate(args.parameter_names)
         },
     )
 
