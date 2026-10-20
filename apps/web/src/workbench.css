@@ -2,6 +2,9 @@
 .workspace-page { height: 100dvh; background: var(--surface-0); overflow: hidden; }
 .studio { height: calc(100dvh - 44px); display: flex; flex-direction: column; min-height: 0; background: var(--surface-0); }
 .studio > .studio-body { flex: 1; min-height: 0; overflow: hidden; }
+.audition-filter { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; min-height: 32px; padding: 3px 12px; background: #202022; border-bottom: 1px solid #333335; color: #c6c0b8; font-size: 12px; }
+.audition-filter > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audition-filter > button { flex: 0 0 auto; padding: 3px 8px; font-size: 12px; }
 .studio-body.resizable-studio { display: grid; grid-template-columns: var(--track-width) 6px minmax(0,1fr) 6px var(--ai-width); grid-template-rows: minmax(0,1fr); align-items: stretch; }
 .track-panel,.arrangement,.inspector { min-width: 0; min-height: 0; }
 .track-panel { padding: 4px 8px 20px; overflow: auto; background: #161618; }

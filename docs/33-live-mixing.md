@@ -32,3 +32,15 @@ SDK提供`playback`、`set_mixer`，CLI可用`music.cmd call playback.get`和`mu
 正式305秒工程没有进行音乐修改、模型推理或整曲重渲染；NAS未访问。用户已删除的H盘音色库继续暂停恢复和迁移。本轮不代表P6人工听辨通过。
 
 正式应用已stop/start加载新版后端；回读head仍为`b89562e3f52c45b0a2aaddd163cbd6ac`、9,378音符、15任务，6轨播放计划可用。对比前次相同JSON序列化方式的快照摘要仍为`cc45f357a492456a198fc05b9a0f918d4aabd92e19021f1c945fde046138d394`（数据库canonical摘要为`f8aacf1a5838bd3c21f2278b4c28fff0fb4687de3086c031503e431545203401`）。正式页面检查音轨推子与混音台，未修改正式推子；日志无error/warn。截图`formal-mixer.jpg`，回读`formal-after-restart.json`。独立8767测试服务与一次性登录辅助已停止，正式8765服务保留供使用。
+
+## 声部漏播与试听保存冲突修复
+
+后续用户反馈电吉他没声音、反复出现`Expected revision differs from project head`。实际电吉他mute/solo均为false，音量约-13.3dB，4,545音符和声音文件存在；80–82秒PCM峰值约0.2105、RMS约-29.27dBFS。原因是旧`audition.mode=tracks`仅包含其余5声部，形成了独立于新混音台的隐藏筛选。已通过正式`audition.set`恢复mix并清空筛选，没有改音符或音色。
+
+规则修复：UI操作音量、声像、静音/独奏时立即回到完整混音；Service的`mixer.set`同步移除tracks筛选，连“不改变音乐数值的取消静音”也有效，名称修改不清筛选。显式SDK声部试听仍保留，UI在工具栏收起时也显示“仅试听N/M声部、未播放声部”和“返回完整混音”。
+
+混音保存和试听设置共用有序写入链；试听请求不再捕获过期head。`auditionSync.ts`仅对明确的revision_conflict读取最新head并有限重试，跟随当前版的试听目标随之更新，显式历史目标不变。新混音版本可能使旧position report失效；transport_superseded在观察回报中正常忽略，不再暂停实际声音。网络错误不自动重放，音乐编辑的expected_revision与观察sequence校验均保留。
+
+17项相关后端回归、试听冲突客户端单元、既有live-mix单元、类型检查、Vite构建及契约漂移检查通过。真实浏览器独立sfizz工程：2/3声部筛选可见，改音量后恢复3个播放通道；有音符的时刻读到恢复声部约-17.48dB信号；连续保存、暂停、SDK试听更新和恢复播放无报错，任务数保持5、音符保持5。声部电平会随实际音符/采样结束回落，不将静音窗当作整轨无声。证据在`data/benchmarks/audition-mix-sync-v1`。
+
+用户在诊断期间自行调整过混音，正式head已推进到`638e771cf2b7402eb845cbc7ec67cd08`；没有回滚用户设置。更新重启前后head、快照摘要、9,378音符与15任务一致，试听为mix、6轨来源可用。未生成新的正式渲染、调用模型或访问NAS；独立测试服务已停止。

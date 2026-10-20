@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {pathToFileURL} from 'node:url';
-import path from 'node:path';
 import ts from 'typescript';
 import {channelGains} from './src/liveMix.ts';
 
@@ -14,7 +12,7 @@ assert.deepEqual(channelGains({...channel,bakedPan:.5,values:{gain_db:-12,pan:0}
 // Exercise actual transport routing, independent voices for identical PCM, and
 // source replacement with a deterministic Web Audio contract double.
 let sourceCode=await readFile(new URL('./src/transport.ts',import.meta.url),'utf8');
-for(const module of ['listeningLevel','liveMix'])sourceCode=sourceCode.replace(`'./${module}'`,JSON.stringify(pathToFileURL(path.resolve('apps/web/src/'+module+'.ts')).href));
+for(const module of ['listeningLevel','liveMix'])sourceCode=sourceCode.replace(`'./${module}'`,JSON.stringify(new URL('./src/'+module+'.ts',import.meta.url).href));
 const javascript=ts.transpileModule(sourceCode,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText;
 const {Transport}=await import('data:text/javascript;base64,'+Buffer.from(javascript).toString('base64'));
 const starts=[];

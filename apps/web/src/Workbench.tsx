@@ -8,6 +8,7 @@ import {DawEditor} from './DawEditor';
 import type {EditRequest} from './DawEditor';
 import {trackName as instrumentName} from './dawEditing';
 import {call} from './api';
+import {writeAudition} from './auditionSync';
 import {Transport} from './transport';
 import type {MixValues} from './liveMix';
 import {AutoHideToolbar} from './AutoHideToolbar';
@@ -67,6 +68,9 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const [livePeaks,setLivePeaks]=useState<Record<string,number>>({});
   const [matched,setMatched]=useState(true),[prepared,setPrepared]=useState('');
   const cueWrites=useRef<Promise<unknown>>(Promise.resolve());
+  const currentHead=useRef(head.id);
+  useEffect(()=>{currentHead.current=head.id;},[head.id]);
+  const transportWrite=useCallback(<T,>(operation:'audition.set'|'audition.report',args:Record<string,unknown>,followHead=false)=>writeAudition<T>(call,head.project_id,operation,args,()=>currentHead.current,id=>{currentHead.current=id;},followHead),[head.project_id]);
   const viewport=(nextZoom:number,anchor=.5)=>{const z=Math.max(1,Math.min(256,nextZoom)),at=viewStart+duration/zoom*anchor;setZoom(z);setViewStart(Math.max(0,Math.min(duration-duration/z,at-duration/z*anchor)));};
   const [width,setWidth]=useState(900);
   const [wave,setWave]=useState<Array<Array<[number,number]>>>([]);
@@ -243,9 +247,17 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     if(mixInFlight.current||!Object.keys(mixPending.current).length)return;
     if(editingLock.current){mixTimer.current=setTimeout(()=>mixFlush.current(),100);return;}
     const batch=mixPending.current;mixPending.current={};mixInFlight.current=true;setMixSaving(true);
-    const before=mixRevision.current;
+    let before=mixRevision.current;
     try{
-      const result=await call<MixerResult>('mixer.set',{project_id:head.project_id,tracks:Object.entries(batch).map(([track_id,values])=>({track_id,...values}))},before.id,true);
+      // Share ordering with transport writes. The next cue resolves the new
+      // head after this commit, rather than keeping a captured old head.
+      const write=cueWrites.current.catch(()=>{}).then(async()=>{
+        before=mixRevision.current;
+        const result=await call<MixerResult>('mixer.set',{project_id:head.project_id,tracks:Object.entries(batch).map(([track_id,values])=>({track_id,...values}))},before.id,true);
+        mixRevision.current=result.revision;currentHead.current=result.revision.id;return result;
+      });
+      cueWrites.current=write;
+      const result=await write;
       mixRevision.current=result.revision;preserveMix.current=result.revision.id;commitBefore.current=before.id;localCommit.current=result.revision.id;historyHead.current=result.revision.id;
       setUndoStack(stack=>[...stack,before.id]);setRedoStack([]);
       setRevision(result.revision);setPlayback(result.playback);setPublication(null);if(!result.playback.available)setError(result.playback.reason??'正在更新相关声部的声音…');
@@ -258,6 +270,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   function changeMix(id:string,patch:MixValues){
     const draft={...mixRef.current,[id]:{...mixRef.current[id],...patch}};mixRef.current=draft;setMixDraft(draft);configureMix(draft);
     mixPending.current={...mixPending.current,[id]:{...mixPending.current[id],...patch}};if(mixTimer.current)clearTimeout(mixTimer.current);mixTimer.current=setTimeout(()=>mixFlush.current(),400);
+    if(mode==='tracks'&&Object.keys(patch).some(key=>key!=='name'))void cue({mode:'mix',track_ids:[]});
   }
   useEffect(()=>()=>{if(mixTimer.current)clearTimeout(mixTimer.current);mixFlush.current();},[]);
   const applyCue=useCallback(async(state:AuditionState,sequence:string|null,preserve=false)=>{
@@ -288,7 +301,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
       if(active&&!localCuePending.current&&cue.sequence===lastCue.current&&cue.sequence&&cue.desired?.revision_id===revision.id&&(changed||Date.now()-lastReportTime.current>3000)){
         lastReportTime.current=Date.now();
         const status=applyingCue.current?'loading':player.current.playing?'playing':cue.desired.playing?(player.current.context?.state==='running'?'error':'needs_activation'):'paused';
-        await call('audition.report',{project_id:head.project_id,sequence:cue.sequence,position_sample:Math.round(player.current.position*rate),status},head.id,true);
+        await transportWrite('audition.report',{sequence:cue.sequence,position_sample:Math.round(player.current.position*rate),status});
       }};
     let pending:ReturnType<typeof setTimeout>|undefined;
     const unsubscribe=subscribeDomain(event=>{
@@ -298,7 +311,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     });
     void poll().catch(()=>{});const timer=setInterval(()=>void poll().catch(()=>{}),5000);
     return()=>{active=false;clearInterval(timer);clearTimeout(pending);unsubscribe();};
-  },[head.project_id,head.id,revision.id,rate,applyCue]);
+  },[head.project_id,head.id,revision.id,rate,applyCue,transportWrite]);
 
   function desired(patch:Partial<AuditionState>={}):AuditionState{
     return{revision_id:revision.id,position_sample:Math.round(Math.min(duration,patch.playing===false?player.current.renderPosition:player.current.position)*rate),mode:mode as AuditionState['mode'],
@@ -312,13 +325,16 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     // Local audio responds immediately; persistence remains ordered and failures
     // stop the preview and recover the authoritative desired transport.
     const local=applyCue(state,null,patch.position_sample===undefined&&state.playing===true);
-    const write=cueWrites.current.catch(()=>{}).then(()=>call<Cue>('audition.set',{project_id:head.project_id,state},head.id,true));
+    const followHead=versionId==='head';
+    const write=cueWrites.current.catch(()=>{}).then(()=>transportWrite<Cue>('audition.set',{state},followHead));
     cueWrites.current=write;
     try{const result=await write;await local;
+      if(!result)return;
       if(generation!==requestGeneration.current)return;
       lastCue.current=result.sequence;
-      if(result.sequence)await call('audition.report',{project_id:head.project_id,sequence:result.sequence,
-        position_sample:Math.round(player.current.position*rate),status:player.current.playing?'playing':state.playing?'needs_activation':'paused'},head.id,true);
+      if(result.desired?.revision_id!==state.revision_id)await onCommitted?.();
+      if(result.sequence)await transportWrite('audition.report',{sequence:result.sequence,
+        position_sample:Math.round(player.current.position*rate),status:player.current.playing?'playing':state.playing?'needs_activation':'paused'});
     }catch(e){if(generation===requestGeneration.current){player.current.pause();setPlaying(false);setError('试听状态保存失败：'+(e as Error).message);
       try{const saved=await call<Cue>('audition.get',{project_id:head.project_id});if(saved.desired)await applyCue({...saved.desired,playing:false},saved.sequence);}catch{ /* preserve visible failure */ }
     }}
@@ -391,6 +407,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     <div className="studio-toolbar"><div className="transport-buttons"><button className="icon-button" aria-label="回到开头" onClick={()=>void cue({position_sample:0})}><Icon name="start"/></button><button className="play-button" aria-label={playing?'暂停':'播放'} disabled={loading} onClick={()=>void playToggle()}>{loading?'···':<Icon name={playing?'pause':'play'} size={16}/>}</button><button className={'icon-button '+(loop?'is-active':'')} aria-label="循环" aria-pressed={loop} onClick={()=>void cue({loop:!loop})}><Icon name="loop"/></button></div><div className="clock"><strong>{time(position)}</strong><span>/ {time(mode==='original'?duration:Math.max(duration,player.current.duration))}</span></div><span className="toolbar-divider"/><div className="mode-switch" aria-label="试听方式"><button aria-pressed={mode==='original'} disabled={!snapshot.source_asset_id} onClick={()=>void cue({mode:'original'})}>原曲</button>{referenceId&&<button aria-pressed={mode==='reference'} onClick={()=>void cue({mode:'reference'})}>参考 <span>A</span></button>}<button aria-pressed={mode==='mix'} disabled={!publication&&!playback?.available} onClick={()=>void cue({mode:'mix'})}>重建 <span>B</span></button>{hybridJob&&<button aria-pressed={mode==='hybrid'} onClick={()=>void cue({mode:'hybrid',hybrid_job_id:hybridJob.id})}>贝斯混合</button>}</div><span className="listening-label">{mode==='hybrid'?'播放：贝斯替换':mode==='tracks'?`播放：${trackIds.length} 条声部`:mode==='mix'?'播放：重建':mode==='reference'?'播放：参考版本':'播放：原曲'}</span><label className="level-match"><input type="checkbox" aria-label="试听电平匹配" checked={matched} onChange={e=>void cue({level_match:e.target.checked})}/>电平匹配</label><small className="stem-preload">声部 {prepared||'准备中'}</small><button className="soft-button" aria-pressed={focusEditor} onClick={()=>{setChatFocused(false);setFocusEditor(!focusEditor);}}>{focusEditor?'恢复侧栏':'专注编辑'}</button><button className="soft-button render-audition" onClick={()=>void render()} disabled={loading||renderBusy||editingBusy}>导出混音</button><div className="zoom-control"><button aria-label="缩小时间轴" onClick={()=>viewport(zoom/1.5)}>−</button><input aria-label="时间轴缩放" type="range" min={0} max={8} step={.05} value={Math.log2(zoom)} onChange={e=>viewport(2**+e.target.value)}/><button aria-label="放大时间轴" onClick={()=>viewport(zoom*1.5)}>+</button><button onClick={()=>{setZoom(1);setViewStart(0);}}>整曲</button><button onClick={()=>{const begin=loopStart,finish=loopEnd||duration;if(finish>begin){const z=Math.min(256,duration/(finish-begin));setZoom(z);setViewStart(Math.min(begin,duration-duration/z));}}}>选区</button></div></div>
     </AutoHideToolbar>
     {error&&<div className="studio-message" role="status">{error}<button aria-label="关闭工作台提示" onClick={()=>setError('')}>×</button></div>}
+    {mode==='tracks'&&<div className="audition-filter" role="status"><span>仅试听 {trackIds.length}/{tracks.length} 条声部{tracks.some(t=>!trackIds.includes(t.id))?' · 未播放：'+tracks.filter(t=>!trackIds.includes(t.id)).map(instrumentName).join('、'):''}</span><button onClick={()=>void cue({mode:'mix',track_ids:[]})}>返回完整混音</button></div>}
     <div className="studio-body resizable-studio" ref={body} style={{'--track-width':leftWidth+'px','--ai-width':rightWidth+'px'} as CSSProperties}><aside className="track-panel"><div className="panel-heading"><span>音轨</span><span>{tracks.length.toString().padStart(2,'0')}</span></div><button className={'all-tracks '+(selected==='all'?'is-selected':'')} onClick={()=>setSelected('all')}>全部声部 <small>{(snapshot.notes??[]).length.toLocaleString()}</small></button>
       <div className="track-cards">{tracks.map((track,i)=><div className={'track-card '+(selected===track.id?'is-selected':'')} key={track.id} style={{'--track-color':colors[i%colors.length]} as CSSProperties}><button className="track-select" title={instrumentName(track)+' · 双击打开卷帘'} onClick={()=>setSelected(track.id)} onDoubleClick={()=>{setSelected(track.id);setPianoRequest(n=>n+1);}}><span className="track-index">{(i+1).toString().padStart(2,'0')}</span><div><strong>{instrumentName(track)}</strong><small title="实际渲染预设">{(snapshot.plugins??[]).find(p=>p.track_id===track.id&&p.order===0)?.preset_name??(track.kind==='audio'?'音频素材':(snapshot.plugins??[]).some(p=>p.track_id===track.id)?'未记录明确预设':'尚未选择音色')}</small></div></button><div className="track-actions"><small className="track-note-count">{(snapshot.notes??[]).filter(n=>n.track_id===track.id).length.toLocaleString()} 音符</small><span className="track-color-line"/><button aria-label={`独奏 ${i+1}`} aria-pressed={mixDraft[track.id]?.solo??track.solo??false} disabled={versionId!=='head'} onClick={()=>changeMix(track.id,{solo:!(mixDraft[track.id]?.solo??track.solo)})}>独奏</button><button aria-label={`试听静音 ${i+1}`} aria-pressed={mixDraft[track.id]?.mute??track.mute??false} disabled={versionId!=='head'} onClick={()=>changeMix(track.id,{mute:!(mixDraft[track.id]?.mute??track.mute)})}>静音</button><span>{track.gain_db??0} dB</span></div><label className="track-volume"><input aria-label={'音轨音量 '+instrumentName(track)} type="range" min={-60} max={12} step={.1} value={mixDraft[track.id]?.gain_db??track.gain_db??0} disabled={versionId!=='head'} onChange={e=>changeMix(track.id,{gain_db:+e.target.value})}/><output>{(mixDraft[track.id]?.gain_db??track.gain_db??0).toFixed(1)} dB</output></label></div>)}</div>
       <details className="source-stems"><summary>原曲分轨 <span>{(snapshot.stems??[]).length}</span></summary><div className="stem-chips">{(snapshot.stems??[]).map(stem=><a key={stem.id} download href={'/v1/assets/'+stem.asset_id}><i/> {stem.name} <span>↓</span></a>)}</div></details></aside><PanelResize label="调整声部栏宽度" value={leftWidth} min={140} max={Math.min(480,Math.max(140,bodyWidth-rightWidth-332))} onChange={setTrackWidth} reset={190}/>

@@ -16,7 +16,7 @@ from .storage import digest
 from .settings import ROOT
 
 
-def retarget(service, db, before, updated, request):
+def retarget(service, db, before, updated, request, *, mixer=False):
     from .audition import dispatch as audition
 
     existing = db.execute(
@@ -24,6 +24,10 @@ def retarget(service, db, before, updated, request):
     ).scalar()
     if existing and existing.get("desired", {}).get("revision_id") == before:
         state = dict(existing["desired"], revision_id=updated["id"])
+        # Track audition is a separate filter from the persisted mixer. Once
+        # the mixer is operated, its mute/solo controls must own audibility.
+        if mixer and state.get("mode") == "tracks":
+            state.update(mode="mix", track_ids=[])
         snapshot = updated["snapshot"]
         duration = snapshot["duration_samples"]
         if not duration:
@@ -221,12 +225,15 @@ def dispatch(service, db, op, args, request):
         if not fields:
             raise ValueError("Mixer patch is empty")
         tracks[patch.track_id].update(fields)
-    if data == revision["snapshot"]:
-        return {"revision": revision, "playback": plan(service, db, revision)}
-    if any(
+    audio_mix = any(
         any(getattr(patch, field) is not None for field in ("gain_db", "pan", "mute", "solo"))
         for patch in args.tracks
-    ):
+    )
+    if data == revision["snapshot"]:
+        if audio_mix:
+            retarget(service, db, revision["id"], revision, request, mixer=True)
+        return {"revision": revision, "playback": plan(service, db, revision)}
+    if audio_mix:
         data["frozen_tracks"] = {}
     updated = service.commit(
         db,
@@ -237,7 +244,7 @@ def dispatch(service, db, op, args, request):
         args.description,
         request.request_id,
     )
-    retarget(service, db, revision["id"], updated, request)
+    retarget(service, db, revision["id"], updated, request, mixer=audio_mix)
     playback = plan(service, db, updated)
     preparation = None
     if playback["available"]:

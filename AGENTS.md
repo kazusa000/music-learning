@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新试听修复（2026-10-20）：docs/33-live-mixing.md末段。旧audition tracks筛选曾排除电吉他，已恢复正式mix；不能只看mute/solo判断实际参与播放。混音控件/Service mixer.set的音频字段操作清tracks筛选（含无音乐变化的取消静音），改名保留；SDK显式tracks试听有常驻提示和恢复完整混音入口。混音/试听设置共用写入序列，试听明确版本冲突才有限刷新重试，历史目标不重绑、观察superseded不暂停、网络失败不重放。17相关后端及客户端/真实浏览器通过；用户自行调混音后head638e771cf2b7402eb845cbc7ec67cd08保持，音符/音色未改、未正式渲染。
+
 最新混音（2026-10-20）：先读docs/33-live-mixing.md。新增playback.get/mixer.set，共57操作/11任务、无迁移。音量/声像/静音/独奏直接调逐轨播放并400ms合并保存；统一Service新版本/幂等/冲突保留，兼容祖先音频按内容签名生成目标revision播放计划，不能冒充新Render。更换乐器只准备变化的独立声部，复杂处理图回原生准备；尚非常驻实时VST3宿主。preview=true准备可被更新预览取消，显式渲染/导出不取消。顶部导出混音使用project.export，未有完整混音时在导出任务内准备。108后端、Transport契约单元、构建、真实浏览器即时混音及sfizz增量换音色通过；正式音乐head未改，音色库恢复仍暂停，NAS未访问。
 
 最新视觉（2026-10-20）：按用户要求参考Suno Studio 2，统一主页/工作台的视觉系统，先读docs/32-studio-visual-system.md。style.css为共享基础，workbench/daw/discussion.css分管制作界面；旧studio.css已移除，不再叠加旧金属主题。Icon.tsx统一SVG图标，visual.ts共用音轨/画布色板；未编组MIDI显示真实音高/时值缩略路径，显示网格按比例抽稀而不改吸附。构建、既有编辑/电平单元及真实浏览器桌面/中等/窄窗口、整曲播放/空格暂停通过。正式head/快照/9,378音符/15任务与试听desired/sequence保持，未新推理或渲染。用户已删除H盘音色库且暂停恢复；禁止据此任务恢复、复制或迁移音色文件。

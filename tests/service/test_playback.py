@@ -134,6 +134,54 @@ def test_note_changes_invalidate_only_the_affected_stem_and_keep_history(service
     assert invoke(service, "playback.get", dict(project_id=project["id"], revision_id=old["id"]))["available"]
 
 
+def test_mixer_replaces_hidden_audition_filter_but_preserves_notes_and_clock(service, project):
+    old = base(service, project)
+    publish_fixture(service, project, old)
+    a, b = [track["id"] for track in old["snapshot"]["tracks"]]
+    state = dict(revision_id=old["id"], mode="tracks", track_ids=[a], position_sample=400, playing=True)
+    invoke(service, "audition.set", dict(project_id=project["id"], state=state), old["id"])
+    renamed = invoke(
+        service,
+        "mixer.set",
+        dict(project_id=project["id"], tracks=[dict(track_id=b, name="Guitar")]),
+        old["id"],
+    )
+    assert invoke(service, "audition.get", dict(project_id=project["id"]))["desired"]["mode"] == "tracks"
+    value = invoke(
+        service,
+        "mixer.set",
+        dict(project_id=project["id"], tracks=[dict(track_id=b, gain_db=-6)]),
+        renamed["revision"]["id"],
+    )
+    audition = invoke(service, "audition.get", dict(project_id=project["id"]))["desired"]
+    assert audition["mode"] == "mix" and audition["track_ids"] == []
+    assert audition["position_sample"] == 400 and audition["playing"]
+    assert audition["revision_id"] == value["revision"]["id"]
+    assert value["playback"]["available"] and value["preparation_job_id"] is None
+    assert value["revision"]["snapshot"]["notes"] == old["snapshot"]["notes"]
+    # Head conflict and observation sequence fencing remain enforced.
+    with pytest.raises(DomainError, match="Expected revision"):
+        invoke(service, "audition.set", dict(project_id=project["id"], state=state), old["id"])
+
+
+def test_noop_unmute_also_clears_separate_filter_without_new_revision(service, project):
+    old = base(service, project)
+    publish_fixture(service, project, old)
+    a, b = [track["id"] for track in old["snapshot"]["tracks"]]
+    invoke(
+        service,
+        "audition.set",
+        dict(project_id=project["id"], state=dict(revision_id=old["id"], mode="tracks", track_ids=[a])),
+        old["id"],
+    )
+    value = invoke(
+        service, "mixer.set", dict(project_id=project["id"], tracks=[dict(track_id=b, mute=False)]), old["id"]
+    )
+    assert value["revision"]["id"] == old["id"]
+    assert invoke(service, "audition.get", dict(project_id=project["id"]))["desired"]["mode"] == "mix"
+    assert len(invoke(service, "jobs.list", dict(project_id=project["id"]))) == 1
+
+
 def test_unrelated_branch_and_baked_silence_are_not_faked_as_playable(service, project):
     old = base(service, project)
     data = copy.deepcopy(old["snapshot"])
