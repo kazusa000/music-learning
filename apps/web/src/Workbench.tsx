@@ -76,7 +76,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const [prepared,setPrepared]=useState('');
   const cueWrites=useRef<Promise<unknown>>(Promise.resolve());
   const currentHead=useRef(head.id);
-  useEffect(()=>{currentHead.current=head.id;},[head.id]);
+  useEffect(()=>{if(!localCommit.current||head.id===localCommit.current||head.created_at>localCommitTime.current)currentHead.current=head.id;},[head.id]);
   const transportWrite=useCallback(<T,>(operation:'audition.set'|'audition.report',args:Record<string,unknown>,followHead=false)=>writeAudition<T>(call,head.project_id,operation,args,()=>currentHead.current,id=>{currentHead.current=id;},followHead),[head.project_id]);
   const viewport=(nextZoom:number,anchor=.5)=>{const z=Math.max(1,Math.min(256,nextZoom)),at=viewStart+duration/zoom*anchor;setZoom(z);setViewStart(Math.max(0,Math.min(duration-duration/z,at-duration/z*anchor)));};
   const [width,setWidth]=useState(900);
@@ -85,6 +85,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const [pluginInfo,setPluginInfo]=useState<Record<string,PluginInfo>>({});
   const [sourceIssues,setSourceIssues]=useState<string[]>([]);
   const [editingBusy,setEditingBusy]=useState(false),[undoStack,setUndoStack]=useState<string[]>([]),[redoStack,setRedoStack]=useState<string[]>([]);
+  const localCommitTime=useRef(0);
   const editingLock=useRef(false),localCommit=useRef<string|null>(null),commitBefore=useRef<string|null>(null),historyHead=useRef<string|null>(null);
   const canvas=useRef<HTMLCanvasElement>(null);
   const player=useRef(new Transport());
@@ -100,6 +101,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const rate=snapshot.sample_rate??44100;
   const duration=(snapshot.duration_samples??0)/rate;
   const tracks=snapshot.tracks??[];
+  const atHead=versionId==='head'&&(revision.id===head.id||revision.id===localCommit.current);
   const renderJob=jobs.filter(job=>job.kind==='project.render'&&job.revision_id===revision.id).at(-1);
   const renderBusy=!!renderJob&&['queued','running','cancel_requested'].includes(renderJob.status);
   const exportBusy=jobs.some(job=>job.kind==='project.export'&&job.revision_id===revision.id&&job.payload.format==='wav'&&['queued','running','cancel_requested'].includes(job.status));
@@ -178,7 +180,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
         call<Render[]>('renders.list',{project_id:head.project_id,revision_id:id}),
         call<Version[]>('versions.list',{project_id:head.project_id,limit:1000}),call<PlaybackPlan>('playback.get',{project_id:head.project_id,revision_id:id})]);
       if(!active)return;
-      if(localCommit.current&&read.id!==localCommit.current&&head.id===commitBefore.current)return;
+      if(versionId==='head'&&localCommit.current&&read.id!==localCommit.current){if(read.created_at<=localCommitTime.current)return;localCommit.current=null;currentHead.current=read.id;}
       const full=renders.filter(r=>(r.start_sample??0)===0&&(r.end_sample??read.snapshot.duration_samples)===read.snapshot.duration_samples);
       if(versionId==='head'&&playbackState.current)preserveMix.current=read.id;
       setPlayback(plan);setRevision(read);setPublication(full.at(-1)??preprocessed.publication);setVersions(list.slice().reverse());
@@ -195,20 +197,23 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     return()=>{active=false;clearInterval(timer);clearTimeout(pending);unsubscribe();};
   },[versionId,head]);
 
-  useEffect(()=>{if(localCommit.current&&head.id!==commitBefore.current)localCommit.current=null;
+  useEffect(()=>{if(localCommit.current&&(head.id===localCommit.current||head.created_at>localCommitTime.current))localCommit.current=null;
     if(editingLock.current||localCommit.current)return;
     if(historyHead.current&&head.id!==historyHead.current){setUndoStack([]);setRedoStack([]);historyHead.current=null;}
   },[head.id,editingBusy]);
   async function acceptManualRevision(next:Revision){
-    commitBefore.current=revision.id;localCommit.current=next.id;historyHead.current=next.id;preserveMix.current=next.id;currentHead.current=next.id;
-    const plan=await call<PlaybackPlan>('playback.get',{project_id:head.project_id,revision_id:next.id});
-    setPlayback(plan);setRevision(next);setPublication(null);setVersionId('head');setError('');
-
-    try{await onCommitted?.();}catch(e){setError('工程已保存，但刷新失败：'+(e as Error).message);}
+    commitBefore.current=revision.id;localCommit.current=next.id;localCommitTime.current=next.created_at;historyHead.current=next.id;preserveMix.current=next.id;currentHead.current=next.id;
+    setRevision(next);setPublication(null);setVersionId('head');setError('');
+    // The committed edit is usable now. Derived playback and library refreshes
+    // must not extend the editor's transaction lock.
+    void call<PlaybackPlan>('playback.get',{project_id:head.project_id,revision_id:next.id}).then(plan=>{
+      if(currentHead.current===next.id)setPlayback(plan);
+    }).catch(e=>{if(currentHead.current===next.id)setError('播放信息刷新失败：'+(e as Error).message);});
+    void onCommitted?.().catch(e=>{if(currentHead.current===next.id)setError('工程列表刷新失败：'+(e as Error).message);});
   }
   async function manualEdit(request:EditRequest){
     if(editingLock.current)throw new Error('前一次编辑仍在保存。');
-    if(revision.id!==head.id||versionId!=='head')throw new Error('历史版本只读，请切回当前版本。');
+    if(!atHead)throw new Error('历史版本只读，请切回当前版本。');
     editingLock.current=true;setEditingBusy(true);
     try{const next=await call<Revision>('edits.apply',{project_id:head.project_id,
       scope:{track_ids:request.trackIds,start_sample:0,end_sample:snapshot.duration_samples,structural:request.structural??false},
@@ -218,7 +223,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   }
   async function manualRestore(redo=false){
     const stack=redo?redoStack:undoStack,target=stack.at(-1);if(!target)return;
-    if(editingLock.current||revision.id!==head.id||versionId!=='head')throw new Error('请等待保存完成并切回当前版本。');
+    if(editingLock.current||!atHead)throw new Error('请等待保存完成并切回当前版本。');
     editingLock.current=true;setEditingBusy(true);
     try{const next=await call<Revision>('revisions.restore',{project_id:head.project_id,revision_id:target,description:redo?'手动编辑重做':'手动编辑撤销'},revision.id,true);
       if(redo){setRedoStack(stack=>stack.slice(0,-1));setUndoStack(stack=>[...stack,revision.id]);}
@@ -474,7 +479,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
       </div>;})}</div>
       <details className="source-stems"><summary>原曲分轨 <span>{(snapshot.stems??[]).length}</span></summary><div className="stem-chips">{(snapshot.stems??[]).map(stem=><a key={stem.id} download href={'/v1/assets/'+stem.asset_id}><i/> {stem.name} <span>↓</span></a>)}</div></details></aside><PanelResize label="调整声部栏宽度" value={leftWidth} min={140} max={Math.min(480,Math.max(140,bodyWidth-rightWidth-332))} onChange={setTrackWidth} reset={190}/>
       <div className="arrangement"><div className="arrangement-heading"><div><h3>{mixing?'混音':'编排与制作'}</h3></div><span className="view-pill">{selected==='all'?'整曲总览':'声部聚焦'} · {zoom===1?'FIT':zoom.toFixed(1)+'×'}</span></div><div className="section-lane" aria-label="段落">{sections.map((section,i)=><button key={section.id} style={{flex:Math.max(1,section.end_sample-section.start_sample)}} onClick={()=>{setLoopStart(section.start_sample/rate);setLoopEnd(section.end_sample/rate);void cue({position_sample:section.start_sample,loop_start_sample:section.start_sample,loop_end_sample:section.end_sample});}}><i style={{background:colors[i%colors.length]}}/><strong>{section.text}</strong><span>{time(section.start_sample/rate)}</span></button>)}</div>
-        <DawEditor mixingOnly={mixing} livePeaks={livePeaks} liveMix={mixing?mixProfile?.tracks:mixDraft} onMixChange={changeMix} mixSaving={mixSaving} onViewport={(factor,anchor,pan)=>{if(pan!==undefined)setViewStart(Math.max(0,Math.min(duration-duration/zoom,viewStart+pan*duration/zoom)));else viewport(zoom*factor,anchor);}} pianoRequest={pianoRequest} revision={revision} selected={selected} onSelect={setSelected} editable={versionId==='head'&&revision.id===head.id} busy={editingBusy||mixSaving} onEdit={manualEdit} onUndo={()=>manualRestore()} onRedo={()=>manualRestore(true)} canUndo={!!undoStack.length} canRedo={!!redoStack.length} start={Math.round(viewStart*rate)} end={Math.round(Math.min(duration,viewStart+duration/zoom)*rate)} position={Math.round(position*rate)} selectionStart={Math.round(loopStart*rate)} selectionEnd={Math.round((loopEnd||duration)*rate)} onSeek={sample=>void cue({position_sample:sample})} overview={<div className="roll-frame"><div className="roll-caption"><span>WAVEFORM</span><span>源样本时间 · 演奏时刻保留</span></div><canvas ref={canvas} data-waveform-buckets={wave.length} className="piano-roll" role="img" aria-label="整曲波形与钢琴卷帘" onClick={e=>{const b=e.currentTarget.getBoundingClientRect(),seconds=viewStart+Math.max(0,Math.min(1,(e.clientX-b.left-46)/(b.width-58)))*duration/zoom;void cue({position_sample:Math.round(Math.min(duration,seconds)*rate)});}}/><div className="roll-footer"><span>PIANO ROLL</span><span>{notes.length.toLocaleString()} NOTES <i/> {rate/1000} kHz</span></div></div>}/>
+        <DawEditor mixingOnly={mixing} livePeaks={livePeaks} liveMix={mixing?mixProfile?.tracks:mixDraft} onMixChange={changeMix} mixSaving={mixSaving} onViewport={(factor,anchor,pan)=>{if(pan!==undefined)setViewStart(Math.max(0,Math.min(duration-duration/zoom,viewStart+pan*duration/zoom)));else viewport(zoom*factor,anchor);}} pianoRequest={pianoRequest} revision={revision} selected={selected} onSelect={setSelected} editable={atHead} busy={editingBusy||mixSaving} onEdit={manualEdit} onUndo={()=>manualRestore()} onRedo={()=>manualRestore(true)} canUndo={!!undoStack.length} canRedo={!!redoStack.length} start={Math.round(viewStart*rate)} end={Math.round(Math.min(duration,viewStart+duration/zoom)*rate)} position={Math.round(position*rate)} selectionStart={Math.round(loopStart*rate)} selectionEnd={Math.round((loopEnd||duration)*rate)} onSeek={sample=>void cue({position_sample:sample})} overview={<div className="roll-frame"><div className="roll-caption"><span>WAVEFORM</span><span>源样本时间 · 演奏时刻保留</span></div><canvas ref={canvas} data-waveform-buckets={wave.length} className="piano-roll" role="img" aria-label="整曲波形与钢琴卷帘" onClick={e=>{const b=e.currentTarget.getBoundingClientRect(),seconds=viewStart+Math.max(0,Math.min(1,(e.clientX-b.left-46)/(b.width-58)))*duration/zoom;void cue({position_sample:Math.round(Math.min(duration,seconds)*rate)});}}/><div className="roll-footer"><span>PIANO ROLL</span><span>{notes.length.toLocaleString()} NOTES <i/> {rate/1000} kHz</span></div></div>}/>
 
         <input className="timeline-pan" aria-label="时间轴平移" type="range" min={0} max={Math.max(0,duration-duration/zoom)} step={.05} value={viewStart} onChange={e=>setViewStart(+e.target.value)}/><div className="loop-editor"><label>循环起点 <input aria-label="循环起点秒" type="number" min={0} max={duration} step={.1} value={+loopStart.toFixed(2)} onChange={e=>setLoopStart(+e.target.value)}/></label><span>—</span><label>终点 <input aria-label="循环终点秒" type="number" min={0} max={duration} step={.1} value={+loopEnd.toFixed(2)} onChange={e=>setLoopEnd(+e.target.value)}/></label><button disabled={!Number.isFinite(loopStart)||!Number.isFinite(loopEnd)||loopStart<0||loopEnd>duration||loopStart>=loopEnd} title="起点须早于终点，终点不超过歌曲结尾" onClick={()=>void cue({loop_start_sample:Math.round(loopStart*rate),loop_end_sample:Math.round(loopEnd*rate),loop:true})}>应用循环</button></div><div className="context-strip"><div><span>当前和弦</span><strong>{chord||'—'}</strong></div><div><span>当前试听</span><strong className="context-mode">{mode==='original'?'原始录音':mode==='mix'?'整曲重建':mode==='reference'?'参考版本 A':mode==='hybrid'?'原曲 + 新贝斯':'选定声部'}</strong></div></div></div>
       <PanelResize label="调整 AI 侧栏宽度" value={rightWidth} min={260} max={Math.min(900,Math.max(260,bodyWidth-leftWidth-332))} onChange={setAiWidth} reverse reset={340}/><aside className="inspector"><div className="inspector-tabs" role="tablist" aria-label="侧栏内容" onKeyDown={e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;const tabs=Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]')),index=tabs.indexOf(e.target as HTMLButtonElement);if(index<0)return;e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(index+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next].focus();tabs[next].click();}}>{[['discussion','讨论'],['sounds','音色与效果'],['versions','版本'],['analysis','分析']].map(([id,label])=><button role="tab" key={id} tabIndex={inspector===id?0:-1} aria-selected={inspector===id} aria-pressed={inspector===id} onClick={()=>{setInspector(id);if(id!=='discussion')setChatFocused(false);}}><Icon name={id==='discussion'?'chat':id==='sounds'?'mixer':id==='versions'?'history':'analysis'}/>{label}</button>)}</div>
