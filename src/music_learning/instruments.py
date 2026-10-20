@@ -41,6 +41,29 @@ def public(entry):
     }
 
 
+PRESET_FIELDS = {"sfz": "sfizz_sfz_path", "surge-fxp": "surge_fxp_path", "vst3-preset": "preset_path"}
+
+
+def preset_spec(entry, entrypoint):
+    """Dispatch by the installed format, never interpret every new bank as Surge FXP."""
+    field = PRESET_FIELDS.get(entry["backend"])
+    if field is None:
+        raise ValueError("Unsupported instrument backend: " + entry["backend"])
+    spec = dict(path=entry["plugin_path"], binary_sha256=entry["plugin_sha256"])
+    if entry.get("identifier"):
+        spec["identifier"] = entry["identifier"]
+    spec[field] = str(entrypoint)
+    return spec
+
+
+def verify_runtime(root, entry):
+    """Pin sidecar engines as well as a small VST3 loader binary."""
+    for relative, meta in entry.get("runtime_dependencies", {}).items():
+        path = resource_path(root, relative)
+        if path.stat().st_size != meta["bytes"] or digest(path) != meta["sha256"]:
+            raise ValueError("Installed plugin runtime dependency changed: " + relative)
+
+
 def query(settings, args):
     allowed = descendants(args.instrument_id) if args.instrument_id else None
     found = [
@@ -221,6 +244,7 @@ def materialize(settings, entry, destination):
     import shutil
 
     source_root = resource_path(settings.instrument_library, entry["bank_root"])
+    verify_runtime(source_root, entry)
     required = sum(meta["bytes"] for meta in entry["resources"].values())
     if shutil.disk_usage(destination.resolve().anchor).free < required + getattr(
         settings, "pipeline_min_free_bytes", 3 * 1024**3

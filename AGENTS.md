@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新用户音源接入（2026-10-20）：先读 docs/34-user-instrument-intake.md。用户明确指定 H:\music\Sound Library 为新库，授权检查 H:\music\tmp 两套包；旧删除库仍不得擅自恢复。Pianoteq 922 源文件复制及 SHA 一致，源结束复核 0 变化；导出797内置预设、15乐器类，但当前包不同乐器预设返回相同状态/音频，拒绝入库，需要正常切换预设的 Windows x64 VST3。Keyscape只有STEAM，缺 Windows x64 VST3 播放器，用户会提供；未复制77.5GB数据或改源后缀。新库配置已生效，当前0可选预设，库存不等于就绪。preset_spec统一sfz/surge-fxp/vst3-preset，未知拒绝；runtime_dependencies核对侧车引擎；index_pianoteq必须验证且只发布已测条目，不同乐器相同状态拒绝整次入库。114后端、22原生及新增1条标准VST3状态/音频回归通过。正式head6d12b49aa72840429d79ce93294e1dc6、9378音符、15任务保持，无正式渲染/推理或NAS访问。
+
 最新完整链路回归（2026-10-20）：先读docs/benchmarks/playback-mixer-workflow.md。真实sfizz持续发声独立工程验证播放/暂停/推子/静音/多轨独奏、两处控件、SDK、旧筛选、刷新/离开时保存、A/B、自然结束/重播与服务重启。修复曲末desired仍playing造成轮询复活，结束时保存暂停、显式重播从0开始；电平匹配须先读共同mix参考，禁止冷启动各stem各自匹配。最终25观察点通过，总55点包含修复前故障；110后端与前端单元/构建通过。fixture脚本prepare_mixer_workflow.py的seed不得对正式工程运行；evidence检查器只分析已记录实际浏览器数据，不冒充可自动重跑的浏览器驱动。未改正式音乐、未访问NAS/推理/恢复音色库。
 
 最新试听修复（2026-10-20）：docs/33-live-mixing.md末段。旧audition tracks筛选曾排除电吉他，已恢复正式mix；不能只看mute/solo判断实际参与播放。混音控件/Service mixer.set的音频字段操作清tracks筛选（含无音乐变化的取消静音），改名保留；SDK显式tracks试听有常驻提示和恢复完整混音入口。混音/试听设置共用写入序列，试听明确版本冲突才有限刷新重试，历史目标不重绑、观察superseded不暂停、网络失败不重放。17相关后端及客户端/真实浏览器通过；用户自行调混音后head638e771cf2b7402eb845cbc7ec67cd08保持，音符/音色未改、未正式渲染。

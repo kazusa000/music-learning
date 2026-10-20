@@ -9,7 +9,7 @@ import sys
 
 from .settings import ROOT
 from .storage import digest
-from .instruments import resource_path
+from .instruments import resource_path, preset_spec, verify_runtime
 
 
 class InstrumentSpaceError(ValueError):
@@ -70,6 +70,7 @@ def capture(settings, job, directory):
 
     entry = job["payload"]["preset"]
     root = resource_path(settings.instrument_library, entry["bank_root"])
+    verify_runtime(root, entry)
     target_root = directory / "resources"
     target_root.mkdir()
     required = sum(x["bytes"] for x in entry["resources"].values())
@@ -99,11 +100,10 @@ def capture(settings, job, directory):
         shutil.copyfile(source, target)
         resources[relative] = add(target, "application/octet-stream")
     plugin_path = settings.plugin_path(entry["plugin_path"])
-    spec = dict(id="instrument", path=str(plugin_path), binary_sha256=entry["plugin_sha256"])
-    if entry.get("identifier"):
-        spec["identifier"] = entry["identifier"]
-    spec["sfizz_sfz_path" if entry["backend"] == "sfz" else "surge_fxp_path"] = str(
-        resource_path(target_root, entry["entrypoint"])
+    spec = dict(
+        preset_spec(entry, resource_path(target_root, entry["entrypoint"])),
+        id="instrument",
+        path=str(plugin_path),
     )
     host = NativeHost(settings.native_host, directory / "native")
     plugin, metrics = native_probe(host, spec, directory, entry["key_range"], entry["family"] == "drums")

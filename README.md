@@ -129,6 +129,8 @@ pnpm --dir apps/web build
 
 ## 仓库与音乐工程
 
+用户指定的新音源库位于 `H:\music\Sound Library`，两套音源的文件清单、待补播放器与接入状态见 [音源接入记录](docs/34-user-instrument-intake.md)。
+
 Git 管理源代码、开发文档、契约和小型测试数据。用户音乐、模型、分轨、渲染音频、数据库、对话与个人经验保存在被忽略的 `data/`、`models/`、`runtime/` 中，并由应用自己的工程版本与备份机制管理。
 
 本机大文件和应用数据现已迁回项目内的 `E:\Intrest\music-learning\data`，同样不进入源码 Git。P1 的 SQLite backup API 仅备份元数据；P6 已提供数据库与全部 CAS（包括音频、插件状态及采样资源）的完整备份和独立恢复，实际演练通过。模型、已安装插件与运行时由固定依赖清单另行恢复，详见[本地交付](docs/20-local-delivery.md)。

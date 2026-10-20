@@ -22,6 +22,7 @@ from music_learning import contracts as c  # noqa: E402
 from music_learning.musical import assemble_candidates, coverage, stable, raw_note_diagnostics  # noqa: E402
 from music_learning.settings import Settings  # noqa: E402
 from music_learning.storage import Storage, digest  # noqa: E402
+from music_learning.instruments import preset_spec, PRESET_FIELDS  # noqa: E402
 from media_runtime import verify_tool  # noqa: E402
 from midi_to_native import normalize, to_project, load_drum_map  # noqa: E402
 from native_host import NativeHost  # noqa: E402
@@ -401,10 +402,7 @@ class Adapter:
                 for path in destination.rglob("*"):
                     if path.is_file():
                         self.add(path)
-                spec = dict(id="instrument", path=entry["plugin_path"], binary_sha256=entry["plugin_sha256"])
-                if entry.get("identifier"):
-                    spec["identifier"] = entry["identifier"]
-                spec["sfizz_sfz_path" if entry["backend"] == "sfz" else "surge_fxp_path"] = str(target)
+                spec = dict(preset_spec(entry, target), id="instrument")
                 instrument_assignments[voice["id"]] = dict(
                     plugin=spec,
                     usage=entry["usage"],
@@ -506,7 +504,7 @@ class Adapter:
                 for a in musical["assignments"]
                 if stable(self.args["target_revision"], "track:" + a["track_id"]) == track["id"]
             )
-            for key in ("sfizz_sfz_path", "surge_fxp_path"):
+            for key in PRESET_FIELDS.values():
                 if key in track["plugins"][0]:
                     track["plugins"][0][key] = (
                         str(

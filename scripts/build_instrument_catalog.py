@@ -391,10 +391,10 @@ def build(root, verify, validation_name):
             if p.get("identifier"):
                 spec["identifier"] = p["identifier"]
             from types import SimpleNamespace
-            from music_learning.instruments import materialize
+            from music_learning.instruments import materialize, preset_spec
 
             local_entry = materialize(SimpleNamespace(instrument_library=root), p, output / "resources")
-            spec["sfizz_sfz_path" if p["backend"] == "sfz" else "surge_fxp_path"] = str(local_entry)
+            spec.update(preset_spec(p, local_entry))
             try:
                 plugin, metrics = native_probe(host, spec, output, p["key_range"], p["family"] == "drums")
                 p.update(audio_verified=True, metrics=metrics, state_sha256=plugin["state_sha256"])

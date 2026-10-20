@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from array import array
+import base64
+import xml.etree.ElementTree as ET
 import copy
 import math
 from pathlib import Path
@@ -337,3 +339,68 @@ def test_mismatched_plugin_binary_is_rejected(host, tmp_path):
     with pytest.raises(NativeHostError, match="Plugin binary digest mismatch"):
         host.call({"schema_version": 1, "action": "inspect",
                    "plugin": {"path": str(FIXTURE), "binary_sha256": "0" * 64}})
+
+
+def test_standard_vst3_preset_changes_fixture_state_and_audio(host, fixture_parameters, tmp_path):
+    from music_learning.instruments import preset_spec
+    from music_learning.storage import digest
+
+    desired = host.call(
+        dict(
+            schema_version=1,
+            action="inspect",
+            plugin=dict(path=str(FIXTURE), parameters={fixture_parameters["Gain"]: 0.3}),
+        )
+    )["plugin"]
+    state = base64.b64decode(desired["state_base64"])
+    xml = ET.fromstring(state[8:].split(b"\0")[0])
+    chunks = []
+    # JUCE MemoryBlock text encodes little-endian 6-bit groups, not RFC4648.
+    alphabet = ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
+    for field, tag in [("IComponent", b"Comp"), ("IEditController", b"Cont")]:
+        element = xml.find(field)
+        if element is None:
+            continue
+        size, encoded = element.text.strip().split(".", 1)
+        data = bytearray(int(size))
+        for index, char in enumerate(encoded):
+            value = alphabet.index(char)
+            for bit in range(6):
+                offset = index * 6 + bit
+                if offset < len(data) * 8 and value & (1 << bit):
+                    data[offset // 8] |= 1 << (offset % 8)
+        chunks.append((tag, bytes(data)))
+    body, entries, offset = b"", b"", 48
+    for tag, data in chunks:
+        entries += struct.pack("<4sqq", tag, offset, len(data))
+        body += data
+        offset += len(data)
+    preset = tmp_path / "gain.vstpreset"
+    preset.write_bytes(
+        b"VST3"
+        + struct.pack("<I", 1)
+        + desired["vst3_class_id"].encode()
+        + struct.pack("<q", offset)
+        + body
+        + b"List"
+        + struct.pack("<I", len(chunks))
+        + entries
+    )
+    binary = next((FIXTURE / "Contents/x86_64-win").glob("*.vst3"))
+    spec = preset_spec(
+        dict(backend="vst3-preset", plugin_path=str(binary), plugin_sha256=digest(binary)), preset
+    )
+    actual = host.call(dict(schema_version=1, action="inspect", plugin=spec))["plugin"]
+    assert actual["state_sha256"] == desired["state_sha256"]
+    source = tmp_path / "source.wav"
+    source_wave(source)
+    result = render(
+        host,
+        project(
+            dict(id="audio", plugins=[dict(spec, id="fx")], audio_clips=[dict(path=str(source), sample=0)])
+        ),
+        tmp_path / "preset.wav",
+    )
+    _, channels = read_float_wave(Path(result["output_path"]))
+    for samples in channels:
+        assert max(abs(value - 0.075) for value in samples) < 1e-6
