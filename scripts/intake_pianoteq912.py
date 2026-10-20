@@ -1,7 +1,8 @@
 """Prepare full factory programs through Pianoteq RPC and verify VST3 admission.
 
 Default: cover every instrument family and selected useful variants. --all tests
-the complete inventory. --resume continues the immutable queue without exporting
+the complete inventory; --remaining tests only unpublished prepared programs.
+--resume continues the immutable queue without exporting
 again. Does not submit any music-project command or change system installation.
 """
 from __future__ import annotations
@@ -211,25 +212,60 @@ def prepare(settings, bank, exports, evidence, host):
     return inventory
 
 
-def intake(exports, all_presets=False, resume=None, output=None):
+def publish_verified(settings, entry):
+    """Incremental atomic admission; reject one bad identity, preserve other entries."""
+    from music_learning.instrument_localization import prepare_import
+
+    entry = prepare_import(classify(entry))
+    with library_lock(settings.instrument_library):
+        path = settings.instrument_library / "catalog.json"
+        catalog = json.loads(path.read_bytes())
+        for other in catalog["presets"]:
+            if (other["id"] == entry["id"] or other.get("library_id") != LIBRARY
+                    or other["family"] == entry["family"]):
+                continue
+            for field in ["state_sha256", "probe_sha256"]:
+                if other.get(field) and other[field] == entry[field]:
+                    raise ValueError("Different instruments returned identical state/audio: " + other["id"])
+        combined = [p for p in catalog["presets"] if p["id"] != entry["id"]] + [entry]
+        if len({p["id"] for p in combined}) != len(combined):
+            raise ValueError("Duplicate preset IDs")
+        atomic_json(path, dict(catalog, presets=combined))
+
+
+def select_entries(inventory, catalog, *, remaining=False, resume_ids=None):
+    entries = inventory["presets"]
+    if resume_ids is not None:
+        if resume_ids - {e["id"] for e in entries}:
+            raise ValueError("Resume queue references missing prepared programs")
+        return [e for e in entries if e["id"] in resume_ids]
+    if remaining:
+        admitted = {e["id"] for e in catalog["presets"] if e.get("audio_verified")}
+        return [e for e in entries if e["id"] not in admitted]
+    return entries
+
+
+def intake(exports=None, all_presets=False, resume=None, output=None, remaining=False):
     settings = Settings.load()
     bank = settings.instrument_library / "Pianoteq 9.1.2"
     with library_lock(bank):
         output = Path(resume or output or bank / "verification-runs" /
                       (time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8])).resolve()
-        if not resume:
+        if remaining or resume:
+            # Existing preparation is immutable during an incremental batch.
+            inventory = json.loads((bank / "full-factory-inventory.json").read_bytes())
+        else:
             # run() owns creation of its output; preparation uses a separate small journal.
             preparation = bank / "preparation-evidence"
             preparation.mkdir(exist_ok=True)
             host = pinned_host(settings, bank, preparation / "native")
             inventory = prepare(settings, bank, Path(exports), preparation, host)
-        else:
-            inventory = json.loads((bank / "full-factory-inventory.json").read_bytes())
-        entries = inventory["presets"]
+        catalog = json.loads((settings.instrument_library / "catalog.json").read_bytes())
+        ids = None
         if resume:
             ids = {p["id"] for p in json.loads((output / "queue.json").read_bytes())["items"]}
-            entries = [e for e in entries if e["id"] in ids]
-        elif not all_presets:
+        entries = select_entries(inventory, catalog, remaining=remaining, resume_ids=ids)
+        if not resume and not remaining and not all_presets:
             selected = {p["id"]: p for p in entries if p["name"] in USEFUL}
             for family in sorted({p["family"] for p in entries} - {"unclassified"}):
                 first = next(p for p in entries if p["family"] == family)
@@ -241,26 +277,9 @@ def intake(exports, all_presets=False, resume=None, output=None):
         implementation = implementation_fingerprint(host, [Path(__file__),
             ROOT / "src/music_learning/pianoteq_presets.py", ROOT / "src/music_learning/vst3_state.py"])
         admitted, report = run(settings, entries, bank, output, host, implementation,
-            lambda state, entry: verify_state(state, entry["expected_pianoteq"]), resume=bool(resume))
-        # Each complete program is checked byte-for-byte in both first and restored native state.
-        # Also reject accidental duplicate outputs across instrument families.
-        known = {}
-        for entry in admitted:
-            for field in ["state_sha256", "probe_sha256"]:
-                signature = (field, entry[field])
-                previous = known.setdefault(signature, entry)
-                if previous["family"] != entry["family"]:
-                    raise ValueError("Different instruments returned identical state/audio")
-        with library_lock(settings.instrument_library):
-            path = settings.instrument_library / "catalog.json"
-            catalog = json.loads(path.read_bytes())
-            from music_learning.instrument_localization import prepare_import
-            admitted = [prepare_import(classify(p)) for p in admitted]
-            ids = {p["id"] for p in admitted}
-            combined = [p for p in catalog["presets"] if p["id"] not in ids] + admitted
-            if len({p["id"] for p in combined}) != len(combined):
-                raise ValueError("Duplicate preset IDs")
-            atomic_json(path, dict(catalog, presets=combined))
+            lambda state, entry: verify_state(state, entry["expected_pianoteq"]), resume=bool(resume),
+            on_verified=lambda entry: publish_verified(settings, entry))
+        combined = json.loads((settings.instrument_library / "catalog.json").read_bytes())["presets"]
         report.update(inventory=len(inventory["presets"]), selectable=len(combined),
                       families=sorted({p["family"] for p in admitted}))
         atomic_json(output / "report.json", report)
@@ -272,10 +291,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exports", type=Path)
     parser.add_argument("--all", action="store_true", dest="all_presets")
+    parser.add_argument("--remaining", action="store_true", help="Verify unpublished prepared presets only")
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    if not args.resume and not args.exports:
+    if args.remaining and args.all_presets:
+        parser.error("--remaining and --all are mutually exclusive")
+    if not args.resume and not args.exports and not args.remaining:
         parser.error("--exports is required for preparation")
     result = intake(**vars(args))
     sys.exit(1 if result["failures"] else 0)

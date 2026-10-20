@@ -106,7 +106,7 @@ def check_entry(settings, entry):
 
 
 def run(settings, entries, bank, output, host, implementation, validator, *, resume=False,
-        force=False, retry_failed=False, limit=None):
+        force=False, retry_failed=False, limit=None, on_verified=None):
     """Caller holds library_lock through this run and the final catalog publication."""
     bank, output = Path(bank).resolve(), Path(output).resolve()
     output.relative_to(bank / "verification-runs")
@@ -155,7 +155,10 @@ def run(settings, entries, bank, output, host, implementation, validator, *, res
             receipt = None if force else cached_result(bank, key)
             if receipt is not None:
                 validator(receipt["plugin"], entry)
-                accepted[entry["id"]] = dict(entry, audio_verified=True, **receipt["admission"])
+                candidate = dict(entry, audio_verified=True, **receipt["admission"])
+                if on_verified:
+                    on_verified(candidate)
+                accepted[entry["id"]] = candidate
                 item.update(status="cached", error=None)
                 print("CACHE " + entry["name"], flush=True)
                 save()
@@ -185,7 +188,10 @@ def run(settings, entries, bank, output, host, implementation, validator, *, res
                                        sha256=digest(path))
             atomic_json(bank / "verification-cache" / (key + ".json"),
                         dict(schema_version=1, fingerprint=key, artifacts=artifacts))
-            accepted[entry["id"]] = dict(entry, audio_verified=True, **admission)
+            candidate = dict(entry, audio_verified=True, **admission)
+            if on_verified:
+                on_verified(candidate)
+            accepted[entry["id"]] = candidate
             item.update(status="passed", error=None)
             print("PASS " + entry["name"], flush=True)
         except (KeyboardInterrupt, SystemExit):

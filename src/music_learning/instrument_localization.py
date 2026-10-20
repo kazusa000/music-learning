@@ -529,6 +529,9 @@ Sustain cancels release|延音取消释音
 4'|四英尺音栓
 """)
 )
+from .instrument_localization_pianoteq import VOCABULARY  # noqa: E402
+
+PHRASES.update(table(VOCABULARY))
 _choices = {**PHRASES, **MODELS}
 _pattern = re.compile(
     r"(?<![A-Za-z])(?:"
@@ -538,7 +541,7 @@ _pattern = re.compile(
 )
 _folded = {k.casefold(): v for k, v in _choices.items()}
 _codes = re.compile(
-    r"\b(?:[0-9]+[A-Z]+|[A-Z]{1,4}-?\d+[A-Z]*|[A-Z]\d?|[WM]KI{0,2}|AC-30|CP70|MXR|EP|NR|MKS|[0-9]+s|dB|Hz|kHz|ms|sec|V-B|V-M|DG|XT)\b"
+    r"\b(?:[0-9]+[A-Z]+|[A-Z]{1,4}-?\d+[A-Z]*|[A-Z]\d?|[WM]KI{0,2}|AC-30|CP70|MXR|EP|NR|MKS|[0-9]+s|dB|Hz|kHz|ms|sec|V-B|V-M|DG|XT|SK-EX|VC|EAP|RMI)\b"
 )
 
 

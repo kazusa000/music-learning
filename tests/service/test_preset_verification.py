@@ -128,3 +128,25 @@ def test_fingerprint_ignores_display_state_but_pins_sound_inputs(tmp_path, monke
     assert fingerprint(changed, {}) == before
     changed["plugin_sha256"] = "new binary"
     assert fingerprint(changed, {}) != before
+
+
+def test_incremental_admission_rejects_one_item_without_publishing_or_discarding_others(tmp_path, monkeypatch):
+    settings, bank, entries, calls = setup(tmp_path, monkeypatch)
+    published = []
+
+    def admit(entry):
+        if entry["id"] == "two":
+            raise ValueError("Duplicate cross-instrument audio")
+        published.append(entry["id"])
+
+    accepted, report = run(settings, entries, bank, bank / "verification-runs/incremental",
+                           None, {}, lambda *_: None, on_verified=admit)
+    assert published == ["one", "three"]
+    assert {p["id"] for p in accepted} == {"one", "three"}
+    assert report["failures"] == [dict(id="two", error="Duplicate cross-instrument audio")]
+    # Cache hits still pass admission checks, rather than bypassing a failed rule.
+    accepted, report = run(settings, entries, bank, bank / "verification-runs/cached-incremental",
+                           None, {}, lambda *_: None, on_verified=admit)
+    assert {p["id"] for p in accepted} == {"one", "three"}
+    assert report["verified"] == 2 and len(report["failures"]) == 1
+    assert calls == ["one", "two", "three"]
