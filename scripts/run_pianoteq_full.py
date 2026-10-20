@@ -53,6 +53,15 @@ def check_pins(request):
             raise ValueError("Frozen validation input changed: " + name)
 
 
+def progress_snapshot(path):
+    # Atomic file replacement on Windows can briefly deny readers. Monitoring
+    # must never take down the verifier or invalidate its durable queue.
+    try:
+        return json.loads(path.read_bytes())
+    except (OSError, ValueError):
+        return None
+
+
 def verifier_process(command, **kwargs):
     # OwnedProcess supplies CREATE_NO_WINDOW itself; do not pass creationflags twice.
     owner = OwnedProcess(command, **kwargs)
@@ -191,8 +200,9 @@ def supervise(request_path):
                 while owner.process.poll() is None:
                     state["heartbeat_at"] = time.time()
                     progress = output / "progress.json"
-                    if progress.exists():
-                        state["progress"] = json.loads(progress.read_bytes())
+                    snapshot = progress_snapshot(progress)
+                    if snapshot is not None:
+                        state["progress"] = snapshot
                     atomic_json(directory / "status.json", state)
                     time.sleep(5)
                 state["returncode"] = owner.process.returncode

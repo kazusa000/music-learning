@@ -113,6 +113,8 @@ def test_supervision_closes_with_admission_and_preview_membership_without_touchi
     (output / "queue.json").write_text(json.dumps(dict(items=[
         dict(id=preset["id"], name=preset["name"], status="passed")])))
     (output / "report.json").write_text(json.dumps(dict(status="completed")))
+    progress = output / "progress.json"
+    progress.write_text(json.dumps(dict(status="completed", total=1)))
     directory = tmp_path / "supervision"
     directory.mkdir()
     config = directory / "app.local.json"
@@ -129,12 +131,25 @@ def test_supervision_closes_with_admission_and_preview_membership_without_touchi
 
     @contextmanager
     def completed_worker(*args, **kwargs):
-        yield SimpleNamespace(process=SimpleNamespace(pid=os.getpid(), poll=lambda: 0, returncode=0))
+        states = iter([None, None, 0])
+        yield SimpleNamespace(process=SimpleNamespace(pid=os.getpid(), poll=lambda: next(states), returncode=0))
 
+    from pathlib import Path
+    original_read = Path.read_bytes
+    denied = []
+    def locked_read(path):
+        if path == progress and not denied:
+            denied.append(True)
+            raise PermissionError("temporary sharing violation")
+        return original_read(path)
+
+    monkeypatch.setattr(Path, "read_bytes", locked_read)
+    monkeypatch.setattr(supervisor.time, "sleep", lambda _: None)
     monkeypatch.setattr(supervisor, "verifier_process", completed_worker)
     supervisor.supervise(request_path)
     state = json.loads((directory / "status.json").read_bytes())
     assert state["status"] == "completed" and state["formal_unchanged"]
+    assert denied and state["progress"]["total"] == 1
     assert state["verified"] == state["preview_enqueued"] == 1 and state["failures"] == 0
     assert "git_error" in state and doc.read_text() == "Keep this user edit"
     assert json.loads((directory / "failures.json").read_bytes()) == []
