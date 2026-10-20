@@ -26,8 +26,8 @@ EDIT_INSTRUCTIONS = (
     COMMON_INSTRUCTIONS
     + """ This conversation supports actions automatically. Discuss questions without editing; when the user asks to change something, perform the requested change using tools and report its actual result, not instructions for doing it manually. scope_policy=automatic gives access to this project's current revision. A discussion excerpt is not an edit ceiling; use the user's requested musical extent. If scope_policy=explicit, respect that caller-supplied edit_scope. Project/revision identities are pinned by the application.
 Arrangement and mixing are separate. Changing instruments, notes or tracks must preserve existing track gain/pan and must not introduce loudness normalization, mixer automation, or unsolicited mixing. Temporary solo/mute monitoring is not a musical edit. Independent final mixing is saved in mixing.get/save via API/SDK/CLI, outside music_edit.
-For a sound change: query the actual target plugin and installed presets; preset_capture({"preset_id":"ID_FROM_LIBRARY"}); after status succeeded, music_edit({"description":"Change sound","operations":[{"op":"patch_plugin","id":"TARGET_PLUGIN_ID","preset_capture_job_id":"RETURNED_JOB_ID"}]}). Never use type instead of op or put preset_id inside patch_plugin. A different label on the same preset is not a different sound. Existing captured plugins may be copied with preset_plugin_id. If capture is pending query production_query(capture_job_id); if it failed explain the actual error.
-For note pitch/velocity prefer patch_note, preserving timing. For put entities include provenance origin=ai_edit/source_id=the turn id. Query real parameters and existing automation IDs; reuse a lane ID for a curve on the same target/parameter. One successful edit batch per turn; failed validation does not commit and can be corrected and retried. The service autosaves working state. User-visible versions are only created by explicit Save Version. Playback uses persistent per-track VST3 sessions and reusable unchanged stems. Sound/note edits never queue full-song rendering; full-song rendering is an explicit export action. Read the edit receipt to report committed edits accurately; do not claim audio was heard or measured without a playback result. If no edit was needed or no suitable sound exists, say so normally; never invent a successful edit."""
+For a sound change: query the actual target plugin and installed presets; preset_capture({"preset_id":"ID_FROM_LIBRARY"}); after status succeeded, music_edit({"description":"Change sound","operations":[{"op":"patch_plugin","id":"TARGET_PLUGIN_ID","preset_capture_job_id":"RETURNED_JOB_ID"}]}). Never use type instead of op or put preset_id inside patch_plugin. A different label on the same preset is not a different sound. Existing captured plugins may be copied with preset_plugin_id. Admitted VST3 presets load their full saved state directly without repeated sound probes. If loading is pending query production_query(capture_job_id) only when needed; if it failed explain the actual error.
+For note pitch/velocity prefer patch_note, preserving timing. For put entities include provenance origin=ai_edit/source_id=the turn id. Query real parameters and existing automation IDs; reuse a lane ID for a curve on the same target/parameter. You may make several successive edits in one conversation turn. Each successful receipt advances the current revision automatically; failed validation can be corrected and retried. The service autosaves working state. User-visible versions are only created by explicit Save Version. Playback uses persistent per-track VST3 sessions and reusable unchanged stems. Sound/note edits never queue full-song rendering; full-song rendering is an explicit export action. Read the edit receipt to report committed edits accurately; do not claim audio was heard or measured without a playback result. If no edit was needed or no suitable sound exists, say so normally; never invent a successful edit."""
 )
 
 
@@ -227,7 +227,7 @@ class DialogueWorker:
                     "preset_capture",
                     c.CaptureInstrument,
                     (),
-                    "Capture an installed preset in this project: durable native audio and state validation. Requires full-time structural edit permission. Read status via production_query(capture_job_id), then patch_plugin.preset_capture_job_id.",
+                    "Load an installed preset. Already admitted VST3 presets import full state directly; no repeated audio validation or full-song render. Then patch_plugin.preset_capture_job_id.",
                 ),
                 (
                     "production_query",
@@ -239,7 +239,7 @@ class DialogueWorker:
                     "music_edit",
                     c.AgentEdit,
                     ("project_id", "turn_id"),
-                    'Commit one atomic scoped edit batch. Mixer-only edits play immediately; other edits prepare changed track audio. Each operation MUST use op, NOT type. For a captured sound: {"description":"Change sound","operations":[{"op":"patch_plugin","id":"PLUGIN_ID_FROM_QUERY","preset_capture_job_id":"SUCCEEDED_CAPTURE_JOB_ID"}]}. patch_plugin has NO preset_id field. Call preset_capture first, or use preset_plugin_id to copy an existing captured plugin. Failed validation can be corrected and retried; never enlarge the pinned scope. Read back after committing.',
+                    'Apply an atomic edit batch; you may call again to continue the requested work. Mixer-only edits play immediately; other edits prepare changed track audio. Each operation MUST use op, NOT type. For a captured sound: {"description":"Change sound","operations":[{"op":"patch_plugin","id":"PLUGIN_ID_FROM_QUERY","preset_capture_job_id":"SUCCEEDED_CAPTURE_JOB_ID"}]}. patch_plugin has NO preset_id field. Call preset_capture first, or use preset_plugin_id to copy an existing captured plugin. Failed validation can be corrected and retried. Automatic mode follows the user request across this project; an SDK explicit scope remains binding. Read back after committing.',
                 ),
             ):
                 if not editable and name != "production_query":
@@ -255,8 +255,8 @@ class DialogueWorker:
 
             async def handler(params):
                 name = params["tool"]
-                if name not in {tool["name"] for tool in tools} or len(turn["tools"]) >= 32:
-                    raise ValueError("Tool not allowed or call limit exceeded")
+                if name not in {tool["name"] for tool in tools}:
+                    raise ValueError("Unknown music tool")
                 arguments = params["arguments"]
                 if not isinstance(arguments, dict) or any(
                     k in arguments for k in ("project_id", "revision_id", "turn_id", "scope")
@@ -311,7 +311,7 @@ class DialogueWorker:
                     envelope = {"operation": operation, "arguments": actual}
                     if name == "music_edit":
                         envelope.update(
-                            expected_revision=turn["revision_id"], idempotency_key="agent-edit:" + turn["id"]
+                            expected_revision=target, idempotency_key="agent-edit:" + turn["id"] + ':' + target
                         )
                     elif name == "preset_capture":
                         envelope.update(

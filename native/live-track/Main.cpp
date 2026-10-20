@@ -105,7 +105,9 @@ public:
             require(plugin->getTotalNumInputChannels()<=2,"Live track does not accept sidechains");
             require(plugin->getTotalNumOutputChannels()==2||needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()),"Live track needs stereo output");
             channels=std::max(channels,plugin->getTotalNumOutputChannels());
-            plugin->setNonRealtime(false);plugin->setPlayHead(timeline.get());plugin->setRateAndBufferSizeDetails(rate,blockSize);plugin->prepareToPlay(rate,blockSize);
+            // This child produces PCM ahead of the browser clock; it is not a
+            // device callback. Keyscape must finish its sample work per block.
+            plugin->setNonRealtime(needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()));plugin->setPlayHead(timeline.get());plugin->setRateAndBufferSizeDetails(rate,blockSize);plugin->prepareToPlay(rate,blockSize);
             if(needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription())) MessageManager::getInstance()->runDispatchLoopUntil(10000);
             latency+=plugin->getLatencySamples();plugins.push_back(std::move(plugin));
         }

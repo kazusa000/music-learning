@@ -26,6 +26,10 @@ def execute(settings, job, directory=None):
 
         bounded = capture_settings(settings)
         try:
+            from .preset_import import import_admitted
+            imported = import_admitted(bounded, job, directory)
+            if imported is not None:
+                return imported
             return capture(bounded, job, directory)
         except InstrumentSpaceError as error:
             required = sum(x["bytes"] for x in job["payload"]["preset"]["resources"].values())

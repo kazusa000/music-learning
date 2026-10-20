@@ -14,6 +14,16 @@ from music_learning.settings import ROOT
 PROV = dict(origin="rule", source_id="live-mix-fixture", review="unreviewed")
 
 
+def test_empty_track_does_not_start_a_native_audio_session(service,project):
+    empty=c.Track(id=c.new_id(),name='Empty',kind='instrument',provenance=PROV)
+    snapshot=c.Snapshot(duration_samples=44100,tracks=[empty])
+    rev=commit(service,project,snapshot.model_dump(),project['current_revision'])
+    plan=invoke(service,'playback.get',dict(project_id=project['id']))
+    assert plan['pending_track_ids']==[] and not plan['available']
+    assert not invoke(service,'jobs.list',dict(project_id=project['id']))
+    assert rev['snapshot']['tracks'][0]['id']==empty.id
+
+
 def commit(service, project, snapshot, head):
     return invoke(
         service,
