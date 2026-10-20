@@ -85,6 +85,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   const requestGeneration=useRef(0);
   const localCuePending=useRef(false);
   const applyingCue=useRef(false);
+  const playbackFinished=useRef(false),onPlaybackEnded=useRef(()=>{});
   const lastReportTime=useRef(0);
   const snapshot=revision.snapshot;
   const rate=snapshot.sample_rate??44100;
@@ -123,7 +124,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   useEffect(()=>{
     player.current=new Transport();const transport=player.current;let frame=0;
     let meterTime=0;const draw=()=>{setPosition(transport.position);setPlaying(transport.playing);if(performance.now()-meterTime>70){meterTime=performance.now();setLivePeaks(transport.meterLevels());}
-      if(transport.playing&&!transport.loop&&transport.position>=transport.duration)transport.pause();
+      if(transport.playing&&!transport.loop&&transport.position>=transport.duration){playbackFinished.current=true;transport.pause();onPlaybackEnded.current();}
       frame=requestAnimationFrame(draw);};
     frame=requestAnimationFrame(draw);
     return()=>{cancelAnimationFrame(frame);void transport.close();};
@@ -201,6 +202,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   useEffect(()=>{
     if(preserveMix.current===revision.id)return;
     mixRevision.current=revision;mixRef.current={};setMixDraft({});
+    playbackFinished.current=false;
     player.current.pause();player.current.offset=0;setPosition(0);
     setLoopStart(previous=>Math.min(previous,Math.max(0,duration-1/rate)));
     setLoopEnd(previous=>previous>0?Math.min(previous,duration):duration);
@@ -275,7 +277,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
   useEffect(()=>()=>{if(mixTimer.current)clearTimeout(mixTimer.current);mixFlush.current();},[]);
   const applyCue=useCallback(async(state:AuditionState,sequence:string|null,preserve=false)=>{
     if(state.revision_id!==revision.id){const project=await call<{current_revision:string}>('projects.get',{project_id:head.project_id});if(project.current_revision===state.revision_id){setVersionId('head');await onCommitted?.();}else setVersionId(state.revision_id);return;}
-    if(sequence)lastCue.current=sequence;
+    if(sequence){if(sequence!==lastCue.current&&state.playing)playbackFinished.current=false;lastCue.current=sequence;}
     setMatched(state.level_match??true);player.current.setMatched(state.level_match??true);
     setMode(state.mode??'original');setTrackIds(state.track_ids??[]);setLoop(state.loop??false);
     setReferenceId(state.reference_revision_id??null);
@@ -296,7 +298,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     let active=true;
     const poll=async()=>{const cue=await call<Cue>('audition.get',{project_id:head.project_id});
       const changed=cue.sequence!==lastCue.current;
-      const readyNow=cue.desired?.revision_id===revision.id&&cue.desired.playing&&!player.current.playing&&!!(publication||playback?.available)&&player.current.context?.state==='running';
+      const readyNow=!playbackFinished.current&&cue.desired?.revision_id===revision.id&&cue.desired.playing&&!player.current.playing&&!!(publication||playback?.available)&&player.current.context?.state==='running';
       if(active&&!localCuePending.current&&cue.sequence&&(changed||readyNow)&&cue.desired)await applyCue(cue.desired,cue.sequence,preserveMix.current===revision.id&&player.current.playing);
       if(active&&!localCuePending.current&&cue.sequence===lastCue.current&&cue.sequence&&cue.desired?.revision_id===revision.id&&(changed||Date.now()-lastReportTime.current>3000)){
         lastReportTime.current=Date.now();
@@ -321,7 +323,7 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     const generation=++requestGeneration.current,state=desired(patch);
     localCuePending.current=true;
     if(patch.playing===false){player.current.pause();setPlaying(false);}
-    if(patch.position_sample!==undefined){player.current.pause();player.current.offset=patch.position_sample/rate;setPosition(patch.position_sample/rate);}
+    if(patch.position_sample!==undefined){playbackFinished.current=false;player.current.pause();player.current.offset=patch.position_sample/rate;setPosition(patch.position_sample/rate);}
     // Local audio responds immediately; persistence remains ordered and failures
     // stop the preview and recover the authoritative desired transport.
     const local=applyCue(state,null,patch.position_sample===undefined&&state.playing===true);
@@ -340,11 +342,14 @@ export function Workbench({title,revision:head,publication:initial,jobs=[],onBac
     }}
     finally{if(generation===requestGeneration.current)localCuePending.current=false;}
   }
+  onPlaybackEnded.current=()=>{void cue({playing:false});};
 
   async function playToggle(){
     if((mode==='mix'||mode==='tracks')&&!publication&&!playback?.available){setError(playback?.reason??'正在准备发生变化的音轨声音…');return;}
     if(!player.current.playing)try{await player.current.activate();}catch(e){setError((e as Error).message);return;}
-    await cue({playing:!player.current.playing});
+    const restart=!player.current.playing&&(playbackFinished.current||player.current.position>=duration);
+    if(restart)playbackFinished.current=false;
+    await cue({playing:!player.current.playing,...(restart?{position_sample:0}:{})});
   }
   const playShortcut=useRef(()=>{});
   playShortcut.current=()=>{void playToggle();};

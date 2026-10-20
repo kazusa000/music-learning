@@ -128,6 +128,13 @@ export class Transport {
     const generation = ++this.generation;
     if (!ids.length) {this.pause(); return;}
     await this.activate();
+    // A live mix shares the level of its baked reference mix. Do not start
+    // with per-stem normalization while the reference is still preloading:
+    // otherwise the first play changes balance/loudness after cache warm-up.
+    if(this.matched){
+      const references=[...new Set(ids.map(id=>this.families.get(id)).filter((id):id is string=>!!id))];
+      await Promise.all(references.filter(id=>this.matchedGains[id]===undefined&&!this.levels.has(id)).map(id=>this.buffer(id)));
+    }
     const buffers = await Promise.all(ids.map(id => this.buffer(id)));
     if (generation !== this.generation || this.disposed) return;
     const context = this.context!, when = context.currentTime+.01;
