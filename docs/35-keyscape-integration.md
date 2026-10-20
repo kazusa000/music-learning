@@ -82,3 +82,32 @@ data/envs/app/Scripts/python.exe scripts/index_keyscape.py `
 C 盘 5 个旧程序文件共 92,984,640 字节已在 H 盘核对备份；删除均被 Windows ACL 拒绝，实际删除 0 文件、释放 0 字节。没有修改 ACL、接管所有权或提升权限。旧文件还在，但项目只允许并实际加载 H 盘的 Keyscape 路径。清理计划与实际结果在 `keyscape-intake-v1/c-plugin-cleanup*.json`；STEAM 定位联接保留。
 
 最终源复核、当前可选目录、依赖清单、正式工程前后回读见 `keyscape-intake-v1/summary.json`、`live-catalog-final.json`、`formal-before.json` 与 `formal-after.json`。运行数据、原厂预设、样本、插件及 WAV 均不进入 Git。
+
+## 自动增量验证
+
+以后无需手填插件、模板、源复制清单等六个路径，直接使用已经准备的库存：
+
+```powershell
+# 自动处理完整库存，已通过且指纹/实际依赖/证据未变的直接复用
+data/envs/app/Scripts/python.exe scripts/verify_keyscape.py
+
+# 自动找到最近未完成队列并续跑；失败条目仅在明确要求时重试
+data/envs/app/Scripts/python.exe scripts/verify_keyscape.py --resume
+data/envs/app/Scripts/python.exe scripts/verify_keyscape.py --resume --retry-failed
+
+# 也可每次只处理 10 款新音色，或单独指定预设
+data/envs/app/Scripts/python.exe scripts/verify_keyscape.py --limit 10
+data/envs/app/Scripts/python.exe scripts/verify_keyscape.py --preset 'Toy Piano - Classic'
+```
+
+`--limit` 后继续使用 `--resume`，不会重新开始。`--force` 对新队列强制重测，不能与续跑同时使用。普通退出、崩溃或中断后，已经完成的测试和音频仍在；恢复时核对原队列输入，依赖变化则要求建立新队列，不能把旧结果绑到新音色上。
+
+共享的 `preset_verification.py` 负责队列、验证指纹、证据缓存与进度落盘；当前提供 Keyscape 一键入口，其他音源的适配器可复用同一流程。指纹覆盖宿主、验证实现、插件、实际预设资源、声源身份和样本清单。缓存命中前仍检查实际依赖和原始首次/重开音频、结果文件的 SHA；文件缺失或变化不能命中。旧目录的 `audio_verified` 标记本身不是缓存凭据，新流程第一次仍会产生完整证据。
+
+同一库的旧准备器和新验证器共用操作系统文件锁，防止并发覆盖目录。每款失败单独保存，不阻止后续条目；批次最后原子合并通过项，保留其他库和此前已接纳条目。失败不会自动成为可选音色；命令遇到失败返回非零退出码。运行本身不调用音乐模型或 Codex，不修改正式工程。
+
+进度、逐次调用报告及探测音频存放在 `H:\music\Sound Library\Spectrasonics\verification-runs`，缓存收据在同目录的 `verification-cache`，不会另占 E 盘大块空间。每个队列有 `queue.json`、`progress.json`、最新 `report.json` 和不可变 `invocations/*.json`；原生请求、音频与失败记录保留。
+
+本机单款 Toy Piano Classic 实测：首次完整发声及重开验证本身 34.5 秒，同一队列复用缓存 0.203 秒，均不含命令启动时间。完整库首次仍需真实加载采样和重新打开，不能据此声称全库首次只需几秒；后续只重测新增、变化或丢失证据的项目。
+
+自动流程专项的 144 项后端回归、Ruff 和契约漂移检查通过，包含缓存失效、证据丢失、分批续跑、失败显式重试、输入变更拒绝、库互斥和中断恢复。真实缓存复跑没有新建原生进程；正式歌曲的 head、快照 SHA、9,378 音符、15 任务与当前 20 可选音色保持。没有修改原生 DSP，未重复原生回归或整曲听辨，也没有自动启动剩余 435 款的长时间验证。

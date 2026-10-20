@@ -20,6 +20,7 @@ from music_learning.instruments import materialize, preset_spec  # noqa: E402
 from music_learning.keyscape_library import read_presets, read_container_member  # noqa: E402
 from music_learning.keyscape_presets import build_preset, verify_state  # noqa: E402
 from music_learning.storage import digest  # noqa: E402
+from music_learning.preset_verification import library_lock  # noqa: E402
 from native_host import NativeHost  # noqa: E402
 
 LIBRARY_ID = "spectrasonics-keyscape"
@@ -101,6 +102,11 @@ def installed_manifest(library, bank, copy_manifest):
 
 
 def build(library, bank, plugin, baseline, copy_manifest, evidence, all_presets=False, names=()):
+    with library_lock(bank):
+        return _build(library, bank, plugin, baseline, copy_manifest, evidence, all_presets, names)
+
+
+def _build(library, bank, plugin, baseline, copy_manifest, evidence, all_presets=False, names=()):
     library, bank, plugin, evidence = (Path(p).resolve() for p in (library, bank, plugin, evidence))
     bank_relative = bank.relative_to(library).as_posix()
     plugin.relative_to(bank)
