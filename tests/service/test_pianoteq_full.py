@@ -8,7 +8,7 @@ import pytest
 
 from intake_pianoteq912 import publish_verified, select_entries
 from run_pianoteq_full import check_pins, formal_snapshot, verifier_process
-from music_learning.instrument_localization import prepare_import
+from music_learning.instrument_localization import prepare_import, label
 from music_learning.instrument_taxonomy import classify
 from music_learning.storage import digest
 
@@ -86,3 +86,73 @@ def test_verifier_process_uses_shared_hidden_process_owner_without_duplicate_fla
         if os.name == "nt":
             assert psutil.Process(owner.process.pid).nice() == psutil.BELOW_NORMAL_PRIORITY_CLASS
         assert owner.process.wait(timeout=10) == 0
+
+
+@pytest.mark.parametrize("variant", ["D 282", "440", "K2"])
+def test_code_only_factory_variant_round_trips_without_inventing_chinese_names(variant):
+    p = entry()
+    p.update(name=variant, variant_name=variant)
+    result = prepare_import(classify(p))
+    assert prepare_import(classify(result))["display_variant_name"] == result["display_variant_name"]
+    assert label(variant, variant) == variant
+    with pytest.raises(ValueError, match="Chinese instrument labels"):
+        label("Unknown untranslated piano", "Unknown untranslated piano")
+
+
+def test_supervision_closes_with_admission_and_preview_membership_without_touching_user_work(service, project, tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    import run_pianoteq_full as supervisor
+    from test_instruments import installed
+
+    root, preset = installed(service.settings, tmp_path)
+    preset["audio_verified"] = True
+    (root / "catalog.json").write_text(json.dumps(dict(schema_version=1, presets=[preset])))
+    bank = root / "bank"
+    output = bank / "verification-runs/completed"
+    output.mkdir(parents=True)
+    (output / "queue.json").write_text(json.dumps(dict(items=[
+        dict(id=preset["id"], name=preset["name"], status="passed")])))
+    (output / "report.json").write_text(json.dumps(dict(status="completed")))
+    directory = tmp_path / "supervision"
+    directory.mkdir()
+    config = directory / "app.local.json"
+    config.write_text(json.dumps(dict(data_root=str(service.settings.data_root), instrument_library=str(root))))
+    doc = directory / "user-changed-report.md"
+    doc.write_text("Keep this user edit")
+    request = dict(run_directory=str(output), bank=str(bank), pins={}, ids=[preset["id"]],
+                   config=str(config), database=str(service.database.path),
+                   previously_admitted=[preset["id"]], report_document=str(doc),
+                   branch="deliberately-different-branch", report_document_sha256="old")
+    request_path = directory / "request.json"
+    request_path.write_text(json.dumps(request))
+    (directory / "formal-before.json").write_text(json.dumps(formal_snapshot(service.database.path)))
+
+    @contextmanager
+    def completed_worker(*args, **kwargs):
+        yield SimpleNamespace(process=SimpleNamespace(pid=os.getpid(), poll=lambda: 0, returncode=0))
+
+    monkeypatch.setattr(supervisor, "verifier_process", completed_worker)
+    supervisor.supervise(request_path)
+    state = json.loads((directory / "status.json").read_bytes())
+    assert state["status"] == "completed" and state["formal_unchanged"]
+    assert state["verified"] == state["preview_enqueued"] == 1 and state["failures"] == 0
+    assert "git_error" in state and doc.read_text() == "Keep this user edit"
+    assert json.loads((directory / "failures.json").read_bytes()) == []
+
+
+def test_worker_explicit_retry_is_not_repeated_on_abnormal_recovery(tmp_path, monkeypatch):
+    import intake_pianoteq912 as adapter
+    from run_pianoteq_full import verify_worker
+
+    request = tmp_path / "request.json"
+    request.write_text(json.dumps(dict(run_directory=str(tmp_path / "run"), retry_failed=True)))
+    calls = []
+    def original(**kw):
+        calls.append(kw)
+    monkeypatch.setattr(adapter, "intake", lambda **kw: adapter.run())
+    monkeypatch.setattr(adapter, "run", original)
+    verify_worker(request)
+    assert calls[-1]["retry_failed"] is True
+    monkeypatch.setattr(adapter, "run", original)
+    verify_worker(request, recovery=1)
+    assert calls[-1]["retry_failed"] is False

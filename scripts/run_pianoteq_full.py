@@ -70,7 +70,7 @@ def verifier_process(command, **kwargs):
         raise
 
 
-def start(resume_request=None):
+def start(resume_request=None, retry_failed=False):
     from music_learning.instrument_localization import prepare_entries
     from intake_pianoteq912 import select_entries, LIBRARY
 
@@ -95,6 +95,8 @@ def start(resume_request=None):
             check_pins(dict(pins={p: sha for p, sha in origin["pins"].items()
                                   if Path(p).resolve() != Path(__file__).resolve()}))
             Path(origin["run_directory"]).relative_to(bank / "verification-runs")
+        if retry_failed and not origin:
+            raise ValueError("Failed-item retry requires an existing request")
         entries = prepare_entries(select_entries(inventory, catalog, remaining=True,
             resume_ids=set(origin["ids"]) if origin else None), bank)
         if not entries:
@@ -131,6 +133,11 @@ def start(resume_request=None):
         request_path = directory / "request.json"
         if origin:
             request["resume_of"] = str(Path(resume_request).resolve())
+        request["retry_failed"] = retry_failed
+        if retry_failed:
+            original_queue = json.loads((Path(request["run_directory"]) / "queue.json").read_bytes())
+            atomic_json(directory / "failures-before-retry.json",
+                        [p for p in original_queue["items"] if p["status"] == "failed"])
         atomic_json(request_path, request)
         baseline = (json.loads(Path(resume_request).with_name("formal-before.json").read_bytes())
                     if origin else formal_snapshot(request["database"]))
@@ -144,6 +151,20 @@ def start(resume_request=None):
                      create_time=psutil.Process(process.pid).create_time(), request=str(request_path))
         atomic_json(pointer, state)
         print(json.dumps(dict(state, requested=len(entries), run_directory=request["run_directory"])))
+
+
+def verify_worker(request_path, recovery=0):
+    """Supply the shared queue's explicit retry flag without changing audio policy."""
+    from functools import partial
+    import intake_pianoteq912 as adapter
+
+    request = json.loads(Path(request_path).read_bytes())
+    output = Path(request["run_directory"])
+    # Only the explicitly requested retry is allowed; abnormal recovery must not
+    # repeatedly retry genuine failed sounds encountered later in this batch.
+    adapter.run = partial(adapter.run, retry_failed=bool(request.get("retry_failed") and recovery == 0))
+    adapter.intake(remaining=True, resume=output if (output / "queue.json").exists() else None,
+                   output=output)
 
 
 def supervise(request_path):
@@ -161,11 +182,8 @@ def supervise(request_path):
         # A single bounded recovery handles an abnormal child exit, not failed presets.
         for attempt in range(2):
             check_pins(request)
-            command = [sys.executable, "-u", str(ROOT / "scripts/intake_pianoteq912.py"), "--remaining"]
-            if (output / "queue.json").exists():
-                command += ["--resume", str(output)]
-            else:
-                command += ["--output", str(output)]
+            command = [sys.executable, "-u", str(Path(__file__).resolve()), "--worker",
+                       str(request_path), str(attempt)]
             with (directory / "worker.log").open("ab") as log, verifier_process(
                 command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
             ) as owner:
@@ -257,8 +275,12 @@ def supervise(request_path):
 if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--start":
         start()
+    elif len(sys.argv) == 4 and sys.argv[1] == "--resume" and sys.argv[3] == "--retry-failed":
+        start(sys.argv[2], retry_failed=True)
     elif len(sys.argv) == 3 and sys.argv[1] == "--resume":
         start(sys.argv[2])
+    elif len(sys.argv) == 4 and sys.argv[1] == "--worker":
+        verify_worker(sys.argv[2], int(sys.argv[3]))
     elif len(sys.argv) == 2:
         supervise(sys.argv[1])
     else:

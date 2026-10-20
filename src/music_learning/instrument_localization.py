@@ -555,7 +555,9 @@ def translate(text):
 
 def label(text, explicit=None, fallback="音色"):
     if explicit:
-        if not isinstance(explicit, str) or not re.search(r"[\u4e00-\u9fff]", explicit):
+        unchanged_code = (isinstance(explicit, str) and explicit == text
+                          and translate(text) == (text, []))
+        if not isinstance(explicit, str) or (not re.search(r"[\u4e00-\u9fff]", explicit) and not unchanged_code):
             raise ValueError("Chinese instrument labels must contain Chinese text")
         return explicit
     translated, missing = translate(text)

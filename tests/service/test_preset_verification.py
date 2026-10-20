@@ -150,3 +150,8 @@ def test_incremental_admission_rejects_one_item_without_publishing_or_discarding
     assert {p["id"] for p in accepted} == {"one", "three"}
     assert report["verified"] == 2 and len(report["failures"]) == 1
     assert calls == ["one", "two", "three"]
+    # Explicit retry after an admission-only fix reuses the genuine audio evidence.
+    accepted, report = run(settings, entries, bank, bank / "verification-runs/incremental",
+                           None, {}, lambda *_: None, resume=True, retry_failed=True,
+                           on_verified=lambda e: None)
+    assert len(accepted) == 3 and not report["failures"] and report["probes"] == 0
