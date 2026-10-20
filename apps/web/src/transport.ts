@@ -10,9 +10,11 @@ export class Transport {
   voices = new Map<string,{source:AudioBufferSourceNode;gain:GainNode;left?:GainNode;right?:GainNode;meter?:AnalyserNode;assetId?:string}>();
   channels=new Map<string,MixChannel>();
   output:GainNode|null=null;
+  clock:AudioWorkletNode|null=null;clockReady:Promise<void>|null=null;
+  onEnded:(()=>void)|null=null;
   liveClient=crypto.randomUUID().replaceAll('-','');
   liveSequence=0;referenceSequence=0;referenceClient=crypto.randomUUID().replaceAll('-','');
-  streams=new Map<string,{epoch:number;timer?:ReturnType<typeof setTimeout>;nodes:Set<AudioBufferSourceNode>;session:LiveTrack}>();
+  streams=new Map<string,{epoch:number;timer?:ReturnType<typeof setTimeout>;nodes:Set<AudioBufferSourceNode>;session:LiveTrack;tick?:()=>void;chunks?:number;lastSample?:number}>();
   liveErrors:Record<string,string>={};
   primes=new Map<string,Promise<AudioBuffer>>();
   playLatencyMs=0;firstSoundLatencyMs=0;playRequestedAt=0;
@@ -44,13 +46,13 @@ export class Transport {
   liveVoice(id:string,live:LiveTrack,first?:{buffer:AudioBuffer;sample:number;when:number}){
     const prior=this.streams.get(id);if(prior?.session.session_id===live.session_id&&prior.session.generation===live.generation)return;
     // Existing audio stays connected until the replacement has its first PCM.
-    const context=this.context!,epoch=++this.streamEpoch,stream={epoch,nodes:new Set<AudioBufferSourceNode>(),session:live,timer:undefined as ReturnType<typeof setTimeout>|undefined};
+    const context=this.context!,epoch=++this.streamEpoch,stream={epoch,nodes:new Set<AudioBufferSourceNode>(),session:live,timer:undefined as ReturnType<typeof setTimeout>|undefined,tick:undefined as (()=>void)|undefined,chunks:0,lastSample:0};
     this.streams.set(id,stream);let nextWhen=0,nextSample=0,connected=false;
     let gain:GainNode,left:GainNode,right:GainNode,meter:AnalyserNode;
     const pump=async()=>{
       if(!this.playing||this.disposed||this.streams.get(id)!==stream)return;
       try{
-        while(!connected||nextWhen<context.currentTime+.12){
+        while(!connected||nextWhen<context.currentTime+.24){
           const when=first?first.when:connected?nextWhen:context.currentTime+.03;
           if(first){nextWhen=first.when;nextSample=first.sample;}
           if(!first&&!connected){nextSample=Math.round(this.at(when)*live.sample_rate);nextWhen=when;}
@@ -59,6 +61,7 @@ export class Transport {
           const frames=Math.min(4096,boundary-nextSample);
           const buffer=first?.buffer??await this.liveBuffer(live,nextSample,frames);first=undefined;
           if(!this.playing||this.streams.get(id)!==stream)return;
+          stream.chunks++;stream.lastSample=nextSample;
           // Keep advancing through returned PCM. Re-seeking every late request
           // caused a permanent silent retry loop on the full-size project.
           const skip=Math.max(0,Math.ceil((context.currentTime+.008-nextWhen)*live.sample_rate));
@@ -77,9 +80,9 @@ export class Transport {
           stream.nodes.add(source);source.onended=()=>{stream.nodes.delete(source);source.disconnect();split.disconnect();};
           nextWhen+=buffer.duration;nextSample+=buffer.length;
         }
-      }catch(error){if(this.streams.get(id)===stream){const e=error as Error&{code?:string};if(e.code==='live_superseded'||e.code==='live_not_ready')return;this.liveErrors[id]=e.message;return;}}
-      if(this.streams.get(id)===stream)stream.timer=setTimeout(()=>void pump(),12);
-    };void pump();
+      }catch(error){if(this.streams.get(id)===stream){const e=error as Error&{code?:string};if(e.code==='live_superseded'||e.code==='live_not_ready')return;this.liveErrors[id]=e.message;stream.tick=undefined;return;}}
+      if(!this.clock&&this.streams.get(id)===stream)stream.timer=setTimeout(()=>stream.tick?.(),12);
+    };let busy=false;stream.tick=()=>{if(busy)return;busy=true;void pump().finally(()=>{busy=false;});};stream.tick();
   }
   streamEpoch=0;
   configureChannels(channels:MixChannel[]){
@@ -163,6 +166,16 @@ export class Transport {
     if(this.context.state!=='running'&&!navigator.userActivation.hasBeenActive)throw new Error('请点击播放以启用浏览器音频。');
     if(this.context.state!=='running')await this.context.resume();
     if (this.context.state !== 'running') throw new Error('请点击播放以启用浏览器音频。');
+    if(this.context.audioWorklet){
+      this.clockReady??=(async()=>{await this.context!.audioWorklet.addModule(new URL('./transport-clock.worklet.js?no-inline',import.meta.url));
+        if(this.disposed)return;this.clock=new AudioWorkletNode(this.context!,'transport-clock');
+        this.clock.port.onmessage=()=>{if(!this.playing)return;
+          if(!this.loop&&this.renderPosition>=this.duration){this.pause();this.onEnded?.();return;}
+          for(const stream of this.streams.values())stream.tick?.();};
+        this.clock.connect(this.context!.destination);
+      })();
+      await this.clockReady;
+    }
   }
   at(clock:number) {
     const timeline=[...this.timelines].reverse().find(t=>t.when<=clock)??this.timelines[0];
@@ -261,6 +274,7 @@ export class Transport {
     this.disposed=true;this.primes.clear();
     for(const channel of this.channels.values())if(channel.live)void call('playback.live.close',{session_id:channel.live.session_id}).catch(()=>{});
     this.pause();this.disposed = true;++this.warmGeneration;this.abort.abort();this.buffers.clear();this.analyzer?.terminate();
+    this.clock?.disconnect();this.clock?.port.close();
     for(const request of this.levelPending.values())request.reject(new Error('试听已关闭'));this.levelPending.clear();
     if (this.context) await this.context.close();
   }
