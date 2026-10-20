@@ -243,6 +243,11 @@ def materialize(settings, entry, destination):
     """Copy a pinned preset's dependency closure, retaining include-relative paths."""
     import shutil
 
+    if entry.get("installed_library"):
+        from .installed_libraries import verify_installed_library
+
+        verify_installed_library(settings, entry["installed_library"])
+
     source_root = resource_path(settings.instrument_library, entry["bank_root"])
     verify_runtime(source_root, entry)
     required = sum(meta["bytes"] for meta in entry["resources"].values())

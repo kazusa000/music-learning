@@ -134,6 +134,12 @@ var parameters(AudioPluginInstance& plugin)
     return result;
 }
 
+bool needsKeyscapeAuxiliaryOutputs(const PluginDescription& description)
+{
+    return description.name == "Keyscape" && description.manufacturerName == "Spectrasonics"
+        && description.version == "1.3.3d";
+}
+
 std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int blockSize)
 {
     checkKeys(spec, {"id", "path", "identifier", "state_base64", "state_encoding", "state_sha256",
@@ -155,7 +161,10 @@ std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int bloc
     auto plugin = manager.createPluginInstance(description, rate, blockSize, error);
     require(plugin != nullptr, "Cannot instantiate VST3: " + error);
     plugin->setNonRealtime(true);
-    plugin->disableNonMainBuses();
+    if (needsKeyscapeAuxiliaryOutputs(description))
+        plugin->enableAllBuses();
+    else
+        plugin->disableNonMainBuses();
     if (static_cast<bool>(field(spec, "sidechain", false)))
     {
         auto* bus = plugin->getBus(true, 1);

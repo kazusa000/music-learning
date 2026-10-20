@@ -7,11 +7,11 @@
 | 来源 | 已完成 | 待补或未通过 |
 | --- | --- | --- |
 | Pianoteq 9 | 922 文件复制到新库下 `Pianoteq 9`，逐文件 SHA-256 比对一致；结束时重新核对源目录，0 文件变化。VST3 扫描、默认发声可用；内置 797 个标准 VST3 预设成功导出，分为 15 个乐器类。 | 当前提供包的 VST3 在本宿主中接受不同预设却保持同一钢琴状态和声音，需要可正常切换预设的 Windows x64 VST3 安装版。没有发布为可选音色。 |
-| Keyscape / Spectrasonics | 只读检查到 STEAM 数据，150 文件、77,528,440,122 字节；没有复制这批大文件。 | 未找到 Windows x64 Keyscape 播放器或 VST3 插件，用户已表示会提供。若干二进制 `.db` 容器附有 `.txt` 后缀，待播放器齐备后在目标副本处理；数据完整性和版本配套待实测。 |
+| Keyscape / Spectrasonics | 用户已提供 Windows x64 VST3；150 文件、77,528,440,122 字节复制到指定 H 盘新库并逐文件校验。455 个原厂预设完成乐器分类，已通过的预设进入可选目录。 | 播放器后台加载采样需要宿主兼容等待；完整接入及各轮实际验证见 [Keyscape 接入](35-keyscape-integration.md)。未测试变体仍为库存。 |
 
-Keyscape 现在先补 **Windows 64 位 Keyscape 播放器安装包，包含 VST3**，放入 `H:\music\tmp`；暂不要求重新下载整套样本库。装好播放器后再判断是否需要配套更新。官方说明：[Keyscape](https://www.spectrasonics.net/products/keyscape/)、[STEAM 文件夹](https://www.spectrasonics.net/support/knowledgebase/article/view/175/21)。没有索取账号、密码或授权码。
+Keyscape 播放器与采样现已接入。原先缺播放器的记录保留在 Git 历史中，不再要求重复提供。官方说明：[Keyscape](https://www.spectrasonics.net/products/keyscape/)、[STEAM 文件夹](https://www.spectrasonics.net/support/knowledgebase/article/view/175/21)。没有索取账号、密码或授权码。
 
-被忽略的 `runtime/instrument-library.local.json` 已改为新路径。新库的 `library-inventory.json` 保存来源、文件位置和待补项目；`catalog.json` 目前为 0 个可选预设，与 797 个导出文件的库存统计不同。正式服务已重启，新配置生效；未扩大插件允许目录。
+被忽略的 `runtime/instrument-library.local.json` 使用新路径。新库的 `library-inventory.json` 保存来源、文件位置和接入状态；首次检查时 `catalog.json` 为 0 个可选预设，现由通过验证的 Keyscape 条目更新。Pianoteq 的 797 个导出文件仍只是库存。插件允许目录仅新增 H 盘 Keyscape 的 `Spectrasonics\VST3` 子目录。
 
 ## Pianoteq 验证
 
@@ -48,4 +48,4 @@ Keyscape 现在先补 **Windows 64 位 Keyscape 播放器安装包，包含 VST3
 - 正式工程 `4012a10f50574b2395d4ec4a9d8f27b5` 的 head `6d12b49aa72840429d79ce93294e1dc6`、快照 SHA `4591d13714931fce665e7f156a66a551487078233d2645c80b0167d19c8ceb5c`、9,378 音符和 15 任务保持。
 - 证据位于被忽略的 `data/benchmarks/user-instruments-v1`：复制清单、源文件复核、原生请求/音频、两轮入库诊断、独立夹具对照、正式工程前后回读。音源文件、偏好、数据库和日志不进入 Git。
 
-下一步是补齐两套可用的 VST3 播放器后继续验证，再发布可选音色。当前尚未完成音色库恢复。
+上述 Pianoteq 测试仍未通过，保持不入库；Keyscape 后续接入的实际结果见 [专项记录](35-keyscape-integration.md)。没有恢复旧删除库。

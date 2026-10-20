@@ -10,6 +10,7 @@ import sys
 from .settings import ROOT
 from .storage import digest
 from .instruments import resource_path, preset_spec, verify_runtime
+from .installed_libraries import verify_installed_library
 
 
 class InstrumentSpaceError(ValueError):
@@ -19,7 +20,7 @@ class InstrumentSpaceError(ValueError):
     }
 
 
-def native_probe(host, spec, directory, key_range, drums=False):
+def native_probe(host, spec, directory, key_range, drums=False, validate_state=None):
     rate = 44100
     low, high = key_range
     pitches = [36, 38, 42] if drums else [max(low, min(high, p)) for p in (48, 60, 72)]
@@ -53,6 +54,9 @@ def native_probe(host, spec, directory, key_range, drums=False):
     if second["rms"] < 1e-6:
         raise ValueError("Restored preset is silent")
     a, b = first["snapshot"]["tracks"][0]["plugins"][0], second["snapshot"]["tracks"][0]["plugins"][0]
+    if validate_state:
+        validate_state(a)
+        validate_state(b)
     left, right = ({p["id"]: p["value"] for p in x["parameters_readback"]} for x in (a, b))
     if left.keys() != right.keys() or max((abs(left[k] - right[k]) for k in left), default=0) > 1e-4:
         raise ValueError("Preset parameters did not restore")
@@ -69,6 +73,8 @@ def capture(settings, job, directory):
     from native_host import NativeHost
 
     entry = job["payload"]["preset"]
+    if entry.get("installed_library"):
+        verify_installed_library(settings, entry["installed_library"])
     root = resource_path(settings.instrument_library, entry["bank_root"])
     verify_runtime(root, entry)
     target_root = directory / "resources"
@@ -106,9 +112,18 @@ def capture(settings, job, directory):
         path=str(plugin_path),
     )
     host = NativeHost(settings.native_host, directory / "native")
-    plugin, metrics = native_probe(host, spec, directory, entry["key_range"], entry["family"] == "drums")
+    validator = None
+    if entry.get("expected_keyscape"):
+        from .keyscape_presets import verify_state
+
+        def validator(state):
+            return verify_state(state, entry["expected_keyscape"])
+    plugin, metrics = native_probe(host, spec, directory, entry["key_range"], entry["family"] == "drums", validator)
+    if entry.get("installed_library"):
+        verify_installed_library(settings, entry["installed_library"])
     descriptor = directory / "descriptor.json"
-    descriptor.write_text(json.dumps(plugin), encoding="utf-8")
+    metadata = {key: entry[key] for key in ("installed_library", "expected_keyscape") if key in entry}
+    descriptor.write_text(json.dumps(dict(plugin=plugin, **metadata) if metadata else plugin), encoding="utf-8")
     descriptor_sha = add(descriptor, "application/json")
     state = directory / "state.bin"
     state.write_bytes(base64.b64decode(plugin["state_base64"], validate=True))

@@ -129,6 +129,7 @@ class Production:
             )
             paths[sha] = str(target)
         descriptors, resources = {}, {}
+        installed = {}
         for plugin in s.plugins:
             if plugin.track_id in s.frozen_tracks:
                 continue
@@ -136,6 +137,17 @@ class Production:
                 raise ValueError("plugin lacks a captured descriptor; inspect before using it")
             raw = json.loads(self.path(plugin.descriptor_asset_id).read_bytes())
             descriptor = raw.get("plugin", raw)
+            if raw.get("installed_library"):
+                from music_learning.installed_libraries import verify_installed_library
+
+                reference = raw["installed_library"]
+                manifest_sha = plugin.resource_paths.get(reference["manifest_path"])
+                if not manifest_sha:
+                    raise ValueError("Installed library lacks a captured manifest")
+                verify_installed_library(self.settings, reference, manifest_path=self.path(manifest_sha))
+                installed[plugin.id] = {
+                    key: raw[key] for key in ("installed_library", "expected_keyscape") if key in raw
+                }
             descriptors[plugin.id] = descriptor
             if plugin.bypass:
                 continue
@@ -303,7 +315,17 @@ class Production:
                 if sha != plugin["state_sha256"]:
                     raise ValueError("native state checksum differs")
                 desc = path.with_suffix(".json")
-                write_json(desc, plugin)
+                metadata = installed.get(identifier, {})
+                if metadata.get("expected_keyscape"):
+                    from music_learning.keyscape_presets import verify_state
+
+                    verify_state(plugin, metadata["expected_keyscape"])
+                if metadata:
+                    original = next(p for p in s.plugins if p.id == identifier)
+                    reference = metadata["installed_library"]
+                    verify_installed_library(self.settings, reference,
+                        manifest_path=self.path(original.resource_paths[reference["manifest_path"]]))
+                write_json(desc, dict(plugin=plugin, **metadata) if metadata else plugin)
                 captured[identifier] = dict(
                     state_asset_id=sha,
                     descriptor_asset_id=self.add(desc),

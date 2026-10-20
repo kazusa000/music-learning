@@ -16,6 +16,7 @@ String text(const var&, const char*);
 void writeJson(const File&, const var&);
 AudioProcessorParameter* parameter(AudioPluginInstance&, const String&);
 var pluginSnapshot(AudioPluginInstance&);
+bool needsKeyscapeAuxiliaryOutputs(const PluginDescription&);
 std::unique_ptr<AudioPluginInstance> load(const var&, double, int);
 var render(const var&);
 }

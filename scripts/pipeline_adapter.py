@@ -410,6 +410,7 @@ class Adapter:
                     preset_name=entry["name"],
                     resource_entrypoint=target.relative_to(destination).as_posix(),
                     backend=entry["backend"],
+                    **{k: entry[k] for k in ("installed_library", "expected_keyscape") if k in entry},
                 )
         native, assignments = to_project(
             normalized, self.frames, drum_mapping=mapping, instrument_assignments=instrument_assignments
@@ -504,6 +505,12 @@ class Adapter:
                 for a in musical["assignments"]
                 if stable(self.args["target_revision"], "track:" + a["track_id"]) == track["id"]
             )
+            if assignment.get("installed_library"):
+                from music_learning.installed_libraries import verify_installed_library
+
+                reference = assignment["installed_library"]
+                verify_installed_library(self.settings, reference,
+                    manifest_path=self.out / "resources" / assignment["track_id"] / reference["manifest_path"])
             for key in PRESET_FIELDS.values():
                 if key in track["plugins"][0]:
                     track["plugins"][0][key] = (
@@ -541,14 +548,25 @@ class Adapter:
                 if state_item["sha256"] != plugin["state_sha256"]:
                     raise ValueError("plugin opaque state checksum changed")
                 descriptor = self.out / "states" / (plugin_id + ".json")
-                write_json(descriptor, plugin)
-                descriptor_item = self.add(descriptor)
                 source_track = next(t for t in project["tracks"] if t["id"] == track.id)
                 assignment = next(
                     a
                     for a in musical["assignments"]
                     if stable(self.args["target_revision"], "track:" + a["track_id"]) == track.id
                 )
+                metadata = {
+                    k: assignment[k] for k in ("installed_library", "expected_keyscape") if k in assignment
+                }
+                if metadata.get("expected_keyscape"):
+                    from music_learning.keyscape_presets import verify_state
+
+                    verify_state(plugin, metadata["expected_keyscape"])
+                if metadata:
+                    reference = metadata["installed_library"]
+                    verify_installed_library(self.settings, reference,
+                        manifest_path=self.out / "resources" / assignment["track_id"] / reference["manifest_path"])
+                write_json(descriptor, dict(plugin=plugin, **metadata) if metadata else plugin)
+                descriptor_item = self.add(descriptor)
                 prefix = assignment["track_id"] + "/"
                 owned_resources = (
                     {k[len(prefix) :]: v for k, v in resources.items() if k.startswith(prefix)}
@@ -567,8 +585,8 @@ class Adapter:
                         binary_sha256=plugin["binary_sha256"],
                         state_asset_id=state_item["sha256"],
                         descriptor_asset_id=descriptor_item["sha256"],
-                        resource_asset_ids=list(set(owned_resources.values())) if uses_resources else [],
-                        resource_paths=owned_resources if uses_resources else {},
+                        resource_asset_ids=list(set(owned_resources.values())) if uses_resources or metadata else [],
+                        resource_paths=owned_resources if uses_resources or metadata else {},
                         resource_entrypoint=assignment.get("resource_entrypoint", "kit.sfz")
                         if uses_resources
                         else None,

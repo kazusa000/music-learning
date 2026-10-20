@@ -287,16 +287,26 @@ var render(const var& request)
         Array<var> snapshots;
         std::set<String> pluginIds;
         int latency = 0;
+        int processChannels = 4;
         for (const auto& spec : specs)
         {
             const auto id = text(spec, "id");
             require(pluginIds.insert(id).second, "Duplicate plugin instance ID");
             auto plugin = load(spec, rate, blockSize);
-            require(plugin->getTotalNumInputChannels() <= 4 && plugin->getTotalNumOutputChannels() == 2,
+            const bool mainOnly = needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription());
+            require(plugin->getTotalNumInputChannels() <= 4
+                    && (plugin->getTotalNumOutputChannels() == 2
+                        || (mainOnly && plugin->getTotalNumOutputChannels() == 18)),
                     "Expected stereo output and optional stereo sidechain");
+            processChannels = std::max(processChannels, plugin->getTotalNumOutputChannels());
             plugin->setPlayHead(&timeline);
             plugin->setRateAndBufferSizeDetails(rate, blockSize);
             plugin->prepareToPlay(rate, blockSize);
+            // Keyscape 1.3.3d returns from state loading before its sample worker
+            // is ready. Offline blocks can otherwise finish before any sample
+            // arrives. This wall-clock settling does not advance musical time;
+            // admission still requires audible first/restored probes.
+            if (mainOnly) MessageManager::getInstance()->runDispatchLoopUntil(10000);
             auto snapshot = pluginSnapshot(*plugin);
             snapshot.getDynamicObject()->setProperty("id", id);
             if (static_cast<bool>(field(spec, "sidechain", false))) snapshot.getDynamicObject()->setProperty("sidechain", true);
@@ -434,7 +444,7 @@ var render(const var& request)
         }
         require(!events.empty() || !clips.empty() || static_cast<bool>(field(track, "allow_empty", false)), "Track has no MIDI or audio source");
         require(events.empty() || !plugins.empty(), "MIDI requires an instrument plugin");
-        AudioBuffer<float> block(4, blockSize), source(2, blockSize);
+        AudioBuffer<float> block(processChannels, blockSize), source(2, blockSize);
         size_t automationIndex = 0;
         std::vector<size_t> eventIndices(plugins.size(), 0);
         int64 cursor = 0;
@@ -495,7 +505,8 @@ var render(const var& request)
                     require(event.sample >= cursor - precedingLatency, "MIDI scheduler lost an event");
                     midi.addEvent(event.message, static_cast<int>(event.sample - cursor + precedingLatency));
                 }
-                block.clear(2, 0, count); block.clear(3, 0, count);
+                for (int channel = 2; channel < processChannels; ++channel)
+                    block.clear(channel, 0, count);
                 for (auto& entry : sidechains)
                 {
                     if (entry.first != text(snapshots[static_cast<int>(pluginIndex)], "id")) continue;
@@ -510,7 +521,8 @@ var render(const var& request)
                     for (int channel = 0; channel < 2; ++channel)
                         block.addFrom(channel + 2, static_cast<int>(begin - sideCursor), source, channel, 0, n, clip.gain);
                 }
-                AudioBuffer<float> view(block.getArrayOfWritePointers(), std::max(2, plugin->getTotalNumInputChannels()), count);
+                AudioBuffer<float> view(block.getArrayOfWritePointers(),
+                    std::max({2, plugin->getTotalNumInputChannels(), plugin->getTotalNumOutputChannels()}), count);
                 plugin->processBlock(view, midi);
                 precedingLatency += plugin->getLatencySamples();
             }

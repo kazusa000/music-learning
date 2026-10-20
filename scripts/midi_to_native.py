@@ -237,6 +237,7 @@ def to_project(
                         "preset_name": assignment["preset_name"],
                         "resource_entrypoint": assignment["resource_entrypoint"],
                         "backend": assignment["backend"],
+                        **{k: assignment[k] for k in ("installed_library", "expected_keyscape") if k in assignment},
                     }
                     if instrument_assignments is not None
                     else {}

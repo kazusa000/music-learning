@@ -129,10 +129,10 @@ pnpm --dir apps/web build
 
 ## 仓库与音乐工程
 
-用户指定的新音源库位于 `H:\music\Sound Library`，两套音源的文件清单、待补播放器与接入状态见 [音源接入记录](docs/34-user-instrument-intake.md)。
+用户指定的新音源库位于 `H:\music\Sound Library`。两套音源的接入状态见 [音源接入记录](docs/34-user-instrument-intake.md)；Keyscape 的乐器分类、预设映射与实际发声验证见 [Keyscape 接入](docs/35-keyscape-integration.md)。
 
 Git 管理源代码、开发文档、契约和小型测试数据。用户音乐、模型、分轨、渲染音频、数据库、对话与个人经验保存在被忽略的 `data/`、`models/`、`runtime/` 中，并由应用自己的工程版本与备份机制管理。
 
-本机大文件和应用数据现已迁回项目内的 `E:\Intrest\music-learning\data`，同样不进入源码 Git。P1 的 SQLite backup API 仅备份元数据；P6 已提供数据库与全部 CAS（包括音频、插件状态及采样资源）的完整备份和独立恢复，实际演练通过。模型、已安装插件与运行时由固定依赖清单另行恢复，详见[本地交付](docs/20-local-delivery.md)。
+本机应用数据位于 `E:\Intrest\music-learning\data`，不进入源码 Git；音源库使用上述用户指定的 H 盘目录。P1 的 SQLite backup API 仅备份元数据；P6 提供数据库与全部工程 CAS 的完整备份和独立恢复。Keyscape 的大型外部样本库只随工程保存不可变资源清单，样本本体和已安装插件需要另行保留；模型与运行时同样另行恢复，详见[本地交付](docs/20-local-delivery.md)。
 
 本地 Git 仓库不等于远程备份；音乐工程也不依赖 Git 提交来保存。
