@@ -2,6 +2,8 @@
 
 以音乐工程为共同上下文、由 AI 直接操作的 DAW，用于研究、改编、积累并创作音乐，支持 Windows x64 VST3 音源与效果器。
 
+Pianoteq 9.1.2 已接入：797 款完整状态已准备，34 款经真实 VST3 验证后可选、覆盖 22 类乐器，与 Keyscape 455 款共同按乐器查询。钢琴/电钢琴/吉他实际 SDK 切换和各 305 秒常驻供声通过，换音色不生成整曲 WAV。状态适配、剩余库存与证据见 [Pianoteq 接入](docs/41-pianoteq-integration.md)。
+
 连续供声、Keyscape播放模式及音色完整状态复用已修正；AI支持同轮连续修改，不再限制每轮一次编辑或32次工具调用。实际速度、冷加载成本和验证见[音色切换与连续供声](docs/40-preset-loading-and-streaming.md)。
 
 播放尾音越界、音色小任务空间预算、对话完成状态及 E 盘存储实查见[反馈与存储](docs/38-feedback-and-storage.md)。本次未清理或迁移历史数据。

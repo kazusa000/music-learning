@@ -189,6 +189,11 @@ def import_admitted(settings, job, directory):
         verify_state(
             dict(descriptor, state_base64=base64.b64encode(state).decode()), entry["expected_keyscape"]
         )
+    if entry.get("expected_pianoteq"):
+        from .pianoteq_presets import verify_state
+
+        verify_state(dict(descriptor, state_base64=base64.b64encode(state).decode()),
+                     entry["expected_pianoteq"])
     prepared = job["payload"].get("prepared_plugin")
     if prepared:
         store = Storage(settings)
@@ -248,11 +253,16 @@ def import_admitted(settings, job, directory):
         from .keyscape_presets import verify_state
 
         verify_state(native, entry["expected_keyscape"])
+    if entry.get("expected_pianoteq"):
+        from .pianoteq_presets import verify_state
+
+        verify_state(native, entry["expected_pianoteq"])
     state = base64.b64decode(native["state_base64"], validate=True)
     descriptor = {
         k: v for k, v in native.items() if k not in ("state_base64", "state_sha256", "state_encoding")
     }
-    metadata = {k: entry[k] for k in ("installed_library", "expected_keyscape") if k in entry}
+    metadata = {k: entry[k] for k in
+                ("installed_library", "expected_keyscape", "expected_pianoteq") if k in entry}
     descriptor_path = directory / "descriptor.json"
     descriptor_path.write_text(
         json.dumps(

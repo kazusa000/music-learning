@@ -81,7 +81,10 @@ def plugin_metadata(service, db, project_id, plugin):
         if not meta.get("automatable") and abs(value - meta["value"]) > 1e-5:
             raise ValueError("nonautomatable parameter writes require a verified plugin adapter")
         steps = meta.get("steps", 0)
-        if meta.get("discrete") and 1 < steps < 1000000:
+        # A native captured value is valid even when the plugin's declared step
+        # count cannot represent its own default (e.g. a three-position control
+        # reporting two steps). Only new parameter writes must lie on that grid.
+        if value != meta["value"] and meta.get("discrete") and 1 < steps < 1000000:
             if abs(value * (steps - 1) - round(value * (steps - 1))) > 1e-4:
                 raise ValueError("discrete parameter must match an available step")
     return descriptor

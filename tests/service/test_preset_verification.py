@@ -89,6 +89,22 @@ def test_mutated_resources_cannot_use_cached_success(tmp_path, monkeypatch):
     assert calls == ["one"]
 
 
+def test_mutated_sidecar_engine_cannot_reuse_cached_audio(tmp_path, monkeypatch):
+    settings, bank, entries, calls = setup(tmp_path, monkeypatch)
+    engine = bank / "engine.dll"
+    engine.write_bytes(b"original engine")
+    entries[0]["runtime_dependencies"] = {
+        engine.name: dict(bytes=engine.stat().st_size, sha256=digest(engine))
+    }
+    run(settings, entries[:1], bank, bank / "verification-runs/first", None, {}, lambda *_: None)
+    engine.write_bytes(b"different engine")
+    admitted, report = run(settings, entries[:1], bank, bank / "verification-runs/changed-engine",
+                           None, {}, lambda *_: None)
+    assert not admitted and report["cached"] == 0 and report["failures"]
+    assert "runtime dependency changed" in report["failures"][0]["error"]
+    assert calls == ["one"]
+
+
 def test_interruption_is_durable_and_library_lock_excludes_another_writer(tmp_path, monkeypatch):
     settings, bank, entries, calls = setup(tmp_path, monkeypatch)
     output = bank / "verification-runs/interrupted"

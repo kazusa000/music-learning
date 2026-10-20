@@ -1,5 +1,7 @@
 # Pianoteq 9.1.2 接入检查
 
+后续：本页保留早期失败对照；完整 FXP/VST3 bank 适配现已解决切换问题，34 款/22 类已实测入库，797 款完整状态已准备。当前结果和 SDK 常驻播放验证见 [Pianoteq 入库](../41-pianoteq-integration.md)。
+
 2026-10-20，用户提供 `H:\music\tmp\pianoteq_setup_v912.exe`。直接提取到指定库下独立目录 `H:\music\Sound Library\Pianoteq 9.1.2`，没有运行安装器、覆盖 9.1.0、修改系统安装或发布可选音色。Keyscape 正在运行的批次及其固定宿主、验证实现、插件、样本和报告保持不动。
 
 ## 实际结果

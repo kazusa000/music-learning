@@ -10,7 +10,7 @@ import time
 import uuid
 
 from .instrument_capture import native_probe
-from .instruments import materialize, preset_spec, resource_path
+from .instruments import materialize, preset_spec, resource_path, verify_runtime
 from .installed_libraries import verify_installed_library
 from .storage import digest
 from .settings import ROOT
@@ -64,7 +64,7 @@ def implementation_fingerprint(host, adapter_paths):
 def fingerprint(entry, implementation):
     fields = ("id", "backend", "family", "key_range", "plugin_path", "plugin_sha256", "identifier",
               "bank_root", "entrypoint", "resources", "installed_library", "runtime_dependencies",
-              "expected_keyscape")
+              "expected_keyscape", "expected_pianoteq")
     data = dict(implementation=implementation, preset={key: entry.get(key) for key in fields})
     return hashlib.sha256(json.dumps(data, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
@@ -98,6 +98,7 @@ def check_entry(settings, entry):
     if len(binaries) != 1 or digest(binaries[0]) != entry["plugin_sha256"]:
         raise ValueError("Plugin changed since inventory preparation")
     root = resource_path(settings.instrument_library, entry["bank_root"])
+    verify_runtime(root, entry)
     for relative, item in entry["resources"].items():
         path = resource_path(root, relative)
         if path.stat().st_size != item["bytes"] or digest(path) != item["sha256"]:

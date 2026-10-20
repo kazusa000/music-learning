@@ -118,11 +118,17 @@ def capture(settings, job, directory):
 
         def validator(state):
             return verify_state(state, entry["expected_keyscape"])
+    if entry.get("expected_pianoteq"):
+        from .pianoteq_presets import verify_state
+
+        def validator(state):
+            return verify_state(state, entry["expected_pianoteq"])
     plugin, metrics = native_probe(host, spec, directory, entry["key_range"], entry["family"] == "drums", validator)
     if entry.get("installed_library"):
         verify_installed_library(settings, entry["installed_library"])
     descriptor = directory / "descriptor.json"
-    metadata = {key: entry[key] for key in ("installed_library", "expected_keyscape") if key in entry}
+    metadata = {key: entry[key] for key in
+                ("installed_library", "expected_keyscape", "expected_pianoteq") if key in entry}
     descriptor.write_text(json.dumps(dict(plugin=plugin, **metadata) if metadata else plugin), encoding="utf-8")
     descriptor_sha = add(descriptor, "application/json")
     state = directory / "state.bin"
