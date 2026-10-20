@@ -50,7 +50,7 @@ try{
   assert.ok(!(await draft.inputValue()).includes('preset_id='));
   assert.equal(await page.getByRole('button',{name:'允许改编模式'}).count(),0);assert.equal(await page.locator('input[aria-label="允许整轨插件和自动化"]').count(),0);
   await page.locator('.track-select').nth(1).click();
-  await page.getByRole('button',{name:'发送 ↗',exact:true}).click();
+  await page.getByRole('button',{name:'发送',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'乐器草稿绑定的版本或声部已改变'}).waitFor();
   assert.deepEqual(productionWrites,[]);
   await page.getByRole('tab',{name:'音色与效果',exact:true}).click();

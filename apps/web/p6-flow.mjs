@@ -49,7 +49,7 @@ try{
  await page.getByLabel('Codex 登录方式',{exact:true}).selectOption('existing');
  let discussionId,discussion;
  if(!resume){await page.getByLabel('讨论问题',{exact:true}).fill('请查询整曲summary，并按需读取至多12条annotations。概括主要配器候选、结构和一处值得核对的和声，说明模型候选与理论解释的区别，附实际工程位置引用。不修改，250字以内。');
- await page.getByRole('button',{name:'发送 ↗',exact:true}).click();
+ await page.getByRole('button',{name:'发送',exact:true}).click();
  await page.waitForFunction(()=>document.querySelectorAll('.discussion-turn').length===1);
  discussionId=await page.locator('.discussion-turn').last().getAttribute('data-turn');
  await page.waitForFunction(id=>['succeeded','failed','cancelled'].includes(document.querySelector(`[data-turn="${id}"]`)?.dataset.status),discussionId,{timeout:240000});
@@ -62,7 +62,7 @@ try{
  await page.getByLabel('上下文与设置',{exact:true}).click();await page.getByLabel('讨论上下文',{exact:true}).selectOption('selection');await page.getByLabel('上下文与设置',{exact:true}).click();
  await page.getByLabel('讨论问题',{exact:true}).fill('查询该贝斯声部选区内events（limit=12），只把按起音顺序最早三个完整位于60–75秒内的音符升一个半音、力度乘0.9，起音/时值和其他事件不动。提交一次编辑并回读，给出新版本实际引用，说明渲染排队状态。');
  const priorTurns=(await api('dialogue.list',{project_id:project.id,limit:1000})).length;
- await page.getByRole('button',{name:'发送 ↗',exact:true}).click();
+ await page.getByRole('button',{name:'发送',exact:true}).click();
  await page.waitForFunction(count=>document.querySelectorAll('.discussion-turn').length===count+1,priorTurns);
  const editId=await page.locator('.discussion-turn').last().getAttribute('data-turn');
  await page.waitForFunction(id=>['succeeded','failed','cancelled'].includes(document.querySelector(`[data-turn="${id}"]`)?.dataset.status),editId,{timeout:240000});

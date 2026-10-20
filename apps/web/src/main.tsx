@@ -1,3 +1,4 @@
+import './style.css';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {CSSProperties} from 'react';
@@ -7,13 +8,13 @@ import {call, connect, result} from './api';
 import {Workbench} from './Workbench';
 import {publishDomain} from './events';
 import {AudioPreview} from './AudioPreview';
+import {Icon} from './Icon';
 import {matchedLevels} from './listeningLevel';
-import './style.css';
 
 const connection = connect();
 const statuses: Record<string, string> = {queued: '排队中', running: '正在处理', cancel_requested: '正在取消',
   cancelled: '已取消', succeeded: '已完成', failed: '处理失败'};
-const kinds: Record<string, string> = {'asset.import': '原曲导入与检查', 'plugin.inspect': '读取插件状态', 'plugin.scan': '扫描插件', 'project.preprocess': '整曲预处理', 'project.render':'工程音频渲染', 'audio.measure':'音频测量', 'project.export':'导出指定版本', 'application.backup':'完整工程备份', 'application.restore':'恢复到独立目录', 'application.diagnose':'本机环境诊断'};
+const kinds: Record<string, string> = {'asset.import': '原曲导入与检查', 'plugin.inspect': '读取插件状态', 'plugin.scan': '扫描插件', 'project.preprocess': '整曲预处理', 'project.render':'工程音频渲染', 'audio.measure':'音频测量', 'instrument.capture':'准备音色', 'project.export':'导出指定版本', 'application.backup':'完整工程备份', 'application.restore':'恢复到独立目录', 'application.diagnose':'本机环境诊断'};
 const projectStatuses: Record<string, string> = {empty:'等待导入', imported:'原曲已保存', queued:'等待整曲处理', processing:'整曲处理中', ready:'可编辑 · 可试听', failed:'处理失败', cancelled:'处理已取消'};
 const stageNames: Record<string, string> = {normalize:'音频规范化', demucs:'音频分轨', muscriptor:'多声部转录', sheetsage:'节拍与和声结构', assemble:'事件对齐', render:'VST3 整曲与逐轨重建', validate:'完整性检查'};
 
@@ -143,22 +144,21 @@ function App() {
   }
 
   return <main className={workspace ? 'workspace-page' : 'library-page'}>
-    <header><a className="brand" href="/">m<span>·</span>l <b>Music Learning</b></a>
-      <span className="connection">{connected ? '● 本机已连接' : '○ 正在连接'}</span></header>
+    <header><a className="brand" href="/" aria-label="Music Learning 音乐库"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><b>Music Learning</b><span className="brand-divider"/><small>{workspace?'Studio':'音乐库'}</small></a>
+      <span className={'connection '+(connected?'is-connected':'')}><i/>{connected ? '本机已连接' : '正在连接'}</span></header>
     {error && <div role="alert">{error}<button onClick={() => setError('')} aria-label="关闭提示">×</button></div>}
     {workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh}
       onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
-      <label className={'import ' + (busy ? 'disabled' : '')}><strong>{busy ? '正在导入…' : '＋ 选择音乐'}</strong>
-        <span>FLAC / WAV / MP3 / OGG 等</span><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
+      <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? '正在导入…' : '选择音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
           disabled={busy} onChange={e => {const file = e.target.files?.[0]; if (file) void importFile(file); e.target.value = '';}}/></label>
       <div className="list-title">歌曲 <span>{projects.length}</span></div><label className="archive-toggle"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/>显示归档工程</label>
       <nav aria-label="工程列表">{projects.map(p => <button key={p.id} aria-pressed={selected === p.id} onClick={() => {
         selectProject(p.id);
-      }}><strong>{p.display_title??p.title}</strong><span>{p.archived?'已归档 · ':''}{projectStatuses[p.status]}</span></button>)}</nav>
+      }}><span className="project-miniature" aria-hidden="true"><Icon name="music" size={18}/></span><span className="project-list-copy"><strong>{p.display_title??p.title}</strong><span>{p.archived?'已归档 · ':''}{projectStatuses[p.status]}</span></span></button>)}</nav>
       {!projects.length && <p className="muted empty-list">还没有工程。选一首完整音乐，保存在本机。</p>}
     </aside><PanelResize label="调整歌曲列表宽度" value={libraryWidth} min={180} max={500} onChange={setLibraryWidth} reset={260}/><section className="detail" aria-label="工程详情">
       {!project ? <div className="welcome"><h2>选择歌曲</h2><p>导入音频，或打开左侧已有歌曲。</p></div> : <>
-        <div className="project-heading"><div><h2>{project.display_title??project.title}</h2></div>
+        <div className="project-heading"><div className="project-identity"><div className="project-art" aria-hidden="true"><Icon name="wave" size={29}/></div><div><p>音乐工程</p><h2>{project.display_title??project.title}</h2></div></div>
           <div className="library-actions"><span className="badge">{projectStatuses[project.status]}</span><button onClick={()=>void organize()}>{project.archived?'恢复到歌曲列表':'归档工程'}</button></div></div>
         <div className="facts"><div><span>版本</span><b>{versionCount}</b></div>
           <div><span>原曲长度</span><b>{revision?.snapshot.duration_samples ? (revision.snapshot.duration_samples / (revision.snapshot.sample_rate ?? 44100)).toFixed(1) + ' 秒' : '—'}</b></div></div>
@@ -166,7 +166,7 @@ function App() {
           <AudioPreview key={'source-'+revision.id} label="原曲试听" previewGain={gains[revision.snapshot.source_asset_id]} assetId={revision.snapshot.source_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial={!publication} onSelect={a=>{homeAudio.current=a;}}/>
           {publication&&<><h3>重建试听</h3><AudioPreview key={'mix-'+publication.mix_asset_id} label="重建试听" previewGain={gains[publication.mix_asset_id]} assetId={publication.mix_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial onSelect={a=>{homeAudio.current=a;}}/></>}
           <p className="muted">{publication ? '已可播放重建、独奏声部、编辑音符和与 AI 讨论。' : '正在准备可编辑的音乐工程。'}</p>
-          {(publication || (revision.snapshot.tracks?.length ?? 0)>0) && <button className="primary-button" onClick={() => {setWorkspace(true); history.replaceState(null,'',`/?project=${project.id}&view=workbench`);}}>打开工程</button>}
+          {(publication || (revision.snapshot.tracks?.length ?? 0)>0) && <button className="primary-button" onClick={() => {setWorkspace(true); history.replaceState(null,'',`/?project=${project.id}&view=workbench`);}}><span>打开工程</span><Icon name="arrow" size={15}/></button>}
           {!publication && !jobs.some(j => j.kind === 'project.preprocess' && ['queued','running','cancel_requested'].includes(j.status)) &&
             <button className="primary-button" onClick={() => void startPreprocessing()}>开始整曲分析</button>}
         </section>}

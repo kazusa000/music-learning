@@ -41,7 +41,7 @@ try{
  await page.getByText('已保存的讨论',{exact:true}).waitFor();
  assert.equal(await page.getByLabel('Codex 登录方式',{exact:true}).inputValue(),'existing');
  await page.getByLabel('讨论问题',{exact:true}).fill('模拟测试，不访问真实供应商');
- await page.getByRole('button',{name:'发送 ↗',exact:true}).click();
+ await page.getByRole('button',{name:'发送',exact:true}).click();
  const first=page.locator('[data-turn="'+ 'b'.repeat(32)+'"]');
  await first.getByText(/模拟流式内容/).waitFor();
  await first.getByRole('button',{name:'停止',exact:true}).click();await first.locator('[class="turn-meta"]').getByText(/已停止/).waitFor();

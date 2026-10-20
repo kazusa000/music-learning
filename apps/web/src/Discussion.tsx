@@ -1,3 +1,4 @@
+import {Icon} from './Icon';
 import {PanelResize,usePanelSize} from './PanelResize';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import type {Citation,Conversation,DialogueTurn,Job,Revision,Track} from '../../../packages/contracts/types';
@@ -119,9 +120,9 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
   return <div className="discussion" aria-label="工程讨论" ref={root}>
     <div className="discussion-heading">
       <div className="chat-session-select"><select aria-label="会话" title="切换会话" value={sessionId??''} onChange={e=>chooseSession(e.target.value||null)}><option value="">历史讨论</option>{sessions.map(s=><option key={s.id} value={s.id}>{s.title}</option>)}</select><select aria-label="对话模型" title="对话模型" value={model} onFocus={()=>{if(!models.length)void loadModels();}} onChange={e=>{setModel(e.target.value);localStorage.setItem('discussion.model',e.target.value);}}><option value="">{modelsBusy?'读取模型中…':'默认模型'}</option>{model&&!models.some(m=>m.id===model)&&<option value={model}>{model}</option>}{models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></div>
-      <button className="new-discussion" aria-label="＋ 新会话" title="新会话" onClick={()=>void newSession()}>＋</button>
-      {onToggleExpand&&<button className="expand-discussion" aria-label={expanded?'还原讨论':'放大讨论'} aria-pressed={expanded} title={expanded?'还原讨论':'放大讨论'} onClick={onToggleExpand}>{expanded?'⤡':'⤢'}</button>}
-      <details className="discussion-menu discussion-popover" ref={menu}><summary aria-label="对话菜单" title="会话菜单">···</summary><div className="discussion-menu-content">
+      <button className="new-discussion" aria-label="＋ 新会话" title="新会话" onClick={()=>void newSession()}><Icon name="plus"/></button>
+      {onToggleExpand&&<button className="expand-discussion" aria-label={expanded?'还原讨论':'放大讨论'} aria-pressed={expanded} title={expanded?'还原讨论':'放大讨论'} onClick={onToggleExpand}><Icon name={expanded?'collapse':'expand'}/></button>}
+      <details className="discussion-menu discussion-popover" ref={menu}><summary aria-label="对话菜单" title="会话菜单"><Icon name="more"/></summary><div className="discussion-menu-content">
         <div className="discussion-toggle"><button aria-pressed={!showNotes} onClick={()=>{setShowNotes(false);if(menu.current)menu.current.open=false;}}>讨论 {turns.length}</button><button aria-pressed={showNotes} onClick={()=>{setShowNotes(true);if(menu.current)menu.current.open=false;}}>笔记 {notes.length}</button></div>
         <button aria-label="刷新可用模型" disabled={modelsBusy} onClick={()=>void loadModels(true)}>刷新模型列表</button>
         <button disabled={!text.trim()||busy} onClick={()=>{void save();if(menu.current)menu.current.open=false;}}>把输入存为笔记</button>
@@ -153,7 +154,7 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
           <label>Codex 登录方式 <select aria-label="Codex 登录方式" value={login} onChange={e=>{setLogin(e.target.value);setModels([]);try{localStorage.setItem('music-learning-login-mode',e.target.value);}catch{/* preference storage is optional */}}}><option value="isolated">应用独立登录</option><option value="existing">使用既有 Codex 登录</option></select></label>
           <p>Enter 发送 · Shift+Enter 换行</p>
         </div></details>
-        <button className="send-discussion" title="Enter 发送，Shift+Enter 换行" disabled={!text.trim()||busy||turns.some(active)} onClick={()=>void submit()}>{busy?'保存中':'发送 ↗'}</button>
+        <button className="send-discussion" title="Enter 发送，Shift+Enter 换行" disabled={!text.trim()||busy||turns.some(active)} onClick={()=>void submit()}>{busy?'保存中':<>发送 <Icon name="send" size={13}/></>}</button>
       </div>
       {error&&<p className="discussion-error" role="alert">{error}</p>}
     </div>

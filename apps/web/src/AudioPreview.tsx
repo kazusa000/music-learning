@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {Transport} from './transport';
+import {Icon} from './Icon';
 const time=(n:number)=>`${Math.floor(n/60)}:${Math.floor(n%60).toString().padStart(2,'0')}`;
 export function AudioPreview({label,assetId,duration,onSelect,initial=false,previewGain}:{label:string;assetId:string;duration:number;onSelect:(audio:HTMLAudioElement)=>void;initial?:boolean;previewGain?:number}){
   const preview=useRef<Transport|null>(null),gain=useRef<GainNode|null>(null),media=useRef<MediaElementAudioSourceNode|null>(null);
@@ -18,7 +19,7 @@ export function AudioPreview({label,assetId,duration,onSelect,initial=false,prev
     onLoadedMetadata={e=>setLength(e.currentTarget.duration)} onTimeUpdate={e=>setPosition(e.currentTarget.currentTime)}
     onPlay={e=>{void level();setPlaying(true);onSelect(e.currentTarget);document.querySelectorAll('audio').forEach(a=>{if(a!==e.currentTarget)a.pause();});}}
     onPause={()=>setPlaying(false)} onEnded={()=>setPlaying(false)}/>
-    <button aria-label={(playing?'暂停':'播放')+label} onClick={()=>{const a=audio.current;if(!a)return;if(playing)a.pause();else void a.play().catch(e=>setError(e.message));}}>{playing?'Ⅱ':'▶'}</button>
+    <button aria-label={(playing?'暂停':'播放')+label} onClick={()=>{const a=audio.current;if(!a)return;if(playing)a.pause();else void a.play().catch(e=>setError(e.message));}}><Icon name={playing?'pause':'play'} size={13}/></button>
     <input aria-label={label+'位置'} type="range" min={0} max={length||duration} step={.1} value={position} onChange={e=>{if(audio.current)audio.current.currentTime=+e.target.value;setPosition(+e.target.value);}}/>
     <span>{preparing?'准备试听…':time(position)+' / '+time(length||duration)}</span><label className="level-match"><input aria-label={label+'电平匹配'} type="checkbox" checked={matched} onChange={e=>{setMatched(e.target.checked);const transport=preview.current;if(transport){transport.setMatched(e.target.checked);if(gain.current&&transport.context)gain.current.gain.setTargetAtTime(e.target.checked?(previewGain??transport.gain(assetId)):1,transport.context.currentTime,.01);}}}/>电平匹配</label>{error&&<small role="alert">{error}</small>}
   </div>;
