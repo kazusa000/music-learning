@@ -27,3 +27,15 @@
 TypeScript、生产构建、契约漂移、音量/独奏及既有 live-mix 控制器检查通过。独立 8774 原生双轨浏览器实测：持续播放中降 20 dB，实际轨道电平由 -12.04 降为 -32.04 dB，启动计数保持 1，另一轨维持 -12.04；独奏排除轨电平降至 -60 dB；取消恢复，手动静音保持；混音页显示相同。未保存刷新恢复工程音量；点击保存后刷新保持 -20.1 dB，仅增加一个 checkpoint 和一个含音量的内部音乐修订，未创建音频任务。没有生成整曲音频、调用音乐模型或真实 AI 推理。
 
 小型证据位于忽略目录 data/maintenance/retention-levels-20261020。正式回收结果及 Keyscape 后台保护核对见部署后补充。
+
+## 正式部署与实际回收
+
+代码 49b610d 已快进合入原 feat/user-instrument-intake 分支，应用停启升级到 0010，生产前端已重建并打开。迁移前 SQLite 元数据备份约 414 MiB 保留，不含音频文件。正式 storage.plan 只含当前 head b7e515f01fbd48bfa635aae992f4c459，手动保存版本为零；随后 storage.collect 已完成 generation 1，pending=false，没有额外音频任务。
+
+删除 860 个不可达对象，文件内容合计 3,931,274,955 字节（3.66 GiB）；保留 2,830 对象 / 2,756,663,542 字节（2.57 GiB），全部逐文件 SHA-256 与登记大小核验通过。收集器运行期间磁盘空闲量差为 3,940,786,176 字节，但整段开发期间 E 盘还有其他活动，不能拿全盘空闲变化当作本项目最终净释放量。SQLite integrity_check/foreign_key_check 通过。
+
+部署前后唯一工程 head、24 内部修订快照 SHA、全部 19 任务与手动 checkpoint 列表逐项相同；6 轨 / 9,378 音符保留。当前播放计划复用 5 轨声音，C7 钢琴仍由既有常驻原生宿主路线提供，不把删除后的旧钢琴试听冒充新音色。本次未再启动真实 Keyscape 实例、第二批验证或整曲渲染。Keyscape 原监督 PID 31420、creation_time 1792505249.027304 相同，11 项受保护代码/宿主/自动报告 SHA 相同，批次继续 running；H 音源与 NAS 未改。
+
+自动审批拒绝了一次明确边界校验后的 Remove-Item：目标是 data/app-data/live 下三个已退出旧会话目录（合计约 573 KiB）及本次 data/t/u-b8lb7smo 隔离浏览器夹具（约 1.74 MiB）。未重试、未用新收集器绕过，目录仍在；这与此前 piano-channel 的两份被拒目录一起保持原样。新实现只负责后续会话自然关闭时释放自有工作副本。拒绝目标及大小存 cleanup-denied.json。测试 8774 服务和自有浏览器页面均已退出。
+
+本次证据 browser-before-save.json / browser-after-save.json 表明监听操作前后 2 个内部修订、0 任务，点击保存后才变为 3 修订、1 checkpoint、0 任务；推子 -20.1 dB 已写入该保存版本。正式歌曲没有代用户保存版本。正式 before/plan/collection/after 核对均留在上述忽略目录。

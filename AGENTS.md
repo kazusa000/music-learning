@@ -1,6 +1,6 @@
 # 项目开发约定
 
-最新即时音量与素材保留（2026-10-20）：先读 docs/39-current-project-retention.md。本次用户明确要求拖动音量不保存：编曲推子只改本地 gain，松手/失焦/离开不请求保存，不创建音频；仅手动 versions.save(track_levels) 原子记录音量与 checkpoint。独奏时其他轨有效静音按钮亮起，取消恢复手动静音。0010、70操作/11任务，storage.plan/collect/status 共用 Service/API/SDK/CLI；素材只按当前 head+手动 checkpoint 及其依赖保留，内部历史/回执不再永久保活旧音色/试听，活动工作阻止回收，短期未绑定素材到期复核。不得触碰 H 音源、NAS、Keyscape 受保护批次或此前清理被拒的两个目录。173后端及独立双轨真实浏览器通过，部署与实际回收结果待本次收尾记录。
+最新即时音量与素材保留（2026-10-20）：先读 docs/39-current-project-retention.md。本次用户明确要求拖动音量不保存：编曲推子只改本地 gain，松手/失焦/离开不请求保存，不创建音频；仅手动 versions.save(track_levels) 原子记录音量与 checkpoint。独奏时其他轨有效静音按钮亮起，取消恢复手动静音。0010、70操作/11任务，storage.plan/collect/status 共用 Service/API/SDK/CLI；素材只按当前 head+手动 checkpoint 及其依赖保留，内部历史/回执不再永久保活旧音色/试听，活动工作阻止回收，短期未绑定素材到期复核。不得触碰 H 音源、NAS、Keyscape 受保护批次或此前清理被拒的两个目录。173后端及独立双轨真实浏览器通过，正式已部署0010，清掉860个旧CAS对象约3.66GiB，保留2830对象约2.57GiB并全部SHA通过；head/24内部修订/19任务/9378音符不变。Keyscape原PID及11项保护摘要不变。当前data/app-data/live下三个旧会话目录和data/t/u-b8lb7smo夹具删除也被自动审批拒绝，不得换工具绕过，详见docs/39。
 
 最新钢琴通道修复（2026-10-20）：docs/36-settings-and-live-tracks.md 新增段为准。Keyscape1.3.3d单有效声部/单来源通道按保存状态路由播放Note/CC，原工程MIDI通道不变；多通道/多声部不折叠。图编译与常驻增量共用，旧未含适配指纹的Keyscape音轨缓存失效，其他轨继续复用；没有自动整曲任务。20项回归及正式C7逐轨非零PCM通过，head b7e515f01fbd48bfa635aae992f4c459/24内部修订/19任务未改，Keyscape后台保护不变。piano-channel-20261020下两份本次测试临时目录清理被自动审批策略拒绝，禁止换工具绕过，不声称已清理。
 
