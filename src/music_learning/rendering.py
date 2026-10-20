@@ -27,17 +27,57 @@ def submit(service, db, args, request):
     if args.kind == "audio.measure":
         service._asset(db, payload["asset_id"], args.project_id)
     if args.kind == "project.render":
+        if payload["preview"]:
+            for previous in db.execute(
+                select(t.jobs).where(
+                    t.jobs.c.project_id == args.project_id,
+                    t.jobs.c.kind == "project.render",
+                    t.jobs.c.status.in_(["queued", "running"]),
+                )
+            ).mappings():
+                if previous["payload"].get("preview"):
+                    status = "cancelled" if previous["status"] == "queued" else "cancel_requested"
+                    db.execute(
+                        update(t.jobs)
+                        .where(t.jobs.c.id == previous["id"])
+                        .values(status=status, updated_at=time.time())
+                    )
+                    emit(
+                        db,
+                        "job." + status,
+                        project_id=args.project_id,
+                        revision_id=previous["revision_id"],
+                        job_id=previous["id"],
+                        request_id=request.request_id,
+                    )
         end = payload["end_sample"] if payload["end_sample"] is not None else snapshot.duration_samples
         if not 0 <= payload["start_sample"] < end <= snapshot.duration_samples:
             raise ValueError("invalid render interval")
         payload["end_sample"] = end
     if args.kind == "project.export" and payload["format"] == "wav":
         if not payload["render_job_id"]:
-            raise ValueError("WAV export requires a completed render_job_id")
-        rendered = row(db, v3.renders, "job_id", payload["render_job_id"])
-        if rendered["revision_id"] != target or rendered["project_id"] != args.project_id:
-            raise ValueError("render belongs to another revision")
-        payload["audio_asset_id"] = rendered["payload"]["mix_asset_id"]
+            existing = db.execute(
+                select(v3.renders.c.payload)
+                .where(v3.renders.c.project_id == args.project_id, v3.renders.c.revision_id == target)
+                .order_by(v3.renders.c.created_at.desc())
+            ).scalars()
+            full = next(
+                (
+                    r
+                    for r in existing
+                    if r["start_sample"] == 0 and r["end_sample"] == snapshot.duration_samples
+                ),
+                None,
+            )
+            if full:
+                payload["audio_asset_id"] = full["mix_asset_id"]
+            else:
+                payload["prepare_mix"] = True
+        else:
+            rendered = row(db, v3.renders, "job_id", payload["render_job_id"])
+            if rendered["revision_id"] != target or rendered["project_id"] != args.project_id:
+                raise ValueError("render belongs to another revision")
+            payload["audio_asset_id"] = rendered["payload"]["mix_asset_id"]
     if args.kind == "project.export" and payload["format"] == "hybrid":
         _hybrid(service, db, args.project_id, revision, payload)
     now = time.time()
@@ -153,6 +193,26 @@ def prepare(service, db, job):
     revision = row(db, t.revisions, "id", job["revision_id"])
     job["snapshot"] = revision["snapshot"]
     job["snapshot_sha256"] = revision["snapshot_sha256"]
+    if job["kind"] == "project.render" or job["payload"].get("prepare_mix"):
+        from .playback import sources
+
+        payload = (
+            job["payload"]
+            if job["kind"] == "project.render"
+            else c.RenderPayload(end_sample=revision["snapshot"]["duration_samples"]).model_dump(mode="json")
+        )
+        job["reused_tracks"] = (
+            sources(
+                service,
+                db,
+                revision,
+                exact_mixer=True,
+                tail_samples=round(payload["tail_seconds"] * revision["snapshot"]["sample_rate"]),
+            )
+            if payload["start_sample"] == 0
+            and payload["end_sample"] == revision["snapshot"]["duration_samples"]
+            else {}
+        )
     if job["kind"] == "project.export" and job["payload"]["format"] == "hybrid":
         job["hybrid"] = _hybrid(service, db, job["project_id"], revision, job["payload"])
     job["asset_metadata"] = {

@@ -5,6 +5,7 @@ import type {EditOperation} from './dawEditing';
 import {PanelResize,usePanelSize} from './PanelResize';
 import {trackColors as palette,canvasTheme} from './visual';
 import {Icon} from './Icon';
+import type {MixValues} from './liveMix';
 import {arrangeClipEdits,beatSample,gridLines,orderedTracks,putNote,removeTrack,sampleBeat,snapSample,trackName,userNote,uuid} from './dawEditing';
 
 export type EditRequest={operations:EditOperation[];trackIds:string[];structural?:boolean;description:string};
@@ -12,7 +13,8 @@ type Gesture={kind:'move'|'resize'|'draw'|'box'|'velocity';revision:string;x:num
 const label=(pitch:number)=>['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'][pitch%12]+(Math.floor(pitch/12)-1);
 const left=48,top=26;
 
-export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUndo,onRedo,canUndo,canRedo,start,end,position,selectionStart,selectionEnd,onSeek,overview,pianoRequest=0,onViewport}:{
+export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUndo,onRedo,canUndo,canRedo,start,end,position,selectionStart,selectionEnd,onSeek,overview,pianoRequest=0,onViewport,liveMix,onMixChange,mixSaving=false,livePeaks={}}:{
+  livePeaks?:Record<string,number>;liveMix?:Record<string,MixValues>;onMixChange?:(id:string,patch:MixValues)=>void;mixSaving?:boolean;
   revision:Revision;selected:string;onSelect:(id:string)=>void;editable:boolean;busy:boolean;
   onEdit:(request:EditRequest)=>Promise<void>;onUndo:()=>Promise<void>;onRedo:()=>Promise<void>;canUndo:boolean;canRedo:boolean;
   start:number;end:number;position:number;selectionStart:number;selectionEnd:number;onSeek:(sample:number)=>void;overview:ReactNode;pianoRequest?:number;onViewport:(factor:number,anchor:number,pan?:number)=>void;
@@ -28,7 +30,8 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
   useEffect(()=>{if(pianoRequest)setView('piano');},[pianoRequest]);
   const [noteIds,setNoteIds]=useState<string[]>([]),[gesture,setGesture]=useState<Gesture|null>(null);
   const liveGesture=useRef<Gesture|null>(null),copyBuffer=useRef<NoteEvent[]>([]),frame=useRef<HTMLDivElement>(null),pianoScroll=useRef<HTMLDivElement>(null);
-  const [width,setWidth]=useState(800),[error,setError]=useState(''),[mix,setMix]=useState<Record<string,Partial<Track>>>({});
+  const [width,setWidth]=useState(800),[error,setError]=useState(''),[localMix,setMix]=useState<Record<string,Partial<Track>>>({});
+  const mix=liveMix??localMix;
   const [fields,setFields]=useState({pitch:60,start:0,end:1,velocity:80});
   const [clipId,setClipId]=useState<string|null>(null),[clipPreview,setClipPreview]=useState<Clip|null>(null);
   const clipDrag=useRef<{clip:Clip;x:number;resize:boolean;revision:string;preview:Clip}|null>(null),dragTrack=useRef<string|null>(null);
@@ -189,7 +192,7 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
   async function reorder(from:string,to:string){if(from===to)return;const order=tracks.map(t=>t.id);const a=order.indexOf(from),b=order.indexOf(to);if(a<0||b<0)return;order.splice(a,1);order.splice(b,0,from);await submit([{op:'track_order',track_ids:order}],'调整轨道顺序',true,order);}
   async function deleteClip(){if(!chosenClip)return;const ops:EditOperation[]=(s.notes??[]).filter(n=>n.clip_id===chosenClip.id).map(n=>({op:'delete',collection:'notes',id:n.id}));ops.push({op:'delete',collection:'clips',id:chosenClip.id});if(await submit(ops,'删除片段及所属音符',true,[chosenClip.track_id]))setClipId(null);}
   async function duplicateClip(){if(!chosenClip)return;try{const ops=await arrangeClipEdits(s,chosenClip,chosenClip.start_sample+chosenClip.duration_samples,revision.id,true);await submit(ops,'复制片段',true,[chosenClip.track_id]);}catch(e){setError((e as Error).message);}}
-  function mixChange(id:string,patch:Partial<Track>){setMix(current=>({...current,[id]:{...current[id],...patch}}));}
+  function mixChange(id:string,patch:MixValues){if(onMixChange){onMixChange(id,patch);return;}setMix(current=>({...current,[id]:{...current[id],...patch}}));}
   const previews=new Map((gesture?.preview??[]).map(n=>[n.id,n]));
   const displayNotes=visibleNotes.map(n=>previews.get(n.id)??n).concat(gesture?.kind==='draw'?(gesture.preview.length?gesture.preview:gesture.notes):[]);
   return <div className="daw-editor" ref={frame} tabIndex={0} onKeyDown={keyboard} data-editor-revision={revision.id} aria-label="制作编辑器">
@@ -228,14 +231,14 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
       </div>
       {chosenClip&&<div className="daw-clip-actions"><span>{chosenClip.asset_id?'音频':'MIDI'}片段 · {(chosenClip.start_sample/rate).toFixed(3)}s</span><button disabled={!editable||busy} onClick={()=>void duplicateClip()}>复制到后方</button><button disabled={!editable||busy} onClick={()=>void submit([{op:'arrange_clip',id:chosenClip.id,action:'split',sample:Math.round(position),new_id:uuid()}],'在播放头分割片段',true,[chosenClip.track_id])}>播放头分割</button><button disabled={!editable||busy} onClick={()=>void deleteClip()}>删除片段</button></div>}
     </>}
-    {view==='mixer'&&<><div className="daw-mixer-actions"><strong>MIXER</strong><span>音量 / 声像 / 工程静音与独奏</span><button disabled={!editable||busy||!Object.keys(mix).length} onClick={()=>void submit(Object.entries(mix).map(([id,patch])=>({op:'put',collection:'tracks',entity:{...tracks.find(t=>t.id===id)!,...patch,provenance:{origin:'user',source_id:'ui:'+revision.id,review:'unreviewed'}}})),'保存混音设置',true,Object.keys(mix))}>保存混音</button></div><div className="daw-mixer">{tracks.map((t,i)=>{const draft={...t,...mix[t.id]};return <div className={'daw-mixer-strip '+(selected===t.id?'is-selected':'')} key={t.id} style={{borderTopColor:palette[i%palette.length]}} data-mixer-track={t.id}>
+    {view==='mixer'&&<><div className="daw-mixer-actions"><strong>MIXER</strong><span>音量 / 声像 / 工程静音与独奏</span>{onMixChange?<span className="daw-mix-status" role="status">{mixSaving?'正在保存…':'实时试听 · 自动保存'}</span>:<button disabled={!editable||busy||!Object.keys(mix).length} onClick={()=>void submit(Object.entries(mix).map(([id,patch])=>({op:'put',collection:'tracks',entity:{...tracks.find(t=>t.id===id)!,...patch,provenance:{origin:'user',source_id:'ui:'+revision.id,review:'unreviewed'}}})),'保存混音设置',true,Object.keys(mix))}>保存混音</button>}</div><div className="daw-mixer">{tracks.map((t,i)=>{const draft={...t,...mix[t.id]};return <div className={'daw-mixer-strip '+(selected===t.id?'is-selected':'')} key={t.id} style={{borderTopColor:palette[i%palette.length]}} data-mixer-track={t.id}>
       <button className="daw-channel-number" onClick={()=>onSelect(t.id)}>{String(i+1).padStart(2,'0')}</button><input aria-label={'轨道名称 '+t.id} value={mix[t.id]?.name??trackName(t)} maxLength={256} onChange={e=>mixChange(t.id,{name:e.target.value})} disabled={!editable||busy}/>
       <div className="daw-mute-solo"><button aria-label={'工程静音 '+trackName(t)} aria-pressed={draft.mute??false} disabled={!editable||busy} onClick={()=>mixChange(t.id,{mute:!draft.mute})}>M</button><button aria-label={'工程独奏 '+trackName(t)} aria-pressed={draft.solo??false} disabled={!editable||busy} onClick={()=>mixChange(t.id,{solo:!draft.solo})}>S</button></div>
       <label>声像<input aria-label={'声像 '+trackName(t)} type="range" min={-1} max={1} step={.01} value={draft.pan??0} disabled={!editable||busy} onChange={e=>mixChange(t.id,{pan:+e.target.value})}/><small>{((draft.pan??0)*100).toFixed(0)}</small></label>
-      <div className="daw-fader"><input aria-label={'音量推子 '+trackName(t)} type="range" min={-60} max={12} step={.1} value={Math.max(-60,Math.min(12,draft.gain_db??0))} disabled={!editable||busy} onChange={e=>mixChange(t.id,{gain_db:+e.target.value})}/><div className="daw-fader-scale"><span>+12</span><span>0</span><span>−12</span><span>−36</span><span>−60</span></div></div><label>dB<input aria-label={'音量数值 '+trackName(t)} type="number" min={-120} max={24} step={.1} value={draft.gain_db??0} disabled={!editable||busy} onChange={e=>mixChange(t.id,{gain_db:+e.target.value})}/></label><small>{mix[t.id]?'● 尚未保存':'已保存'} · {t.kind}</small>
+      <div className="daw-fader"><meter className="daw-live-meter" aria-label={'实际电平 '+trackName(t)} min={-60} max={0} value={livePeaks[t.id]??-60}/><input aria-label={'音量推子 '+trackName(t)} type="range" min={-60} max={12} step={.1} value={Math.max(-60,Math.min(12,draft.gain_db??0))} disabled={!editable||busy} onChange={e=>mixChange(t.id,{gain_db:+e.target.value})}/><div className="daw-fader-scale"><span>+12</span><span>0</span><span>−12</span><span>−36</span><span>−60</span></div></div><label>dB<input aria-label={'音量数值 '+trackName(t)} type="number" min={-120} max={24} step={.1} value={draft.gain_db??0} disabled={!editable||busy} onChange={e=>mixChange(t.id,{gain_db:+e.target.value})}/></label><small>{mixSaving?'正在保存':mix[t.id]?'调整中':'已保存'} · {t.kind}</small>
     </div>;})}</div></>}
     <div hidden={view!=='overview'}>{overview}</div>
     </div>{view!=='piano'&&<PanelResize label="调整制作区域高度" axis="y" value={contentHeight} min={180} max={1200} onChange={setContentHeight} reset={480}/>}
-    <div className="daw-editor-footer"><span>{editable?'手动操作保存为新版本 · 修改后生成试听':'历史版本受保护 · 切回当前版本后编辑'}</span><span>{s.timing_map?'网格跟随当前节拍':'无节拍图 · 使用源秒钟'} · 滚轮上下 · Alt+滚轮音高缩放 · Ctrl+滚轮时间缩放</span></div>
+    <div className="daw-editor-footer"><span>{editable?'音符自动更新声音 · 混音即时生效并自动保存':'历史版本受保护 · 切回当前版本后编辑'}</span><span>{s.timing_map?'网格跟随当前节拍':'无节拍图 · 使用源秒钟'} · 滚轮上下 · Alt+滚轮音高缩放 · Ctrl+滚轮时间缩放</span></div>
   </div>;
 }

@@ -82,6 +82,9 @@
 .track-color-line,.track-actions > span:last-child { display: none; }
 .track-actions button { padding: 3px 5px; font-size: 9px; border-radius: 4px; background: #29292c; color: #aaa6a1; }
 .track-actions button[aria-pressed=true] { color: #191716; background: #e4b48b; }
+.track-volume { display:flex; align-items:center; gap:8px; margin-top:6px; }
+.track-volume input { width:0; min-width:20px; flex:1; height:15px; }
+.track-volume output { font:8px var(--mono); color:#978b7c; white-space:nowrap; min-width:43px; text-align:right; }
 .source-stems { margin: 22px 6px 0; color: #85858e; font-size: 10px; }
 .source-stems summary { cursor: pointer; }
 .source-stems summary > span { float: right; font: 9px var(--mono); }

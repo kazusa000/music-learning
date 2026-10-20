@@ -79,7 +79,17 @@
 .daw-fader input[type=range] { writing-mode: vertical-lr; direction: rtl; width: 20px; height: 164px; }
 .daw-fader input[type=range]::-webkit-slider-runnable-track { height: auto; width: 3px; background: #101012; border: 0; border-radius: 3px; }
 .daw-fader input[type=range]::-webkit-slider-thumb { width: 20px; height: 9px; margin: 0 -8.5px; border-radius: 2px; background: #c4bdb4; box-shadow: 0 1px 3px #0006; }
-.daw-fader-scale { display: flex; flex-direction: column; justify-content: space-between; color: #69666e; font: 8px var(--mono); }
+.daw-fader-scale { position:relative; width:22px; color:#69666e; font:8px var(--mono); }
+.daw-fader-scale span { position:absolute; left:0; transform:translateY(-50%); }
+.daw-fader-scale span:nth-child(1) { top:0; transform:none; }
+.daw-fader-scale span:nth-child(2) { top:16.6667%; }
+.daw-fader-scale span:nth-child(3) { top:33.3333%; }
+.daw-fader-scale span:nth-child(4) { top:66.6667%; }
+.daw-fader-scale span:nth-child(5) { top:100%; transform:translateY(-100%); }
+.daw-mix-status { margin-left:auto; color:#b7be9d!important; font-size:10px; }
+.daw-live-meter { writing-mode:vertical-lr; appearance:none; width:5px; height:164px; background:#141416; border:0; border-radius:2px; transform:rotate(180deg); }
+.daw-live-meter::-webkit-meter-bar { background:#141416; border:0; border-radius:2px; }
+.daw-live-meter::-webkit-meter-optimum-value { background:#b0bf86; border-radius:2px; }
 .daw-mixer-strip input[type=number] { width: 100%; text-align: center; font: 11px var(--mono); padding: 5px; }
 .daw-mixer-strip > small { text-align: center; color: #7e7775; font-size: 8px; line-height: 1.6; }
 @media(max-width:650px) {

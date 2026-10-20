@@ -18,13 +18,12 @@ try{
  const changed=await api('edits.apply',{project_id:fixture.project_id,author:'user',description:'Independent reconstruction-mode regression',scope:{track_ids:[note.track_id],start_sample:0,end_sample:before.snapshot.duration_samples,structural:false},operations:[{op:'patch_note',id:note.id,velocity:note.velocity===.7?.6:.7}]},before.id);
  await page.waitForFunction(id=>document.querySelector('.studio')?.dataset.revision===id,changed.id);
  const mix=page.locator('.mode-switch button').filter({hasText:'重建'});assert.equal(await mix.getAttribute('aria-pressed'),'true');
- await page.getByRole('button',{name:'播放',exact:true}).click();await page.getByText('此版本还没有重建音频，请先生成重建试听。',{exact:false}).waitFor();
+ await page.getByRole('button',{name:'播放',exact:true}).click();await page.getByText('正在准备发生变化的音轨声音…',{exact:false}).waitFor();
  assert.equal(await page.locator('.studio').getAttribute('data-playing'),'false');
- await page.locator('.mode-switch button').filter({hasText:'原曲'}).click();
- await page.getByRole('button',{name:'生成重建试听',exact:true}).click();assert.equal(await mix.getAttribute('aria-pressed'),'true');
+ await api('jobs.submit',{project_id:fixture.project_id,kind:'project.render',payload:{revision_id:changed.id,preview:true}},changed.id);assert.equal(await mix.getAttribute('aria-pressed'),'true');
  await page.getByRole('tab',{name:'分析',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('[data-render-status]')?.getAttribute('data-render-status')==='succeeded',null,{timeout:60000});
  assert.equal(await mix.getAttribute('aria-pressed'),'true');
- const report={status:'succeeded',new_revision_targets_reconstruction:true,missing_render_does_not_play_original:true,render_button_selects_reconstruction:true,completed_render_keeps_reconstruction:true,source_unchanged:changed.snapshot.source_asset_id===before.snapshot.source_asset_id,provider_calls:0};
+ const report={status:'succeeded',new_revision_targets_reconstruction:true,missing_render_does_not_play_original:true,preparation_keeps_reconstruction:true,completed_render_keeps_reconstruction:true,source_unchanged:changed.snapshot.source_asset_id===before.snapshot.source_asset_id,provider_calls:0};
  await writeFile(path.join(output,'summary.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }finally{await browser.close();}

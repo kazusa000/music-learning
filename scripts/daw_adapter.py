@@ -83,6 +83,12 @@ class Production:
 
     def render(self):
         s = c.Snapshot.model_validate(self.job["snapshot"])
+        # Unchanged, independently routed nodes are immutable audio sources.
+        # Only changed VST3 chains are instantiated; original revision/state stays intact.
+        reused = self.job.get("reused_tracks", {})
+        if reused:
+            s = s.model_copy(deep=True)
+            s.frozen_tracks.update({id: value["asset_id"] for id, value in reused.items()})
         payload = self.job["payload"]
         if s.duration_samples / s.sample_rate > self.settings.pipeline_max_duration_seconds:
             raise ValueError("project exceeds the configured offline render duration budget")
@@ -320,6 +326,7 @@ class Production:
             captured_plugins=captured,
             issues=issues,
             pre_roll_samples=start,
+            reused_tracks=reused,
             implementation_sha256=self.fingerprint,
             environment=self.environment,
         )
@@ -355,6 +362,7 @@ class Production:
             captured_plugins=captured,
             measurements=measurements,
             start_sample=start,
+            reused_track_ids=list(reused),
             end_sample=end,
             tail_samples=tail,
             created_at=time.time(),
@@ -476,7 +484,16 @@ class Production:
             return self.hybrid()
         if payload["format"] == "wav":
             path = self.directory / "export.wav"
-            shutil.copyfile(self.path(payload["audio_asset_id"]), path)
+            if payload.get("prepare_mix"):
+                self.job["payload"] = c.RenderPayload(
+                    revision_id=self.job["revision_id"], end_sample=self.job["snapshot"]["duration_samples"]
+                ).model_dump(mode="json")
+                rendered = self.render()
+                self.job["payload"] = payload
+                source = next(item for item in self.files if item["sha256"] == rendered["mix_asset_id"])
+                shutil.copyfile(self.settings.path(source["relative_path"]), path)
+            else:
+                shutil.copyfile(self.path(payload["audio_asset_id"]), path)
         else:
             path = self.directory / "export.mid"
             export_midi(c.Snapshot.model_validate(self.job["snapshot"]), path, self.job["revision_id"])

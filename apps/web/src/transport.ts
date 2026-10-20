@@ -1,11 +1,19 @@
 import {listeningGain,type Level} from './listeningLevel';
+import {channelGains,type MixChannel} from './liveMix';
 /** One audio clock schedules every stem, including loops and A/B switches. */
 export class Transport {
   context: AudioContext | null = null;
   buffers = new Map<string, AudioBuffer>();
   pending = new Map<string, Promise<AudioBuffer>>();
   sources: AudioBufferSourceNode[] = [];
-  voices = new Map<string,{source:AudioBufferSourceNode;gain:GainNode}>();
+  voices = new Map<string,{source:AudioBufferSourceNode;gain:GainNode;left?:GainNode;right?:GainNode;meter?:AnalyserNode;assetId?:string}>();
+  channels=new Map<string,MixChannel>();
+  output:GainNode|null=null;
+  configureChannels(channels:MixChannel[]){
+    for(const c of channels){const id='track:'+c.id;if(this.channels.get(id)?.assetId!==c.assetId){this.buffers.delete(id);this.levels.delete(id);}}
+    this.channels=new Map(channels.map(c=>['track:'+c.id,c]));this.route(this.activeIds);
+  }
+  meterLevels(){const result:Record<string,number>={};if(!this.playing)return result;for(const [id,voice] of this.voices){if(!voice.meter||!id.startsWith('track:'))continue;const values=new Float32Array(voice.meter.fftSize);voice.meter.getFloatTimeDomainData(values);const rms=Math.sqrt(values.reduce((n,v)=>n+v*v,0)/values.length);result[id.slice(6)]=Math.max(-60,20*Math.log10(Math.max(rms,1e-9)));}return result;}
   families = new Map<string,string>();
   levels = new Map<string,Level>();
   levelPending = new Map<string,{resolve:(level:Level)=>void;reject:(error:Error)=>void}>();
@@ -34,10 +42,15 @@ export class Transport {
     this.activeIds=[...ids];const context=this.context;if(!context)return;
     // Conservative sum-of-peaks ceiling also protects partial stem mixtures.
     const bound=ids.reduce((sum,id)=>sum+(this.levels.get(id)?.peak??0)*this.gain(id),0);
-    const ceiling=this.matched&&bound>.794?.794/bound:1;
+    // Mixer faders must not be cancelled by automatic renormalization.
+    const ceiling=ids.some(id=>this.channels.has(id))?1:this.matched&&bound>.794?.794/bound:1;
+    const soloed=Array.from(this.channels.values()).some(c=>c.values.solo);
     for(const [id,voice] of this.voices){const gain=ids.includes(id)?this.gain(id)*ceiling:0;
       voice.gain.gain.cancelScheduledValues(context.currentTime);
       voice.gain.gain.setTargetAtTime(gain,context.currentTime,.003);
+      const channel=this.channels.get(id);
+      if(channel&&voice.left&&voice.right){const [left,right]=channelGains(channel,soloed);
+        voice.left.gain.setTargetAtTime(left,context.currentTime,.003);voice.right.gain.setTargetAtTime(right,context.currentTime,.003);}
     }
   }
   async warm(ids:string[]){
@@ -50,10 +63,17 @@ export class Transport {
     const context=this.context!,buffer=this.buffers.get(id)!;
     const source=context.createBufferSource(),gain=context.createGain();source.buffer=buffer;
     source.loop=this.loop;source.loopStart=this.loopStart;source.loopEnd=this.loopEnd;
-    gain.gain.value=0;source.connect(gain);gain.connect(context.destination);
+    gain.gain.value=0;
+    let left:GainNode|undefined,right:GainNode|undefined;
+    if(this.channels.has(id)){
+      const splitter=context.createChannelSplitter(2),merger=context.createChannelMerger(2);left=context.createGain();right=context.createGain();
+      source.connect(splitter);splitter.connect(left,0);splitter.connect(right,1);left.connect(merger,0,0);right.connect(merger,0,1);merger.connect(gain);
+    }else source.connect(gain);
+    if(!this.output){this.output=context.createGain();this.output.gain.value=1;this.output.connect(context.destination);}
+    const meter=context.createAnalyser();meter.fftSize=512;gain.connect(meter);meter.connect(this.output);
     source.start(when,Math.min(position,Math.max(0,buffer.duration-.001)));
-    source.onended=()=>{source.disconnect();gain.disconnect();};
-    this.voices.set(id,{source,gain});this.sources.push(source);
+    source.onended=()=>{source.disconnect();gain.disconnect();meter.disconnect();this.sources=this.sources.filter(s=>s!==source);if(this.voices.get(id)?.source===source)this.voices.delete(id);};
+    this.voices.set(id,{source,gain,left,right,meter,assetId:this.channels.get(id)?.assetId??id});this.sources.push(source);
   }
   playing = false; offset = 0; started = 0; generation = 0; duration = 0;
   loop = false; loopStart = 0; loopEnd = 0; disposed = false;
@@ -82,7 +102,9 @@ export class Transport {
       : Math.max(0,this.context.currentTime-this.context.baseLatency-(this.context.outputLatency??0));
     return this.at(clock);
   }
-  async buffer(id:string) {
+  async buffer(id:string):Promise<AudioBuffer> {
+    const channel=this.channels.get(id);
+    if(channel){if(this.buffers.has(id))return this.buffers.get(id)!;const buffer=await this.buffer(channel.assetId);this.buffers.set(id,buffer);const level=this.levels.get(channel.assetId);if(level)this.levels.set(id,level);return buffer;}
     if (this.pending.has(id)) return this.pending.get(id)!;
     if (this.buffers.has(id)) return this.buffers.get(id)!;
     if (!this.pending.has(id)) this.pending.set(id,(async () => {
@@ -93,9 +115,8 @@ export class Transport {
       if (!this.disposed) {
         await this.measure(id,buffer);
         if(!this.disposed){
-          let bytes=buffer.length*buffer.numberOfChannels*4;
-          for(const existing of this.buffers.values())bytes+=existing.length*existing.numberOfChannels*4;
-          for(const [key,existing] of this.buffers){if(bytes<=1024**3)break;if(!this.voices.has(key)){this.buffers.delete(key);bytes-=existing.length*existing.numberOfChannels*4;}}
+          const resident=new Set([...this.buffers.values(),buffer]);let bytes=Array.from(resident).reduce((n,b)=>n+b.length*b.numberOfChannels*4,0);
+          for(const [key,existing] of this.buffers){if(bytes<=1024**3)break;if(!this.voices.has(key)){this.buffers.delete(key);if(!Array.from(this.buffers.values()).includes(existing))bytes-=existing.length*existing.numberOfChannels*4;}}
           this.buffers.set(id,buffer);
         }
       }
@@ -115,7 +136,7 @@ export class Transport {
       this.duration=Math.max(...buffers.map(buffer=>buffer.duration));
       for(const timeline of this.timelines)timeline.duration=this.duration;
       const position=this.at(when);
-      for(const id of ids)if(!this.voices.has(id))this.voice(id,when,position);
+      for(const id of ids){const old=this.voices.get(id);if(!old||old.assetId!==(this.channels.get(id)?.assetId??id)){old?.source.stop(when);this.voice(id,when,position);}}
       this.route(ids);this.switches.push({at:performance.now(),ids:[...ids],reused:true});if(this.switches.length>100)this.switches.shift();return;
     }
     const position = preserve && this.playing ? this.at(when) : offset;

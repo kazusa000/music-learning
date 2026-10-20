@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 
 from . import contracts as c, schema_v1 as t
 from .daw import apply, check_scope, diff, plugin_metadata
@@ -186,14 +186,25 @@ def dispatch(service, db, op, args, request):
             "turn_lease_expired", "Discussion lease expired during edit validation; nothing committed", 409
         )
     from .rendering import submit
+    from .playback import plan, retarget
 
-    job = submit(
-        service,
-        db,
-        c.SubmitJob(
-            project_id=args.project_id, kind="project.render", payload={"revision_id": revision["id"]}
-        ),
-        request,
+    retarget(service, db, before["id"], revision, request)
+    playback = plan(service, db, revision)
+    if playback["available"]:
+        db.execute(update(t.projects).where(t.projects.c.id == args.project_id).values(status="ready"))
+    job = (
+        None
+        if playback["available"]
+        else submit(
+            service,
+            db,
+            c.SubmitJob(
+                project_id=args.project_id,
+                kind="project.render",
+                payload={"revision_id": revision["id"], "preview": True},
+            ),
+            request,
+        )
     )
     receipt = {
         "turn_id": turn["id"],
@@ -202,9 +213,12 @@ def dispatch(service, db, op, args, request):
         "revision_id": revision["id"],
         "snapshot_sha256": revision["snapshot_sha256"],
         "diff": change,
-        "render_job_id": job["id"],
+        "render_job_id": job["id"] if job else None,
+        "playback_available": playback["available"],
         "created_at": time.time(),
-        "notice": "Edit committed; render queued. Audible success is not yet established.",
+        "notice": "Mix updated; immediately playable from revision-bound stems."
+        if not job
+        else "Changed tracks queued; unchanged track audio will be reused where compatible.",
     }
     db.execute(insert(arrangements).values(turn_id=turn["id"], payload=receipt))
     return receipt

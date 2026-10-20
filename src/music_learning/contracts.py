@@ -822,6 +822,7 @@ class RestoreRevision(ProjectRef):
 
 class RenderPayload(Model):
     revision_id: Id | None = None
+    preview: bool = False
     tail_seconds: float = Field(default=2, ge=0, le=60)
     block_size: int = Field(default=512, ge=16, le=8192)
     start_sample: Sample = 0
@@ -861,6 +862,43 @@ class AuditionState(Model):
 
 class SetAudition(ProjectRef):
     state: AuditionState
+
+
+class MixerPatch(Model):
+    track_id: Id
+    gain_db: float | None = Field(default=None, ge=-120, le=24)
+    pan: float | None = Field(default=None, ge=-1, le=1)
+    mute: bool | None = None
+    solo: bool | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=256)
+
+
+class SetMixer(ProjectRef):
+    tracks: list[MixerPatch] = Field(min_length=1, max_length=256)
+    description: str = Field(default="调整音轨混音", min_length=1, max_length=2000)
+
+
+class PlaybackStem(Model):
+    asset_id: Hash
+    source_revision_id: Id
+    baked_gain_db: float
+    baked_pan: float
+    mix_asset_id: Hash
+    tail_samples: Sample
+
+
+class PlaybackPlan(Model):
+    revision_id: Id
+    available: bool
+    tracks: dict[str, PlaybackStem]
+    pending_track_ids: list[Id]
+    reason: str | None = None
+
+
+class MixerResult(Model):
+    revision: Revision
+    playback: PlaybackPlan
+    preparation_job_id: Id | None = None
 
 
 class ReportAudition(ProjectRef):
@@ -1015,6 +1053,8 @@ OPERATIONS = {
     "renders.list": (RevisionRef, False),
     "plugins.presets": (RevisionRef, False),
     "audition.get": (ProjectRef, False),
+    "playback.get": (RevisionRef, False),
+    "mixer.set": (SetMixer, True),
     "audition.set": (SetAudition, True),
     "audition.report": (ReportAudition, True),
     "music.query": (MusicQuery, False),
@@ -1076,6 +1116,8 @@ RESULT_TYPES = {
     "instruments.categories": InstrumentCategories,
     "instruments.recommend": dict,
     "audition.get": dict,
+    "playback.get": PlaybackPlan,
+    "mixer.set": MixerResult,
     "audition.set": dict,
     "audition.report": dict,
     "music.query": dict,

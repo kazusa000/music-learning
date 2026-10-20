@@ -243,6 +243,14 @@ class Client:
             expected_revision=expected_revision,
         )
 
+    def playback(self, project_id, revision_id=None):
+        return self.call("playback.get", dict(project_id=project_id, revision_id=revision_id))
+
+    def set_mixer(self, project_id, tracks, *, expected_revision):
+        return self.call(
+            "mixer.set", dict(project_id=project_id, tracks=tracks), expected_revision=expected_revision
+        )
+
     def events(self, *, after=0, project_id=None, follow=True):
         params = {"after": after, "follow": str(follow).lower()}
         if project_id:

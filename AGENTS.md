@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新混音（2026-10-20）：先读docs/33-live-mixing.md。新增playback.get/mixer.set，共57操作/11任务、无迁移。音量/声像/静音/独奏直接调逐轨播放并400ms合并保存；统一Service新版本/幂等/冲突保留，兼容祖先音频按内容签名生成目标revision播放计划，不能冒充新Render。更换乐器只准备变化的独立声部，复杂处理图回原生准备；尚非常驻实时VST3宿主。preview=true准备可被更新预览取消，显式渲染/导出不取消。顶部导出混音使用project.export，未有完整混音时在导出任务内准备。108后端、Transport契约单元、构建、真实浏览器即时混音及sfizz增量换音色通过；正式音乐head未改，音色库恢复仍暂停，NAS未访问。
+
 最新视觉（2026-10-20）：按用户要求参考Suno Studio 2，统一主页/工作台的视觉系统，先读docs/32-studio-visual-system.md。style.css为共享基础，workbench/daw/discussion.css分管制作界面；旧studio.css已移除，不再叠加旧金属主题。Icon.tsx统一SVG图标，visual.ts共用音轨/画布色板；未编组MIDI显示真实音高/时值缩略路径，显示网格按比例抽稀而不改吸附。构建、既有编辑/电平单元及真实浏览器桌面/中等/窄窗口、整曲播放/空格暂停通过。正式head/快照/9,378音符/15任务与试听desired/sequence保持，未新推理或渲染。用户已删除H盘音色库且暂停恢复；禁止据此任务恢复、复制或迁移音色文件。
 
 最新对话规则（2026-10-20）：用户要求删除手动权限需求。先读docs/31-automatic-actions.md。UI无讨论/改编/结构权限开关；dialogue.submit默认edit_mode=auto，Service在context计算本工程整曲制作scope，模型按语义讨论或执行，不再要求用户勾选权限。音轨/片段为上下文而非自动模式的授权上限，默认整曲、引用不改循环。引用可选，未知链接不激活，不能因无引用或正常未编辑而使自动对话失败。SDK显式read_only/edit_scope及原版本/幂等/fencing/校验保留；真实修改仍新版本+渲染。只读浏览器测试必须沙箱化audition状态，不得污染正式循环。101项后端、相关浏览器与真实Codex换Shiny Acoustic通过；新head及渲染见最新文档。

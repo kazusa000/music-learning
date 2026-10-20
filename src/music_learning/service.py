@@ -329,6 +329,10 @@ class Service:
         return revision
 
     def _dispatch(self, db, op, args, request):
+        if op in ("playback.get", "mixer.set"):
+            from .playback import dispatch
+
+            return dispatch(self, db, op, args, request)
         if op.startswith("arrangements.") or op == "production.query":
             from .arranging import dispatch
 

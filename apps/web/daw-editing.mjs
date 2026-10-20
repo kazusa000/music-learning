@@ -15,7 +15,7 @@ const starting=await read();await api('audition.set',{project_id:fixture.project
 const browser=await chromium.launch({headless:true}),errors=[],writes=[],steps=[];
 const page=await browser.newPage({viewport:{width:1680,height:1120}});page.setDefaultTimeout(15000);
 page.on('pageerror',e=>errors.push(String(e)));
-page.on('request',request=>{if(request.url().endsWith('/v1/commands')){const body=request.postDataJSON();if(['edits.apply','revisions.restore','jobs.submit','dialogue.submit'].includes(body.operation))writes.push({operation:body.operation,expected_revision:body.expected_revision,idempotency:!!body.idempotency_key});}});
+page.on('request',request=>{if(request.url().endsWith('/v1/commands')){const body=request.postDataJSON();if(['edits.apply','revisions.restore','jobs.submit','dialogue.submit','mixer.set'].includes(body.operation))writes.push({operation:body.operation,expected_revision:body.expected_revision,idempotency:!!body.idempotency_key});}});
 const note=async id=>(await read()).snapshot.notes.find(n=>n.id===id);
 const editor=page.getByLabel('制作编辑器',{exact:true});
 async function saved(previous){await page.waitForFunction(id=>document.querySelector('.daw-editor')?.dataset.editorRevision!==id,previous);await page.waitForFunction(()=>document.querySelector('.daw-edit-state')?.textContent.includes('可编辑'));return await read();}
@@ -70,11 +70,11 @@ try{
   await edit(()=>page.getByRole('button',{name:'编辑轨道 主旋律',exact:true}).dragTo(page.getByRole('button',{name:'编辑轨道 和声',exact:true})));assert.equal((await read()).snapshot.track_order[0],fixture.melody);
   const originalTracks=(await read()).snapshot.tracks.map(t=>t.id);await edit(()=>page.getByRole('button',{name:'＋ 乐器轨道',exact:true}).click());current=await read();const added=current.snapshot.tracks.find(t=>!originalTracks.includes(t.id));assert.ok(added);
   await edit(()=>page.getByRole('button',{name:'删除轨道',exact:true}).click());assert.equal((await read()).snapshot.tracks.length,originalTracks.length);steps.push('track reorder/add/delete');
-  await page.getByRole('button',{name:'混音台',exact:true}).click();await page.getByLabel('轨道名称 '+fixture.melody,{exact:true}).fill('手动主旋律');
+  await page.getByRole('button',{name:'混音台',exact:true}).click();const mixBefore=(await read()).id;
   const fader=page.getByLabel('音量推子 主旋律',{exact:true});await fader.focus();await fader.press('End');
   await page.getByLabel('音量数值 主旋律',{exact:true}).fill('-6');await page.getByLabel('声像 主旋律',{exact:true}).focus();await page.getByLabel('声像 主旋律',{exact:true}).press('End');
   await page.getByRole('button',{name:'工程静音 主旋律',exact:true}).click();await page.getByRole('button',{name:'工程独奏 和声',exact:true}).click();
-  await edit(()=>page.getByRole('button',{name:'保存混音',exact:true}).click());current=await read();const mixed=current.snapshot.tracks.find(t=>t.id===fixture.melody);
+  await page.getByLabel('轨道名称 '+fixture.melody,{exact:true}).fill('手动主旋律');await saved(mixBefore);current=await read();const mixed=current.snapshot.tracks.find(t=>t.id===fixture.melody);
   assert.equal(mixed.name,'手动主旋律');assert.equal(mixed.gain_db,-6);assert.equal(mixed.pan,1);assert.equal(mixed.mute,true);assert.equal(current.snapshot.tracks.find(t=>t.id===fixture.harmony).solo,true);steps.push('track rename/fader/pan/mute/solo');
   await page.screenshot({path:path.join(output,'mixer.png'),fullPage:true});
   const retained=(await read()).snapshot;await page.getByRole('button',{name:'编排',exact:true}).click();await page.getByLabel('编辑声部',{exact:true}).selectOption(fixture.harmony);
@@ -104,7 +104,7 @@ try{
   await page.waitForFunction(id=>document.querySelector('.daw-editor')?.dataset.editorRevision===id,postCommit.id);await page.unroute('**/v1/commands');assert.equal((await note(n1)).velocity,.7);steps.push('authoritative post-commit head update');
   await page.getByRole('tab',{name:'音色与效果',exact:true}).click();await page.getByRole('button',{name:'总览',exact:true}).click();
   const renderBefore=(await api('jobs.list',{project_id:fixture.project_id,limit:1000})).map(j=>j.id);
-  await page.getByRole('button',{name:'生成重建试听',exact:true}).click();
+  const target=await read();await api('jobs.submit',{project_id:fixture.project_id,kind:'project.render',payload:{revision_id:target.id}},target.id);
   let rendered;for(let i=0;i<120;i++){const tasks=await api('jobs.list',{project_id:fixture.project_id,limit:1000});rendered=tasks.find(j=>j.kind==='project.render'&&!renderBefore.includes(j.id));if(rendered&&['succeeded','failed','cancelled'].includes(rendered.status))break;await new Promise(r=>setTimeout(r,250));}
   assert.equal(rendered?.status,'succeeded',JSON.stringify(rendered?.error));assert.ok(rendered.result.measurements.mix.rms>1e-6);
   const reconstruction=page.locator('.mode-switch button').filter({hasText:'重建'});await reconstruction.waitFor();await page.waitForFunction(()=>![...document.querySelectorAll('.mode-switch button')].find(b=>b.textContent.includes('重建')).disabled);

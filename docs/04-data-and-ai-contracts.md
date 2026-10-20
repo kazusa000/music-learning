@@ -1,5 +1,7 @@
 # 数据与 AI 操作约定
 
+2026-10-20混音契约更新：`mixer.set`原子创建混音版本并返回`playback`与可选`preparation_job_id`；`playback.get`提供目标revision可验证的逐轨来源和烘焙增益/声像。可播放的派生混音不伪装成新Render，最终WAV由`project.export`生成。统一API/SDK/CLI共57操作、11任务，无迁移；见[即时混音](33-live-mixing.md)。
+
 2026-10-20更新：dialogue.submit默认edit_mode=auto，当前工程的制作scope由Service自动计算，无前端权限开关；音轨与片段是讨论上下文，引用可选且不影响轮次成功。显式SDK只读/范围约束和版本/幂等/事务/租约校验保留，见[自动对话操作](31-automatic-actions.md)。
 
 手动前端扩展不新增工程真相或数据库模型。前端与 Agent 同用 edits.apply/revisions.restore，实际操作者 author=user、直接编辑的音符来源 user；时间修改显式锚定源样本并清除旧记谱绑定，原版本保留。UI 范围、幂等、冲突与渲染失效规则见 docs/22-fl-workbench.md。

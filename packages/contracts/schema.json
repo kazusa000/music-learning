@@ -1974,6 +1974,117 @@
       "title": "Meter",
       "type": "object"
     },
+    "MixerPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "track_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Track Id",
+          "type": "string"
+        },
+        "gain_db": {
+          "anyOf": [
+            {
+              "maximum": 24,
+              "minimum": -120,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gain Db"
+        },
+        "pan": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": -1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pan"
+        },
+        "mute": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mute"
+        },
+        "solo": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Solo"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        }
+      },
+      "required": [
+        "track_id"
+      ],
+      "title": "MixerPatch",
+      "type": "object"
+    },
+    "MixerResult": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "playback": {
+          "$ref": "#/$defs/PlaybackPlan"
+        },
+        "preparation_job_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preparation Job Id"
+        }
+      },
+      "required": [
+        "revision",
+        "playback"
+      ],
+      "title": "MixerResult",
+      "type": "object"
+    },
     "ModelCatalog": {
       "additionalProperties": false,
       "properties": {
@@ -2418,6 +2529,98 @@
         "id"
       ],
       "title": "PatchPlugin",
+      "type": "object"
+    },
+    "PlaybackPlan": {
+      "additionalProperties": false,
+      "properties": {
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "tracks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PlaybackStem"
+          },
+          "title": "Tracks",
+          "type": "object"
+        },
+        "pending_track_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "title": "Pending Track Ids",
+          "type": "array"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "revision_id",
+        "available",
+        "tracks",
+        "pending_track_ids"
+      ],
+      "title": "PlaybackPlan",
+      "type": "object"
+    },
+    "PlaybackStem": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "source_revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Source Revision Id",
+          "type": "string"
+        },
+        "baked_gain_db": {
+          "title": "Baked Gain Db",
+          "type": "number"
+        },
+        "baked_pan": {
+          "title": "Baked Pan",
+          "type": "number"
+        },
+        "mix_asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Mix Asset Id",
+          "type": "string"
+        },
+        "tail_samples": {
+          "minimum": 0,
+          "title": "Tail Samples",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "asset_id",
+        "source_revision_id",
+        "baked_gain_db",
+        "baked_pan",
+        "mix_asset_id",
+        "tail_samples"
+      ],
+      "title": "PlaybackStem",
       "type": "object"
     },
     "PluginInstance": {
@@ -3662,6 +3865,38 @@
         "state"
       ],
       "title": "SetAudition",
+      "type": "object"
+    },
+    "SetMixer": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "tracks": {
+          "items": {
+            "$ref": "#/$defs/MixerPatch"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Tracks",
+          "type": "array"
+        },
+        "description": {
+          "default": "调整音轨混音",
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "tracks"
+      ],
+      "title": "SetMixer",
       "type": "object"
     },
     "SetRouting": {
@@ -6046,6 +6281,93 @@
         "type": "object"
       },
       "mutates": false
+    },
+    "playback.get": {
+      "arguments": "RevisionRef",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "tracks": {
+            "additionalProperties": {
+              "$ref": "#/$defs/PlaybackStem"
+            },
+            "title": "Tracks",
+            "type": "object"
+          },
+          "pending_track_ids": {
+            "items": {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            "title": "Pending Track Ids",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "revision_id",
+          "available",
+          "tracks",
+          "pending_track_ids"
+        ],
+        "title": "PlaybackPlan",
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "mixer.set": {
+      "arguments": "SetMixer",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "$ref": "#/$defs/Revision"
+          },
+          "playback": {
+            "$ref": "#/$defs/PlaybackPlan"
+          },
+          "preparation_job_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Preparation Job Id"
+          }
+        },
+        "required": [
+          "revision",
+          "playback"
+        ],
+        "title": "MixerResult",
+        "type": "object"
+      },
+      "mutates": true
     },
     "audition.set": {
       "arguments": "SetAudition",
