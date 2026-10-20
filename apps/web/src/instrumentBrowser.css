@@ -1,0 +1,14 @@
+.instrument-model-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; min-height: 30px; }
+.instrument-model-heading > div { min-width: 0; }
+.instrument-model-heading strong { display: block; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.instrument-model-heading small { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; }
+.instrument-model-heading .model-back { padding: 5px 8px; font-size: 11px; flex: 0 0 auto; }
+.instrument-browser .instrument-preset-list { overflow: auto; min-height: 0; flex: 1; align-content: start; overscroll-behavior: contain; }
+.instrument-browser .variant-option.is-selected { border-color: #d19b6d; background: #332a23; }
+.instrument-browser .variant-option:focus-visible,.instrument-browser .model-option:focus-visible { outline: 2px solid #d19b6d; outline-offset: -2px; }
+.instrument-browser .preset-confirm { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 10px; flex: 0 0 auto; }
+.preset-confirm > div { min-width: 0; flex: 1 1 110px; }
+.preset-confirm span { display: block; font-size: 11px; overflow-wrap: anywhere; }
+.preset-confirm small { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
+.preset-confirm button { padding: 8px 12px; font-size: 11px; }
+.preset-list-error p { margin: 0 0 6px; }

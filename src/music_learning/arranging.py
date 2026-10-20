@@ -60,7 +60,7 @@ def production_query(service, db, args):
         ],
         "notice": "Use patch_plugin to change parameters or load a preset. Changes follow the user's requested musical extent.",
     }
-    from .instruments import categories, query, recommend
+    from .instruments import categories, models, query, recommend
 
     result["instrument_advice"] = recommend(service.settings, s)
     if args.track_id:
@@ -71,12 +71,17 @@ def production_query(service, db, args):
         ]
     if args.include_instrument_categories:
         result["instrument_categories"] = categories(service.settings)
-    if args.preset_search is not None or args.instrument_id is not None:
+    if args.include_instrument_models:
+        result["instrument_models"] = models(service.settings, c.InstrumentModelQuery(
+            instrument_id=args.instrument_id, search=args.preset_search or "",
+            model_id=args.model_id, offset=args.offset, limit=args.limit))
+    if args.preset_search is not None or args.instrument_id is not None or args.model_id is not None:
         result["library"] = query(
             service.settings,
             c.InstrumentQuery(
                 search=args.preset_search or "",
                 instrument_id=args.instrument_id,
+                model_id=args.model_id,
                 offset=args.offset,
                 limit=args.limit,
             ),

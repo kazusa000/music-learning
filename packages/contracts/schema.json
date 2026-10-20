@@ -1733,6 +1733,241 @@
       "title": "InstrumentCategory",
       "type": "object"
     },
+    "InstrumentModelItem": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "instrument",
+            "layer",
+            "synth",
+            "unspecified"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "basis": {
+          "title": "Basis",
+          "type": "string"
+        },
+        "model_spec": {
+          "$ref": "#/$defs/InstrumentModelSpec"
+        },
+        "source": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Source",
+          "type": "object"
+        },
+        "instrument_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Instrument Ids",
+          "type": "array"
+        },
+        "variant_count": {
+          "title": "Variant Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "basis",
+        "model_spec",
+        "source",
+        "instrument_ids",
+        "variant_count"
+      ],
+      "title": "InstrumentModelItem",
+      "type": "object"
+    },
+    "InstrumentModelQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "search": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Search",
+          "type": "string"
+        },
+        "family": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Family"
+        },
+        "instrument_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instrument Id"
+        },
+        "audio_verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Verified"
+        },
+        "model_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Id"
+        },
+        "current_preset_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Preset Id"
+        }
+      },
+      "title": "InstrumentModelQuery",
+      "type": "object"
+    },
+    "InstrumentModelSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": ".*\\S.*",
+          "title": "Key",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": ".*\\S.*",
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "default": "instrument",
+          "enum": [
+            "instrument",
+            "layer",
+            "synth",
+            "unspecified"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "name"
+      ],
+      "title": "InstrumentModelSpec",
+      "type": "object"
+    },
+    "InstrumentModels": {
+      "additionalProperties": false,
+      "properties": {
+        "total": {
+          "title": "Total",
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/InstrumentModelItem"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "next_offset": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Offset"
+        },
+        "current_model_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Current Model Id"
+        }
+      },
+      "required": [
+        "total",
+        "items",
+        "next_offset",
+        "current_model_id"
+      ],
+      "title": "InstrumentModels",
+      "type": "object"
+    },
     "InstrumentQuery": {
       "additionalProperties": false,
       "properties": {
@@ -1793,6 +2028,20 @@
           ],
           "default": null,
           "title": "Audio Verified"
+        },
+        "model_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Id"
         }
       },
       "title": "InstrumentQuery",
@@ -3161,6 +3410,25 @@
         "include_instrument_categories": {
           "default": false,
           "title": "Include Instrument Categories",
+          "type": "boolean"
+        },
+        "model_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Id"
+        },
+        "include_instrument_models": {
+          "default": false,
+          "title": "Include Instrument Models",
           "type": "boolean"
         },
         "capture_job_id": {
@@ -7486,6 +7754,56 @@
       "arguments": "InstrumentQuery",
       "result": {
         "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.models": {
+      "arguments": "InstrumentModelQuery",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/$defs/InstrumentModelItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "current_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Model Id"
+          }
+        },
+        "required": [
+          "total",
+          "items",
+          "next_offset",
+          "current_model_id"
+        ],
+        "title": "InstrumentModels",
         "type": "object"
       },
       "mutates": false

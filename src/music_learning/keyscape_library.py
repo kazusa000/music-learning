@@ -397,6 +397,9 @@ _MODEL_IDS: dict[str, tuple[str, ...]] = {
     "jd-800 crystal rhodes": ("synth-keys",),
 }
 
+FACTORY_MODEL_NAMES = frozenset(_MODEL_IDS) | {"duo combination", "hohner clavinet-pianet duo"}
+
+
 _TYPE_IDS: dict[str, tuple[str, ...]] = {
     "acoustic pianos": ("acoustic-piano",),
     "electric pianos": ("electric-piano",),

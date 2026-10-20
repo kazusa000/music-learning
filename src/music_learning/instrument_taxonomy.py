@@ -156,6 +156,8 @@ def descendants(id):
 
 def classify(entry):
     """An additive view; never mutate legacy catalogs, captured jobs or revisions."""
+    from .instrument_models import with_model
+
     ids = entry.get("instrument_ids")
     basis = entry.get("classification_basis", "catalog-assignment")
     if ids is None:
@@ -173,7 +175,7 @@ def classify(entry):
         raise ValueError("Invalid instrument classification for preset " + entry["id"])
     if len(set(ids)) != len(ids) or ("unclassified" in ids and len(ids) != 1):
         raise ValueError("Ambiguous instrument classification for preset " + entry["id"])
-    return {
+    return with_model({
         **entry,
         "instrument_ids": ids,
         "classification_basis": basis,
@@ -183,7 +185,7 @@ def classify(entry):
             "library_name": entry.get("library_name", entry.get("bank_root", "unknown")),
             "backend": entry["backend"],
         },
-    }
+    })
 
 
 def search_terms(entry):

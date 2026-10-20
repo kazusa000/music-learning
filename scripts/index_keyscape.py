@@ -21,6 +21,8 @@ from music_learning.keyscape_library import read_presets, read_container_member 
 from music_learning.keyscape_presets import build_preset, verify_state  # noqa: E402
 from music_learning.storage import digest  # noqa: E402
 from music_learning.preset_verification import library_lock  # noqa: E402
+from music_learning.instrument_models import keyscape_model  # noqa: E402
+from music_learning.instrument_taxonomy import classify  # noqa: E402
 from native_host import NativeHost  # noqa: E402
 
 LIBRARY_ID = "spectrasonics-keyscape"
@@ -133,11 +135,12 @@ def _build(library, bank, plugin, baseline, copy_manifest, evidence, all_presets
             raise ValueError("Prepared preset changed; retain it and use a new bank version")
         path.write_bytes(preset)
         ids = item["classification"]["instrument_ids"]
-        presets.append(dict(
+        presets.append(classify(dict(
             id=identifier, name=item["name"], library_id=LIBRARY_ID, library_name="Keyscape",
             bank_root=bank_relative, backend="vst3-preset", family=ids[0], instrument_ids=ids,
             classification_basis=item["classification"]["classification_basis"],
             source_category=item["types"], tags=item["models"] + item["subcategories"],
+            model_spec=keyscape_model(item["models"]), model_basis="keyscape-factory-model",
             gm_programs=GM.get(ids[0], []), key_range=[21, 108], default=False, audio_verified=False,
             usage="按原厂键盘型号与奏法选择；复合音色保留其层叠配器。", entrypoint=relative,
             resources={relative: dict(sha256=digest(path), bytes=path.stat().st_size),
@@ -145,7 +148,7 @@ def _build(library, bank, plugin, baseline, copy_manifest, evidence, all_presets
                                                         bytes=(bank / reference["manifest_path"]).stat().st_size)},
             plugin_path=str(plugin), plugin_sha256=plugin_hash, installed_library=reference,
             expected_keyscape=expected,
-        ))
+        )))
     write_json(bank / "factory-inventory.json", dict(schema_version=1, presets=presets))
     kinds = sorted({i for p in presets for i in p["instrument_ids"]})
     requested = set(names) if names else PICKS

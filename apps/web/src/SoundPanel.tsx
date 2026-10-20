@@ -37,7 +37,7 @@ export function SoundPanel({revision,selected,onSelect,enabled,pluginInfo,onChoo
       {change.phase==='error'&&<div className="sound-switch-error"><p role="alert">{change.applied?'音色已应用，声音未就绪：':''}{change.message}</p><button onClick={onRetry}>{change.applied?'重试加载':'重试'}</button></div>}
     </section>}
     {metadataError&&<div className="sound-metadata-error"><p role="alert">{metadataError}</p><button onClick={onReloadMetadata}>重新读取</button></div>}
-    <InstrumentBrowser enabled={enabled&&track?.kind==='instrument'&&completeMetadata&&!busy} currentPreset={instrument?.preset_id} onChoose={choice=>onChoose(choice,instrument?.id??null)}/>
+    <InstrumentBrowser key={selected+':'+(instrument?.id??'empty')} targetName={track?trackName(track):undefined} enabled={enabled&&track?.kind==='instrument'&&completeMetadata&&!busy} currentPreset={instrument?.preset_id} onChoose={choice=>onChoose(choice,instrument?.id??null)}/>
     {!!plugins.length&&<details className="inspector-section sound-effects"><summary>效果与参数</summary><div className="sound-chain">
       {plugins.map(plugin=><details className="plugin-card sound-slot" key={plugin.id} data-plugin-id={plugin.id}><summary><div><strong>{plugin.preset_name??pluginInfo[plugin.id]?.name??'VST3'}</strong></div></summary>
         <div className="parameter-list">{Object.entries(plugin.parameters??{}).slice(0,24).map(([id,value])=><div key={id}><span>{pluginInfo[plugin.id]?.parameters_readback.find(p=>p.id===id)?.name??id}</span><b>{value.toFixed(3)}</b></div>)}</div>

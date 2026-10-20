@@ -401,10 +401,12 @@ class Service:
 
             return dispatch(self, db, op, args, request)
         if op.startswith("instruments."):
-            from .instruments import categories, query, recommend
+            from .instruments import categories, models, query, recommend
 
             if op == "instruments.list":
                 return query(self.settings, args)
+            if op == "instruments.models":
+                return models(self.settings, args)
             if op == "instruments.categories":
                 return categories(self.settings)
             revision = self._revision(db, args)

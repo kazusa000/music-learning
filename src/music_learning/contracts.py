@@ -635,11 +635,40 @@ class CaptureInstrument(Model):
     preset_id: str = Field(min_length=1, max_length=200, pattern=r"^[a-zA-Z0-9_.-]+$")
 
 
+class InstrumentModelSpec(Model):
+    key: str = Field(min_length=1, max_length=256, pattern=r".*\S.*")
+    name: str = Field(min_length=1, max_length=256, pattern=r".*\S.*")
+    kind: Literal["instrument", "layer", "synth", "unspecified"] = "instrument"
+
+
 class InstrumentQuery(Page):
     search: str = Field(default="", max_length=200)
     family: str | None = Field(default=None, max_length=80)
     instrument_id: str | None = Field(default=None, min_length=1, max_length=80)
     audio_verified: bool | None = None
+    model_id: str | None = Field(default=None, min_length=1, max_length=80)
+
+
+class InstrumentModelQuery(InstrumentQuery):
+    current_preset_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class InstrumentModelItem(Model):
+    id: str
+    name: str
+    kind: Literal["instrument", "layer", "synth", "unspecified"]
+    basis: str
+    model_spec: InstrumentModelSpec
+    source: dict[str, str]
+    instrument_ids: list[str]
+    variant_count: int
+
+
+class InstrumentModels(Model):
+    total: int
+    items: list[InstrumentModelItem]
+    next_offset: int | None
+    current_model_id: str | None
 
 
 class InstrumentCategory(Model):
@@ -992,6 +1021,8 @@ class ProductionQuery(RevisionRef, Page):
     preset_search: str | None = Field(default=None, max_length=200)
     instrument_id: str | None = Field(default=None, min_length=1, max_length=80)
     include_instrument_categories: bool = False
+    model_id: str | None = Field(default=None, min_length=1, max_length=80)
+    include_instrument_models: bool = False
     capture_job_id: Id | None = None
     limit: int = Field(default=40, ge=1, le=100)
 
@@ -1144,6 +1175,7 @@ OPERATIONS = {
     "arrangements.get": (DialogueRef, False),
     "production.query": (ProductionQuery, False),
     "instruments.list": (InstrumentQuery, False),
+    "instruments.models": (InstrumentModelQuery, False),
     "instruments.categories": (Empty, False),
     "instruments.recommend": (RecommendInstruments, False),
 }
@@ -1197,6 +1229,7 @@ RESULT_TYPES = {
     "renders.list": list[dict],
     "plugins.presets": list[dict],
     "instruments.list": dict,
+    "instruments.models": InstrumentModels,
     "instruments.categories": InstrumentCategories,
     "instruments.recommend": dict,
     "audition.get": dict,

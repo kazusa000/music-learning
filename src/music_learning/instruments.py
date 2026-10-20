@@ -22,6 +22,11 @@ def catalog(settings):
     presets = [classify(entry) for entry in data["presets"]]
     if len({p["id"] for p in presets}) != len(presets):
         raise ValueError("Duplicate preset ids across installed libraries; use stable unique ids")
+    models = {}
+    for p in presets:
+        signature = (p["model"]["name"], p["model"]["kind"], p["source"])
+        if models.setdefault(p["model"]["id"], signature) != signature:
+            raise ValueError("Conflicting instrument model metadata: " + p["model"]["id"])
     return presets
 
 
@@ -64,17 +69,24 @@ def verify_runtime(root, entry):
             raise ValueError("Installed plugin runtime dependency changed: " + relative)
 
 
-def query(settings, args):
+def filtered(settings, args, presets):
     allowed = descendants(args.instrument_id) if args.instrument_id else None
+    if args.model_id and not any(p["model"]["id"] == args.model_id for p in presets):
+        raise ValueError("Unknown instrument model: " + args.model_id)
     found = [
         p
-        for p in catalog(settings)
+        for p in presets
         if (not args.family or p["family"] == args.family)
+        and (not args.model_id or p["model"]["id"] == args.model_id)
         and (allowed is None or bool(allowed.intersection(p["instrument_ids"])))
         and (args.audio_verified is None or p["audio_verified"] == args.audio_verified)
         and args.search.casefold()
         in (
             p["name"]
+            + " "
+            + p["model"]["name"]
+            + " "
+            + p["variant_name"]
             + " "
             + p["id"]
             + " "
@@ -86,11 +98,44 @@ def query(settings, args):
         ).casefold()
     ]
     found.sort(key=lambda p: (not p["audio_verified"], not p.get("default"), p["name"].casefold(), p["id"]))
+    return found
+
+
+def query(settings, args):
+    found = filtered(settings, args, catalog(settings))
     return {
         "total": len(found),
         "items": [public(p) for p in found[args.offset : args.offset + args.limit]],
         "next_offset": args.offset + args.limit if args.offset + args.limit < len(found) else None,
     }
+
+
+def models(settings, args):
+    presets = catalog(settings)
+    matching = {p["model"]["id"] for p in filtered(settings, args, presets)}
+    # Variant search finds a model, but its badge counts everything that will
+    # open under the current category/availability filter.
+    found = filtered(settings, args.model_copy(update={"search": ""}), presets)
+    groups = {}
+    for p in found:
+        model = p["model"]
+        group = groups.setdefault(
+            model["id"],
+            dict(**model, model_spec=p["model_spec"], source=p["source"], instrument_ids=[], variant_count=0),
+        )
+        group["variant_count"] += 1
+        group["instrument_ids"] = sorted(set(group["instrument_ids"]) | set(p["instrument_ids"]))
+    values = sorted(
+        [m for m in groups.values() if m["id"] in matching],
+        key=lambda m: (m["name"].casefold(), m["source"]["library_id"], m["id"]),
+    )
+    current = next((p["model"]["id"] for p in presets if p["id"] == args.current_preset_id), None)
+    return dict(
+        total=len(values),
+        items=values[args.offset : args.offset + args.limit],
+        next_offset=args.offset + args.limit if args.offset + args.limit < len(values) else None,
+        current_model_id=current,
+    )
 
 
 def categories(settings):

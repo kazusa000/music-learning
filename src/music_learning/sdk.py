@@ -205,15 +205,50 @@ class Client:
         return self.call("instruments.categories")
 
     def instruments(
-        self, search="", *, instrument_id=None, audio_verified=None, family=None, offset=0, limit=100
+        self,
+        search="",
+        *,
+        instrument_id=None,
+        model_id=None,
+        audio_verified=None,
+        family=None,
+        offset=0,
+        limit=100,
     ):
         return self.call(
             "instruments.list",
             dict(
                 search=search,
                 instrument_id=instrument_id,
+                model_id=model_id,
                 audio_verified=audio_verified,
                 family=family,
+                offset=offset,
+                limit=limit,
+            ),
+        )
+
+    def instrument_models(
+        self,
+        search="",
+        *,
+        instrument_id=None,
+        model_id=None,
+        family=None,
+        current_preset_id=None,
+        audio_verified=None,
+        offset=0,
+        limit=100,
+    ):
+        return self.call(
+            "instruments.models",
+            dict(
+                search=search,
+                instrument_id=instrument_id,
+                model_id=model_id,
+                family=family,
+                current_preset_id=current_preset_id,
+                audio_verified=audio_verified,
                 offset=offset,
                 limit=limit,
             ),
