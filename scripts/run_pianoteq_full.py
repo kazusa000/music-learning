@@ -33,7 +33,8 @@ def formal_snapshot(database):
             encoded = sorted(json.dumps(row, sort_keys=True, default=str) for row in rows)
             result[table] = dict(count=len(rows), sha256=hashlib.sha256(
                 json.dumps(encoded).encode()).hexdigest())
-        result["heads"] = db.execute("select id,current_revision from projects order by id").fetchall()
+        result["heads"] = [list(row) for row in db.execute(
+            "select id,current_revision from projects order by id").fetchall()]
         return result
 
 
@@ -69,7 +70,7 @@ def verifier_process(command, **kwargs):
         raise
 
 
-def start():
+def start(resume_request=None):
     from music_learning.instrument_localization import prepare_entries
     from intake_pianoteq912 import select_entries, LIBRARY
 
@@ -87,7 +88,15 @@ def start():
         inventory_path = bank / "full-factory-inventory.json"
         inventory = json.loads(inventory_path.read_bytes())
         catalog = json.loads((settings.instrument_library / "catalog.json").read_bytes())
-        entries = prepare_entries(select_entries(inventory, catalog, remaining=True), bank)
+        origin = json.loads(Path(resume_request).read_bytes()) if resume_request else None
+        if origin:
+            # A new supervision receipt may fix orchestration, but audio inputs and
+            # verification implementation must still match the original queue.
+            check_pins(dict(pins={p: sha for p, sha in origin["pins"].items()
+                                  if Path(p).resolve() != Path(__file__).resolve()}))
+            Path(origin["run_directory"]).relative_to(bank / "verification-runs")
+        entries = prepare_entries(select_entries(inventory, catalog, remaining=True,
+            resume_ids=set(origin["ids"]) if origin else None), bank)
         if not entries:
             raise ValueError("No unpublished Pianoteq presets remain")
         label = time.strftime("%Y%m%d-%H%M%S") + "-remaining-" + uuid.uuid4().hex[:8]
@@ -111,17 +120,21 @@ def start():
                  bank / "preparation-evidence/host/ml_audio_host.exe"]
         report_doc = "docs/benchmarks/pianoteq-full-verification.md"
         request = dict(config=str(config_path), bank=str(bank), database=str(settings.path("projects.sqlite3")),
-                       run_directory=str(bank / "verification-runs" / label),
+                       run_directory=origin["run_directory"] if origin else str(bank / "verification-runs" / label),
                        ids=[p["id"] for p in entries],
-                       previously_admitted=[p["id"] for p in catalog["presets"]],
-                       pianoteq_before=sum(p.get("library_id") == LIBRARY for p in catalog["presets"]),
+                       previously_admitted=origin["previously_admitted"] if origin else [p["id"] for p in catalog["presets"]],
+                       pianoteq_before=origin["pianoteq_before"] if origin else sum(p.get("library_id") == LIBRARY for p in catalog["presets"]),
                        pins={str(p): digest(p) for p in paths}, report_document=report_doc,
                        report_document_sha256=digest(ROOT / report_doc),
                        branch=subprocess.check_output(["git", "branch", "--show-current"], cwd=ROOT,
                                                       text=True).strip())
         request_path = directory / "request.json"
+        if origin:
+            request["resume_of"] = str(Path(resume_request).resolve())
         atomic_json(request_path, request)
-        atomic_json(directory / "formal-before.json", formal_snapshot(request["database"]))
+        baseline = (json.loads(Path(resume_request).with_name("formal-before.json").read_bytes())
+                    if origin else formal_snapshot(request["database"]))
+        atomic_json(directory / "formal-before.json", baseline)
         with (directory / "supervisor.log").open("ab") as log:
             process = subprocess.Popen([sys.executable, "-u", str(Path(__file__).resolve()), str(request_path)],
                 cwd=ROOT, env=dict(os.environ, PYTHONPATH=str(ROOT / "src")), stdout=log,
@@ -244,7 +257,9 @@ def supervise(request_path):
 if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--start":
         start()
+    elif len(sys.argv) == 3 and sys.argv[1] == "--resume":
+        start(sys.argv[2])
     elif len(sys.argv) == 2:
         supervise(sys.argv[1])
     else:
-        raise SystemExit("Usage: run_pianoteq_full.py --start | REQUEST.json")
+        raise SystemExit("Usage: run_pianoteq_full.py --start | --resume REQUEST.json | REQUEST.json")

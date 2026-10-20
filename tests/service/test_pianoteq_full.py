@@ -66,7 +66,7 @@ def test_new_factory_names_are_bilingual_without_changing_originals(model, name,
     assert prepare_import(classify(result))["display_name"] == result["display_name"]
 
 
-def test_supervisor_pins_detect_changes_and_snapshot_is_read_only(service, tmp_path):
+def test_supervisor_pins_detect_changes_and_snapshot_is_read_only(service, project, tmp_path):
     source = tmp_path / "fixed-host.exe"
     source.write_bytes(b"fixed")
     request = dict(pins={str(source): digest(source)})
@@ -75,6 +75,8 @@ def test_supervisor_pins_detect_changes_and_snapshot_is_read_only(service, tmp_p
     with pytest.raises(ValueError, match="Frozen validation input changed"):
         check_pins(request)
     before = formal_snapshot(service.database.path)
+    assert before["heads"]
+    assert before == json.loads(json.dumps(before))
     assert before == formal_snapshot(service.database.path)
     assert before["jobs"]["count"] == 0
 
