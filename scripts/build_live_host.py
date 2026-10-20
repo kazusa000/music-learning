@@ -1,6 +1,8 @@
 """Build the additive live host against the pinned, already built JUCE runtime."""
 
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -12,8 +14,16 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-root", type=Path, default=ROOT / "runtime")
+    parser.add_argument("--runtime-library", type=Path)
     args = parser.parse_args()
     runtime = args.runtime_root.resolve()
+    library = args.runtime_library or runtime / "build/msvc/ml_audio_runtime.lib"
+    profile = ROOT / "runtime/live-host-build.local.json"
+    if args.runtime_library is None and profile.is_file():
+        pinned = json.loads(profile.read_bytes())
+        library = Path(pinned["runtime_library"])
+        if hashlib.sha256(library.read_bytes()).hexdigest() != pinned["sha256"]:
+            raise SystemExit("Pinned live audio runtime changed; validate Keyscape PCM before replacing it")
     env = {k.upper(): v for k, v in os.environ.items()}
     setup = runtime / "toolchain/msvc/setup_x64.bat"
     for line in setup.read_text().splitlines():
@@ -48,11 +58,12 @@ def main():
             "/utf-8",
             *["/D" + d for d in definitions],
             "/I" + str(runtime / "third-party/JUCE/modules"),
+            "/I" + str(ROOT / "native/include"),
             str(ROOT / "native/live-track/Main.cpp"),
             "/Fo" + str(output / "live.obj"),
             "/Fe" + str(output / "ml_track_host.exe"),
             "/link",
-            str(runtime / "build/msvc/ml_audio_runtime.lib"),
+            str(library.resolve()),
             *[
                 n + ".lib"
                 for n in [
