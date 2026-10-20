@@ -40,3 +40,4 @@
 - TypeScript、前端构建、契约漂移检查、修改文件 Ruff、audition-sync / turn-status / transport-start 单元验证通过。没有新契约/迁移。
 - 独立 8774 浏览器工程：8 秒源音频，原生实际生成 2 秒尾音。播放至 8.378 秒后暂停，保存为 8 秒，无错误横幅；9 秒循环终点禁用提交，恢复 8 秒后可提交。工程 head 与 1 个既有任务不变。证据 `data/benchmarks/feedback-tail/{browser.json,after-pause.json,paused.png}`；已关闭测试页与服务。
 - 此验证证明时钟、任务预算和反馈逻辑，不代表正式 C7 已更换，也不代表人工音乐听辨通过。
+- 代码提交 `82d7edf` 已快进合入原分支 `feat/user-instrument-intake`，重新构建并启动正式应用。部署前后 13 工程 head/快照摘要、64 个任务及 10 项受保护文件摘要一致；无活动正式任务/对话。Keyscape 原监督进程 PID 31420、创建时间保持一致，仍在运行。回读证据 `data/benchmarks/feedback-tail/deployment-{before,after}.json`。
