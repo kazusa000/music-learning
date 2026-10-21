@@ -1,9 +1,13 @@
 # Pianoteq 剩余预设全量验证
 
-用户于 2026-10-21 授权剩余 763 款全部自动验证，通过项立即入库并加入试听预热，保留原 34 款和 Keyscape 455 款。
+本批 763 款均已得到结果，通过 763，失败 0。
 
-本文件为本批结果位置；完整结束后，归属明确的监督进程会在分支与本文未被外部改动时写入真实统计并单独提交。未得到终态前，不能把 763 款写成全部通过。
+此前 34 款保留；当前全库可选 1252 款。本批通过项 763 款已加入共享试听队列，不能把排队等同于试听全部完成。
 
-当前请求入口为忽略的 `runtime/pianoteq-full-job.local.json`，其中 `request` 指向 H 指定库内 `verification-jobs` 的唯一请求。运行状态、PID/创建时间、心跳、失败 JSON/CSV、正式九表快照与 Git 结果保存在同一任务目录；实际逐款状态读取请求所指 `verification-runs` 的 `queue.json` 和 `progress.json`。
+首次与重开发声、参数、完整程序及跨乐器身份校验保持；失败项保留原始诊断，不自动反复重试。型号/变体沿用中文（原名），产品名保持原名。
 
-维护入口、恢复规则、双语与预热衔接见 [Pianoteq 接入文档](../41-pianoteq-integration.md) 的后续全量段。
+正式九表与 head 前后相同：False；false 时按外部实际变化记录，不覆写旧基线。
+
+验证队列/原始音频：`H:\music\Sound Library\Pianoteq 9.1.2\verification-runs\20261021-013846-remaining-ba4bfb4d`。
+
+监督状态、失败 JSON/CSV、前后快照：`H:\music\Sound Library\Pianoteq 9.1.2\verification-jobs\20261021-014606-remaining-edead312`。
