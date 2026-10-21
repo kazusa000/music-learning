@@ -1,5 +1,7 @@
 # 第一阶段技术方案
 
+> 2026-10-21：本文件保留早期架构历史。当前已实现导入以[双编排](50-original-and-reconstruction.md)为准；下一阶段采用[本地DAW架构](architecture/native-daw.md)，顺序见[N0–N7](plans/native-daw-migration.md)。下文移除SheetSage、浏览器掌握播放等旧约定均不作为当前重构方向。
+
 2026-10-21 当前导入方案已改为 MuScriptor large＋Beat This，移除分轨、和弦和曲式，保留速度小节网格；旧工程清空与并发保护见 [新流程](47-large-beat-import.md)。下文历史阶段描述以该文覆盖。
 
 2026-10-20 型号目录更新：乐器类别→库内稳定型号→预设变体，前端确认后复用既有加载链路。API/SDK/CLI、AI 查询和后续导入共用 `model_spec`，详见 [型号与变体](44-instrument-models-and-variants.md)。

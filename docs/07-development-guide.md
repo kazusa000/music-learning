@@ -1,5 +1,7 @@
 # 开发与 Git 约定
 
+> 2026-10-21：目录职责和后续迁移以[仓库目录约定](development/repository-layout.md)为准；新引擎实施顺序见[迁移计划](plans/native-daw-migration.md)。下文早期目录树保留作历史说明，不表示这些目录均应创建或搬移。
+
 ## 当前仓库
 
 根目录为 `E:\Intrest\music-learning`。P1 已建立下列实际模块；共享领域、SDK/CLI 实现在 `src/music_learning`，packages 存放生成契约与 SDK 入口文档。运行见 [P1 工程服务](14-project-service.md)，P0 原生接口继续见 [原生宿主](11-native-host.md)。
