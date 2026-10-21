@@ -159,10 +159,13 @@ export class Transport {
     for(const id of this.buffers.keys())if(!keep.has(id)&&!this.voices.has(id)){this.buffers.delete(id);this.levels.delete(id);}
     await Promise.all([0,1].map(async()=>{while(queue.length&&generation===this.warmGeneration&&!this.disposed){const id=queue.shift()!;try{await this.buffer(id);}catch(error){console.warn('Audio preload:',error);}}}));
   }
-  voice(id:string,when:number,position:number,first?:{buffer:AudioBuffer;sample:number}){
+  voice(id:string,when:number,position:number,first?:{buffer:AudioBuffer;sample:number},prepared?:AudioBuffer){
     const live=this.channels.get(id)?.live;if(live){this.liveVoice(id,live,first?{...first,when}:undefined);return;}
     this.stopStream(id);
-    const context=this.context!,buffer=this.buffers.get(id)!;
+    // Cache eviction (including background warm-up) may occur after decoding.
+    // The play transaction owns its decoded buffers until WebAudio owns them.
+    const context=this.context!,buffer=prepared??this.buffers.get(id);
+    if(!buffer)throw new Error('音轨音频尚未准备完成，请重试播放。');
     const source=context.createBufferSource(),gain=context.createGain();source.buffer=buffer;
     source.loop=this.loop;source.loopStart=this.loopStart;source.loopEnd=this.loopEnd;
     gain.gain.value=0;
@@ -251,22 +254,26 @@ export class Transport {
       const references=[...new Set(ids.map(id=>this.families.get(id)).filter((id):id is string=>!!id))];
       await Promise.all(references.filter(id=>this.matchedGains[id]===undefined&&!this.levels.has(id)).map(id=>this.buffer(id)));
     }
-    const buffers = await Promise.all(ids.map(id => {const live=this.channels.get(id)?.live;return live?Promise.resolve({duration:live.duration_samples/live.sample_rate}):this.buffer(id);}));
+    const prepared = await Promise.all(ids.map(async id => {
+      const live=this.channels.get(id)?.live;
+      if(live)return {id,duration:live.duration_samples/live.sample_rate,buffer:undefined};
+      const buffer=await this.buffer(id);return {id,duration:buffer.duration,buffer};
+    }));
     if (generation !== this.generation || this.disposed) return;
     const primed=!(preserve&&this.playing)?await this.primeLive(ids,loop.enabled&&offset>=loop.end?loop.start:offset,loop):[];
     if(generation!==this.generation||this.disposed)return;
     const context = this.context!, when = context.currentTime+.025;
     this.playLatencyMs=performance.now()-this.playRequestedAt;
     if(preserve&&this.playing&&sameLoop){
-      this.duration=Math.max(...buffers.map(buffer=>buffer.duration));
+      this.duration=Math.max(...prepared.map(part=>part.duration));
       for(const timeline of this.timelines)timeline.duration=this.duration;
       const position=this.at(when);
       for(const id of this.streams.keys())if(!ids.includes(id)){this.stopStream(id);const voice=this.voices.get(id);voice?.gain.disconnect();voice?.meter?.disconnect();this.voices.delete(id);}
-      for(const id of ids){const old=this.voices.get(id);if(!old||old.assetId!==(this.channels.get(id)?.assetId??id)){if(!this.channels.get(id)?.live){try{old?.source.stop(when);}catch{/* live placeholder */}}this.voice(id,when,position);}}
+      for(const part of prepared){const id=part.id,old=this.voices.get(id);if(!old||old.assetId!==(this.channels.get(id)?.assetId??id)){if(!this.channels.get(id)?.live){try{old?.source.stop(when);}catch{/* live placeholder */}}this.voice(id,when,position,undefined,part.buffer);}}
       this.route(ids);this.switches.push({at:performance.now(),ids:[...ids],reused:true});if(this.switches.length>100)this.switches.shift();return;
     }
     const position = preserve && this.playing ? this.at(when) : offset;
-    this.duration = Math.max(...buffers.map(b => b.duration));
+    this.duration = Math.max(...prepared.map(part=>part.duration));
     this.loop = loop.enabled;this.loopStart = loop.start;this.loopEnd = loop.end;
     this.offset = this.loop && position >= this.loopEnd ? this.loopStart : Math.min(position,Math.max(0,this.duration-.001));
     for(const source of this.sources){try{source.stop(when);}catch{ /* already ended */ }}
@@ -275,7 +282,7 @@ export class Transport {
     // Publish the common clock before a live channel requests its first chunk.
     this.started=when;this.playing=true;
     this.timelines.push({when,offset:this.offset,loop:this.loop,start:this.loopStart,end:this.loopEnd,duration:this.duration});
-    for(const id of ids)this.voice(id,when,this.offset,primed.find(part=>part.id===id));
+    for(const part of prepared)this.voice(part.id,when,this.offset,primed.find(first=>first.id===part.id),part.buffer);
     this.route(ids);this.switches.push({at:performance.now(),ids:[...ids],reused:false});
     this.started = when;this.playing = true;
     if(this.timelines.length>12)this.timelines.shift();
