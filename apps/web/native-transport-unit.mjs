@@ -16,7 +16,7 @@ const api=async(operation,args={})=>{
   if(operation==='engine.claim')state={...state,owner_id:args.owner_id};
   if(operation==='engine.monitor'){assert.equal(args.generation,state.generation);state.monitor={...state.monitor,...args.tracks};}
   if(operation==='engine.transport'){assert.equal(args.generation,state.generation);state={...state,...args};}
-  if(operation==='engine.close'){assert.equal(args.owner_id,state.owner_id);state={status:'stopped'};}
+  if(operation==='engine.close'&&args.owner_id===state.owner_id)state={status:'stopped'};
   inflight--;return structuredClone(state);
 };
 const transport=new NativeTransport(api),target={project:'p',revision:'r1',view:'arrangement'};
@@ -32,6 +32,6 @@ assert.equal(transport.playing,true);
 // A late unmount must not close a different controller's output.
 state.owner_id='another';
 await transport.close();
-assert(!operations.some(x=>x.operation==='engine.close'));
+assert.equal(state.owner_id,'another','Old owner release closed new controller');
 assert(!operations.some(x=>x.operation.includes('chunk')||x.operation==='playback.get'));
 console.log('Native control serialization, revision update, loop preservation, monitor fields and stale-owner close passed');

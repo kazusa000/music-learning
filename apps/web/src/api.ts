@@ -10,7 +10,7 @@ export async function result<T>(response: Response): Promise<T> {
 }
 
 export async function call<T>(operation: Operation, args: object = {}, expectedRevision?: string, write = false): Promise<T> {
-  return result<T>(await fetch('/v1/commands', {method: 'POST', keepalive:operation==='playback.live.close', headers: {'Content-Type': 'application/json'},
+  return result<T>(await fetch('/v1/commands', {method: 'POST', keepalive:['playback.live.close','engine.close','engine.preview'].includes(operation), headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({schema_version: 1, operation, arguments: args, expected_revision: expectedRevision ?? null,
       idempotency_key: write ? crypto.randomUUID().replaceAll('-', '') : null})}));
 }

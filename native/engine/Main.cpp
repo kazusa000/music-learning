@@ -6,6 +6,7 @@
 #include <future>
 #include <thread>
 #include <vector>
+#include <set>
 #include "FileGraph.h"
 
 using namespace juce;
@@ -27,6 +28,7 @@ class DeviceEngine final : public AudioIODeviceCallback {
     int previewSequence=0;
     std::atomic<float> previewVolume{.7f};
     mlengine::PluginPool pluginPool;
+    std::set<String> warmKeys;
     std::atomic<bool> filePlaying{false};
     std::atomic<bool> callbackBusy{false};
     int generation = 0;
@@ -93,6 +95,9 @@ public:
             {"preview_id",previewId},{"volume",previewVolume.load()}}));
         fields->setProperty("generation", generation);
         fields->setProperty("owner_id",controlOwner);
+        Array<var> retained;int64 warmBytes=0;
+        for(const auto& source:pluginPool){retained.add(source.second->programPath());if(source.second.use_count()==1)warmBytes+=(int64)sizeof(mlengine::PluginRing);}
+        fields->setProperty("retained_programs",var(retained));
         if (graph) {
             fields->setProperty("project_id", graph->manifest["project_id"]);
             fields->setProperty("revision_id", graph->manifest["revision_id"]);
@@ -102,7 +107,7 @@ public:
             fields->setProperty("render_position_sample", (int64)graph->playedSample.load());
             fields->setProperty("source_sample_rate", graph->sourceRate);
             fields->setProperty("duration_samples", (int64)graph->songDuration);
-            fields->setProperty("cache_bytes", graph->cacheBytes());
+            fields->setProperty("cache_bytes", graph->cacheBytes()+warmBytes);
             fields->setProperty("consumed_device_frames", (int64)(graph->read.load()*graph->frames));
             fields->setProperty("underruns", (int64)graph->underruns.load());
             fields->setProperty("loop", graph->looping);
@@ -122,6 +127,8 @@ public:
     }
     var command(const var& request) {
         const auto action = get(request, "action").toString();
+        if(request.hasProperty("owner_id")&&action!="open"&&action!="claim"&&action!="release"&&get(request,"owner_id").toString()!=controlOwner)
+            throw std::runtime_error("Playback window no longer owns output");
         if(request.hasProperty("expected_generation") && (int)get(request,"expected_generation")!=generation)
             throw std::runtime_error("Engine generation changed");
         if (action == "status" || action == "hello") return status();
@@ -225,7 +232,15 @@ public:
                 graph.swap(ready); ++generation; toneCommand.store(-1);
                 device.addAudioCallback(this);
                 ready.reset();
-                for(auto it=pluginPool.begin();it!=pluginPool.end();)if(it->second.use_count()==1)it=pluginPool.erase(it);else ++it;
+                if(value["view"].toString()=="arrangement") {
+                    warmKeys.clear();
+                    if(auto* items=value["tracks"].getArray())for(const auto& item:*items)if(item.hasProperty("plugin_project_path"))
+                        warmKeys.insert(value["project_id"].toString()+":"+item["id"].toString()+":"+item["runtime_signature"].toString());
+                }
+                for(auto it=pluginPool.begin();it!=pluginPool.end();) {
+                    const bool sameProject=it->first.startsWith(value["project_id"].toString()+":");
+                    if(it->second.use_count()==1&&(!sameProject||!warmKeys.count(it->first)))it=pluginPool.erase(it);else ++it;
+                }
             }
             if(action=="open")controlOwner=get(request,"owner_id").toString();
             filePlaying.store(play); return status();

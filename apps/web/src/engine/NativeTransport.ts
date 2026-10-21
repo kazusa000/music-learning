@@ -25,7 +25,12 @@ export class NativeTransport {
   private polling=false;
   private target:Target|null=null;
   private owner=crypto.randomUUID().replaceAll('-','');
+  private attached=false;
+  private pagehide=()=>{void this.close();};
+  private attach(){if(!this.attached&&typeof window!=='undefined'){this.attached=true;window.addEventListener('pagehide',this.pagehide);}}
   private offsetOverride:number|null=null;
+  private pendingMonitor:Record<string,MixValues>={};
+  private monitorFlush:Promise<void>|null=null;
   constructor(private invoke:Invoke=call){}
   get playing(){return !!this.state.playing;}
   get ownsOutput(){return this.state.owner_id===this.owner;}
@@ -53,6 +58,7 @@ export class NativeTransport {
     this.queue=next;return next;
   }
   startPolling(){
+    this.attach();
     if(this.polling||this.disposed)return;this.polling=true;
     const poll=async()=>{
       if(!this.polling||this.disposed)return;
@@ -61,19 +67,41 @@ export class NativeTransport {
     };void poll();
   }
   private async ensure(target:Target,force=false){
-    const state=await this.invoke<EngineState>('engine.status');this.accept(state);
+    for(let attempt=0;;attempt++){
+      try{return await this.ensureOnce(target,force);}catch(error){
+        if(attempt||this.disposed||!this.conflict(error))throw error;
+      }
+    }
+  }
+  private conflict(error:unknown){return /会话已变更|generation changed|no longer owns output/i.test((error as Error).message??'');}
+  private async controlled(action:'engine.transport'|'engine.monitor',values:Record<string,unknown>){
+    for(let attempt=0;;attempt++){
+      try{this.accept(await this.invoke<EngineState>(action,{engine_session:this.state.engine_session,generation:this.state.generation,owner_id:this.owner,...values}));return;}
+      catch(error){
+        if(attempt||this.disposed||!this.conflict(error))throw error;
+        this.accept(await this.invoke<EngineState>('engine.status'));
+        if(this.state.project_id!==this.target?.project||this.state.view!==this.target?.view)throw error;
+        if(!this.ownsOutput)this.accept(await this.invoke<EngineState>('engine.claim',{engine_session:this.state.engine_session,generation:this.state.generation,owner_id:this.owner}));
+      }
+    }
+  }
+  private async ensureOnce(target:Target,force=false){
+    let state=await this.invoke<EngineState>('engine.status');this.accept(state);
+    if(state.project_id===target.project&&state.view===target.view&&state.owner_id!==this.owner){
+      this.accept(await this.invoke<EngineState>('engine.claim',{engine_session:state.engine_session,generation:state.generation,owner_id:this.owner}));state=this.state;
+    }
     if(force||state.project_id!==target.project||state.view!==target.view||state.status==='stopped'||state.status==='closed'){
       this.accept(await this.invoke<EngineState>('engine.open',{project_id:target.project,revision_id:target.revision,view:target.view,
         owner_id:this.owner,position_sample:state.project_id===target.project?(state.position_sample??0):0,playing:state.project_id===target.project&&state.playing}));
     }else if(state.revision_id!==target.revision){
       this.accept(await this.invoke<EngineState>('engine.update',{project_id:target.project,revision_id:target.revision,view:target.view,
-        engine_session:state.engine_session,generation:state.generation}));
+        engine_session:state.engine_session,generation:state.generation,owner_id:this.owner}));
     }
     if(this.state.owner_id!==this.owner)this.accept(await this.invoke<EngineState>('engine.claim',{
       engine_session:this.state.engine_session,generation:this.state.generation,owner_id:this.owner}));
     this.target=target;
   }
-  open(target:Target,force=false){return this.serialize(()=>this.ensure(target,force));}
+  open(target:Target,force=false){this.attach();return this.serialize(()=>this.ensure(target,force));}
   async waitTrack(target:Target,track:string,retry=false){
     await this.open(target,retry);const deadline=Date.now()+60000;
     while(!this.disposed&&Date.now()<deadline){
@@ -87,36 +115,47 @@ export class NativeTransport {
     throw new Error('音轨载入超时，可以重试');
   }
   apply(target:Target,values:{playing:boolean;sample?:number;loop?:boolean;start?:number;end?:number},monitor?:Record<string,MixValues>){
+    this.attach();
     return this.serialize(async()=>{
       await this.ensure(target);
       if(monitor&&Object.keys(monitor).length)await this.monitorNow(monitor);
       const state=this.state;
       const changedLoop=values.loop!==undefined&&(values.loop!==state.loop||values.start!==state.loop_start_sample||values.end!==state.loop_end_sample);
-      this.accept(await this.invoke<EngineState>('engine.transport',{engine_session:state.engine_session,generation:state.generation,
+      await this.controlled('engine.transport',{
         playing:values.playing,...(values.sample!==undefined?{position_sample:values.sample}:{}),
-        ...(changedLoop?{loop:values.loop,loop_start_sample:values.start,loop_end_sample:values.end}:{})}));
+        ...(changedLoop?{loop:values.loop,loop_start_sample:values.start,loop_end_sample:values.end}:{})});
     });
   }
   private async monitorNow(tracks:Record<string,MixValues>){
+    this.accept(await this.invoke<EngineState>('engine.status'));
+    if(this.target&&(this.state.project_id!==this.target.project||this.state.view!==this.target.view))return;
+    if(this.target&&!this.ownsOutput)this.accept(await this.invoke<EngineState>('engine.claim',{engine_session:this.state.engine_session,generation:this.state.generation,owner_id:this.owner}));
     const available=new Set(Object.keys(this.state.monitor??{}));
     const filtered=Object.fromEntries(Object.entries(tracks).filter(([id])=>available.has(id)).map(([id,values])=>
       [id,Object.fromEntries(Object.entries(values).filter(([key])=>['gain_db','pan','mute','solo'].includes(key)))]));
     if(!Object.keys(filtered).length)return;
-    this.accept(await this.invoke<EngineState>('engine.monitor',{engine_session:this.state.engine_session,generation:this.state.generation,tracks:filtered}));
+    await this.controlled('engine.monitor',{tracks:filtered});
   }
-  monitor(tracks:Record<string,MixValues>){return this.serialize(()=>this.monitorNow(tracks));}
+  monitor(tracks:Record<string,MixValues>){
+    for(const [id,values] of Object.entries(tracks))this.pendingMonitor[id]={...this.pendingMonitor[id],...values};
+    if(!this.monitorFlush)this.monitorFlush=this.serialize(async()=>{
+      while(Object.keys(this.pendingMonitor).length){const pending=this.pendingMonitor;this.pendingMonitor={};await this.monitorNow(pending);}
+    }).finally(()=>{this.monitorFlush=null;});
+    return this.monitorFlush;
+  }
   pause(){if(this.disposed)return;void this.serialize(async()=>{
     this.accept(await this.invoke<EngineState>('engine.status'));
     if(!this.ownsOutput)return;
     if(!this.state.engine_session)return;
-    this.accept(await this.invoke<EngineState>('engine.transport',{engine_session:this.state.engine_session,generation:this.state.generation,playing:false}));
+    await this.controlled('engine.transport',{playing:false});
   }).catch(error=>this.onError?.(error));}
   async close(){
-    this.polling=false;if(this.timer)clearTimeout(this.timer);
-    await this.queue.catch(()=>{});
     if(this.disposed)return;this.disposed=true;
-    // Closing a stale view must not close another project's active engine.
-    const state=await this.invoke<EngineState>('engine.status').catch(()=>null);
-    if(state?.owner_id===this.owner)await this.invoke('engine.close',{engine_session:state.engine_session,generation:state.generation,owner_id:this.owner}).catch(()=>{});
+    this.polling=false;if(this.timer)clearTimeout(this.timer);
+    if(this.attached&&typeof window!=='undefined')window.removeEventListener('pagehide',this.pagehide);
+    // Register closure before awaiting in-flight preparation. The server rejects
+    // later commands from this owner, even when it never obtained a session.
+    const closing=this.invoke('engine.close',{owner_id:this.owner}).catch(()=>{});
+    await this.queue.catch(()=>{});await closing;
   }
 }

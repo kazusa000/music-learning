@@ -27,6 +27,7 @@ try{
  await page.getByLabel('试听静音 1',{exact:true}).click();
  await until(async()=>(await call('engine.status')).meters[fixture.tracks[0]]===0,'Mute did not silence');
  await page.getByLabel('独奏 2',{exact:true}).click();
+ await until(async()=>(await call('engine.status')).monitor[fixture.tracks[1]].solo,'Solo did not apply');
  let state=await call('engine.status');assert(state.monitor[fixture.tracks[1]].solo);
  await page.getByLabel('独奏 2',{exact:true}).click();
  await page.getByLabel('试听静音 1',{exact:true}).click();
@@ -40,7 +41,7 @@ try{
  await call('audition.set',{project_id:project,state:{revision_id:revision.id,mode:'mix',position_sample:441000,playing:true}},revision.id);
  await until(async()=>+await page.locator('.studio').getAttribute('data-position')>=10,'SDK seek did not reach UI');
  report.checks.push('SDK transport intent applies on shared native owner');
- const switchPosition=(await call('engine.status')).position_sample;
+ const switchState=await call('engine.status'),switchPosition=switchState.position_sample;
  await page.locator('.mode-switch').getByRole('button',{name:'原曲',exact:true}).click();
  await until(async()=>{const s=await call('engine.status');return s.view==='original'&&s.playing&&s.position_sample>=switchPosition-4410;},'Original switch lost transport');
  assert.equal(await page.locator('.track-card').count(),3);assert(await page.getByLabel('独奏 2',{exact:true}).isDisabled());
@@ -50,6 +51,7 @@ try{
  await page.screenshot({path:path.join(root,'original-4k.png')});
  await page.locator('.mode-switch').getByRole('button',{name:/重建/}).click();
  await until(async()=>{const s=await call('engine.status');return s.view==='arrangement'&&s.status==='ready'&&s.playing;},'Reconstruction did not resume');
+ for(const [id,plugin] of Object.entries(switchState.plugins))assert.equal((await call('engine.status')).plugins[id].pid,plugin.pid,'A/B switch restarted a warm plugin');
  report.checks.push('Original/reconstruction switch, two audio tracks and silent melody');
  const original=await call('engine.status'),note={...revision.snapshot.notes[0],end_sample:44100};
  revision=await call('edits.apply',{project_id:project,scope:{track_ids:[fixture.tracks[0]],start_sample:0,end_sample:44100*32},operations:[{op:'put',collection:'notes',entity:note}],description:'Native UI fixture edit'},revision.id);

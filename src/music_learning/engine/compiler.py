@@ -1,8 +1,29 @@
 """Compile existing exact/compatible file sources into a derived device graph."""
 import hashlib
 
-from ..playback import plan, wav_extent
+from sqlalchemy import select
+
+from ..playback import wav_extent
 from ..service import canonical
+from ..contracts import RevisionRef
+
+
+def frozen_source(service,db,revision,track_id,sha):
+    from .. import schema_v3 as t
+
+    service._asset(db,sha,revision['project_id'])
+    records=db.execute(select(t.renders).where(t.renders.c.project_id==revision['project_id'],
+        t.renders.c.payload['track_renders'][track_id].as_string()==sha).order_by(t.renders.c.created_at.desc())).mappings()
+    for record in records:
+        original=service._revision(db,RevisionRef(project_id=revision['project_id'],revision_id=record['revision_id']))
+        payload=record['payload']
+        if payload.get('start_sample',0) or payload.get('end_sample')!=revision['snapshot']['duration_samples']:
+            continue
+        baseline=next((track for track in original['snapshot']['tracks'] if track['id']==track_id),None)
+        if baseline is None:
+            continue
+        return dict(asset_id=sha,baked_gain_db=baseline.get('gain_db',0),baked_pan=baseline.get('pan',0))
+    raise ValueError('冻结音频缺少对应完整渲染及推子基准')
 
 
 def compile_files(service, args):
@@ -13,7 +34,8 @@ def compile_files(service, args):
         tracks, tail = [], 0
         identity = service.engine_broker.identity if service.engine_broker else "compiler"
         session_key = hashlib.sha256((identity+revision["project_id"]).encode()).hexdigest()[:24]
-        directory = service.settings.path("engine",session_key)
+        directory = (service.engine_workspaces.directory(revision["project_id"]) if service.engine_workspaces
+                     else service.settings.path("engine",session_key))
         if args.view == "original":
             reference = snapshot.get("source_reference")
             if reference:
@@ -38,10 +60,10 @@ def compile_files(service, args):
                     clips=[dict(path=str(path), asset_id=sha, start_sample=0, source_offset_samples=0,
                                 duration_samples=duration, gain=1)]))
         else:
-            playback = plan(service, db, revision) if snapshot.get("frozen_tracks") else {"tracks":{}}
             calibration = snapshot.get("listening_calibration") or {}
             for track in snapshot["tracks"]:
-                stem = playback["tracks"].get(track["id"])
+                frozen=snapshot.get('frozen_tracks',{}).get(track['id'])
+                stem=frozen_source(service,db,revision,track['id'],frozen) if frozen else None
                 if not stem:
                     if not any(e["track_id"] == track["id"] for name in ("notes", "clips") for e in snapshot[name]):
                         continue

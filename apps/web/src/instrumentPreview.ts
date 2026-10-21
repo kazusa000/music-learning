@@ -7,7 +7,8 @@ export class InstrumentPreviewPlayer {
   private client=crypto.randomUUID().replaceAll('-','');
   private sequence=0;
   private timer:ReturnType<typeof setTimeout>|null=null;
-  constructor(private update:(state:PreviewState|null)=>void){}
+  private pagehide=()=>this.dispose();
+  constructor(private update:(state:PreviewState|null)=>void){if(typeof window!=='undefined')window.addEventListener('pagehide',this.pagehide);}
   setVolume(value:number){this.volume=value;if(this.state?.phase==='playing')void call('engine.preview',{client_id:this.client,client_sequence:++this.sequence,volume:value}).catch(()=>{});}
   stop(){this.generation++;if(this.timer)clearTimeout(this.timer);this.timer=null;void call('engine.preview',{client_id:this.client,client_sequence:++this.sequence,stop:true}).catch(()=>{});this.state=null;this.update(null);}
   async toggle(presetId:string,retry=false){
@@ -39,5 +40,5 @@ export class InstrumentPreviewPlayer {
       };this.timer=setTimeout(poll,150);
     }catch(error){if(active()){this.state={presetId,phase:'failed',error:error instanceof Error?error.message:'试听失败，请重试'};this.update(this.state);}}
   }
-  dispose(){this.disposed=true;this.stop();}
+  dispose(){this.disposed=true;if(typeof window!=='undefined')window.removeEventListener('pagehide',this.pagehide);this.stop();}
 }

@@ -160,6 +160,10 @@ def owned(settings, category, name):
 
 def remove_work(service, value):
     from .retention import remove_tree
+    from .engine.workspaces import deletion_ready
+
+    if not deletion_ready(service.settings,value["project_id"]):
+        return False
     # Do not race an API thread still materializing plugin resources. Its close
     # path removes the directory or publishes cleanup_ready. A dead API's job
     # handles close its native children, allowing restart recovery.

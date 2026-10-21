@@ -576,6 +576,7 @@ class EngineOpen(RevisionRef):
 class EngineSession(Model):
     engine_session: str = Field(pattern=r"^[a-f0-9]{48}$")
     generation: int = Field(ge=0)
+    owner_id: Id | None = None
 
 
 class EngineClaim(EngineSession):

@@ -71,9 +71,12 @@ class Service:
         self.instrument_previews = None
         self.engine_broker = None
         self.engine_sync_error = None
+        self.engine_workspaces = None
+        self.engine_closed_owners = {}
         import threading
 
         self.live_lock = threading.Lock()
+        self.engine_graph_lock = threading.RLock()
 
     def execute(self, request: c.Request | dict):
         try:
@@ -86,51 +89,11 @@ class Service:
             if mutates and not request.idempotency_key:
                 raise DomainError("idempotency_required", "Writes require idempotency_key", 422)
             if request.operation.startswith("engine."):
-                from .engine.broker import EngineBroker
+                from .engine.controller import dispatch
 
-                with self.live_lock:
-                    if self.engine_broker is None:
-                        self.engine_broker = EngineBroker(self.settings)
                 action = request.operation.split(".", 1)[1]
                 try:
-                    arguments = args.model_dump(exclude_none=True)
-                    if action == "preview":
-                        if args.preview_id:
-                            from .playback import wav_extent
-
-                            path = self.previews().audio(args.preview_id)
-                            rate, frames = wav_extent(path)
-                            arguments["manifest"] = dict(project_id="preview",revision_id=args.preview_id,view="preview",
-                                sample_rate=rate,duration_samples=frames,tracks=[dict(id="preview",gain_db=0,pan=0,
-                                    clips=[dict(path=str(path),start_sample=0,duration_samples=frames,source_offset_samples=0,gain=1)])])
-                    if action in ("open", "update"):
-                        from .engine.compiler import compile_files
-
-                        started = time.perf_counter()
-                        manifest = compile_files(self, args)
-                        compile_ms = (time.perf_counter() - started)*1000
-                        current = self.engine_broker.status()
-                        if current["status"] in ("stopped", "closed"):
-                            self.engine_broker.command("configure", {"sample_rate": manifest["sample_rate"], "buffer_frames": 512})
-                        arguments = dict(manifest=manifest)
-                        if action == "open":
-                            arguments.update(position_sample=args.position_sample,playing=args.playing)
-                            if args.owner_id:
-                                arguments["owner_id"]=args.owner_id
-                    if action in ("transport", "monitor", "update", "claim") or action=="close" and args.owner_id:
-                        if args.engine_session != self.engine_broker.identity:
-                            raise ValueError("引擎会话已变更，请刷新状态")
-                        arguments["expected_generation"] = arguments.pop("generation",args.generation)
-                    result = (self.engine_broker.status() if action == "status" else
-                              self.engine_broker.preview(arguments) if action == "preview" else
-                              self.engine_broker.release(arguments) if action=="close" and args.owner_id else
-                              self.engine_broker.close() if action == "close" else
-                              self.engine_broker.command(action, arguments))
-                    if action in ("open", "update"):
-                        result["compile_ms"] = compile_ms
-                        self.engine_sync_error = None
-                    if action == "status" and self.engine_sync_error:
-                        result["control_error"] = self.engine_sync_error
+                    result = dispatch(self, action, args)
                 except (RuntimeError, OSError, ValueError) as error:
                     raise DomainError("engine_error", str(error), 409) from error
                 TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
@@ -287,8 +250,12 @@ class Service:
                             created_at=time.time(),
                         )
                     )
-            if request.operation == "projects.delete" and self.live_playback is not None:
-                self.live_playback.close_project(args.project_id)
+            if request.operation == "projects.delete":
+                if self.live_playback is not None:
+                    self.live_playback.close_project(args.project_id)
+                from .engine.controller import close_project
+
+                close_project(self, args.project_id)
             if mutates:
                 from .engine.sync import after_write
 

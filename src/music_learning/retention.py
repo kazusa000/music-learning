@@ -132,6 +132,12 @@ def analyze(service, db):
         p["id"]: {p["current_revision"]} | saved.get(p["id"], set())
         for p in db.execute(select(t.projects)).mappings()
     }
+    from .engine.workspaces import active_roots
+
+    runtime_roots=active_roots(service.settings)
+    for project,ids in runtime_roots:
+        if project in project_roots:
+            project_roots[project].update(ids)
     keep = set()
     ownership = {}
     from .playback import sources
@@ -267,6 +273,7 @@ def analyze(service, db):
         garbage.append(sha)
     return dict(
         epoch=epoch(db),
+        runtime_roots=runtime_roots,
         keep=keep,
         ownership=ownership,
         garbage=garbage,
@@ -345,7 +352,9 @@ def run_once(service):
         plan = analyze(service, db)
     free = shutil.disk_usage(service.settings.data_root).free
     with database.transaction() as db:
-        if busy(db) or epoch(db) != plan["epoch"]:
+        from .engine.workspaces import active_roots
+
+        if busy(db) or epoch(db) != plan["epoch"] or active_roots(service.settings)!=plan["runtime_roots"]:
             return False
         # Registration/commit and the destructive step share the same writer
         # lock. Only unreachable immutable object names are removed.

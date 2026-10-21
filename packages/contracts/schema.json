@@ -1572,6 +1572,19 @@
           "title": "Generation",
           "type": "integer"
         },
+        "owner_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Id"
+        },
         "tracks": {
           "additionalProperties": {
             "$ref": "#/$defs/EngineTrackValues"
@@ -1730,6 +1743,19 @@
           "minimum": 0,
           "title": "Generation",
           "type": "integer"
+        },
+        "owner_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Id"
         }
       },
       "required": [
@@ -1810,6 +1836,19 @@
           "minimum": 0,
           "title": "Generation",
           "type": "integer"
+        },
+        "owner_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Id"
         },
         "playing": {
           "anyOf": [
@@ -1894,6 +1933,19 @@
           "minimum": 0,
           "title": "Generation",
           "type": "integer"
+        },
+        "owner_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Id"
         },
         "project_id": {
           "pattern": "^[a-f0-9]{32}$",

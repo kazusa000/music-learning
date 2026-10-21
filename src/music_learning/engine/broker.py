@@ -37,7 +37,10 @@ class EngineBroker:
     def _start(self):
         if self.owner and self.owner.process.poll() is None:
             return
+        had_process = self.owner is not None
         self._close()
+        if had_process:
+            self.identity = secrets.token_hex(24)
         if os.name != "nt" or not self.executable.is_file():
             raise RuntimeError("本地音频引擎尚未构建")
         name = "ml-engine-" + secrets.token_hex(16)
@@ -119,11 +122,15 @@ class EngineBroker:
                 return result
             except (TimeoutError, OSError, ConnectionError):
                 self._close()
+                self.identity = secrets.token_hex(24)
                 raise
 
     def status(self):
         with self.lock:
-            if not self.owner or self.owner.process.poll() is not None:
+            if self.owner and self.owner.process.poll() is not None:
+                self._close()
+                self.identity = secrets.token_hex(24)
+            if not self.owner:
                 return {"protocol_version": 1, "status": "stopped", "playing": False}
             return self.command("status")
 
@@ -134,15 +141,21 @@ class EngineBroker:
                     self.command("close")
             finally:
                 self._close()
+                self.identity = secrets.token_hex(24)
         return {"protocol_version": 1, "status": "stopped", "playing": False}
 
     def release(self, arguments):
         with self.lock:
             if not self.owner:
                 return self.status()
+            if self.owner.process.poll() is not None:
+                self._close()
+                self.identity = secrets.token_hex(24)
+                return self.status()
             result = self.command("release",arguments)
             if result.get("status")=="closed":
                 self._close()
+                self.identity = secrets.token_hex(24)
             return result
 
     def _close(self):

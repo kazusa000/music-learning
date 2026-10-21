@@ -45,6 +45,7 @@ class PluginSource {
         return hash;
     }
 public:
+    juce::String programPath() const {return directory.getChildFile(config+".json").getFullPathName();}
     bool retryRequired() { return status()["status"].toString()=="failed"; }
     PluginSource(const juce::var& spec,const juce::File& base,double sourceRate,double deviceRate,int frames)
         :directory(base.getChildFile(spec["storage_key"].toString())) {
@@ -76,6 +77,7 @@ public:
     ~PluginSource() {
         if(shared)shared->quit.store(1);
         if(job.value)TerminateJobObject(job.value,0);
+        if(process.value)WaitForSingleObject(process.value,2000);
         if(shared)UnmapViewOfFile(shared);
     }
     void configure(const juce::File& file,int64_t start,bool loop,int64_t begin,int64_t end) {

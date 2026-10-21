@@ -51,11 +51,27 @@ def create_app(settings: Settings | None = None):
 
         dialogue = DialogueWorker(database, service=service)
         runner = asyncio.create_task(dialogue.run())
+        engine_stopping = asyncio.Event()
+        async def engine_maintenance():
+            from .engine.controller import maintain
+
+            while not engine_stopping.is_set():
+                try:
+                    await asyncio.to_thread(maintain, service)
+                except Exception:
+                    logging.getLogger(__name__).exception("Native engine maintenance failed")
+                try:
+                    await asyncio.wait_for(engine_stopping.wait(), .25)
+                except asyncio.TimeoutError:
+                    pass
+        engine_runner = asyncio.create_task(engine_maintenance())
         previews = service.previews()
         previews.start()
         try:
             yield
         finally:
+            engine_stopping.set()
+            await engine_runner
             await asyncio.to_thread(previews.close)
             dialogue.stopping.set()
             try:
@@ -65,8 +81,9 @@ def create_app(settings: Settings | None = None):
                 await asyncio.gather(runner, return_exceptions=True)
             if service.live_playback is not None:
                 service.live_playback.close()
-            if service.engine_broker is not None:
-                await asyncio.to_thread(service.engine_broker.close)
+            from .engine.controller import close
+
+            await asyncio.to_thread(close, service)
             database.close()
 
     app = FastAPI(
