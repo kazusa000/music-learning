@@ -1,5 +1,6 @@
 #pragma once
 #include "../engine/SharedNode.h"
+#include "../engine/AudioScheduling.h"
 
 namespace ml {
 struct NodeMapping {
@@ -26,6 +27,7 @@ inline int runNodeWorker(const String& name,const File& directory) {
         memory.complete=OpenEventW(EVENT_MODIFY_STATE,FALSE,(name+"-complete").toWideCharPointer());
         require(memory.request&&memory.complete,"Missing private graph events");
         std::unique_ptr<TrackRenderer> renderer;
+        std::unique_ptr<mlengine::AudioScheduling> scheduling;
         String loaded;
         uint64_t applied=0;
         AudioBuffer<float> main(2,(int)shared->capacity),output(2,(int)shared->capacity);
@@ -48,6 +50,7 @@ inline int runNodeWorker(const String& name,const File& directory) {
                     if(!renderer) {
                         const auto started=Time::getHighResolutionTicks();
                         renderer=std::make_unique<TrackRenderer>(project,nullptr,true);
+                        scheduling=std::make_unique<mlengine::AudioScheduling>();
                         shared->loadMicros.store((uint64_t)(Time::highResolutionTicksToSeconds(Time::getHighResolutionTicks()-started)*1000000));
                     }else renderer->update(project);
                     loaded=hash;

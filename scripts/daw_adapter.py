@@ -246,7 +246,7 @@ class Production:
             write_json(request_path, manifest)
             from music_learning.engine.bundle import pin, environment
 
-            bundle, manifest_identity = pin()
+            bundle, manifest_identity = pin(self.settings.native_audio_bundle)
             command = bundle / "ml_graph_runner.exe"
             completed = subprocess.run([str(command), "--render", str(request_path), str(output_path), str(report_path)],
                 timeout=self.settings.pipeline_stage_timeout_seconds, capture_output=True,

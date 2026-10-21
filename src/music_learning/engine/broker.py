@@ -48,7 +48,7 @@ class EngineBroker:
         if executable == ROOT / "runtime/build/engine-v1/bin/ml_engine.exe":
             from .bundle import pin, environment as bundle_environment
 
-            bundle, manifest = pin()
+            bundle, manifest = pin(self.settings.native_audio_bundle)
             executable = bundle / "ml_engine.exe"
             environment = bundle_environment(bundle, manifest)
         name = "ml-engine-" + secrets.token_hex(16)

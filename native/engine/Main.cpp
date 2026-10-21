@@ -21,6 +21,7 @@ class DeviceEngine final : public AudioIODeviceCallback {
     std::atomic<float> peak{0};
     double rate = 48000.0;
     std::unique_ptr<mlengine::SessionGraph> graph;
+    std::unique_ptr<mlengine::SessionGraph> warmArrangement;
     std::unique_ptr<mlengine::SessionGraph> preview;
     AudioBuffer<float> previewBuffer;
     std::atomic<bool> previewPlaying{false};
@@ -31,18 +32,22 @@ class DeviceEngine final : public AudioIODeviceCallback {
     std::set<String> warmKeys;
     std::atomic<bool> filePlaying{false};
     std::atomic<bool> callbackBusy{false};
+    std::atomic<bool> expectedStop{false},outputStopped{true};
     int generation = 0;
     String controlOwner;
+    void detachCallback(){expectedStop.store(true);device.removeAudioCallback(this);outputStopped.store(true);}
+    void attachCallback(){device.addAudioCallback(this);expectedStop.store(false);}
 public:
     size_t availableGraphBudget()const{
         size_t used=graph?(size_t)graph->cacheBytes():0;
+        if(warmArrangement)used+=(size_t)warmArrangement->cacheBytes();
         for(const auto& source:pluginPool)if(source.second.use_count()==1)used+=source.second->bytes();
         if(preview)used+=(size_t)preview->cacheBytes()+(size_t)previewBuffer.getNumSamples()*previewBuffer.getNumChannels()*sizeof(float);
         constexpr size_t limit=256ull*1024*1024;return used<limit?limit-used:0;
     }
-    ~DeviceEngine() override { device.removeAudioCallback(this); device.closeAudioDevice(); }
-    void audioDeviceAboutToStart(AudioIODevice* d) override { rate = d->getCurrentSampleRate(); }
-    void audioDeviceStopped() override { remaining.store(0); }
+    ~DeviceEngine() override { detachCallback(); device.closeAudioDevice(); }
+    void audioDeviceAboutToStart(AudioIODevice* d) override { rate = d->getCurrentSampleRate();outputStopped.store(false); }
+    void audioDeviceStopped() override { remaining.store(0);outputStopped.store(true);if(!expectedStop.load()){filePlaying.store(false);previewPlaying.store(false);} }
     void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* out,
         int channels, int frames, const AudioIODeviceCallbackContext&) override {
         callbackBusy.store(true);
@@ -90,8 +95,10 @@ public:
     var status() {
         auto* d = device.getCurrentAudioDevice();
         auto result = obj({{"protocol_version", 1}, {"pid", (int)GetCurrentProcessId()},
-            {"status", d ? "ready" : "closed"}, {"device", d ? d->getName() : String()},
+            {"status", d ? (outputStopped.load()?"stopped":"ready") : "closed"}, {"device", d ? d->getName() : String()},
             {"sample_rate", d ? d->getCurrentSampleRate() : 0.0},
+            {"backend",d?d->getTypeName():String()},
+            {"output_latency_samples",d?d->getOutputLatencyInSamples():0},
             {"buffer_frames", d ? d->getCurrentBufferSizeSamples() : 0},
             {"position_sample", position.load()}, {"callbacks", callbacks.load()},
             {"playing", remaining.load() > 0}, {"peak", peak.load()},
@@ -102,6 +109,7 @@ public:
         fields->setProperty("generation", generation);
         fields->setProperty("owner_id",controlOwner);
         Array<var> retained;int64 warmBytes=0;
+        if(warmArrangement){warmBytes+=warmArrangement->cacheBytes();for(const auto& program:warmArrangement->routed->programs())retained.add(program);}
         for(const auto& source:pluginPool){retained.add(source.second->programPath());if(source.second.use_count()==1)warmBytes+=(int64)source.second->bytes();}
         if(preview)warmBytes+=preview->cacheBytes()+(int64)previewBuffer.getNumSamples()*previewBuffer.getNumChannels()*sizeof(float);
         if(graph&&graph->routed)for(const auto& program:graph->routed->programs())retained.add(program);
@@ -126,12 +134,13 @@ public:
             fields->setProperty("meters", graph->meterValues());
             fields->setProperty("file_error", graph->failed.load());
             bool ready=false;const auto plugins=graph->pluginValues(ready);fields->setProperty("plugins",plugins);
+            if(outputStopped.load()){ready=false;fields->setProperty("playing",false);fields->setProperty("control_error","输出设备已停止，按播放重试连接");}
             bool pluginFailed=false;
             if(auto* items=plugins.getDynamicObject())for(const auto& item:items->getProperties())if(item.value["status"].toString()=="failed")pluginFailed=true;
             fields->setProperty("desired_revision",graph->manifest["revision_id"]);
             fields->setProperty("applied_revision",ready?(graph->routed?var(graph->routed->appliedRevision()):graph->manifest["revision_id"]):var());
             if(graph->routed&&graph->routed->failure().isNotEmpty())fields->setProperty("control_error",graph->routed->failure());
-            if(!ready)fields->setProperty("status",pluginFailed||(graph->routed&&graph->routed->failure().isNotEmpty())?"partial":"loading");
+            if(!ready&&!outputStopped.load())fields->setProperty("status",pluginFailed||(graph->routed&&graph->routed->failure().isNotEmpty())?"partial":"loading");
         }
         return result;
     }
@@ -145,8 +154,8 @@ public:
         if(action=="claim"){controlOwner=get(request,"owner_id").toString();return status();}
         if(action=="release") {
             if(controlOwner!=get(request,"owner_id").toString())return status();
-            filePlaying.store(false);device.removeAudioCallback(this);graph.reset();pluginPool.clear();controlOwner.clear();
-            if(previewPlaying.load())device.addAudioCallback(this);else device.closeAudioDevice();
+            filePlaying.store(false);detachCallback();graph.reset();warmArrangement.reset();pluginPool.clear();controlOwner.clear();
+            if(previewPlaying.load())attachCallback();else device.closeAudioDevice();
             return status();
         }
         if (action == "devices") {
@@ -160,11 +169,12 @@ public:
             return result;
         }
         if (action == "configure") {
-            toneCommand.store(-1); filePlaying.store(false);previewPlaying.store(false); device.removeAudioCallback(this); graph.reset();preview.reset();pluginPool.clear(); device.closeAudioDevice();
+            toneCommand.store(-1); filePlaying.store(false);previewPlaying.store(false); detachCallback(); graph.reset();warmArrangement.reset();preview.reset();pluginPool.clear(); device.closeAudioDevice();
             controlOwner.clear();
-            device.setCurrentAudioDeviceType("Windows Audio", false);
+            device.setCurrentAudioDeviceType((bool)get(request,"low_latency",false)?"Windows Audio (Low Latency Mode)":"Windows Audio", false);
             const auto error = device.initialise(0, 2, nullptr, true);
             if (error.isNotEmpty()) throw std::runtime_error(error.toStdString());
+            if((bool)get(request,"low_latency",false))device.setCurrentAudioDeviceType("Windows Audio (Low Latency Mode)",false);
             AudioDeviceManager::AudioDeviceSetup setup; device.getAudioDeviceSetup(setup);
             const auto name = get(request, "device").toString(); if (name.isNotEmpty()) setup.outputDeviceName = name;
             setup.sampleRate = (double)get(request, "sample_rate", 48000.0);
@@ -172,7 +182,7 @@ public:
             const auto failure = device.setAudioDeviceSetup(setup, true);
             if (failure.isNotEmpty()) throw std::runtime_error(failure.toStdString());
             previewBuffer.setSize(2,device.getCurrentAudioDevice()->getCurrentBufferSizeSamples());
-            device.addAudioCallback(this); return status();
+            attachCallback(); return status();
         }
         if(action=="preview") {
             auto* d=device.getCurrentAudioDevice();if(!d)throw std::runtime_error("Configure an audio device first");
@@ -183,14 +193,14 @@ public:
             if(request.hasProperty("manifest")) {
                 const auto manifest=get(request,"manifest");
                 auto ready=std::make_unique<mlengine::SessionGraph>(manifest,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),0,false,0,(double)manifest["duration_samples"],nullptr,availableGraphBudget());
-                device.removeAudioCallback(this);preview.swap(ready);previewId=get(request,"preview_id").toString();
+                detachCallback();preview.swap(ready);previewId=get(request,"preview_id").toString();
                 previewClient=client;previewSequence=sequence;previewVolume.store((float)(double)get(request,"volume",.7));
-                previewPlaying.store(true);device.addAudioCallback(this);return status();
+                previewPlaying.store(true);attachCallback();return status();
             }
             if(client!=previewClient)return status();
             previewSequence=sequence;
             if(request.hasProperty("volume"))previewVolume.store((float)(double)get(request,"volume"));
-            if(stop){previewPlaying.store(false);device.removeAudioCallback(this);preview.reset();device.addAudioCallback(this);}
+            if(stop){previewPlaying.store(false);detachCallback();preview.reset();attachCallback();}
             return status();
         }
         if(action=="update") {
@@ -223,7 +233,7 @@ public:
             graph->manifest=value;++generation;return status();
         }
         if (action == "open" || action == "transport") {
-            auto* d = device.getCurrentAudioDevice(); if (!d) throw std::runtime_error("Configure an audio device first");
+            auto* d = device.getCurrentAudioDevice(); if (!d||outputStopped.load()) throw std::runtime_error("输出设备未就绪，请重试连接");
             if (action == "transport" && !graph) throw std::runtime_error("Open a project first");
             const bool play = (bool)get(request,"playing", action=="open" ? false : filePlaying.load());
             const bool replay = action=="transport" && play && graph->ended();
@@ -238,11 +248,25 @@ public:
                 const auto begin = (double)get(request,"loop_start_sample",graph ? graph->loopStart : 0.0);
                 const auto end = (double)get(request,"loop_end_sample",graph ? graph->loopEnd : (double)value["duration_samples"]);
                 const bool loop = (bool)get(request,"loop",graph ? graph->looping : false);
+                if(action=="open"&&warmArrangement){
+                    const bool matching=value["project_id"]==warmArrangement->manifest["project_id"]
+                        &&value["view"].toString()=="arrangement";
+                    if(matching&&warmArrangement->routed->update(value)){
+                        warmArrangement->routed->seek(start,loop,begin,end);
+                        warmArrangement->manifest=value;warmArrangement->origin=start;warmArrangement->playedSample.store(start);
+                        warmArrangement->looping=loop;warmArrangement->loopStart=begin;warmArrangement->loopEnd=end;warmArrangement->read.store(0);
+                        detachCallback();graph.swap(warmArrangement);warmArrangement.reset();++generation;attachCallback();
+                        controlOwner=get(request,"owner_id").toString();graph->routed->setPlaying(play);filePlaying.store(play);committed=true;return status();
+                    }
+                    if(value["project_id"]!=warmArrangement->manifest["project_id"]||value["view"].toString()=="arrangement")warmArrangement.reset();
+                }
                 if(action=="transport"&&graph->routed){
                     graph->routed->seek(start,loop,begin,end);graph->origin=start;graph->playedSample.store(start);
                     graph->looping=loop;graph->loopStart=begin;graph->loopEnd=end;graph->read.store(0);++generation;
                     graph->routed->setPlaying(play);filePlaying.store(play);committed=true;return status();
                 }
+                const bool retainArrangement=action=="open"&&graph&&graph->routed&&graph->manifest["view"].toString()=="arrangement"
+                    &&value["view"].toString()=="original"&&value["project_id"]==graph->manifest["project_id"];
                 if(action=="open"&&graph&&graph->routed)graph->routed->pauseProducer();
                 auto ready = std::make_unique<mlengine::SessionGraph>(value,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),start,loop,begin,end,&pluginPool,availableGraphBudget());
                 if(graph && (action=="transport" || (graph->manifest["project_id"]==value["project_id"]&&graph->manifest["view"]==value["view"]))) {
@@ -250,10 +274,10 @@ public:
                     for(const auto& track:ready->tracks)if(previous.hasProperty(track->id))matching->setProperty(track->id,previous.getProperty(track->id,{}));
                     ready->monitor(var(matching));
                 }
-                filePlaying.store(false); device.removeAudioCallback(this);
+                filePlaying.store(false); detachCallback();
                 graph.swap(ready); ++generation; toneCommand.store(-1);
-                device.addAudioCallback(this);
-                ready.reset();
+                attachCallback();
+                if(retainArrangement){ready->routed->setPlaying(false);ready->routed->resumeProducer();warmArrangement=std::move(ready);}else ready.reset();
                 if(value["view"].toString()=="arrangement") {
                     warmKeys.clear();
                     if(auto* items=value["tracks"].getArray())for(const auto& item:*items)if(item.hasProperty("plugin_project_path"))
@@ -280,7 +304,7 @@ public:
             filePlaying.store(false); toneCommand.store((int64)(seconds * rate)); return status();
         }
         if (action == "stop") { filePlaying.store(false);while(callbackBusy.load())Thread::sleep(1);if(graph&&graph->routed)graph->routed->setPlaying(false);toneCommand.store(-1); return status(); }
-        if (action == "close") { filePlaying.store(false);previewPlaying.store(false); toneCommand.store(-1); device.removeAudioCallback(this); graph.reset();preview.reset();pluginPool.clear(); device.closeAudioDevice(); return status(); }
+        if (action == "close") { filePlaying.store(false);previewPlaying.store(false); toneCommand.store(-1); detachCallback(); graph.reset();warmArrangement.reset();preview.reset();pluginPool.clear(); device.closeAudioDevice(); return status(); }
         throw std::runtime_error("Unsupported engine action");
     }
 };

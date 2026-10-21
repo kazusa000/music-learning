@@ -16,6 +16,7 @@ sealed class StudioWindow : Form {
     readonly string profile;
     readonly JavaScriptSerializer json = new JavaScriptSerializer();
     readonly string diagnostic;
+    readonly string verificationScript;
     [DllImport("user32.dll")] static extern IntPtr GetThreadDpiAwarenessContext();
     [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
     [DllImport("user32.dll")] static extern bool AreDpiAwarenessContextsEqual(IntPtr first, IntPtr second);
@@ -25,8 +26,9 @@ sealed class StudioWindow : Form {
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
     protected override bool ShowWithoutActivation { get { return diagnostic != null; } }
-    public StudioWindow(string url, string data, string report = null) {
+    public StudioWindow(string url, string data, string report = null, string script = null) {
         diagnostic = report;
+        verificationScript = script;
         if (diagnostic != null) { ShowInTaskbar = false; Opacity = 0; }
         target = new Uri(url); profile = data;
         if (target.Scheme != "http" || target.Host != "127.0.0.1") throw new ArgumentException("Local application URL required");
@@ -63,6 +65,19 @@ sealed class StudioWindow : Form {
                     if (diagnostic != null) {
                         try {
                             await Task.Delay(500);
+                            object workflow = null;
+                            if (verificationScript != null) {
+                                var source = File.ReadAllText(verificationScript);
+                                if (source.Length > 65536) throw new InvalidOperationException("Diagnostic script exceeds limit");
+                                await core.ExecuteScriptAsync(source);
+                                for (int attempt = 0; attempt < 240; ++attempt) {
+                                    var state = await core.ExecuteScriptAsync("JSON.stringify(window.__nativeQAResult || null)");
+                                    workflow = json.DeserializeObject(json.Deserialize<string>(state));
+                                    if (workflow != null) break;
+                                    await Task.Delay(250);
+                                }
+                                if (workflow == null) throw new TimeoutException("Native window workflow did not finish");
+                            }
                             var metrics = await core.ExecuteScriptAsync("JSON.stringify({dpr:devicePixelRatio,width:innerWidth,height:innerHeight,screenWidth:screen.width,screenHeight:screen.height,visualScale:visualViewport.scale})");
                             File.WriteAllText(diagnostic,json.Serialize(new {
                                 per_monitor_v2 = AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(), new IntPtr(-4)),
@@ -72,6 +87,7 @@ sealed class StudioWindow : Form {
                                 viewport = json.DeserializeObject(json.Deserialize<string>(metrics)), zoom = web.ZoomFactor,
                                 os = Environment.OSVersion.VersionString,
                                 navigation_success = args.IsSuccess,
+                                workflow = workflow,
                                 foreground_unchanged = GetForegroundWindow() == originalForeground
                             }));
                             using (var image = File.Create(Path.ChangeExtension(diagnostic,"png"))) await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
@@ -128,8 +144,9 @@ sealed class StudioWindow : Form {
     protected override void Dispose(bool disposing) { if(disposing) web.Dispose(); base.Dispose(disposing); }
     [STAThread] static void Main(string[] args) {
         bool probe = args.Length == 4 && args[0] == "--diagnose";
-        if(args.Length!=2 && !probe) return;
+        bool verify = args.Length == 5 && args[0] == "--verify";
+        if(args.Length!=2 && !probe && !verify) return;
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(probe ? new StudioWindow(args[1],args[2],args[3]) : new StudioWindow(args[0],args[1]));
+        Application.Run(verify ? new StudioWindow(args[1],args[2],args[3],args[4]) : probe ? new StudioWindow(args[1],args[2],args[3]) : new StudioWindow(args[0],args[1]));
     }
 }

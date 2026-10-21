@@ -23,6 +23,44 @@ def graph_project(service, project, tmp_path):
         author="test", description="Isolated native graph"), revision["id"])
 
 
+def test_routed_original_switch_retains_loaded_workers_and_applies_edits(service, project, tmp_path, wav):
+    from test_engine_lifecycle import registered
+
+    revision = graph_project(service, project, tmp_path)
+    snapshot = copy.deepcopy(revision['snapshot'])
+    snapshot['duration_samples'] = 44100
+    snapshot['source_asset_id'] = registered(service, project, wav.read_bytes())
+    for note in snapshot['notes']:
+        note['end_sample'] = 40000
+    revision = invoke(service, 'revisions.commit', dict(project_id=project['id'], snapshot=snapshot,
+        author='test', description='Short original and routed graph fixture'), revision['id'])
+    try:
+        invoke(service, 'engine.open', dict(project_id=project['id']))
+        initial = ready(service)
+        pids = {key: plugin['pid'] for key, plugin in initial['plugins'].items()}
+        invoke(service, 'engine.transport', dict(engine_session=initial['engine_session'], generation=initial['generation'],
+            playing=True, loop=True, loop_start_sample=0, loop_end_sample=44100))
+        for _ in range(3):
+            source = invoke(service, 'engine.open', dict(project_id=project['id'], view='original', playing=True))
+            assert source['playing'] and source['retained_programs']
+            assert source['cache_bytes'] <= 256 * 1024**2
+            invoke(service, 'engine.open', dict(project_id=project['id'], playing=True))
+            restored = ready(service)
+            assert restored['playing'] and {key: value['pid'] for key, value in restored['plugins'].items()} == pids
+        invoke(service, 'engine.open', dict(project_id=project['id'], view='original', playing=True))
+        note = dict(revision['snapshot']['notes'][0], pitch=72)
+        changed = invoke(service, 'edits.apply', dict(project_id=project['id'],
+            scope=dict(track_ids=[note['track_id']], start_sample=0, end_sample=44100),
+            operations=[dict(op='put', collection='notes', entity=note)], description='Edit while viewing original'), revision['id'])
+        invoke(service, 'engine.open', dict(project_id=project['id'], playing=True))
+        restored = ready(service)
+        assert restored['applied_revision'] == changed['id']
+        assert {key: value['pid'] for key, value in restored['plugins'].items()} == pids
+        assert invoke(service, 'jobs.list', dict(project_id=project['id'])) == []
+    finally:
+        invoke(service, 'engine.close')
+
+
 def test_routed_native_device_play_monitor_and_incremental_notes(service, project, tmp_path):
     revision = graph_project(service, project, tmp_path)
     a, b, bus = [track["id"] for track in revision["snapshot"]["tracks"]]

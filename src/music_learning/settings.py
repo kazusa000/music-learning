@@ -38,10 +38,13 @@ class Settings:
     instrument_preview_cache_bytes: int = 512 * 1024**2
     instrument_preview_warm: bool = True
     native_audio_enabled: bool = True
+    native_audio_bundle: Path | None = None
     web_root: Path | None = None
 
     def __post_init__(self):
         self.data_root = local_fixed(Path(self.data_root))
+        if self.native_audio_bundle is not None:
+            self.native_audio_bundle = local_fixed(Path(self.native_audio_bundle))
         if self.web_root is not None:
             self.web_root = local_fixed(Path(self.web_root))
         self.plugin_roots = [local_fixed(Path(p)) for p in self.plugin_roots]

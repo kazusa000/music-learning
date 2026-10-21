@@ -27,6 +27,7 @@ int main(int argc,char** argv) {
         ml::require(shared->protocol==mlengine::pluginProtocol&&shared->frames>0&&shared->frames<=mlengine::pluginMaxFrames,"Plugin mapping protocol mismatch");
         const juce::File directory{juce::String(argv[2])};
         std::unique_ptr<ml::TrackRenderer> renderer;
+        std::unique_ptr<mlengine::AudioScheduling> scheduling;
         std::unique_ptr<juce::ResamplingAudioSource> resampler;
         juce::String loadedHash;
         uint64_t epoch=0,produced=0;
@@ -46,6 +47,7 @@ int main(int argc,char** argv) {
                     if(!renderer) {
                         const auto loading=juce::Time::getHighResolutionTicks();
                         renderer=std::make_unique<ml::TrackRenderer>(project,shared);
+                        scheduling=std::make_unique<mlengine::AudioScheduling>();
                         shared->loadMicros.store((uint64_t)(juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks()-loading)*1000000));
                         resampler=std::make_unique<juce::ResamplingAudioSource>(renderer.get(),false,2);
                         resampler->setResamplingRatio(shared->sourceRate/shared->deviceRate);

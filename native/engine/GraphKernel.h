@@ -378,7 +378,10 @@ public:
                     node.recovering=false;node.submitted=true;
                 }catch(...){if(strict)throw;node.raw.clear();node.recovering=true;}
             }
-            const auto deadline=juce::Time::getMillisecondCounterHiRes()+(strict?2000.0:std::max(2.0,count/rate*1000.0*.8));
+            // First/chased quantum is preparation on the producer thread. A
+            // cold plugin can initialise DSP here after reporting state ready;
+            // it must not be replaced with silence by the live block deadline.
+            const auto deadline=juce::Time::getMillisecondCounterHiRes()+((strict||first)?2000.0:std::max(2.0,count/rate*1000.0*.8));
             for(auto i:level){
                 auto& node=*nodes[i];
                 if(node.worker&&node.submitted&&node.worker->isPending()){

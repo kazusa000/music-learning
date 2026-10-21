@@ -17,6 +17,7 @@ def test_bundle_is_immutable_and_does_not_load_a_replaced_worker(tmp_path, monke
         files[name] = hashlib.sha256(content).hexdigest()
     (source/"bundle.json").write_text(json.dumps(dict(schema_version=1, files=files)), encoding="utf-8")
     pinned, manifest = bundle.pin(source)
+    assert bundle.pin(pinned) == (pinned, manifest), 'A published bundle must be independently reopenable'
     (source/"ml_plugin_worker.exe").write_bytes(b"replaced")
     # Reopening the same immutable bundle keeps the original worker bytes.
     again, _ = bundle.pin(source)

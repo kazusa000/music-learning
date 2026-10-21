@@ -1,5 +1,6 @@
 #pragma once
 #include "GraphKernel.h"
+#include "AudioScheduling.h"
 #include <mutex>
 #include <thread>
 
@@ -84,6 +85,7 @@ public:
                 +((size_t)std::ceil(frames*rate/outputRate)+64)*2*sizeof(float);
             if(audioBudget<=outputBytes)throw std::runtime_error("No available native graph audio budget");
             GraphKernel kernel(initial,(int64_t)origin,loop,(int64_t)loopStart,(int64_t)loopEnd,false,&stopping,audioBudget-outputBytes);
+            AudioScheduling scheduling;
             Stream stream(kernel);juce::ResamplingAudioSource resampler(&stream,false,2);
             resampler.setResamplingRatio(rate/outputRate);resampler.prepareToPlay(frames,outputRate);
             uint64_t counter=0,epoch=1,appliedId=0,planId=0;auto current=initial;bool ready=false;
@@ -208,7 +210,7 @@ public:
     var monitorValues()const{std::lock_guard lock(control);return monitors.clone();}
     var meterValues()const{std::lock_guard lock(control);return meters;}
     var pluginValues(bool& ready)const{
-        std::lock_guard lock(control);ready=prepared.load()&&!failed.load()&&updateError.isEmpty()&&updateApplied.load()>=updateRequested.load();
+        std::lock_guard lock(control);ready=prepared.load()&&!failed.load()&&updateError.isEmpty()&&!publishedRevision.isEmpty()&&updateApplied.load()>=updateRequested.load();
         if(auto* object=diagnostics.getDynamicObject())for(const auto& p:object->getProperties())if(p.value["status"].toString()!="ready")ready=false;
         return diagnostics.isObject()?diagnostics:var(new juce::DynamicObject());
     }

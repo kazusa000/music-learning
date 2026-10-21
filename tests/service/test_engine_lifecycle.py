@@ -42,6 +42,18 @@ def short_native(service,project,tmp_path,wav):
         author='test',description='Independent one-second lifecycle fixture'),previous['id'])
 
 
+def test_stopped_device_releases_workers_before_workspace_cleanup(service, project, tmp_path, wav, monkeypatch):
+    revision = short_native(service, project, tmp_path, wav)
+    invoke(service, 'engine.open', dict(project_id=project['id']))
+    state = ready(service)
+    broker = service.engine_broker
+    directory = service.engine_workspaces.directory(project['id'])
+    monkeypatch.setattr(broker, 'status', lambda: dict(state, status='stopped', playing=False))
+    maintain(service)
+    assert broker.owner is None and not directory.exists()
+    assert invoke(service, 'revisions.get', dict(project_id=project['id'])) == revision
+
+
 def test_warm_original_switch_keeps_workers_and_close_releases_only_derived_files(service,project,tmp_path,wav):
     revision=short_native(service,project,tmp_path,wav)
     source=revision['snapshot']['source_asset_id']

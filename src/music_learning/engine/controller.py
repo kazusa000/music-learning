@@ -126,6 +126,10 @@ def maintain(service):
         state=service.engine_broker.status()
         project=state.get("project_id")
         if state["status"]=="stopped" and service.engine_workspaces:
+            # A stopped physical endpoint may leave live workers and file
+            # handles behind. Release our process tree before deleting leases
+            # or derived files, just as after an engine crash.
+            service.engine_broker.close()
             service.engine_workspaces.close()
             return
         if not project and service.engine_workspaces:

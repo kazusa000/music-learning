@@ -158,3 +158,19 @@ def test_compressed_audio_with_fx_uses_native_reader_without_python_pcm(graph_ca
     a["plugin_project_path"] = save(program)
     _, audio = run([a], [edge("a", "master")])
     assert audio == pytest.approx([.125]*2048, abs=1e-7)
+
+
+def test_cold_first_dsp_quantum_is_prefetched_without_silence(graph_case, tmp_path, monkeypatch):
+    from native_host import NativeHost
+
+    node, edge, run, save, _ = graph_case
+    descriptor = NativeHost(diagnostics=tmp_path / 'dynamic-inspect').call(dict(schema_version=1,
+        action='inspect', plugin=dict(path=str(ROOT / 'runtime/build/engine-dynamic-fixture/MLDynamicFixture_artefacts/Release/VST3/MLDynamicFixture.vst3'))))['plugin']
+    a, program = node('cold', 1, [.125] * 2048)
+    plugin = program['tracks'][0]['plugins'][0]
+    for key in ('path', 'identifier', 'binary_sha256', 'version'):
+        plugin[key] = descriptor[key]
+    a['plugin_project_path'] = save(program)
+    monkeypatch.setenv('ML_DYNAMIC_FIRST_PROCESS_DELAY', '1')
+    _, audio = run([a], [edge('cold', 'master')], compare_capture=True)
+    assert audio == pytest.approx([.125] * 2048, abs=1e-7)

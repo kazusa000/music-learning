@@ -1,6 +1,6 @@
 # 文档入口
 
-当前产品是本机AI音乐DAW。**本地引擎重构N0–N5已独立验收，N6–N7继续，尚未切正式默认。**
+当前产品是本机AI音乐DAW。**本地引擎重构N0–N6已独立验收，N7最终验收与发布进行中，尚未切正式默认。**
 
 ## 当前设计与开发入口
 
@@ -8,6 +8,7 @@
 - [N0–N7开发顺序和验收](plans/native-daw-migration.md)：从设备发声到默认切换。
 - [N4产品接线验收](benchmarks/native-engine-n4.md)：本地播放、AI/SDK共用、原生试听与4K流程。
 - [N5生命周期验收](benchmarks/native-engine-n5.md)：关闭、重开、删除屏障、临时租约、缓存与显式冻结。
+- [N6完整原生图](benchmarks/native-engine-n6.md)、[N7最终验收](benchmarks/native-engine-n7.md)：路由/侧链/自动化/导出、实际设备/桌面/AI与发布进度。
 - [目录职责和整理顺序](development/repository-layout.md)：当前位置、目标目录、受保护路径。
 - [原曲／重建双编排](50-original-and-reconstruction.md)：当前模型、原曲参考和AI双视图。
 - [工程持久化](14-project-service.md)、[统一DAW契约](09-agent-daw-contract.md)、[AI接入](13-codex-integration.md)。

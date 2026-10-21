@@ -38,6 +38,14 @@ def pin(directory=None):
             raise ValueError("Native engine changed during bundle pinning")
         # os.replace only publishes identical immutable content at this SHA key.
         os.replace(pending, target)
+    metadata = destination / 'bundle.json'
+    if metadata.exists():
+        if metadata.read_bytes() != content:
+            raise ValueError('Pinned native engine bundle manifest changed')
+    else:
+        pending = destination / ('bundle.' + os.urandom(8).hex() + '.partial')
+        pending.write_bytes(content)
+        os.replace(pending, metadata)
     return destination, manifest
 
 
