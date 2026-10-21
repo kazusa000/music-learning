@@ -1722,6 +1722,55 @@
       "title": "EngineTransport",
       "type": "object"
     },
+    "EngineUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_session": {
+          "pattern": "^[a-f0-9]{48}$",
+          "title": "Engine Session",
+          "type": "string"
+        },
+        "generation": {
+          "minimum": 0,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "view": {
+          "default": "arrangement",
+          "enum": [
+            "original",
+            "arrangement"
+          ],
+          "title": "View",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine_session",
+        "generation",
+        "project_id"
+      ],
+      "title": "EngineUpdate",
+      "type": "object"
+    },
     "EventPage": {
       "additionalProperties": false,
       "properties": {
@@ -5996,6 +6045,14 @@
     }
   },
   "operations": {
+    "engine.update": {
+      "arguments": "EngineUpdate",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
     "engine.open": {
       "arguments": "EngineOpen",
       "result": {

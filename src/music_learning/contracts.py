@@ -577,6 +577,10 @@ class EngineTransport(EngineSession):
     loop_end_sample: Sample | None = None
 
 
+class EngineUpdate(RevisionRef, EngineSession):
+    view: Literal["original", "arrangement"] = "arrangement"
+
+
 class EngineTrackValues(Model):
     gain_db: float | None = Field(default=None, ge=-120, le=24)
     pan: float | None = Field(default=None, ge=-1, le=1)
@@ -1228,6 +1232,7 @@ class LiveChunk(LiveSession):
 
 
 OPERATIONS = {
+    "engine.update": (EngineUpdate, False),
     "engine.open": (EngineOpen, False),
     "engine.transport": (EngineTransport, False),
     "engine.monitor": (EngineMonitor, False),
@@ -1320,6 +1325,7 @@ OPERATIONS = {
 }
 
 RESULT_TYPES = {
+    "engine.update": dict,
     "engine.open": dict,
     "engine.transport": dict,
     "engine.monitor": dict,

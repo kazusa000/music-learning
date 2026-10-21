@@ -20,7 +20,9 @@ class DeviceEngine final : public AudioIODeviceCallback {
     std::atomic<float> peak{0};
     double rate = 48000.0;
     std::unique_ptr<mlengine::FileGraph> graph;
+    mlengine::PluginPool pluginPool;
     std::atomic<bool> filePlaying{false};
+    std::atomic<bool> callbackBusy{false};
     int generation = 0;
 public:
     ~DeviceEngine() override { device.removeAudioCallback(this); device.closeAudioDevice(); }
@@ -28,6 +30,8 @@ public:
     void audioDeviceStopped() override { remaining.store(0); }
     void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* out,
         int channels, int frames, const AudioIODeviceCallbackContext&) override {
+        callbackBusy.store(true);
+        struct Completion {std::atomic<bool>& flag;~Completion(){flag.store(false);}} completion{callbackBusy};
         for (int ch = 0; ch < channels; ++ch) if (out[ch]) FloatVectorOperations::clear(out[ch], frames);
         if (graph && filePlaying.load()) {
             float maximum = 0;
@@ -81,6 +85,12 @@ public:
             fields->setProperty("monitor", graph->monitorValues());
             fields->setProperty("meters", graph->meterValues());
             fields->setProperty("file_error", graph->failed.load());
+            bool ready=false;const auto plugins=graph->pluginValues(ready);fields->setProperty("plugins",plugins);
+            bool pluginFailed=false;
+            if(auto* items=plugins.getDynamicObject())for(const auto& item:items->getProperties())if(item.value["status"].toString()=="failed")pluginFailed=true;
+            fields->setProperty("desired_revision",graph->manifest["revision_id"]);
+            fields->setProperty("applied_revision",ready?graph->manifest["revision_id"]:var());
+            if(!ready)fields->setProperty("status",pluginFailed?"partial":"loading");
         }
         return result;
     }
@@ -100,7 +110,7 @@ public:
             return result;
         }
         if (action == "configure") {
-            toneCommand.store(-1); filePlaying.store(false); device.removeAudioCallback(this); graph.reset(); device.closeAudioDevice();
+            toneCommand.store(-1); filePlaying.store(false); device.removeAudioCallback(this); graph.reset();pluginPool.clear(); device.closeAudioDevice();
             device.setCurrentAudioDeviceType("Windows Audio", false);
             const auto error = device.initialise(0, 2, nullptr, true);
             if (error.isNotEmpty()) throw std::runtime_error(error.toStdString());
@@ -112,6 +122,31 @@ public:
             if (failure.isNotEmpty()) throw std::runtime_error(failure.toStdString());
             device.addAudioCallback(this); return status();
         }
+        if(action=="update") {
+            if(!graph)throw std::runtime_error("Open a project first");
+            const auto value=get(request,"manifest");
+            bool compatible=value["project_id"]==graph->manifest["project_id"]&&value["view"]==graph->manifest["view"]
+                &&value["sample_rate"]==graph->manifest["sample_rate"]&&value["duration_samples"]==graph->manifest["duration_samples"]
+                &&value["tail_samples"]==graph->manifest["tail_samples"];
+            const auto* next=value["tracks"].getArray();const auto* previous=graph->manifest["tracks"].getArray();
+            compatible=compatible&&next&&previous&&next->size()==previous->size();
+            if(compatible)for(int i=0;i<next->size();++i) {
+                const auto& node=(*next)[i];const auto& old=(*previous)[i];
+                if(node["id"]!=old["id"]){compatible=false;break;}
+                if(graph->tracks[(size_t)i]->plugin) {
+                    if(graph->tracks[(size_t)i]->plugin->retryRequired()){compatible=false;break;}
+                    if(node["runtime_signature"]!=old["runtime_signature"]){compatible=false;break;}
+                }else if(JSON::toString(node,true)!=JSON::toString(old,true)){compatible=false;break;}
+            }
+            if(!compatible) {
+                auto reopen=request.clone();auto* fields=reopen.getDynamicObject();fields->setProperty("action","open");
+                fields->setProperty("position_sample",graph->playedSample.load());fields->setProperty("playing",filePlaying.load());
+                return command(reopen);
+            }
+            for(int i=0;i<next->size();++i)if(graph->tracks[(size_t)i]->plugin)
+                graph->tracks[(size_t)i]->plugin->update(File((*next)[i]["plugin_project_path"].toString()));
+            graph->manifest=value;++generation;return status();
+        }
         if (action == "open" || action == "transport") {
             auto* d = device.getCurrentAudioDevice(); if (!d) throw std::runtime_error("Configure an audio device first");
             if (action == "transport" && !graph) throw std::runtime_error("Open a project first");
@@ -120,16 +155,23 @@ public:
             const bool rebuild = action == "open" || request.hasProperty("position_sample") || request.hasProperty("loop")
                 || request.hasProperty("loop_start_sample") || request.hasProperty("loop_end_sample") || replay;
             if (rebuild) {
+                filePlaying.store(false);while(callbackBusy.load())Thread::sleep(1);
                 const auto value = action == "open" ? get(request,"manifest") : graph->manifest;
                 const auto start = (double)get(request,"position_sample",graph && !replay ? graph->playedSample.load() : 0.0);
                 const auto begin = (double)get(request,"loop_start_sample",graph ? graph->loopStart : 0.0);
                 const auto end = (double)get(request,"loop_end_sample",graph ? graph->loopEnd : (double)value["duration_samples"]);
                 const bool loop = (bool)get(request,"loop",graph ? graph->looping : false);
-                auto ready = std::make_unique<mlengine::FileGraph>(value,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),start,loop,begin,end);
-                if(action=="transport")ready->monitor(graph->monitorValues());
+                auto ready = std::make_unique<mlengine::FileGraph>(value,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),start,loop,begin,end,&pluginPool);
+                if(graph && (action=="transport" || (graph->manifest["project_id"]==value["project_id"]&&graph->manifest["view"]==value["view"]))) {
+                    const auto previous=graph->monitorValues();auto* matching=new DynamicObject();
+                    for(const auto& track:ready->tracks)if(previous.hasProperty(track->id))matching->setProperty(track->id,previous.getProperty(track->id,{}));
+                    ready->monitor(var(matching));
+                }
                 filePlaying.store(false); device.removeAudioCallback(this);
                 graph.swap(ready); ++generation; toneCommand.store(-1);
                 device.addAudioCallback(this);
+                ready.reset();
+                for(auto it=pluginPool.begin();it!=pluginPool.end();)if(it->second.use_count()==1)it=pluginPool.erase(it);else ++it;
             }
             filePlaying.store(play); return status();
         }
@@ -144,7 +186,7 @@ public:
             filePlaying.store(false); toneCommand.store((int64)(seconds * rate)); return status();
         }
         if (action == "stop") { filePlaying.store(false); toneCommand.store(-1); return status(); }
-        if (action == "close") { filePlaying.store(false); toneCommand.store(-1); device.removeAudioCallback(this); graph.reset(); device.closeAudioDevice(); return status(); }
+        if (action == "close") { filePlaying.store(false); toneCommand.store(-1); device.removeAudioCallback(this); graph.reset();pluginPool.clear(); device.closeAudioDevice(); return status(); }
         throw std::runtime_error("Unsupported engine action");
     }
 };

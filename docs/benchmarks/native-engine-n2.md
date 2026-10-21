@@ -1,6 +1,6 @@
-# N2：本地文件播放（持续验收中）
+# N2：本地文件播放
 
-2026-10-21。本地文件播放核心已实现，完整后端288项通过；**长时间验收仍运行，N2尚未最终完成，N3–N7继续推进，未切换正式默认。**
+2026-10-21。本地文件播放与本阶段长验收完成，完整后端288项通过。N3–N7继续推进，未切换正式默认。
 
 ## 已实现与短测
 
@@ -15,6 +15,8 @@ EngineCompiler从不可变修订和既有严格播放计划派生清单；原曲
 短测报告`data/maintenance/native-engine/n2/20261021-165655-e4e3d2c3/report.json`；独立14引擎/协议/闭合契约测试及2原曲服务集成通过，新增覆盖：44.1k源到48k设备的帧换算、暂停稳定、后台无Python供声、监听保持、独奏排他、未知音轨、旧generation、自然结束/重播、无效循环不替换图。完整`tests/service tests/engine` **288通过**（108.70s），Ruff、生成契约检查通过。
 
 ## 正在运行的连续验证
+
+终态补记：该次run已完整结束，`report.json`记录status=succeeded；约395.639秒整曲、305秒参考和1800秒循环全部完成。最终callbacks=250493，underruns=0、xruns=0、file_error=false。自有辅助与设备引擎均已退出。此处以下为启动时的原始说明；不覆盖原报告。新插件/前端/完整图改变后仍须N7最终候选整体验收。
 
 固定运行根：`data/maintenance/native-engine/n2/20261021-165751-cb507e0a`。监督入口`runtime/engine-n2-long-job.local.json`，父PID29800及creation_time/SHA已记录；以实际进程和progress.json为准，不凭本文宣布完成。脚本`scripts/probe_engine_files.py --long-seconds 1800`。
 

@@ -27,3 +27,12 @@ add_executable(ml_engine_loopback Loopback.cpp)
 target_compile_options(ml_engine_loopback PRIVATE /utf-8 /EHsc /W4)
 target_link_libraries(ml_engine_loopback PRIVATE ole32 uuid avrt)
 set_target_properties(ml_engine_loopback PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+add_executable(ml_plugin_worker "${CMAKE_CURRENT_SOURCE_DIR}/../plugin-worker/Main.cpp")
+target_include_directories(ml_plugin_worker PRIVATE "${JUCE_ROOT}/modules" "${ML_ROOT}/native/include")
+target_compile_definitions(ml_plugin_worker PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1
+    JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_PLUGINHOST_VST3=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
+    JUCE_USE_FLAC=0 JUCE_USE_OGGVORBIS=0 JUCE_USE_MP3AUDIOFORMAT=0 JUCE_USE_WINDOWS_MEDIA_FORMAT=0)
+target_compile_options(ml_plugin_worker PRIVATE /utf-8 /EHsc /W4)
+target_link_libraries(ml_plugin_worker PRIVATE "${ML_RUNTIME_LIBRARY}"
+    kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32)
+set_target_properties(ml_plugin_worker PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

@@ -4,9 +4,12 @@
 #include <atomic>
 #include <thread>
 #include <memory>
+#include <map>
+#include "PluginSource.h"
 
 namespace mlengine {
 using namespace juce;
+using PluginPool = std::map<String,std::shared_ptr<PluginSource>>;
 
 // All readers and resamplers are consumed exclusively by the producer thread.
 class FileTimeline final : public AudioSource {
@@ -62,6 +65,7 @@ public:
         String id;
         std::unique_ptr<FileTimeline> source;
         std::unique_ptr<ResamplingAudioSource> resampler;
+        std::shared_ptr<PluginSource> plugin;
         std::atomic<float> gainDb{0}, pan{0};
         std::atomic<bool> mute{false}, solo{false};
         std::atomic<float> peak{0};
@@ -80,7 +84,7 @@ public:
     double sourceRate, deviceRate, duration, songDuration, origin, loopStart, loopEnd;
     bool looping;
 
-    FileGraph(const var& value, double outputRate, int quantum, double start, bool loop, double begin, double end)
+    FileGraph(const var& value, double outputRate, int quantum, double start, bool loop, double begin, double end,PluginPool* pool=nullptr)
         : manifest(value), frames(quantum), sourceRate((double)value["sample_rate"]), deviceRate(outputRate),
           duration((double)value["duration_samples"] + (double)value.getProperty("tail_samples", 0)),
           songDuration((double)value["duration_samples"]), origin(start), loopStart(begin), loopEnd(end), looping(loop) {
@@ -96,10 +100,18 @@ public:
             track->bakedPan = (float)(double)item.getProperty("baked_pan", 0.0);
             track->monitorGain = (float)(double)item.getProperty("monitor_gain_db", 0.0);
             track->soloGain = (float)(double)item.getProperty("solo_gain_db", track->monitorGain);
-            track->source = std::make_unique<FileTimeline>(item, sourceRate, (int64)start, loop, (int64)begin, (int64)end);
-            track->resampler = std::make_unique<ResamplingAudioSource>(track->source.get(), false, 2);
-            track->resampler->setResamplingRatio(sourceRate / deviceRate);
-            track->resampler->prepareToPlay(frames, deviceRate);
+            if(item.hasProperty("plugin_project_path")) {
+                if(!pool)throw std::runtime_error("Plugin pool missing");
+                const auto key=value["project_id"].toString()+":"+track->id+":"+item["runtime_signature"].toString();
+                auto& source=(*pool)[key];
+                if(!source||source->retryRequired())source=std::make_shared<PluginSource>(item,File(value["session_directory"].toString()),sourceRate,deviceRate,frames);
+                source->configure(File(item["plugin_project_path"].toString()),(int64)start,loop,(int64)begin,(int64)end);track->plugin=source;
+            }else {
+                track->source = std::make_unique<FileTimeline>(item, sourceRate, (int64)start, loop, (int64)begin, (int64)end);
+                track->resampler = std::make_unique<ResamplingAudioSource>(track->source.get(), false, 2);
+                track->resampler->setResamplingRatio(sourceRate / deviceRate);
+                track->resampler->prepareToPlay(frames, deviceRate);
+            }
             tracks.push_back(std::move(track));
         }
         if (tracks.empty() || tracks.size() > 128) throw std::runtime_error("File graph needs 1..128 tracks");
@@ -110,6 +122,7 @@ public:
                 if (counter - read.load(std::memory_order_acquire) >= capacity) { Thread::sleep(1); continue; }
                 auto& block = blocks[counter % capacity];
                 for (size_t i = 0; i < tracks.size(); ++i) {
+                    if(tracks[i]->plugin){block.tracks[i].clear();continue;}
                     AudioSourceChannelInfo info(&block.tracks[i], 0, frames); tracks[i]->resampler->getNextAudioBlock(info);
                     if (tracks[i]->source->failed.load()) failed.store(true);
                     for(int ch=0;ch<2;++ch)for(int sample=0;sample<frames;++sample)
@@ -136,6 +149,11 @@ public:
     var meterValues() const {
         auto* values=new DynamicObject();for(const auto& track:tracks)values->setProperty(track->id,track->peak.load());return var(values);
     }
+    var pluginValues(bool& ready) const {
+        auto* values=new DynamicObject();ready=true;
+        for(const auto& track:tracks)if(track->plugin){const auto state=track->plugin->status();if(state["status"].toString()!="ready")ready=false;values->setProperty(track->id,state);}
+        return var(values);
+    }
     void monitor(const var& values) {
         if(!values.isObject())throw std::runtime_error("Invalid monitor map");
         for(const auto& field:values.getDynamicObject()->getProperties()) {
@@ -160,6 +178,7 @@ public:
         for (const auto& track : tracks) if (!track->mute.load() && (!soloed || track->solo.load())) ++audible;
         for (size_t t = 0; t < tracks.size(); ++t) {
             auto& track = *tracks[t]; const auto pan = track.pan.load();
+            const auto* mapped=track.plugin?track.plugin->block(current,count):nullptr;
             const float level = track.mute.load() || (soloed && !track.solo.load()) ? 0.0f :
                 std::pow(10.0f, (track.gainDb.load() - track.bakedGain + (audible == 1 ? track.soloGain : track.monitorGain)) / 20.0f);
             const float left = level * (pan > 0 ? 1-pan : 1) / jmax(.0001f, track.bakedPan > 0 ? 1-track.bakedPan : 1);
@@ -168,12 +187,14 @@ public:
             float trackPeak=0;
             for (int i = 0; i < count; ++i) {
                 track.left += (left-track.left)*ramp; track.right += (right-track.right)*ramp;
-                const float l=block.tracks[t].getSample(0,i)*track.left,r=block.tracks[t].getSample(1,i)*track.right;
+                const float l=(mapped?mapped[i*2]:block.tracks[t].getSample(0,i))*track.left;
+                const float r=(mapped?mapped[i*2+1]:block.tracks[t].getSample(1,i))*track.right;
                 trackPeak=jmax(trackPeak,jmax(std::abs(l),std::abs(r)));
                 if (channels > 0 && output[0]) output[0][i] += l;
                 if (channels > 1 && output[1]) output[1][i] += r;
             }
             track.peak.store(trackPeak);
+            if(track.plugin)track.plugin->release(current);
         }
         for (int ch = 0; ch < channels; ++ch) if (output[ch]) for (int i = 0; i < count; ++i) {
             const float x = output[ch][i], a = std::abs(x);
@@ -183,6 +204,10 @@ public:
         playedSample.store(block.endSample); read.store(current+1,std::memory_order_release); return true;
     }
     bool ended() const { return !looping && playedSample.load() >= duration; }
-    int64 cacheBytes() const { return (int64)capacity * frames * 2 * sizeof(float) * (int64)tracks.size(); }
+    int64 cacheBytes() const {
+        int64 total=(int64)capacity * frames * 2 * sizeof(float) * (int64)tracks.size();
+        for(const auto& track:tracks)if(track->plugin)total+=(int64)sizeof(PluginRing);
+        return total;
+    }
 };
 }

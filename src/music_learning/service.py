@@ -93,21 +93,27 @@ class Service:
                 action = request.operation.split(".", 1)[1]
                 try:
                     arguments = args.model_dump(exclude_none=True)
-                    if action == "open":
+                    if action in ("open", "update"):
                         from .engine.compiler import compile_files
 
+                        started = time.perf_counter()
                         manifest = compile_files(self, args)
+                        compile_ms = (time.perf_counter() - started)*1000
                         current = self.engine_broker.status()
                         if current["status"] in ("stopped", "closed"):
                             self.engine_broker.command("configure", {"sample_rate": manifest["sample_rate"], "buffer_frames": 512})
-                        arguments = dict(manifest=manifest, position_sample=args.position_sample, playing=args.playing)
-                    if action in ("transport", "monitor"):
+                        arguments = dict(manifest=manifest)
+                        if action == "open":
+                            arguments.update(position_sample=args.position_sample,playing=args.playing)
+                    if action in ("transport", "monitor", "update"):
                         if args.engine_session != self.engine_broker.identity:
                             raise ValueError("引擎会话已变更，请刷新状态")
-                        arguments["expected_generation"] = arguments.pop("generation")
+                        arguments["expected_generation"] = arguments.pop("generation",args.generation)
                     result = (self.engine_broker.status() if action == "status" else
                               self.engine_broker.close() if action == "close" else
                               self.engine_broker.command(action, arguments))
+                    if action in ("open", "update"):
+                        result["compile_ms"] = compile_ms
                 except (RuntimeError, OSError, ValueError) as error:
                     raise DomainError("engine_error", str(error), 409) from error
                 TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)

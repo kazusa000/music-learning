@@ -11,6 +11,9 @@ def compile_files(service, args):
         snapshot = revision["snapshot"]
         rate, duration = snapshot["sample_rate"], snapshot["duration_samples"]
         tracks, tail = [], 0
+        identity = service.engine_broker.identity if service.engine_broker else "compiler"
+        session_key = hashlib.sha256((identity+revision["project_id"]).encode()).hexdigest()[:24]
+        directory = service.settings.path("engine",session_key)
         if args.view == "original":
             reference = snapshot.get("source_reference")
             if reference:
@@ -44,7 +47,14 @@ def compile_files(service, args):
                 if not stem:
                     if not any(e["track_id"] == track["id"] for name in ("notes", "clips") for e in snapshot[name]):
                         continue
-                    raise ValueError("本音轨需要实时插件；N3接入后启用，不能播放过期音频")
+                    from .plugin_compiler import compile_track
+
+                    compiled = compile_track(service,db,revision,track["id"],directory)
+                    tracks.append(dict(id=track["id"],gain_db=track.get("gain_db",0),pan=track.get("pan",0),
+                        baked_gain_db=0,baked_pan=0,monitor_gain_db=calibration.get("mix_gain_db",0),
+                        solo_gain_db=calibration.get("solo_gain_db",{}).get(track["id"],0),clips=[],**compiled))
+                    tail=max(tail,round(rate*2))
+                    continue
                 path = service.storage.object_path(stem["asset_id"])
                 file_rate, frames = wav_extent(path)
                 if file_rate != rate:
@@ -59,6 +69,7 @@ def compile_files(service, args):
         if not tracks:
             raise ValueError("工程没有可播放的音频轨")
         manifest = dict(schema_version=1, project_id=revision["project_id"], revision_id=revision["id"],
-            view=args.view, sample_rate=rate, duration_samples=duration, tail_samples=tail, tracks=tracks)
+            view=args.view, sample_rate=rate, duration_samples=duration, tail_samples=tail, tracks=tracks,
+            session_directory=str(directory))
         manifest["graph_hash"] = hashlib.sha256(canonical(manifest).encode()).hexdigest()
         return manifest

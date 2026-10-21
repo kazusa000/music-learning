@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新本地引擎N2/N3（2026-10-21）：先读docs/benchmarks/native-engine-n2.md、native-engine-n3.md。N2固定run终态succeeded，约396s整曲/305s参考/1800s循环完成、欠载/xrun/文件错误0，自有进程退出。N3新增独立plugin-worker/共享内存供声与engine.update，共90操作；MLFixture双轨增量、崩溃/卡死隔离和显式恢复、sfizz实际设备通过。Pianoteq钢琴/电钢与Keyscape C7/Wurlitzer四款新设备实际非零，装载2.10–12.75秒，missed/underrun/xrun0；不代表人耳音质或全库新路径验收。293完整后端、19最终专项通过；保护九表/head+14固定SHA相同。原探针假设/名称错误报告保留。N4前端接线进行中；正式仍旧WebAudio服务，未默认部署，N4–N7未完成，目标active。完整跨轨图/侧链/PDC仍N6，不能用独立插件链冒充。H/NAS/Pianoteq固定实现/旧拒绝路径不动，见详细文档。
+
 最新本地引擎N2进行中（2026-10-21）：先读docs/benchmarks/native-engine-n2.md。本地FileGraph读取/重采样/预读＋设备回调混音、监听/定位/循环/自然结束已实现，engine.open/transport/monitor共89操作；原曲静音MIDI不发声，尚无缓存的MIDI等N3，不能用旧音频冒充。288完整后端、16引擎与服务专项、Ruff/契约检查通过。当前7轨原生清单打开2.84ms（另有编译/校验约856ms），20次设备回调非零P95约7.8ms，不是硬件回环首声；缓存215,040字节。连续验收PID29800，定位runtime/engine-n2-long-job.local.json，固定run data/maintenance/native-engine/n2/20261021-165751-cb507e0a；约396秒全曲已过，305秒参考与30min循环未终态。不得改该run固定EXE/脚本/证据、不开第二份长测；可继续新代码/独立构建。当前长测版本早于后加的初始错误检查/诊断字段，N7必须验最终候选，勿替代。正式UI仍旧WebAudio，目标active，N2未最终完成/N3–N7未完成。正式库/H/NAS/固定Pianoteq/历史拒绝目录保护不变。
 
 最新本地引擎N1（2026-10-21）：用户授权设目标完成N1–N7，目标active，继续推进而非只做方案。先读docs/benchmarks/native-engine-n1.md和迁移计划。新增独立native/engine（WASAPI设备/受当前SID ACL保护的管道/系统回环探针），EngineBroker只传控制，无PCM/工程写入；engine六操作共86、无迁移。实际48kHz/480帧/149回调/48,000样本自然停止，9973Hz回环背景比38.7、设备xrun/采集断续0；短探针不等于工程实时验收。282完整后端、10专项、Ruff/契约/前端构建通过。正式九表/head与14项保护SHA一致，无H写/NAS/Pianoteq控制/旧宿主替换。N1已完成，N2进行中，N3–N7未完成，尚未部署默认，不得提前标整个目标完成。旧997Hz背景对照失败保留；新探针独立run保存失败，不覆盖报告。当前正式仍旧WebAudio构建/未停启服务。
