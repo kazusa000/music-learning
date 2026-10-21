@@ -28,7 +28,7 @@ class GraphSession final {
     struct Block{Buffer audio;double endSample=0;uint64_t epoch=0;};
     std::array<Block,capacity> blocks;
     var initial,pendingUpdate,pendingSeek,diagnostics,monitors,meters;
-    juce::String error,updateError,publishedRevision;
+    juce::String error,updateError,publishedRevision,desiredRevision;
     mutable std::mutex control;
     std::atomic<bool> stopping{false},prepared{false},failed{false};
     std::atomic<bool> suspended{false},suspendAck{false};
@@ -47,6 +47,7 @@ public:
         :initial(manifest),frames(quantum),rate((double)manifest["sample_rate"]),outputRate(deviceRate),origin(start),loopStart(begin),loopEnd(end),
          duration((double)manifest["duration_samples"]+(double)manifest.getProperty("tail_samples",0)),loop(looping),audioBudget(available){
         if(quantum<=0||quantum>4096||start<0||start>duration||(loop&&(begin<0||end<=begin||end>(double)manifest["duration_samples"])))throw std::runtime_error("Invalid graph transport");
+        desiredRevision=manifest["revision_id"].toString();
         played.store(start);for(auto& block:blocks)block.audio.setSize(2,frames);
         size_t forecast=capacity*(size_t)frames*2*sizeof(float)+512*2*sizeof(float)
             +((size_t)std::ceil(frames*rate/outputRate)+64)*2*sizeof(float)+ListeningProcessor::bufferBytesBoundFor(512);
@@ -161,7 +162,8 @@ public:
                     if(completed&&ready)publishedRevision=current["revision_id"].toString();
                 };
                 publish(false);
-                if(counter-read.load(std::memory_order_acquire)>=capacity){juce::Thread::sleep(1);continue;}
+                auto consumed=read.load(std::memory_order_acquire);
+                if(counter-consumed>=capacity){WaitOnAddress((volatile void*)&read,&consumed,sizeof(consumed),2);continue;}
                 auto& block=blocks[counter%capacity];juce::AudioSourceChannelInfo info(&block.audio,0,frames);resampler.getNextAudioBlock(info);
                 const double source=origin+(double)((counter+1)*(uint64_t)frames)*rate/outputRate;
                 block.endSample=loop&&source>=loopEnd?loopStart+std::fmod(source-loopStart,loopEnd-loopStart):juce::jmin(source,duration);block.epoch=epoch;
@@ -182,7 +184,7 @@ public:
             const float value=block.audio.getSample(ch,i);
             output[ch][i]+=value;peak=juce::jmax(peak,std::abs(value));
         }
-        played.store(block.endSample);read.store(current+1,std::memory_order_release);return true;
+        played.store(block.endSample);read.store(current+1,std::memory_order_release);WakeByAddressSingle(&read);return true;
     }
     bool update(const var& manifest){
         for(const char* key:{"project_id","view","sample_rate","duration_samples","tail_samples"})if(initial[key]!=manifest[key])return false;
@@ -191,7 +193,7 @@ public:
         const auto* before=initial["tracks"].getArray();const auto* after=manifest["tracks"].getArray();
         if(!before||!after||before->size()!=after->size())return false;
         for(int i=0;i<before->size();++i)if((*before)[i]["id"]!=(*after)[i]["id"])return false;
-        std::lock_guard lock(control);pendingUpdate=manifest;updateRequested.fetch_add(1);return true;
+        std::lock_guard lock(control);pendingUpdate=manifest;desiredRevision=manifest["revision_id"].toString();updateRequested.fetch_add(1);return true;
     }
     void setPlaying(bool playing){std::lock_guard lock(activity);active=playing;}
     void seek(double start,bool looping,double begin,double end){
@@ -210,7 +212,7 @@ public:
     var monitorValues()const{std::lock_guard lock(control);return monitors.clone();}
     var meterValues()const{std::lock_guard lock(control);return meters;}
     var pluginValues(bool& ready)const{
-        std::lock_guard lock(control);ready=prepared.load()&&!failed.load()&&updateError.isEmpty()&&!publishedRevision.isEmpty()&&updateApplied.load()>=updateRequested.load();
+        std::lock_guard lock(control);ready=prepared.load()&&!failed.load()&&updateError.isEmpty()&&!publishedRevision.isEmpty()&&publishedRevision==desiredRevision&&updateApplied.load()>=updateRequested.load();
         if(auto* object=diagnostics.getDynamicObject())for(const auto& p:object->getProperties())if(p.value["status"].toString()!="ready")ready=false;
         return diagnostics.isObject()?diagnostics:var(new juce::DynamicObject());
     }

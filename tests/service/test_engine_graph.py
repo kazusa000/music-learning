@@ -242,7 +242,7 @@ def test_runtime_plugin_latency_change_replans_without_reopening_processes(servi
         note["end_sample"] = 44100*3
     path = ROOT / "runtime/build/engine-dynamic-fixture/MLDynamicFixture_artefacts/Release/VST3/MLDynamicFixture.vst3"
     assert path.is_dir(), "Build the isolated dynamic fixture with scripts/build_engine_fixture.py"
-    service.settings.plugin_roots.append(path)
+    service.settings.plugin_roots.append(path.resolve())
     descriptor = NativeHost(diagnostics=tmp_path/"dynamic-inspect").call(dict(schema_version=1,
         action="inspect", plugin=dict(path=str(path))))["plugin"]
     plugin = snapshot["plugins"][0]

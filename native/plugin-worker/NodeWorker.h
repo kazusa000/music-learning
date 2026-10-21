@@ -64,7 +64,7 @@ inline int runNodeWorker(const String& name,const File& directory) {
             }
             const auto sequence=shared->requestedSequence.load(std::memory_order_acquire);
             if(sequence==shared->completedSequence.load()) {
-                if(WaitForSingleObject(memory.request,5)==WAIT_TIMEOUT)MessageManager::getInstance()->runDispatchLoopUntil(1);
+                if(WaitForSingleObject(memory.request,5)==WAIT_TIMEOUT)mlengine::pumpPendingMessages();
                 continue;
             }
             if(shared->programEpoch.load()!=applied)continue;

@@ -70,7 +70,7 @@ int main(int argc,char** argv) {
                 renderer->seek((juce::int64)(loop&&source>=end?begin+std::fmod(source-begin,(double)(end-begin)):source),loop,begin,end);
                 resampler->flushBuffers();
             }
-            if(produced-consumed>=mlengine::pluginCapacity){juce::MessageManager::getInstance()->runDispatchLoopUntil(1);continue;}
+            if(produced-consumed>=mlengine::pluginCapacity){mlengine::pumpPendingMessages();Sleep(1);continue;}
             const auto started=juce::Time::getHighResolutionTicks();
             juce::AudioSourceChannelInfo info(&output,0,(int)shared->frames);resampler->getNextAudioBlock(info);
             if(shared->requestedEpoch.load()!=epoch)continue;

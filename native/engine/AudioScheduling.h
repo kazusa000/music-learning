@@ -14,4 +14,9 @@ public:
     AudioScheduling& operator=(const AudioScheduling&)=delete;
     bool active()const{return task!=nullptr;}
 };
+inline void pumpPendingMessages(){
+    MSG message{};
+    for(int count=0;count<32&&PeekMessageW(&message,nullptr,0,0,PM_REMOVE);++count)
+        if(message.message!=WM_QUIT){TranslateMessage(&message);DispatchMessageW(&message);}
+}
 }

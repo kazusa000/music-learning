@@ -22,7 +22,7 @@ target_compile_definitions(ml_engine PRIVATE
     JUCE_USE_OGGVORBIS=1 JUCE_USE_MP3AUDIOFORMAT=1 JUCE_USE_WINDOWS_MEDIA_FORMAT=0 NOMINMAX)
 target_compile_options(ml_engine PRIVATE /utf-8 /EHsc /W4)
 target_link_libraries(ml_engine PRIVATE "${ML_RUNTIME_LIBRARY}"
-    kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32 winmm avrt cfgmgr32)
+    kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32 winmm avrt cfgmgr32 synchronization)
 set_target_properties(ml_engine PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 add_executable(ml_engine_loopback Loopback.cpp)
 target_compile_options(ml_engine_loopback PRIVATE /utf-8 /EHsc /W4)
@@ -61,7 +61,7 @@ target_compile_definitions(ml_graph_runner PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_I
     JUCE_USE_FLAC=1 JUCE_USE_OGGVORBIS=1 JUCE_USE_MP3AUDIOFORMAT=1 JUCE_USE_WINDOWS_MEDIA_FORMAT=0)
 target_compile_options(ml_graph_runner PRIVATE /utf-8 /EHsc /W4)
 target_link_libraries(ml_graph_runner PRIVATE "${ML_RUNTIME_LIBRARY}"
-    kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32 winmm avrt)
+    kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32 winmm avrt synchronization)
 set_target_properties(ml_graph_runner PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 get_target_property(ML_DEVICE_SOURCES ml_engine SOURCES)
 list(REMOVE_ITEM ML_DEVICE_SOURCES Main.cpp)

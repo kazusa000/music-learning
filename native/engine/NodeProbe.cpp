@@ -26,12 +26,16 @@ int main(int argc,char** argv) {
         if(!pcm.openedOk())throw std::runtime_error("Cannot open probe output");
         const auto initial=node.status();
         for(const auto& item:*request["requests"].getArray()) {
+            const int idle=(int)item.getProperty("idle_ms",0);
+            if(idle<0||idle>100)throw std::runtime_error("Probe idle outside bounds");
+            if(idle)Thread::sleep(idle);
             if(item.hasProperty("program")){node.configure(File(item["program"].toString()));node.waitReady();}
             const auto count=(int)item.getProperty("frames",frames);
             for(int ch=0;ch<2;++ch){
                 FloatVectorOperations::fill(main.getWritePointer(ch),(float)(double)item.getProperty("main",0.0),count);
                 for(auto& side:sides)FloatVectorOperations::fill(side.getWritePointer(ch),(float)(double)item.getProperty("side",0.0),count);
             }
+            const auto submitted=Time::getHighResolutionTicks();
             node.submit((int64)item["sample"],(int64)item.getProperty("input_delay",(int64)0),(int64)item.getProperty("origin",(int64)0),
                 (bool)item.getProperty("chase",false),(bool)item.getProperty("loop",false),
                 (int64)item.getProperty("loop_start",(int64)0),(int64)item.getProperty("loop_end",(int64)1),main,sides,count);
@@ -41,6 +45,7 @@ int main(int argc,char** argv) {
             while(!node.receive(output,count,1))if(Time::getMillisecondCounterHiRes()>deadline)throw std::runtime_error("Probe output timeout");
             for(int i=0;i<count;++i)for(int ch=0;ch<2;++ch)pcm.writeFloat(output.getSample(ch,i));
             auto* check=new DynamicObject();check->setProperty("sample",item["sample"]);check->setProperty("frames",count);
+            check->setProperty("round_trip_micros",Time::highResolutionTicksToSeconds(Time::getHighResolutionTicks()-submitted)*1000000.0);
             check->setProperty("overlap_rejected",overlapRejected);check->setProperty("status",node.status());checks.add(var(check));
         }
         report->setProperty("initial",initial);report->setProperty("checks",checks);report->setProperty("ok",true);

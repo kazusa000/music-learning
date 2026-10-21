@@ -59,6 +59,16 @@ def test_stereo_sidechain_latency_and_input_ownership(node_case):
     assert right == left
 
 
+def test_idle_node_wakes_without_restarting_or_changing_pcm(node_case):
+    _, _, _, run = node_case
+    report, left, right = run([dict(sample=i * 512, main=.2, chase=i == 0, idle_ms=40) for i in range(20)])
+    assert left[:128] == [0.] * 128
+    assert left[128:] == pytest.approx([.2] * (len(left) - 128), abs=1e-6)
+    assert right == left
+    assert len({item['status']['pid'] for item in report['checks']}) == 1
+    assert sorted(item['round_trip_micros'] for item in report['checks'])[18] < 20000, report
+
+
 def test_parameter_update_preserves_delay_history_and_pid(node_case):
     project, ids, save, run = node_case
     changed = copy.deepcopy(project)

@@ -157,12 +157,27 @@ def supervise(settings):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "command", choices=["start", "stop", "status", "open", "supervise", "migrate", "backup"]
+        "command", choices=["start", "stop", "status", "open", "supervise", "migrate", "backup", "repair-audio"]
     )
     parser.add_argument("--open", action="store_true")
     parser.add_argument("--browser", action="store_true", help="Explicitly use a browser tab instead of the application window")
     args = parser.parse_args()
     settings = Settings.load()
+    if args.command == 'repair-audio':
+        if not ready(settings):
+            raise SystemExit('请先运行 start.cmd 启动本机服务。')
+        from music_learning.engine.recovery import recover
+        from music_learning.sdk import Client
+
+        client = Client(url=f'http://127.0.0.1:{settings.port}', token_file=settings.path('session-token.local'))
+        try:
+            state = recover(client)
+            print(json.dumps(dict(status=state['status'], project_id=state.get('project_id'),
+                position_sample=state.get('position_sample'), playing=state.get('playing', False),
+                message='音频进程已重新连接；工程保持暂停，按播放继续。'), ensure_ascii=False))
+        finally:
+            client.http.close()
+        return
     if args.command == "supervise":
         supervise(settings)
         return
@@ -215,6 +230,10 @@ def main():
         try:
             process = owned(settings)
             if not process:
+                if settings.native_audio_enabled:
+                    from music_learning.engine.bundle import pin
+
+                    pin(settings.native_audio_bundle)
                 if not (ROOT / "apps/web/dist/index.html").is_file() or not settings.native_host.is_file():
                     raise SystemExit(
                         "Missing web build or native host; run bootstrap_app.py and build_native.py"
