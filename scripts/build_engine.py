@@ -26,7 +26,7 @@ def main():
     cmake = runtime / "tooling/Scripts/cmake.exe"
     output = runtime / "build/engine-v1"
     subprocess.run([str(cmake), "-S", str(ROOT / "native/engine"), "-B", str(output),
-        "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_CXX_COMPILER=cl",
+        "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_CXX_COMPILER=cl", "-DCMAKE_C_COMPILER=cl",
         "-DCMAKE_MAKE_PROGRAM=" + str(runtime / "tooling/Scripts/ninja.exe"),
         "-DML_RUNTIME_LIBRARY=" + str(library)], env=env, check=True, cwd=ROOT)
     subprocess.run([str(cmake), "--build", str(output), "--parallel", "2"], env=env, check=True)

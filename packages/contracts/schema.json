@@ -1486,6 +1486,85 @@
       "title": "EngineConfigure",
       "type": "object"
     },
+    "EngineMonitor": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_session": {
+          "pattern": "^[a-f0-9]{48}$",
+          "title": "Engine Session",
+          "type": "string"
+        },
+        "generation": {
+          "minimum": 0,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "tracks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EngineTrackValues"
+          },
+          "maxProperties": 128,
+          "minProperties": 1,
+          "title": "Tracks",
+          "type": "object"
+        }
+      },
+      "required": [
+        "engine_session",
+        "generation",
+        "tracks"
+      ],
+      "title": "EngineMonitor",
+      "type": "object"
+    },
+    "EngineOpen": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "view": {
+          "default": "arrangement",
+          "enum": [
+            "original",
+            "arrangement"
+          ],
+          "title": "View",
+          "type": "string"
+        },
+        "position_sample": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Position Sample",
+          "type": "integer"
+        },
+        "playing": {
+          "default": false,
+          "title": "Playing",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "EngineOpen",
+      "type": "object"
+    },
     "EngineProbe": {
       "additionalProperties": false,
       "properties": {
@@ -1498,6 +1577,149 @@
         }
       },
       "title": "EngineProbe",
+      "type": "object"
+    },
+    "EngineTrackValues": {
+      "additionalProperties": false,
+      "properties": {
+        "gain_db": {
+          "anyOf": [
+            {
+              "maximum": 24,
+              "minimum": -120,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gain Db"
+        },
+        "pan": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": -1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pan"
+        },
+        "mute": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mute"
+        },
+        "solo": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Solo"
+        }
+      },
+      "title": "EngineTrackValues",
+      "type": "object"
+    },
+    "EngineTransport": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_session": {
+          "pattern": "^[a-f0-9]{48}$",
+          "title": "Engine Session",
+          "type": "string"
+        },
+        "generation": {
+          "minimum": 0,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "playing": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Playing"
+        },
+        "position_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Position Sample"
+        },
+        "loop": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Loop"
+        },
+        "loop_start_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Loop Start Sample"
+        },
+        "loop_end_sample": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Loop End Sample"
+        }
+      },
+      "required": [
+        "engine_session",
+        "generation"
+      ],
+      "title": "EngineTransport",
       "type": "object"
     },
     "EventPage": {
@@ -5774,6 +5996,30 @@
     }
   },
   "operations": {
+    "engine.open": {
+      "arguments": "EngineOpen",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "engine.transport": {
+      "arguments": "EngineTransport",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "engine.monitor": {
+      "arguments": "EngineMonitor",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
     "engine.devices": {
       "arguments": "Empty",
       "result": {

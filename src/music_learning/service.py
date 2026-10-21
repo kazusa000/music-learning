@@ -92,9 +92,22 @@ class Service:
                         self.engine_broker = EngineBroker(self.settings)
                 action = request.operation.split(".", 1)[1]
                 try:
+                    arguments = args.model_dump(exclude_none=True)
+                    if action == "open":
+                        from .engine.compiler import compile_files
+
+                        manifest = compile_files(self, args)
+                        current = self.engine_broker.status()
+                        if current["status"] in ("stopped", "closed"):
+                            self.engine_broker.command("configure", {"sample_rate": manifest["sample_rate"], "buffer_frames": 512})
+                        arguments = dict(manifest=manifest, position_sample=args.position_sample, playing=args.playing)
+                    if action in ("transport", "monitor"):
+                        if args.engine_session != self.engine_broker.identity:
+                            raise ValueError("引擎会话已变更，请刷新状态")
+                        arguments["expected_generation"] = arguments.pop("generation")
                     result = (self.engine_broker.status() if action == "status" else
                               self.engine_broker.close() if action == "close" else
-                              self.engine_broker.command(action, args.model_dump()))
+                              self.engine_broker.command(action, arguments))
                 except (RuntimeError, OSError, ValueError) as error:
                     raise DomainError("engine_error", str(error), 409) from error
                 TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)

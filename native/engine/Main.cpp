@@ -6,6 +6,7 @@
 #include <future>
 #include <thread>
 #include <vector>
+#include "FileGraph.h"
 
 using namespace juce;
 static var obj(std::initializer_list<std::pair<String, var>> fields) {
@@ -18,12 +19,22 @@ class DeviceEngine final : public AudioIODeviceCallback {
     std::atomic<int64> position{0}, callbacks{0}, remaining{0}, toneCommand{0};
     std::atomic<float> peak{0};
     double rate = 48000.0;
+    std::unique_ptr<mlengine::FileGraph> graph;
+    std::atomic<bool> filePlaying{false};
+    int generation = 0;
 public:
     ~DeviceEngine() override { device.removeAudioCallback(this); device.closeAudioDevice(); }
     void audioDeviceAboutToStart(AudioIODevice* d) override { rate = d->getCurrentSampleRate(); }
     void audioDeviceStopped() override { remaining.store(0); }
     void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* out,
         int channels, int frames, const AudioIODeviceCallbackContext&) override {
+        for (int ch = 0; ch < channels; ++ch) if (out[ch]) FloatVectorOperations::clear(out[ch], frames);
+        if (graph && filePlaying.load()) {
+            float maximum = 0;
+            graph->consume(out, channels, frames, maximum);
+            if (graph->ended() || graph->failed.load()) filePlaying.store(false);
+            peak.store(maximum); callbacks.fetch_add(1); return;
+        }
         auto p = position.load(std::memory_order_relaxed), left = remaining.load(std::memory_order_relaxed);
         const auto command = toneCommand.exchange(0);
         if (command < 0) left = 0;
@@ -45,16 +56,38 @@ public:
     }
     var status() {
         auto* d = device.getCurrentAudioDevice();
-        return obj({{"protocol_version", 1}, {"pid", (int)GetCurrentProcessId()},
+        auto result = obj({{"protocol_version", 1}, {"pid", (int)GetCurrentProcessId()},
             {"status", d ? "ready" : "closed"}, {"device", d ? d->getName() : String()},
             {"sample_rate", d ? d->getCurrentSampleRate() : 0.0},
             {"buffer_frames", d ? d->getCurrentBufferSizeSamples() : 0},
             {"position_sample", position.load()}, {"callbacks", callbacks.load()},
             {"playing", remaining.load() > 0}, {"peak", peak.load()},
             {"xruns", device.getXRunCount()}});
+        auto* fields = result.getDynamicObject();
+        fields->setProperty("generation", generation);
+        if (graph) {
+            fields->setProperty("project_id", graph->manifest["project_id"]);
+            fields->setProperty("revision_id", graph->manifest["revision_id"]);
+            fields->setProperty("view", graph->manifest["view"]);
+            fields->setProperty("playing", filePlaying.load());
+            fields->setProperty("position_sample", (int64)jmin(graph->songDuration,graph->playedSample.load()));
+            fields->setProperty("render_position_sample", (int64)graph->playedSample.load());
+            fields->setProperty("source_sample_rate", graph->sourceRate);
+            fields->setProperty("duration_samples", (int64)graph->songDuration);
+            fields->setProperty("cache_bytes", graph->cacheBytes());
+            fields->setProperty("consumed_device_frames", (int64)(graph->read.load()*graph->frames));
+            fields->setProperty("underruns", (int64)graph->underruns.load());
+            fields->setProperty("loop", graph->looping);
+            fields->setProperty("monitor", graph->monitorValues());
+            fields->setProperty("meters", graph->meterValues());
+            fields->setProperty("file_error", graph->failed.load());
+        }
+        return result;
     }
     var command(const var& request) {
         const auto action = get(request, "action").toString();
+        if(request.hasProperty("expected_generation") && (int)get(request,"expected_generation")!=generation)
+            throw std::runtime_error("Engine generation changed");
         if (action == "status" || action == "hello") return status();
         if (action == "devices") {
             Array<var> result;
@@ -67,7 +100,7 @@ public:
             return result;
         }
         if (action == "configure") {
-            toneCommand.store(-1); device.removeAudioCallback(this); device.closeAudioDevice();
+            toneCommand.store(-1); filePlaying.store(false); device.removeAudioCallback(this); graph.reset(); device.closeAudioDevice();
             device.setCurrentAudioDeviceType("Windows Audio", false);
             const auto error = device.initialise(0, 2, nullptr, true);
             if (error.isNotEmpty()) throw std::runtime_error(error.toStdString());
@@ -79,14 +112,39 @@ public:
             if (failure.isNotEmpty()) throw std::runtime_error(failure.toStdString());
             device.addAudioCallback(this); return status();
         }
+        if (action == "open" || action == "transport") {
+            auto* d = device.getCurrentAudioDevice(); if (!d) throw std::runtime_error("Configure an audio device first");
+            if (action == "transport" && !graph) throw std::runtime_error("Open a project first");
+            const bool play = (bool)get(request,"playing", action=="open" ? false : filePlaying.load());
+            const bool replay = action=="transport" && play && graph->ended();
+            const bool rebuild = action == "open" || request.hasProperty("position_sample") || request.hasProperty("loop")
+                || request.hasProperty("loop_start_sample") || request.hasProperty("loop_end_sample") || replay;
+            if (rebuild) {
+                const auto value = action == "open" ? get(request,"manifest") : graph->manifest;
+                const auto start = (double)get(request,"position_sample",graph && !replay ? graph->playedSample.load() : 0.0);
+                const auto begin = (double)get(request,"loop_start_sample",graph ? graph->loopStart : 0.0);
+                const auto end = (double)get(request,"loop_end_sample",graph ? graph->loopEnd : (double)value["duration_samples"]);
+                const bool loop = (bool)get(request,"loop",graph ? graph->looping : false);
+                auto ready = std::make_unique<mlengine::FileGraph>(value,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),start,loop,begin,end);
+                if(action=="transport")ready->monitor(graph->monitorValues());
+                filePlaying.store(false); device.removeAudioCallback(this);
+                graph.swap(ready); ++generation; toneCommand.store(-1);
+                device.addAudioCallback(this);
+            }
+            filePlaying.store(play); return status();
+        }
+        if (action == "monitor") {
+            if (!graph) throw std::runtime_error("Open a project first");
+            graph->monitor(get(request,"tracks"));return status();
+        }
         if (action == "probe") {
             if (!device.getCurrentAudioDevice()) throw std::runtime_error("Configure an audio device first");
             const auto seconds = (double)get(request, "seconds", .5);
             if (!(seconds > 0 && seconds <= 3)) throw std::runtime_error("Probe duration must be 0..3 seconds");
-            toneCommand.store((int64)(seconds * rate)); return status();
+            filePlaying.store(false); toneCommand.store((int64)(seconds * rate)); return status();
         }
-        if (action == "stop") { toneCommand.store(-1); return status(); }
-        if (action == "close") { toneCommand.store(-1); device.removeAudioCallback(this); device.closeAudioDevice(); return status(); }
+        if (action == "stop") { filePlaying.store(false); toneCommand.store(-1); return status(); }
+        if (action == "close") { filePlaying.store(false); toneCommand.store(-1); device.removeAudioCallback(this); graph.reset(); device.closeAudioDevice(); return status(); }
         throw std::runtime_error("Unsupported engine action");
     }
 };

@@ -558,6 +558,36 @@ class RevisionRef(ProjectRef):
     revision_id: Id | None = None
 
 
+class EngineOpen(RevisionRef):
+    view: Literal["original", "arrangement"] = "arrangement"
+    position_sample: Sample = 0
+    playing: bool = False
+
+
+class EngineSession(Model):
+    engine_session: str = Field(pattern=r"^[a-f0-9]{48}$")
+    generation: int = Field(ge=0)
+
+
+class EngineTransport(EngineSession):
+    playing: bool | None = None
+    position_sample: Sample | None = None
+    loop: bool | None = None
+    loop_start_sample: Sample | None = None
+    loop_end_sample: Sample | None = None
+
+
+class EngineTrackValues(Model):
+    gain_db: float | None = Field(default=None, ge=-120, le=24)
+    pan: float | None = Field(default=None, ge=-1, le=1)
+    mute: bool | None = None
+    solo: bool | None = None
+
+
+class EngineMonitor(EngineSession):
+    tracks: dict[str, EngineTrackValues] = Field(min_length=1, max_length=128)
+
+
 class ProjectPage(ProjectRef, Page):
     pass
 
@@ -1198,6 +1228,9 @@ class LiveChunk(LiveSession):
 
 
 OPERATIONS = {
+    "engine.open": (EngineOpen, False),
+    "engine.transport": (EngineTransport, False),
+    "engine.monitor": (EngineMonitor, False),
     "engine.devices": (Empty, False),
     "engine.configure": (EngineConfigure, False),
     "engine.status": (Empty, False),
@@ -1287,6 +1320,9 @@ OPERATIONS = {
 }
 
 RESULT_TYPES = {
+    "engine.open": dict,
+    "engine.transport": dict,
+    "engine.monitor": dict,
     "engine.devices": list[dict],
     "engine.configure": dict,
     "engine.status": dict,

@@ -99,7 +99,10 @@ class EngineBroker:
                         or reply.get("session_id") != self.identity
                         or reply.get("request_id") != message["request_id"]):
                     raise ValueError("引擎回执序号无效")
-                return reply["result"]
+                result = reply["result"]
+                if isinstance(result, dict):
+                    result = dict(result, engine_session=self.identity)
+                return result
             except (TimeoutError, OSError, ConnectionError):
                 self._close()
                 raise
