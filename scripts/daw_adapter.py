@@ -7,6 +7,7 @@ import base64
 import importlib.metadata
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -51,6 +52,8 @@ class Production:
             ROOT / "config/media-runtime.json",
             self.settings.native_host,
         ]
+        if self.job["kind"] == "project.export":
+            self.code_paths.extend(sorted((ROOT / "src/music_learning/engine").glob("*.py")))
         self.environment = dict(
             python=sys.version,
             packages={
@@ -112,6 +115,10 @@ class Production:
             # leave room for the task path on Windows readers with MAX_PATH limits.
             target = self.directory / "sources" / (str(index) + ".wav")
             target.parent.mkdir(exist_ok=True)
+            if self.job["kind"] == "project.export":
+                os.link(self.path(sha), target)
+                paths[sha] = str(target)
+                continue
             subprocess.run(
                 [
                     str(verify_tool("ffmpeg")),
@@ -227,6 +234,32 @@ class Production:
                             )
                     lanes.append(dict(lane, points=points))
                 track["automation"] = lanes
+        if self.job["kind"] == "project.export":
+            from music_learning.engine.graph_compiler import export_manifest
+
+            manifest = export_manifest(project, self.directory / "n",
+                s.listening_calibration.model_dump(mode="json") if s.listening_calibration else None,
+                self.job.get("export_mixing_version"))
+            manifest["start_sample"] = payload["start_sample"]
+            request_path, output_path, report_path = (self.directory / name for name in
+                ("native-export.json", "native-export.wav", "native-export-report.json"))
+            write_json(request_path, manifest)
+            from music_learning.engine.bundle import pin, environment
+
+            bundle, manifest_identity = pin()
+            command = bundle / "ml_graph_runner.exe"
+            completed = subprocess.run([str(command), "--render", str(request_path), str(output_path), str(report_path)],
+                timeout=self.settings.pipeline_stage_timeout_seconds, capture_output=True,
+                env=environment(bundle, manifest_identity),
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+            report = json.loads(report_path.read_bytes()) if report_path.is_file() else {}
+            if completed.returncode or not report.get("ok") or report.get("revision_id") != self.job["revision_id"]:
+                raise ProductionError("native_export_failed", report.get("error", "Native graph export failed"))
+            if report.get("mixing_version") != self.job.get("export_mixing_version"):
+                raise ValueError("Native export returned another mixing version")
+            self.add(request_path)
+            self.add(report_path)
+            return dict(mix_asset_id=self.add(output_path, report), native_graph=True)
         native = NativeHost(self.settings.native_host, self.directory / "native-calls").call(
             dict(
                 schema_version=1,
@@ -506,20 +539,26 @@ class Production:
         if payload["format"] == "wav":
             path = self.directory / "export.wav"
             if payload.get("prepare_mix"):
+                self.job["export_mixing_version"] = payload.get("mixing_version")
                 self.job["payload"] = c.RenderPayload(
                     revision_id=self.job["revision_id"], end_sample=self.job["snapshot"]["duration_samples"]
                 ).model_dump(mode="json")
                 rendered = self.render()
                 self.job["payload"] = payload
                 source = next(item for item in self.files if item["sha256"] == rendered["mix_asset_id"])
-                shutil.copyfile(self.settings.path(source["relative_path"]), path)
+                if rendered.get("native_graph"):
+                    path = self.settings.path(source["relative_path"])
+                else:
+                    shutil.copyfile(self.settings.path(source["relative_path"]), path)
             else:
                 shutil.copyfile(self.path(payload["audio_asset_id"]), path)
         else:
             path = self.directory / "export.mid"
             export_midi(c.Snapshot.model_validate(self.job["snapshot"]), path, self.job["revision_id"])
         result = dict(
-            format=payload["format"], asset_id=self.add(path), snapshot_sha256=self.job["snapshot_sha256"]
+            format=payload["format"],
+            asset_id=(rendered["mix_asset_id"] if payload.get("prepare_mix") and rendered.get("native_graph") else self.add(path)),
+            snapshot_sha256=self.job["snapshot_sha256"]
         )
         if "mixing_tracks" in payload:
             result.update(mixing_version=payload["mixing_version"], arrangement_snapshot_sha256=self.job["arrangement_snapshot_sha256"])

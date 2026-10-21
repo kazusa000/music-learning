@@ -26,6 +26,11 @@ struct PrivateSecurity {
     }
     ~PrivateSecurity(){if(descriptor)LocalFree(descriptor);}
 };
+inline void verifyWorkerBundle(const juce::File& executable){
+    const auto expected=juce::SystemStats::getEnvironmentVariable("ML_PLUGIN_WORKER_SHA256",{});
+    if(expected.isNotEmpty()&&juce::SHA256(executable).toHexString()!=expected)
+        throw std::runtime_error("Plugin worker differs from the running engine bundle");
+}
 
 class PluginSource {
     NativeHandle mapping,job,process;
@@ -65,6 +70,7 @@ public:
             if(!job.value||!SetInformationJobObject(job.value,JobObjectExtendedLimitInformation,&info,sizeof(info)))throw std::runtime_error("Cannot own plugin worker");
             const auto executable=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("ml_plugin_worker.exe");
             if(!executable.existsAsFile())throw std::runtime_error("Plugin worker executable missing");
+            verifyWorkerBundle(executable);
             auto command=executable.getFullPathName().quoted()+" "+name.quoted()+" "+directory.getFullPathName().quoted();
             const std::wstring wide(command.toWideCharPointer());std::vector<wchar_t> writable(wide.begin(),wide.end());writable.push_back(0);
             STARTUPINFOW startup{};startup.cb=sizeof(startup);PROCESS_INFORMATION child{};
@@ -98,6 +104,15 @@ public:
         epoch.store(shared->requestedEpoch.fetch_add(1,std::memory_order_release)+1);config=text;
         configuredAt=juce::Time::getMillisecondCounterHiRes();readySeenAt=0;progressAt=configuredAt;observedProduced=shared->produced.load();
         updating.store(false);
+    }
+    uint64_t align(const juce::File& file,double start,bool loop,int64_t begin,int64_t end){
+        const auto hash=verifyManifest(file).toHexString();
+        const auto consumed=shared->consumed.load(std::memory_order_acquire);
+        double source=(double)shared->origin.load()+(double)(consumed*shared->frames)*shared->sourceRate/shared->deviceRate;
+        if(loop&&source>=end)source=(double)begin+std::fmod(source-begin,(double)(end-begin));
+        if(!failed&&hash==config&&loop==(shared->looping.load()!=0)&&(!loop||(begin==shared->loopStart.load()&&end==shared->loopEnd.load()))
+           &&std::abs(source-start)<=1.0)return consumed;
+        configure(file,(int64_t)start,loop,begin,end);return 0;
     }
     const float* block(uint64_t sequence,int frames) {
         if(updating.load())return nullptr;

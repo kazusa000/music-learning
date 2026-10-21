@@ -6,6 +6,7 @@
 #include <memory>
 #include <map>
 #include "PluginSource.h"
+#include "GraphSession.h"
 
 namespace mlengine {
 using namespace juce;
@@ -15,6 +16,7 @@ using PluginPool = std::map<String,std::shared_ptr<PluginSource>>;
 class FileTimeline final : public AudioSource {
     struct Clip { std::unique_ptr<AudioFormatReader> reader; int64 start, offset, length; float gain; };
     std::vector<Clip> clips;
+    AudioBuffer<float> scratch{2,4096};
     int64 cursor, loopStart, loopEnd;
     bool loop;
 public:
@@ -48,10 +50,15 @@ public:
                 const auto begin = jmax(cursor, clip.start), end = jmin(cursor + count, clip.start + clip.length);
                 if (end <= begin) continue;
                 const int n = (int)(end - begin), offset = info.startSample + written + (int)(begin - cursor);
-                // N2 compiler uses disjoint clips per audio track. Overlapping
-                // arrangement layers will compile into separate sources in N5.
-                if (!clip.reader->read(info.buffer, offset, n, clip.offset + begin - clip.start, true, true)) failed.store(true);
-                info.buffer->applyGain(offset, n, clip.gain);
+                // Overlapping clips are additive, including differently gained
+                // layers. Scratch is bounded and never touches the callback.
+                for(int done=0;done<n;) {
+                    const int chunk=jmin(n-done,scratch.getNumSamples());scratch.clear();
+                    if(!clip.reader->read(&scratch,0,chunk,clip.offset+begin-clip.start+done,true,true))failed.store(true);
+                    for(int ch=0;ch<jmin(2,info.buffer->getNumChannels());++ch)
+                        info.buffer->addFrom(ch,offset+done,scratch,ch,0,chunk,clip.gain);
+                    done+=chunk;
+                }
             }
             cursor += count; written += count;
         }
@@ -66,6 +73,7 @@ public:
         std::unique_ptr<FileTimeline> source;
         std::unique_ptr<ResamplingAudioSource> resampler;
         std::shared_ptr<PluginSource> plugin;
+        uint64_t pluginBase=0;
         std::atomic<float> gainDb{0}, pan{0};
         std::atomic<bool> mute{false}, solo{false};
         std::atomic<float> peak{0};
@@ -75,6 +83,8 @@ public:
     };
     struct Block { std::vector<AudioBuffer<float>> tracks; double endSample=0; };
     var manifest;
+    std::unique_ptr<GraphSession> routed;
+    ListeningProcessor listening;
     std::vector<std::unique_ptr<Track>> tracks;
     std::array<Block, capacity> blocks;
     std::atomic<uint64_t> written{0}, read{0}, underruns{0};
@@ -94,6 +104,12 @@ public:
         if (looping && !(begin >= 0 && end > begin && end <= songDuration)) throw std::runtime_error("Invalid file loop");
         if (start < 0 || start > duration) throw std::runtime_error("Invalid file position");
         playedSample.store(start);
+        listening.prepare(outputRate,quantum);
+        if(value.hasProperty("routing_graph")){
+            if(auto* items=value["tracks"].getArray())for(const auto& item:*items)
+                if(item["id"]!=value["routing_graph"]["master"]){auto track=std::make_unique<Track>();track->id=item["id"].toString();tracks.push_back(std::move(track));}
+            routed=std::make_unique<GraphSession>(value,outputRate,quantum,start,loop,begin,end);return;
+        }
         if (auto* items = value["tracks"].getArray()) for (const auto& item : *items) {
             auto track = std::make_unique<Track>(); track->id = item["id"].toString();
             track->gainDb.store((float)(double)item.getProperty("gain_db", 0.0));
@@ -107,7 +123,7 @@ public:
                 const auto key=value["project_id"].toString()+":"+track->id+":"+item["runtime_signature"].toString();
                 auto& source=(*pool)[key];
                 if(!source||source->retryRequired())source=std::make_shared<PluginSource>(item,File(value["session_directory"].toString()),sourceRate,deviceRate,frames);
-                source->configure(File(item["plugin_project_path"].toString()),(int64)start,loop,(int64)begin,(int64)end);track->plugin=source;
+                track->pluginBase=source->align(File(item["plugin_project_path"].toString()),start,loop,(int64)begin,(int64)end);track->plugin=source;
             }else {
                 track->source = std::make_unique<FileTimeline>(item, sourceRate, (int64)start, loop, (int64)begin, (int64)end);
                 track->resampler = std::make_unique<ResamplingAudioSource>(track->source.get(), false, 2);
@@ -142,6 +158,7 @@ public:
     }
     ~SessionGraph() { stopping.store(true); if (producer.joinable()) producer.join(); }
     var monitorValues() const {
+        if(routed)return routed->monitorValues();
         auto* values = new DynamicObject();
         for (auto& track : tracks) {
             auto* v = new DynamicObject(); v->setProperty("gain_db", track->gainDb.load()); v->setProperty("pan", track->pan.load());
@@ -149,14 +166,17 @@ public:
         }return var(values);
     }
     var meterValues() const {
+        if(routed)return routed->meterValues();
         auto* values=new DynamicObject();for(const auto& track:tracks)values->setProperty(track->id,track->peak.load());return var(values);
     }
     var pluginValues(bool& ready) const {
+        if(routed)return routed->pluginValues(ready);
         auto* values=new DynamicObject();ready=true;
         for(const auto& track:tracks)if(track->plugin){const auto state=track->plugin->status();if(state["status"].toString()!="ready")ready=false;values->setProperty(track->id,state);}
         return var(values);
     }
     void monitor(const var& values) {
+        if(routed){routed->monitor(values);return;}
         if(!values.isObject())throw std::runtime_error("Invalid monitor map");
         for(const auto& field:values.getDynamicObject()->getProperties()) {
             bool found=false;for(const auto& track:tracks)if(track->id==field.name.toString())found=true;
@@ -171,6 +191,7 @@ public:
         }
     }
     bool consume(float* const* output, int channels, int count, float& peak) {
+        if(routed){const bool result=routed->consume(output,channels,count,peak);playedSample.store(routed->position());read.store(routed->consumed());underruns.store(routed->misses());failed.store(routed->isFailed());return result;}
         if(failed.load())return false;
         const auto current = read.load(std::memory_order_relaxed);
         if (count != frames || current == written.load(std::memory_order_acquire)) { underruns.fetch_add(1); return false; }
@@ -180,7 +201,7 @@ public:
         for (const auto& track : tracks) if (!track->mute.load() && (!soloed || track->solo.load())) ++audible;
         for (size_t t = 0; t < tracks.size(); ++t) {
             auto& track = *tracks[t]; const auto pan = track.pan.load();
-            const auto* mapped=track.plugin?track.plugin->block(current,count):nullptr;
+            const auto* mapped=track.plugin?track.plugin->block(current+track.pluginBase,count):nullptr;
             const float level = track.mute.load() || (soloed && !track.solo.load()) ? 0.0f :
                 std::pow(10.0f, (track.gainDb.load() - track.bakedGain + (audible == 1 ? track.soloGain : track.monitorGain)) / 20.0f);
             const float left = level * (pan > 0 ? 1-pan : 1) / jmax(.0001f, track.bakedPan > 0 ? 1-track.bakedPan : 1);
@@ -197,17 +218,17 @@ public:
                 if (channels > 1 && output[1]) output[1][i] += r;
             }
             track.peak.store(trackPeak);
-            if(track.plugin)track.plugin->release(current);
+            if(track.plugin)track.plugin->release(current+track.pluginBase);
         }
+        if(channels>=2&&output[0]&&output[1]){AudioBuffer<float> audio(output,2,count);listening.process(audio,0,count);}
         for (int ch = 0; ch < channels; ++ch) if (output[ch]) for (int i = 0; i < count; ++i) {
-            const float x = output[ch][i], a = std::abs(x);
-            output[ch][i] = std::copysign(a <= .9f ? a : .9f + .07f*(1-std::exp(-(a-.9f)/.07f)), x) * .891250938f;
             peak = jmax(peak, std::abs(output[ch][i]));
         }
         playedSample.store(block.endSample); read.store(current+1,std::memory_order_release); return true;
     }
-    bool ended() const { return !looping && playedSample.load() >= duration; }
+    bool ended() const { return routed?routed->ended():!looping && playedSample.load() >= duration; }
     int64 cacheBytes() const {
+        if(routed)return (int64)routed->bytes();
         int64 total=(int64)capacity * frames * 2 * sizeof(float) * (int64)tracks.size();
         for(const auto& track:tracks)if(track->plugin)total+=(int64)sizeof(PluginRing);
         return total;

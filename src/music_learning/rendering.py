@@ -224,7 +224,7 @@ def prepare(service, db, job):
                 exact_mixer=True,
                 tail_samples=round(payload["tail_seconds"] * revision["snapshot"]["sample_rate"]),
             )
-            if "mixing_tracks" not in job["payload"] and payload["start_sample"] == 0
+            if job["kind"] == "project.render" and "mixing_tracks" not in job["payload"] and payload["start_sample"] == 0
             and payload["end_sample"] == revision["snapshot"]["duration_samples"]
             else {}
         )

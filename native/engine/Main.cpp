@@ -97,6 +97,7 @@ public:
         fields->setProperty("owner_id",controlOwner);
         Array<var> retained;int64 warmBytes=0;
         for(const auto& source:pluginPool){retained.add(source.second->programPath());if(source.second.use_count()==1)warmBytes+=(int64)sizeof(mlengine::PluginRing);}
+        if(graph&&graph->routed)for(const auto& program:graph->routed->programs())retained.add(program);
         fields->setProperty("retained_programs",var(retained));
         if (graph) {
             fields->setProperty("project_id", graph->manifest["project_id"]);
@@ -120,8 +121,9 @@ public:
             bool pluginFailed=false;
             if(auto* items=plugins.getDynamicObject())for(const auto& item:items->getProperties())if(item.value["status"].toString()=="failed")pluginFailed=true;
             fields->setProperty("desired_revision",graph->manifest["revision_id"]);
-            fields->setProperty("applied_revision",ready?graph->manifest["revision_id"]:var());
-            if(!ready)fields->setProperty("status",pluginFailed?"partial":"loading");
+            fields->setProperty("applied_revision",ready?(graph->routed?var(graph->routed->appliedRevision()):graph->manifest["revision_id"]):var());
+            if(graph->routed&&graph->routed->failure().isNotEmpty())fields->setProperty("control_error",graph->routed->failure());
+            if(!ready)fields->setProperty("status",pluginFailed||(graph->routed&&graph->routed->failure().isNotEmpty())?"partial":"loading");
         }
         return result;
     }
@@ -186,9 +188,13 @@ public:
         if(action=="update") {
             if(!graph)throw std::runtime_error("Open a project first");
             const auto value=get(request,"manifest");
+            if(graph->routed&&!filePlaying.load())while(callbackBusy.load())Thread::sleep(1);
+            if(graph->routed&&value.hasProperty("routing_graph")&&graph->routed->update(value,!filePlaying.load())){
+                graph->manifest=value;++generation;return status();
+            }
             bool compatible=value["project_id"]==graph->manifest["project_id"]&&value["view"]==graph->manifest["view"]
                 &&value["sample_rate"]==graph->manifest["sample_rate"]&&value["duration_samples"]==graph->manifest["duration_samples"]
-                &&value["tail_samples"]==graph->manifest["tail_samples"];
+                &&value["tail_samples"]==graph->manifest["tail_samples"]&&!graph->routed&&!value.hasProperty("routing_graph");
             const auto* next=value["tracks"].getArray();const auto* previous=graph->manifest["tracks"].getArray();
             compatible=compatible&&next&&previous&&next->size()==previous->size();
             if(compatible)for(int i=0;i<next->size();++i) {
@@ -222,6 +228,11 @@ public:
                 const auto begin = (double)get(request,"loop_start_sample",graph ? graph->loopStart : 0.0);
                 const auto end = (double)get(request,"loop_end_sample",graph ? graph->loopEnd : (double)value["duration_samples"]);
                 const bool loop = (bool)get(request,"loop",graph ? graph->looping : false);
+                if(action=="transport"&&graph->routed){
+                    graph->routed->seek(start,loop,begin,end);graph->origin=start;graph->playedSample.store(start);
+                    graph->looping=loop;graph->loopStart=begin;graph->loopEnd=end;graph->read.store(0);++generation;
+                    filePlaying.store(play);return status();
+                }
                 auto ready = std::make_unique<mlengine::SessionGraph>(value,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),start,loop,begin,end,&pluginPool);
                 if(graph && (action=="transport" || (graph->manifest["project_id"]==value["project_id"]&&graph->manifest["view"]==value["view"]))) {
                     const auto previous=graph->monitorValues();auto* matching=new DynamicObject();

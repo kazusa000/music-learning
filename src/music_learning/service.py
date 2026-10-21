@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import time
 
 from pydantic import TypeAdapter, ValidationError
@@ -14,10 +13,7 @@ from . import schema_v1 as t
 from .database import Database
 from .storage import Storage
 from .timing import convert
-
-
-def canonical(value):
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+from .serialization import canonical
 
 
 class DomainError(Exception):

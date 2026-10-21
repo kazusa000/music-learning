@@ -43,13 +43,21 @@ class EngineBroker:
             self.identity = secrets.token_hex(24)
         if os.name != "nt" or not self.executable.is_file():
             raise RuntimeError("本地音频引擎尚未构建")
+        executable = self.executable
+        environment = os.environ
+        if executable == ROOT / "runtime/build/engine-v1/bin/ml_engine.exe":
+            from .bundle import pin, environment as bundle_environment
+
+            bundle, manifest = pin()
+            executable = bundle / "ml_engine.exe"
+            environment = bundle_environment(bundle, manifest)
         name = "ml-engine-" + secrets.token_hex(16)
         self.token = secrets.token_hex(32)
         directory = self.settings.path("engine")
         directory.mkdir(exist_ok=True)
         self.log = (directory / "engine.log").open("ab")
-        self.owner = OwnedProcess([str(self.executable), name], cwd=ROOT,
-            env=dict(os.environ, ML_ENGINE_TOKEN=self.token), stdout=self.log, stderr=self.log)
+        self.owner = OwnedProcess([str(executable), name], cwd=ROOT,
+            env=dict(environment, ML_ENGINE_TOKEN=self.token), stdout=self.log, stderr=self.log)
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             if self.owner.process.poll() is not None:

@@ -30,6 +30,13 @@ def main():
         "-DCMAKE_MAKE_PROGRAM=" + str(runtime / "tooling/Scripts/ninja.exe"),
         "-DML_RUNTIME_LIBRARY=" + str(library)], env=env, check=True, cwd=ROOT)
     subprocess.run([str(cmake), "--build", str(output), "--parallel", "2"], env=env, check=True)
+    binaries = output / "bin"
+    files = {name: hashlib.sha256((binaries / name).read_bytes()).hexdigest() for name in
+        ("ml_engine.exe", "ml_plugin_worker.exe", "ml_graph_runner.exe", "ml_engine_loopback.exe")}
+    content = json.dumps(dict(schema_version=1, node_protocol=1, plugin_protocol=1, files=files), sort_keys=True)
+    pending = binaries / "bundle.partial.json"
+    pending.write_text(content, encoding="utf-8")
+    os.replace(pending, binaries / "bundle.json")
 
 
 if __name__ == "__main__":

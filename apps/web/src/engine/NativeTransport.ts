@@ -109,7 +109,8 @@ export class NativeTransport {
       if(this.target?.revision!==target.revision)throw new Error('音轨的音色已发生变化');
       const plugin=state.plugins?.[track];
       if(plugin?.status==='failed')throw new Error(plugin.error??'音轨载入失败');
-      if(!plugin||plugin.status==='ready')return;
+      if(state.applied_revision===target.revision&&(!plugin||plugin.status==='ready'))return;
+      if(!plugin&&state.status!=='loading'&&!state.monitor?.[track])return;
       await new Promise(resolve=>setTimeout(resolve,80));
     }
     throw new Error('音轨载入超时，可以重试');

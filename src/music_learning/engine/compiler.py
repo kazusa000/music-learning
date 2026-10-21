@@ -61,7 +61,12 @@ def compile_files(service, args):
                                 duration_samples=duration, gain=1)]))
         else:
             calibration = snapshot.get("listening_calibration") or {}
-            for track in snapshot["tracks"]:
+            advanced = snapshot.get("routing") or any(lane.get("track_id") for lane in snapshot.get("automation", []))
+            if advanced:
+                from .graph_compiler import compile_graph
+
+                tracks, tail, routing = compile_graph(service, db, revision, directory, calibration)
+            for track in ([] if advanced else snapshot["tracks"]):
                 frozen=snapshot.get('frozen_tracks',{}).get(track['id'])
                 stem=frozen_source(service,db,revision,track['id'],frozen) if frozen else None
                 if not stem:
@@ -103,5 +108,9 @@ def compile_files(service, args):
         manifest = dict(schema_version=1, project_id=revision["project_id"], revision_id=revision["id"],
             view=args.view, sample_rate=rate, duration_samples=duration, tail_samples=tail, tracks=tracks,
             session_directory=str(directory))
+        if args.view != "original" and advanced:
+            manifest["routing_graph"] = routing
+            manifest["monitor_protection"] = True
+            manifest["solo_gain_db"] = calibration.get("solo_gain_db", {})
         manifest["graph_hash"] = hashlib.sha256(canonical(manifest).encode()).hexdigest()
         return manifest

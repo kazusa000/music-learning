@@ -8,10 +8,15 @@
 #include "../engine/SharedPlugin.h"
 #include "TrackRenderer.h"
 #include <cstdio>
+#include "NodeWorker.h"
 
 int main(int argc,char** argv) {
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX|SEM_NOOPENFILEERRORBOX);
     _set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);
+    if(argc==4&&juce::String(argv[1])=="--node") {
+        juce::ScopedJuceInitialiser_GUI gui;
+        return ml::runNodeWorker(juce::String(argv[2]),juce::File(juce::String(argv[3])));
+    }
     if(argc!=3||!juce::String(argv[1]).startsWith("Local\\ml-plugin-"))return 2;
     auto mapping=OpenFileMappingW(FILE_MAP_ALL_ACCESS,FALSE,juce::String(argv[1]).toWideCharPointer());
     if(!mapping)return 3;

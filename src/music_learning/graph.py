@@ -10,10 +10,9 @@ from .midi_input import instrument_channel
 MASTER = "0" * 32
 
 
-def compile_project(snapshot, revision_id, descriptors, paths, resources, *, tail_seconds=2, block_size=512):
+def compile_routes(snapshot):
+    """One routing validation/collapse rule for live and offline graphs."""
     s = c.Snapshot.model_validate(snapshot)
-    if not s.tracks:
-        raise ValueError("render requires tracks")
     owners = {p.id: p.track_id for p in s.plugins}
     owners.update({t.id: t.id for t in s.tracks})
     master = MASTER
@@ -24,6 +23,40 @@ def compile_project(snapshot, revision_id, descriptors, paths, resources, *, tai
         master = unknown.pop()
         if master in {e.source for e in s.routing.edges}:
             raise ValueError("master cannot send audio upstream")
+    edges = []
+    if s.routing:
+        for edge in s.routing.edges:
+            source, target = owners.get(edge.source, edge.source), owners.get(edge.target, edge.target)
+            if source == target:
+                if edge.kind != "main" or edge.gain_db:
+                    raise ValueError("intra-chain routing must use unmodified main connections")
+                continue
+            value = dict(source=source, target=target, kind=edge.kind, gain_db=edge.gain_db)
+            if edge.kind == "sidechain":
+                if edge.target not in {p.id for p in s.plugins}:
+                    raise ValueError("sidechain target must be a plugin ID")
+                value["plugin_id"] = edge.target
+            if target not in s.frozen_tracks:
+                edges.append(value)
+    else:
+        edges.extend(dict(source=t.id, target=master, kind="main", gain_db=0) for t in s.tracks)
+    if len({(e["source"], e["target"], e["kind"], e.get("plugin_id")) for e in edges}) != len(edges):
+        raise ValueError("duplicate audio routes")
+    # Validate the collapsed graph too: collapsing chains can expose a cycle.
+    c.RoutingGraph(
+        id=master,
+        nodes=[t.id for t in s.tracks] + [master],
+        edges=[c.RoutingEdge(**{k: v for k, v in e.items() if k != "plugin_id"}) for e in edges],
+    )
+    return dict(master=master, edges=edges)
+
+
+def compile_project(snapshot, revision_id, descriptors, paths, resources, *, tail_seconds=2, block_size=512):
+    s = c.Snapshot.model_validate(snapshot)
+    if not s.tracks:
+        raise ValueError("render requires tracks")
+    routing = compile_routes(s)
+    master = routing["master"]
     project = dict(
         revision_id=revision_id,
         sample_rate=s.sample_rate,
@@ -31,7 +64,7 @@ def compile_project(snapshot, revision_id, descriptors, paths, resources, *, tai
         tail_samples=round(s.sample_rate * tail_seconds),
         block_size=block_size,
         tracks=[],
-        graph={"master": master, "edges": []},
+        graph=routing,
     )
     if s.timing_map:
         timing = s.timing_map
@@ -63,31 +96,7 @@ def compile_project(snapshot, revision_id, descriptors, paths, resources, *, tai
             tempo=[{"sample": 0, "bpm": 120}],
             meter=[{"sample": 0, "numerator": 4, "denominator": 4}],
         )
-    edges = project["graph"]["edges"]
-    if s.routing:
-        for edge in s.routing.edges:
-            source, target = owners.get(edge.source, edge.source), owners.get(edge.target, edge.target)
-            if source == target:
-                if edge.kind != "main" or edge.gain_db:
-                    raise ValueError("intra-chain routing must use unmodified main connections")
-                continue
-            value = dict(source=source, target=target, kind=edge.kind, gain_db=edge.gain_db)
-            if edge.kind == "sidechain":
-                if edge.target not in {p.id for p in s.plugins}:
-                    raise ValueError("sidechain target must be a plugin ID")
-                value["plugin_id"] = edge.target
-            if target not in s.frozen_tracks:
-                edges.append(value)
-    else:
-        edges.extend(dict(source=t.id, target=master, kind="main", gain_db=0) for t in s.tracks)
-    if len({(e["source"], e["target"], e["kind"], e.get("plugin_id")) for e in edges}) != len(edges):
-        raise ValueError("duplicate audio routes")
-    # Validate the collapsed graph too: collapsing chains can expose a cycle.
-    c.RoutingGraph(
-        id=master,
-        nodes=[t.id for t in s.tracks] + [master],
-        edges=[c.RoutingEdge(**{k: v for k, v in e.items() if k != "plugin_id"}) for e in edges],
-    )
+    edges = routing["edges"]
     soloed = {t.id for t in s.tracks if t.solo}
     audible = set(soloed)
     if soloed:

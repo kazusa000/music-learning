@@ -6,7 +6,7 @@ import os
 
 from .. import contracts as c
 from ..graph import compile_project
-from ..service import canonical
+from ..serialization import canonical
 
 
 def link_verified(service, sha, target):
@@ -20,7 +20,7 @@ def link_verified(service, sha, target):
         os.link(source, target)
 
 
-def compile_track(service, db, revision, track_id, directory):
+def compile_track(service, db, revision, track_id, directory, *, sidechains=()):
     snapshot = c.Snapshot.model_validate(revision["snapshot"]).model_copy(deep=True)
     snapshot.tracks = [track.model_copy(update=dict(gain_db=0,pan=0,mute=False,solo=False))
                        for track in snapshot.tracks if track.id == track_id]
@@ -75,13 +75,16 @@ def compile_track(service, db, revision, track_id, directory):
     project = compile_project(snapshot,revision["id"],descriptors,paths,resources,tail_seconds=0)
     project["tracks"] = [track for track in project["tracks"] if track["id"] == track_id]
     project.pop("graph")
+    for plugin in project["tracks"][0]["plugins"]:
+        if plugin["id"] in sidechains:
+            plugin["sidechain"] = True
     # Runtime program identity follows audible content, not an unrelated
     # project's revision change; unchanged workers keep their own timeline.
     project["revision_id"] = hashlib.sha256(canonical({k:v for k,v in project.items() if k!="revision_id"}).encode()).hexdigest()[:32]
     runtime = dict(plugins=[dict(id=p.id,state=p.state_asset_id,binary=p.binary_sha256,class_id=p.class_id,
         version=p.version,resources=p.resource_paths,entrypoint=p.resource_entrypoint,order=p.order,bypass=p.bypass) for p in snapshot.plugins],
         sample_rate=snapshot.sample_rate,
-        clips=project["tracks"][0]["audio_clips"],adapter="native-plugin-v1")
+        clips=project["tracks"][0]["audio_clips"],sidechains=sorted(sidechains),adapter="native-plugin-v1")
     signature = hashlib.sha256(canonical(runtime).encode()).hexdigest()
     storage_key = hashlib.sha256((track_id+signature).encode()).hexdigest()[:24]
     root = directory / storage_key
@@ -96,4 +99,5 @@ def compile_track(service, db, revision, track_id, directory):
         pending = root / (c.new_id()+".partial")
         pending.write_bytes(content)
         os.replace(pending,path)
-    return dict(runtime_signature=signature,storage_key=storage_key,plugin_project_path=str(path))
+    return dict(runtime_signature=signature,storage_key=storage_key,plugin_project_path=str(path),
+        plugin_count=len(project["tracks"][0]["plugins"]))
