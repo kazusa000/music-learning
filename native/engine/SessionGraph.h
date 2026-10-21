@@ -58,7 +58,7 @@ public:
     }
 };
 
-class FileGraph {
+class SessionGraph {
 public:
     static constexpr int capacity = 8;
     struct Track {
@@ -86,7 +86,7 @@ public:
     double sourceRate, deviceRate, duration, songDuration, origin, loopStart, loopEnd;
     bool looping;
 
-    FileGraph(const var& value, double outputRate, int quantum, double start, bool loop, double begin, double end,PluginPool* pool=nullptr)
+    SessionGraph(const var& value, double outputRate, int quantum, double start, bool loop, double begin, double end,PluginPool* pool=nullptr)
         : manifest(value), frames(quantum), sourceRate((double)value["sample_rate"]), deviceRate(outputRate),
           duration((double)value["duration_samples"] + (double)value.getProperty("tail_samples", 0)),
           songDuration((double)value["duration_samples"]), origin(start), loopStart(begin), loopEnd(end), looping(loop) {
@@ -140,7 +140,7 @@ public:
         if (written.load() < 2) { stopping.store(true); producer.join(); throw std::runtime_error("Audio prefetch timed out"); }
         if (failed.load()) { stopping.store(true); producer.join(); throw std::runtime_error("Audio decoding failed"); }
     }
-    ~FileGraph() { stopping.store(true); if (producer.joinable()) producer.join(); }
+    ~SessionGraph() { stopping.store(true); if (producer.joinable()) producer.join(); }
     var monitorValues() const {
         auto* values = new DynamicObject();
         for (auto& track : tracks) {

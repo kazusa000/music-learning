@@ -7,7 +7,7 @@
 #include <thread>
 #include <vector>
 #include <set>
-#include "FileGraph.h"
+#include "SessionGraph.h"
 
 using namespace juce;
 static var obj(std::initializer_list<std::pair<String, var>> fields) {
@@ -20,8 +20,8 @@ class DeviceEngine final : public AudioIODeviceCallback {
     std::atomic<int64> position{0}, callbacks{0}, remaining{0}, toneCommand{0};
     std::atomic<float> peak{0};
     double rate = 48000.0;
-    std::unique_ptr<mlengine::FileGraph> graph;
-    std::unique_ptr<mlengine::FileGraph> preview;
+    std::unique_ptr<mlengine::SessionGraph> graph;
+    std::unique_ptr<mlengine::SessionGraph> preview;
     AudioBuffer<float> previewBuffer;
     std::atomic<bool> previewPlaying{false};
     String previewClient,previewId;
@@ -172,7 +172,7 @@ public:
             if(stop&&client!=previewClient)return status();
             if(request.hasProperty("manifest")) {
                 const auto manifest=get(request,"manifest");
-                auto ready=std::make_unique<mlengine::FileGraph>(manifest,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),0,false,0,(double)manifest["duration_samples"]);
+                auto ready=std::make_unique<mlengine::SessionGraph>(manifest,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),0,false,0,(double)manifest["duration_samples"]);
                 device.removeAudioCallback(this);preview.swap(ready);previewId=get(request,"preview_id").toString();
                 previewClient=client;previewSequence=sequence;previewVolume.store((float)(double)get(request,"volume",.7));
                 previewPlaying.store(true);device.addAudioCallback(this);return status();
@@ -222,7 +222,7 @@ public:
                 const auto begin = (double)get(request,"loop_start_sample",graph ? graph->loopStart : 0.0);
                 const auto end = (double)get(request,"loop_end_sample",graph ? graph->loopEnd : (double)value["duration_samples"]);
                 const bool loop = (bool)get(request,"loop",graph ? graph->looping : false);
-                auto ready = std::make_unique<mlengine::FileGraph>(value,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),start,loop,begin,end,&pluginPool);
+                auto ready = std::make_unique<mlengine::SessionGraph>(value,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),start,loop,begin,end,&pluginPool);
                 if(graph && (action=="transport" || (graph->manifest["project_id"]==value["project_id"]&&graph->manifest["view"]==value["view"]))) {
                     const auto previous=graph->monitorValues();auto* matching=new DynamicObject();
                     for(const auto& track:ready->tracks)if(previous.hasProperty(track->id))matching->setProperty(track->id,previous.getProperty(track->id,{}));

@@ -2,7 +2,7 @@
 
 本机 AI 音乐 DAW：导入音乐，查看原曲与重建工程，与 AI 讨论和修改编曲，保存版本并导出。AI 与界面共用 API/SDK/CLI；支持 Windows x64 VST3，不需要 MIDI 键盘。
 
-**本地 C++ 引擎的设备、文件播放、隔离VST3和前端接线已通过N1–N4独立验收；N5生命周期、N6完整路由与N7最终部署继续推进。目前正式已部署版本仍使用 WebAudio。**
+**本地 C++ 引擎的设备、文件播放、隔离VST3、前端接线及生命周期已通过N1–N5独立验收；N6完整路由与N7最终部署继续推进。目前正式已部署版本仍使用 WebAudio。**
 
 - [本地 DAW 架构](docs/architecture/native-daw.md)
 - [开发顺序与验收指标](docs/plans/native-daw-migration.md)

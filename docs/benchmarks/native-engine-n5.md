@@ -15,3 +15,5 @@
 4K Edge最终`data/maintenance/native-engine/n5/ui-v3/browser-report.json`八组操作通过，原曲/重建前后插件PID一致，Browser audio/PCM请求0、JS错误0。主页也可试听尚未整曲渲染的重建，头版本更新不重建控件而误停声音。原初浏览器同步断言读取得太早的失败留在`ui-v1`；改为等待实际应用后，仍需N7测真正控制/回环延迟，功能等待不冒充性能证据。
 
 保护`n5/protection.json`九表/head及14固定SHA一致。正式仍`index-B3LrRqPN.js`，服务未重启；候选在`n5/candidate-v1`及独立8794。N5目录迁移单独提交，随后进入N6完整图；N6/N7与整个目标未完成。H库/NAS/固定Pianoteq/历史拒绝路径不动。根部出现并发AD2探针obj/pdb，不属于本任务，未暂存或清理。
+
+目录整理补记：新引擎六份Python探针迁到scripts/probes/engine，两个前端测试迁到apps/web/tests/{unit,e2e}，原入口保留薄包装；内部FileGraph改为SessionGraph。具体映射见目录约定。独立构建、原生控制新/旧Node入口、Python新/旧保护探针及从新路径准备/运行的`n5/moved-ui`八组4K流程通过。两次保护结果仍全部相同；未移动运行数据或固定文件。

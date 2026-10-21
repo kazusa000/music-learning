@@ -8,8 +8,8 @@
 | --- | --- |
 | `apps/web/src/` | React视图和交互；后续按workspace/library/discussion/instruments/shared及engine client分模块，前端不处理工程音频 |
 | `native/desktop/` | WinForms/WebView2外壳与DPI；暂不更换UI框架 |
-| `native/engine/`（待建） | 本地设备、样本时钟、实时图、混音及文件读取 |
-| `native/plugin-worker/`（待建） | 新原生隔离插件执行；不覆盖旧track host |
+| `native/engine/` | 本地设备、样本时钟、SessionGraph、混音及文件读取 |
+| `native/plugin-worker/` | 原生隔离插件执行；不覆盖旧track host |
 | `native/audio-host/`、`native/live-track/` | 已验证离线与旧播放实现；迁移完成前保留兼容，固定文件不搬 |
 | `native/include/`、`native/tests/`、`native/test-plugin/` | 可复用适配、小型原生测试、确定性VST夹具 |
 | `src/music_learning/` | 唯一Python领域包，保留现有导入名；渐进拆分engine、project、instruments、analysis、dialogue等子包 |
@@ -18,7 +18,7 @@
 | `packages/agent-sdk/` | SDK入口说明；Python实现仍在统一包，不创建第二份操作规则 |
 | `scripts/` | 当前兼容入口；逐步归类app、build、models、instruments、maintenance及probes，保留被引用入口 |
 | `tests/service/` | 后端事务/规则回归；新增engine协议和内核测试使用`tests/engine/` |
-| `apps/web/tests/`（迁移目标） | 前端unit/e2e/probes分类；当前根部.mjs保留至路径更新并验证 |
+| `apps/web/tests/` | 新引擎unit/e2e已分类；根部旧入口为兼容包装，其他旧测试渐进迁移 |
 | `config/` | 可跟踪依赖清单和无凭据样例；本机路径/令牌仍放忽略位置 |
 | `docs/architecture/` | 当前架构决策；不是每轮状态日志 |
 | `docs/plans/` | 当前开发阶段、出口与待办 |
@@ -44,7 +44,7 @@ data/
 runtime/
   app.local.json            本机入口及正式data_root配置
   build/                    旧原生构建与固定链接库
-    engine-v1/              新引擎独立输出（待建）
+    engine-v1/              新引擎独立输出
   desktop/                  已构建外壳及SDK
   toolchain/ tooling/       工具与编译环境
   third-party/              固定依赖源码
@@ -66,3 +66,21 @@ runtime/
 5. **N7：**仅在旧路径引用和运行进程均不存在、测试通过后，收口旧入口。历史编号文档不大规模重命名；导航按主题组织即可。运行数据的物理清理是另一项有明确白名单/保护校验的工作，不随代码目录迁移执行。
 
 每次目录迁移应记录原→新路径、调用者、兼容期、验证和回退。不能用通配符移动 `data`、`runtime`、`plugins`，不能重定向已运行批次的固定路径，也不能把用户手工删除结果未经核对写成“已清理”。
+
+## N5已实施的第一组源码归类
+
+独立于音频行为提交，只有本轮新建代码移动；固定宿主、旧验证器、运行数据、H库未搬动。
+
+| 旧入口 | 实现位置 | 兼容 |
+| --- | --- | --- |
+| scripts/probe_engine_device.py | scripts/probes/engine/device.py | 旧CLI、main/analyse导入保留 |
+| scripts/probe_engine_files.py | scripts/probes/engine/files.py | 旧CLI、main/save导入保留；N2旧run不改 |
+| scripts/probe_engine_plugins.py | scripts/probes/engine/plugins.py | 旧CLI保留 |
+| scripts/probe_engine_protection.py | scripts/probes/engine/protection.py | 旧CLI保留 |
+| scripts/probe_engine_ui.py | scripts/probes/engine/ui.py | 旧CLI保留，内部调用新e2e路径 |
+| scripts/prepare_engine_ui.py | scripts/probes/engine/prepare_ui.py | 旧CLI保留，显式要求独立web-root |
+| apps/web/native-transport-unit.mjs | apps/web/tests/unit/native-transport.mjs | 旧Node命令保留 |
+| apps/web/engine-workspace-e2e.mjs | apps/web/tests/e2e/engine-workspace.mjs | 旧Node命令保留 |
+| native/engine/FileGraph.h | native/engine/SessionGraph.h | 内部类改名SessionGraph，包含文件同步；非外部SDK |
+
+Python新的实际入口按目录深度解析仓库ROOT；独立执行prepare_ui也能定位原有native_host模块，原生构建仍在原engine-v1。Python领域逻辑已聚到`src/music_learning/engine/{broker,controller,compiler,plugin_compiler,sync,workspaces}.py`，浏览器控制在`apps/web/src/engine/NativeTransport.ts`。日常开发先使用新目录，旧包装只保持已有文档/脚本命令兼容，不复制操作规则。
