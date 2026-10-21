@@ -49,3 +49,21 @@ def test_release_manifest_identity_is_required(tmp_path):
 
 def test_development_without_release_keeps_existing_entry(tmp_path):
     assert release_runtime.source_root(tmp_path) == tmp_path
+
+
+def test_incomplete_publication_never_falls_back_to_development(tmp_path):
+    runtime = tmp_path / 'runtime'
+    runtime.mkdir()
+    (runtime / 'application-release.pending.local.json').write_text('{}')
+    with pytest.raises(ValueError, match='incomplete'):
+        release_runtime.source_root(tmp_path)
+
+
+def test_release_settings_cannot_mix_another_web_or_engine_version(tmp_path):
+    _, descriptor = release(tmp_path)
+    value = json.loads(descriptor.read_text())
+    value.update(web_root=str(tmp_path / 'web'), native_audio_bundle=str(tmp_path / 'engine'))
+    descriptor.write_text(json.dumps(value))
+    (tmp_path / 'runtime/app.local.json').write_text(json.dumps(dict(web_root=str(tmp_path / 'old-web'), native_audio_bundle=value['native_audio_bundle'])))
+    with pytest.raises(ValueError, match='settings differ'):
+        release_runtime.source_root(tmp_path)

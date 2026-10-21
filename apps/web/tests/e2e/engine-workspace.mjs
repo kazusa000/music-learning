@@ -4,7 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 const root=path.resolve(process.argv[2]),fixture=JSON.parse(await readFile(path.join(root,'fixture.json'),'utf8'));
 const base='http://127.0.0.1:'+fixture.port,token=fixture.token,project=fixture.project.id;
-const report={checks:[],errors:[],audioRequests:[],pcmRequests:[]};
+const report={checks:[],errors:[],audioRequests:[],pcmRequests:[],legacyPlanRequests:[]};
 async function call(operation,args={},revision){const response=await fetch(base+'/v1/commands',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({operation,arguments:args,expected_revision:revision??null,idempotency_key:crypto.randomUUID().replaceAll('-','')})});const result=await response.json();assert(result.ok,JSON.stringify(result.error));return result.result;}
 async function until(check,message,timeout=15000){const end=Date.now()+timeout;while(Date.now()<end){const value=await check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,50));}throw Error(message);}
 const browser=await chromium.launch({channel:'msedge',headless:true});
@@ -12,7 +12,7 @@ const context=await browser.newContext({viewport:{width:1536,height:864},deviceS
 page.setDefaultTimeout(12000);
 page.on('pageerror',e=>report.errors.push(e.message));
 page.on('response',r=>{if((r.headers()['content-type']??'').startsWith('audio/'))report.audioRequests.push(r.url());});
-page.on('request',r=>{if((r.postData()??'').includes('playback.live.'))report.pcmRequests.push(r.postData());});
+page.on('request',r=>{if((r.postData()??'').includes('playback.live.'))report.pcmRequests.push(r.postData());if((r.postData()??'').includes('playback.get'))report.legacyPlanRequests.push(r.postData());});
 try{
  await page.goto(base+'/?project='+project+'&view=workbench#token='+token);
  await page.locator('.studio').waitFor();
@@ -77,7 +77,7 @@ try{
  await page.screenshot({path:path.join(root,'home-4k.png')});
  report.checks.push('Homepage preview shares native output, stale workspace cleanup is harmless');
  assert.equal((await call('jobs.list',{project_id:project})).length,0);
- assert.equal(report.audioRequests.length,0);assert.equal(report.pcmRequests.length,0);assert.deepEqual(report.errors,[]);
+ assert.equal(report.audioRequests.length,0);assert.equal(report.pcmRequests.length,0);assert.equal(report.legacyPlanRequests.length,0);assert.deepEqual(report.errors,[]);
  report.state=await call('engine.status');report.status='succeeded';
 }catch(error){report.status='failed';report.failure=String(error.stack??error);await page.screenshot({path:path.join(root,'failure.png')}).catch(()=>{});throw error;}
 finally{await writeFile(path.join(root,'browser-report.json'),JSON.stringify(report,null,2));await browser.close();await call('engine.close').catch(()=>{});}

@@ -5,7 +5,7 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {CSSProperties} from 'react';
 import {PanelResize,usePanelSize} from './PanelResize';
-import type {Project, ProjectDeletion, Job, Revision, StageRecord, PreprocessingView, PreprocessingResult, PlaybackPlan} from '../../../packages/contracts/types';
+import type {Project, ProjectDeletion, Job, Revision, StageRecord, PreprocessingView, PreprocessingResult} from '../../../packages/contracts/types';
 import {call, connect} from './api';
 import {Workbench} from './Workbench';
 import {publishDomain} from './events';
@@ -50,7 +50,7 @@ function App() {
   const [playbackReady,setPlaybackReady]=useState(false);
   const [stages, setStages] = useState<Record<string, StageRecord[]>>({});
   const [workspace, setWorkspace] = useState(new URLSearchParams(location.search).get('view') === 'workbench');
-  const detailCache = useRef<{id:string; revision:Revision; publication:PreprocessingResult | null;playbackReady:boolean} | null>(null);
+  const detailCache = useRef<{id:string; revision:Revision; publication:PreprocessingResult | null} | null>(null);
   const homeAudio=useRef<PreviewControl|null>(null);
   useEffect(()=>{
     if(workspace||settingsOpen)return;
@@ -99,18 +99,17 @@ function App() {
     if (selected && list.some(p => p.id === selected)) {
       const headId = list.find(p => p.id === selected)!.current_revision;
       const cached = detailCache.current?.id === headId ? detailCache.current : null;
-      const [head, readiness, tasks, versions, renders, plan] = await Promise.all([
+      const [head, readiness, tasks, versions, renders] = await Promise.all([
         cached ? Promise.resolve(cached.revision) : call<Revision>('revisions.get', {project_id: selected, revision_id:headId}),
         cached ? Promise.resolve({publication:cached.publication}) : call<PreprocessingView>('preprocessing.get', {project_id:selected, revision_id:headId}),
         call<Job[]>('jobs.list', {project_id: selected, limit: 1000}),
         call<unknown[]>('versions.list', {project_id: selected, limit: 1000}),
         call<Array<PreprocessingResult & {start_sample:number;end_sample:number}>>('renders.list', {project_id:selected,revision_id:headId}),
-        cached?Promise.resolve({available:cached.playbackReady,reason:null}):call<PlaybackPlan>('playback.get',{project_id:selected,revision_id:headId}),
       ]);
       if (activeSelection.current !== selected || generation !== refreshGeneration.current) return;
       const media = renders.filter(r => r.start_sample===0&&r.end_sample===head.snapshot.duration_samples).at(-1) ?? readiness.publication;
-      detailCache.current = {id:headId, revision:head, publication:media,playbackReady:plan.available||(!plan.reason&&(head.snapshot.tracks?.length??0)>0)};
-      setPlaybackReady(plan.available||(!plan.reason&&(head.snapshot.tracks?.length??0)>0));
+      detailCache.current = {id:headId, revision:head, publication:media};
+      setPlaybackReady((head.snapshot.duration_samples??0)>0&&((head.snapshot.notes?.length??0)>0||(head.snapshot.clips?.length??0)>0||Object.keys(head.snapshot.frozen_tracks??{}).length>0));
       setRevision(head); setPublication(media); setJobs(tasks); setVersionCount(versions.length);
       const details = await Promise.all(tasks.filter(j => j.kind === 'project.preprocess').map(async job =>
         [job.id, await call<StageRecord[]>('jobs.stages', {job_id:job.id})] as const));

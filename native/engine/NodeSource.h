@@ -13,6 +13,7 @@ class NodeSource final {
     uint64_t sequence=0, epoch=0;
     bool pending=false, failed=false;
     double requestedAt=0, configuredAt=0;
+    uint64_t maximumRenderMicros=0,maximumRoundTripMicros=0;
     juce::String failure;
     void fail(const juce::String& message) {
         failed=true;failure=message;
@@ -131,6 +132,8 @@ public:
         inspect();if(failed)throw std::runtime_error(failure.toStdString());
         if(shared->completedSequence.load(std::memory_order_acquire)!=sequence)return false;
         if(shared->appliedEpoch.load()!=epoch)throw std::runtime_error("Graph output belongs to another program");
+        maximumRenderMicros=std::max(maximumRenderMicros,shared->renderMicros.load());
+        maximumRoundTripMicros=std::max(maximumRoundTripMicros,(uint64_t)((juce::Time::getMillisecondCounterHiRes()-requestedAt)*1000.0));
         for(int ch=0;ch<2;++ch)juce::FloatVectorOperations::copy(output.getWritePointer(ch),nodeChannel(shared,shared->sideSlots+1,(uint32_t)ch),count);
         pending=false;return true;
     }
@@ -141,6 +144,8 @@ public:
         value->setProperty("config_hash",program);value->setProperty("epoch",(juce::int64)epoch);
         value->setProperty("latency_samples",latency());value->setProperty("pending",pending);
         value->setProperty("render_micros",(juce::int64)shared->renderMicros.load());
+        value->setProperty("maximum_render_micros",(juce::int64)maximumRenderMicros);
+        value->setProperty("maximum_round_trip_micros",(juce::int64)maximumRoundTripMicros);
         value->setProperty("load_micros",(juce::int64)shared->loadMicros.load());
         value->setProperty("load_stage",(int)shared->stage.load());
         value->setProperty("chase_count",(juce::int64)shared->chaseCount.load());

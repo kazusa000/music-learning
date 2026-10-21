@@ -54,6 +54,7 @@ class GraphKernel final {
     std::atomic<bool>* cancel=nullptr;
     int blockSize=512,totalDelay=0;
     double rate=44100;
+    double processingDeadline=0;
     int64_t origin=0,processingSample=0,discard=0,loopStart=0,loopEnd=0;
     bool looping=false,first=true,strict=false;
     bool replanWanted=false;
@@ -351,6 +352,7 @@ public:
     int latency()const{return totalDelay;}
     size_t bytes()const{return allocated;}
     int quantum()const{return blockSize;}
+    void setProcessingDeadline(double deadline){processingDeadline=deadline;}
     int64_t sample()const{return processingSample-totalDelay;}
     // One bounded source-rate quantum. The output is still in processing time;
     // the caller discards the initial latency before presenting source time.
@@ -381,7 +383,8 @@ public:
             // First/chased quantum is preparation on the producer thread. A
             // cold plugin can initialise DSP here after reporting state ready;
             // it must not be replaced with silence by the live block deadline.
-            const auto deadline=juce::Time::getMillisecondCounterHiRes()+((strict||first)?2000.0:std::max(2.0,count/rate*1000.0*.8));
+            const auto deadline=(strict||first)?juce::Time::getMillisecondCounterHiRes()+2000.0:
+                processingDeadline>0?processingDeadline:juce::Time::getMillisecondCounterHiRes()+std::max(2.0,count/rate*1000.0*.8);
             for(auto i:level){
                 auto& node=*nodes[i];
                 if(node.worker&&node.submitted&&node.worker->isPending()){

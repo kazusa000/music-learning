@@ -9,12 +9,8 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def source_root(repository):
+def verify_source(repository, value):
     repository = Path(repository).resolve()
-    descriptor = repository / 'runtime/application-release.local.json'
-    if not descriptor.exists():
-        return repository
-    value = json.loads(descriptor.read_bytes())
     if value.get('schema_version') != 1:
         raise ValueError('Unknown application release descriptor')
     root = Path(value['source_root']).resolve()
@@ -31,4 +27,21 @@ def source_root(repository):
         path.relative_to(root)
         if not path.is_file() or digest(path) != expected:
             raise ValueError('Application release source changed: ' + relative)
+    return root
+
+
+def source_root(repository):
+    repository = Path(repository).resolve()
+    if (repository / 'runtime/application-release.pending.local.json').exists():
+        raise ValueError('Application publication is incomplete; reapply the same verified release')
+    descriptor = repository / 'runtime/application-release.local.json'
+    if not descriptor.exists():
+        return repository
+    value = json.loads(descriptor.read_bytes())
+    root = verify_source(repository, value)
+    if 'web_root' in value or 'native_audio_bundle' in value:
+        settings = json.loads((repository / 'runtime/app.local.json').read_bytes())
+        for field in ('web_root', 'native_audio_bundle'):
+            if Path(settings.get(field, '')).resolve() != Path(value[field]).resolve():
+                raise ValueError('Application release settings differ from the published version')
     return root

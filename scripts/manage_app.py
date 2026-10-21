@@ -228,6 +228,11 @@ def main():
     # An exclusive short-lived start lock prevents two callers racing the port.
     with start_lock(settings):
         try:
+            active_release = ROOT / 'runtime/application-release.local.json'
+            if active_release.exists() and Path(json.loads(active_release.read_bytes())['source_root']).resolve() != ROOT.resolve():
+                raise SystemExit('程序版本已更新，请重新运行 start.cmd。')
+            if (ROOT / 'runtime/application-release.pending.local.json').exists():
+                raise SystemExit('程序发布尚未完成，请重新应用同一已校验版本。')
             process = owned(settings)
             if not process:
                 if settings.native_audio_enabled:

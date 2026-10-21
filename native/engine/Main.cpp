@@ -265,7 +265,7 @@ public:
                     graph->looping=loop;graph->loopStart=begin;graph->loopEnd=end;graph->read.store(0);++generation;
                     graph->routed->setPlaying(play);filePlaying.store(play);committed=true;return status();
                 }
-                const bool retainArrangement=action=="open"&&graph&&graph->routed&&graph->manifest["view"].toString()=="arrangement"
+                const bool retainArrangement=action=="open"&&graph&&graph->routed&&!graph->routed->preparing()&&!graph->routed->isFailed()&&graph->manifest["view"].toString()=="arrangement"
                     &&value["view"].toString()=="original"&&value["project_id"]==graph->manifest["project_id"];
                 if(action=="open"&&graph&&graph->routed)graph->routed->pauseProducer();
                 auto ready = std::make_unique<mlengine::SessionGraph>(value,d->getCurrentSampleRate(),d->getCurrentBufferSizeSamples(),start,loop,begin,end,&pluginPool,availableGraphBudget());

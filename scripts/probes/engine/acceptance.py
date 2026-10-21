@@ -64,7 +64,8 @@ def main():
     service = Service(database)
     service.storage.settings = base
     service.engine_broker = broker
-    report = dict(status='running', pid=os.getpid(), bundle=str(bundle), build=build, phases=[])
+    report = dict(status='running', pid=os.getpid(), bundle=str(bundle), build=build, phases=[],
+        script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
     meter = None
     try:
         with database.transaction(write=False) as db:
@@ -84,6 +85,10 @@ def main():
                     if not target.exists():
                         os.link(clip['path'], target)
                     clip['path'] = str(target)
+            from music_learning.serialization import canonical
+
+            source.pop('graph_hash', None)
+            source['graph_hash'] = hashlib.sha256(canonical(source).encode()).hexdigest()
         database.close()
         save(directory / 'manifest.json', manifest)
         save(directory / 'original-manifest.json', original)
@@ -159,14 +164,21 @@ def main():
                     loop_start_sample=0, loop_end_sample=source['duration_samples'], expected_generation=state['generation']))
                 started = time.monotonic()
                 observations = []
+                previous_frames = 0
                 last_action = -1
                 while time.monotonic() - started < seconds:
                     time.sleep(min(1, max(.001, seconds - (time.monotonic() - started))))
                     elapsed = time.monotonic() - started
                     state = broker.status()
+                    assert state['status'] == 'ready' and state.get('applied_revision') == source['revision_id'], state
                     assert not state.get('file_error') and state['underruns'] == 0 and state['xruns'] == 0, state
                     assert state.get('cache_bytes', 0) <= 256 * 1024**2, state
                     assert all(p.get('missed_blocks', 0) == 0 and not p.get('error') for p in state.get('plugins', {}).values()), state
+                    at_end = state['render_position_sample'] >= source['duration_samples'] + source.get('tail_samples', 0)
+                    assert state['playing'] or (not looping and at_end), state
+                    if looping or not at_end:
+                        assert state['consumed_device_frames'] > previous_frames, state
+                    previous_frames = state['consumed_device_frames']
                     # Monitor transitions exercise controls without resetting the playback clock or counters.
                     action = int(elapsed / 17)
                     if action != last_action:
@@ -180,7 +192,7 @@ def main():
                     report['active'] = dict(phase=name, elapsed=elapsed, target_seconds=seconds, state=state)
                     save(directory / 'progress.json', report)
                 if not looping:
-                    assert not state['playing'] and state['position_sample'] == source['duration_samples'], state
+                    assert not state['playing'] and state['position_sample'] == source['duration_samples'] and at_end, state
                 else:
                     broker.command('transport', dict(playing=False, expected_generation=state['generation']))
                     state = broker.status()
@@ -199,11 +211,14 @@ def main():
                 meter = None
                 windows = [json.loads(line) for line in metrics.read_text().splitlines()]
                 final = windows[-1]
+                assert windows[0]['pro_audio_thread_registration'], windows[0]
                 assert final['kind'] == 'final' and final['frames'] > 0, final
                 assert all(final[k] == 0 for k in ('gap_frames', 'out_of_order_packets', 'invalid_samples', 'discontinuities', 'timestamp_errors')), final
+                assert any(item['peak'] > 0 for item in observations), 'No native source output observed'
                 report['phases'].append(dict(name=name, seconds=seconds, native_ready_ms=ready_ms,
                     final=state, loopback=final, source_clock_error_samples=clock_error, observations=observations))
                 save(directory / 'progress.json', report)
+        assert hashlib.sha256(Path(__file__).read_bytes()).hexdigest() == report['script_sha256'], 'Acceptance source changed during run'
         report['status'] = 'succeeded'
     except BaseException as error:
         report.update(status='failed', error=str(error))

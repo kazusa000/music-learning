@@ -35,7 +35,8 @@ class GraphSession final {
     std::atomic<uint64_t> written{0},read{0},underruns{0};
     std::atomic<uint64_t> seekRequested{0},seekApplied{0};
     std::atomic<uint64_t> updateRequested{0},updateApplied{0};
-    mutable std::mutex activity;bool active=false;
+    mutable std::mutex activity;std::atomic<bool> active{false};
+    std::atomic<double> consumptionEpoch{0};
     std::atomic<double> played{0};
     std::atomic<size_t> cache{0};
     std::thread producer;
@@ -95,7 +96,7 @@ public:
                 std::lock_guard guard(activity);
                 if(!active){
                     origin=played.load();kernel.seek((int64_t)origin,loop,(int64_t)loopStart,(int64_t)loopEnd);
-                    stream.available=stream.offset=0;resampler.flushBuffers();counter=0;read.store(0);written.store(0);prepared.store(false);
+                    stream.available=stream.offset=0;resampler.flushBuffers();counter=0;read.store(0);written.store(0);consumptionEpoch.store(0);prepared.store(false);
                 }
             };
             auto apply=[&](const var& update,uint64_t id,const std::shared_ptr<GraphKernel::PreparedUpdate>& replacement){
@@ -126,7 +127,7 @@ public:
                 if(seek.isObject()){
                     origin=(double)seek["position_sample"];loop=(bool)seek["loop"];loopStart=(double)seek["loop_start_sample"];loopEnd=(double)seek["loop_end_sample"];
                     kernel.seek((int64_t)origin,loop,(int64_t)loopStart,(int64_t)loopEnd);
-                    stream.available=stream.offset=0;resampler.flushBuffers();counter=0;read.store(0);written.store(0);prepared.store(false);played.store(origin);seekApplied.store(seekId);
+                    stream.available=stream.offset=0;resampler.flushBuffers();counter=0;read.store(0);written.store(0);consumptionEpoch.store(0);prepared.store(false);played.store(origin);seekApplied.store(seekId);
                 }
                 if(update.isObject()){
                     if(plan){plan->cancelled.store(true);plan.reset();}
@@ -164,10 +165,19 @@ public:
                 publish(false);
                 auto consumed=read.load(std::memory_order_acquire);
                 if(counter-consumed>=capacity){WaitOnAddress((volatile void*)&read,&consumed,sizeof(consumed),2);continue;}
+                const auto clock=consumptionEpoch.load(std::memory_order_acquire);
+                // One deadline spans every node level and resampler quantum
+                // needed for this output block. Use actual consumer time and
+                // queued sequence, rather than prematurely dropping a node at
+                // an arbitrary fraction of one source quantum.
+                kernel.setProcessingDeadline(active.load()&&prepared.load()&&clock>0?
+                    clock+(double)(counter+1)*frames/outputRate*1000.0-1.0:
+                    juce::Time::getMillisecondCounterHiRes()+2000.0);
                 auto& block=blocks[counter%capacity];juce::AudioSourceChannelInfo info(&block.audio,0,frames);resampler.getNextAudioBlock(info);
                 const double source=origin+(double)((counter+1)*(uint64_t)frames)*rate/outputRate;
                 block.endSample=loop&&source>=loopEnd?loopStart+std::fmod(source-loopStart,loopEnd-loopStart):juce::jmin(source,duration);block.epoch=epoch;
-                publish(true);++counter;written.store(counter,std::memory_order_release);prepared.store(true);
+                publish(true);++counter;written.store(counter,std::memory_order_release);
+                if(counter-read.load(std::memory_order_acquire)>=capacity)prepared.store(true);
                 if(appliedId)updateApplied.store(appliedId);
             }
             if(plan)plan->cancelled.store(true);
@@ -184,9 +194,12 @@ public:
             const float value=block.audio.getSample(ch,i);
             output[ch][i]+=value;peak=juce::jmax(peak,std::abs(value));
         }
-        played.store(block.endSample);read.store(current+1,std::memory_order_release);WakeByAddressSingle(&read);return true;
+        played.store(block.endSample);
+        consumptionEpoch.store(juce::Time::getMillisecondCounterHiRes()-(double)(current+1)*frames/outputRate*1000.0,std::memory_order_release);
+        read.store(current+1,std::memory_order_release);WakeByAddressSingle(&read);return true;
     }
     bool update(const var& manifest){
+        if(failed.load())return false;
         for(const char* key:{"project_id","view","sample_rate","duration_samples","tail_samples"})if(initial[key]!=manifest[key])return false;
         if(initial["routing_graph"]!=manifest["routing_graph"]
            &&juce::JSON::toString(initial["routing_graph"],true)!=juce::JSON::toString(manifest["routing_graph"],true))return false;

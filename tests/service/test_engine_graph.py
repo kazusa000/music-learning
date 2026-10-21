@@ -61,6 +61,73 @@ def test_routed_original_switch_retains_loaded_workers_and_applies_edits(service
         invoke(service, 'engine.close')
 
 
+def dynamic_short_project(service, project, tmp_path, wav=None):
+    import base64
+    import json
+    from native_host import NativeHost
+    from music_learning.settings import ROOT
+
+    revision = graph_project(service, project, tmp_path)
+    snapshot = copy.deepcopy(revision['snapshot'])
+    snapshot['duration_samples'] = 44100 * (1 if wav else 4)
+    for note in snapshot['notes']:
+        note['end_sample'] = snapshot['duration_samples'] - 4000
+    if wav:
+        from test_engine_lifecycle import registered
+
+        snapshot['source_asset_id'] = registered(service, project, wav.read_bytes())
+    path = ROOT / 'runtime/build/engine-dynamic-fixture/MLDynamicFixture_artefacts/Release/VST3/MLDynamicFixture.vst3'
+    service.settings.plugin_roots.append(path.resolve())
+    descriptor = NativeHost(diagnostics=tmp_path / 'dynamic-inspect').call(dict(schema_version=1,
+        action='inspect', plugin=dict(path=str(path))))['plugin']
+    plugin = snapshot['plugins'][0]
+    for name, data in [('state_asset_id', base64.b64decode(descriptor['state_base64'])), ('descriptor_asset_id', json.dumps(descriptor).encode())]:
+        sha = service.storage.put(data)
+        with service.database.transaction() as db:
+            service.register_asset(db, project['id'], sha, len(data), 'application/octet-stream', {},
+                dict(origin='rule', source_id='consumer-deadline'))
+        plugin[name] = sha
+    plugin.update(class_id=descriptor['vst3_class_id'], version=descriptor['version'], binary_sha256=descriptor['binary_sha256'],
+        parameters={value['id']: .25 if value['name'] == 'Mode' else 1 if value['name'] == 'Gain' else value['value']
+            for value in descriptor['parameters_readback']})
+    return invoke(service, 'revisions.commit', dict(project_id=project['id'], snapshot=snapshot,
+        author='test', description='Independent bounded delay graph'), revision['id'])
+
+
+def test_worker_uses_actual_device_queue_deadline_without_premature_silence(service, project, tmp_path, monkeypatch):
+    revision = dynamic_short_project(service, project, tmp_path)
+    monkeypatch.setenv('ML_DYNAMIC_STEADY_DELAY', '1')
+    try:
+        invoke(service, 'engine.open', dict(project_id=project['id']))
+        state = ready(service)
+        invoke(service, 'engine.transport', dict(engine_session=state['engine_session'], generation=state['generation'], playing=True))
+        time.sleep(1.1)
+        state = invoke(service, 'engine.status')
+        assert state['applied_revision'] == revision['id'] and state['playing']
+        assert state['underruns'] == 0 and state['xruns'] == 0, state
+        assert all(value['missed_blocks'] == 0 for value in state['plugins'].values()), state
+        assert state['meters'][revision['snapshot']['tracks'][0]['id']] > 0
+        assert state['plugins'][revision['snapshot']['tracks'][0]['id']]['maximum_render_micros'] >= 12000, state
+    finally:
+        invoke(service, 'engine.close')
+
+
+def test_switch_to_original_during_load_does_not_keep_cancelled_graph(service, project, tmp_path, wav, monkeypatch):
+    dynamic_short_project(service, project, tmp_path, wav)
+    monkeypatch.setenv('ML_DYNAMIC_LOAD_DELAY', '1')
+    try:
+        initial = invoke(service, 'engine.open', dict(project_id=project['id']))
+        assert initial['status'] == 'loading', initial
+        original = invoke(service, 'engine.open', dict(project_id=project['id'], view='original'))
+        assert original['status'] == 'ready'
+        invoke(service, 'engine.open', dict(project_id=project['id']))
+        restored = ready(service)
+        assert restored['status'] == 'ready' and not restored.get('control_error'), restored
+        assert all(value['status'] == 'ready' for value in restored['plugins'].values())
+    finally:
+        invoke(service, 'engine.close')
+
+
 def test_routed_native_device_play_monitor_and_incremental_notes(service, project, tmp_path):
     revision = graph_project(service, project, tmp_path)
     a, b, bus = [track["id"] for track in revision["snapshot"]["tracks"]]
