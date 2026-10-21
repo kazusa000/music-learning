@@ -100,7 +100,12 @@ public:
     std::vector<int> pluginLatencies()const{
         std::vector<int> result;for(uint32_t i=0;i<shared->sideSlots;++i)result.push_back(shared->pluginLatency[i].load());return result;
     }
-    size_t bytes()const{return nodeBytes(shared->capacity,shared->sideSlots);}
+    static size_t bytesBound(uint32_t frames,uint32_t plugins){
+        // Mapping plus the child's main/output/side buffers and the largest
+        // verified renderer layout (18 outputs + stereo clip scratch).
+        return nodeBytes(frames,plugins)+(size_t)(24+plugins*2)*frames*sizeof(float);
+    }
+    size_t bytes()const{return bytesBound(shared->capacity,shared->sideSlots);}
     const juce::String& hash()const{return program;}
     juce::String programPath()const{return directory.getChildFile(program+".json").getFullPathName();}
     void submit(int64_t sample,int64_t inputDelay,int64_t origin,bool chase,bool loop,int64_t begin,int64_t end,
@@ -137,6 +142,8 @@ public:
         value->setProperty("latency_samples",latency());value->setProperty("pending",pending);
         value->setProperty("render_micros",(juce::int64)shared->renderMicros.load());
         value->setProperty("load_micros",(juce::int64)shared->loadMicros.load());
+        value->setProperty("load_stage",(int)shared->stage.load());
+        value->setProperty("chase_count",(juce::int64)shared->chaseCount.load());
         value->setProperty("audio_buffer_bytes",(juce::int64)bytes());
         if(failed)value->setProperty("error",failure);return juce::var(value);
     }

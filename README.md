@@ -2,7 +2,7 @@
 
 本机 AI 音乐 DAW：导入音乐，查看原曲与重建工程，与 AI 讨论和修改编曲，保存版本并导出。AI 与界面共用 API/SDK/CLI；支持 Windows x64 VST3，不需要 MIDI 键盘。
 
-**本地 C++ 引擎的设备、文件播放、隔离VST3、前端接线及生命周期已通过N1–N5独立验收；N6完整路由与N7最终部署继续推进。目前正式已部署版本仍使用 WebAudio。**
+**本地 C++ 引擎已通过N1–N6独立验收，包含文件播放、隔离VST3、完整路由/侧链/PDC、后台音色替换及共用导出；N7最终整曲/回环与默认部署进行中。目前正式已部署版本仍使用 WebAudio。**
 
 - [本地 DAW 架构](docs/architecture/native-daw.md)
 - [开发顺序与验收指标](docs/plans/native-daw-migration.md)
@@ -24,7 +24,7 @@
 - **音色：** 按乐器→型号→变体选择，中文／原名并列，产品库名保留；可试听后应用。
 - **工程：** 不可变内部修订、手动版本、独立混音、显式导出和永久删除（不创建备份）。
 
-当前详细行为与实测范围见[双编排](docs/50-original-and-reconstruction.md)、[播放缓存修复](docs/51-playback-buffer-ownership.md)和[永久删除](docs/49-permanent-project-deletion.md)。设备级本地播放与实时完整路由仍属于后续重构，不能以已有离线能力代替验收。
+当前详细行为与实测范围见[双编排](docs/50-original-and-reconstruction.md)、[永久删除](docs/49-permanent-project-deletion.md)和[原生图验收](docs/benchmarks/native-engine-n6.md)。候选支持设备级播放和实时完整路由；旧浏览器播放缓存修复保留为历史记录，最终默认切换仍须完成N7。
 
 ## 开发入口
 

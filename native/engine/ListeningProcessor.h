@@ -7,12 +7,16 @@ namespace mlengine {
 class ListeningProcessor final {
     juce::dsp::Oversampling<float> oversampling{2,2,juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR,true,true};
     double attack=0,release=0,reduction=0;
+    int maximumFrames=0;
 public:
     void prepare(double rate,int frames){
+        maximumFrames=frames;
         attack=std::exp(-1.0/(rate*.001));release=std::exp(-1.0/(rate*.06));reduction=0;
         oversampling.initProcessing((size_t)frames);oversampling.reset();
     }
     int latency()const{return (int)std::lround(oversampling.getLatencyInSamples());}
+    static size_t bufferBytesBoundFor(int frames){return (size_t)frames*64*sizeof(float)+65536;}
+    size_t bufferBytesBound()const{return bufferBytesBoundFor(maximumFrames);}
     void process(juce::AudioBuffer<float>& buffer,int start,int count){
         for(int i=start;i<start+count;++i){
             const auto amplitude=std::max(std::abs(buffer.getSample(0,i)),std::abs(buffer.getSample(1,i)));

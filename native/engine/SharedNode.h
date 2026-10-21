@@ -5,7 +5,7 @@
 #include <cstddef>
 
 namespace mlengine {
-constexpr uint32_t nodeProtocol=1,nodeMaxFrames=4096,nodeMaxPlugins=64;
+constexpr uint32_t nodeProtocol=2,nodeMaxFrames=4096,nodeMaxPlugins=64;
 // One request owns the inputs until completedSequence acknowledges its output.
 // Audio is planar float32 immediately after this aligned header.
 struct alignas(64) NodeHeader {
@@ -16,6 +16,7 @@ struct alignas(64) NodeHeader {
     std::array<std::atomic<uint64_t>,4> configHash{};
     std::atomic<uint32_t> status{0},quit{0},stage{0};
     std::atomic<uint64_t> renderMicros{0},loadMicros{0};
+    std::atomic<uint64_t> chaseCount{0};
     std::atomic<int32_t> latency{0};
     std::array<std::atomic<int32_t>,nodeMaxPlugins> pluginLatency{};
     int64_t sample=0,origin=0,inputDelay=0,loopStart=0,loopEnd=0;

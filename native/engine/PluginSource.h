@@ -43,6 +43,7 @@ class PluginSource {
     bool failed=false;
     double configuredAt=0, readySeenAt=0, progressAt=0;
     uint64_t observedProduced=0;
+    size_t decoderBytes=0;
     juce::SHA256 verifyManifest(const juce::File& file) {
         if(file.getParentDirectory()!=directory||!file.existsAsFile()||file.getSize()>8*1024*1024)throw std::runtime_error("Plugin manifest escaped session or exceeds limit");
         const juce::SHA256 hash(file);
@@ -51,9 +52,15 @@ class PluginSource {
     }
 public:
     juce::String programPath() const {return directory.getChildFile(config+".json").getFullPathName();}
+    static size_t bytesBound(int frames,double sourceRate,double deviceRate,size_t clips){
+        const auto input=(size_t)std::ceil(frames*sourceRate/deviceRate)+64;
+        return sizeof(PluginRing)+20*512*sizeof(float)+(size_t)frames*2*sizeof(float)+input*2*sizeof(float)+clips*1024*1024;
+    }
+    size_t bytes()const{return bytesBound((int)shared->frames,shared->sourceRate,shared->deviceRate,decoderBytes/(1024*1024));}
     bool retryRequired() { return status()["status"].toString()=="failed"; }
     PluginSource(const juce::var& spec,const juce::File& base,double sourceRate,double deviceRate,int frames)
         :directory(base.getChildFile(spec["storage_key"].toString())) {
+        decoderBytes=(size_t)(int)spec.getProperty("audio_clip_count",0)*1024*1024;
         if(frames<=0||frames>(int)pluginMaxFrames)throw std::runtime_error("Invalid plugin worker quantum");
         if(!directory.createDirectory().wasOk())throw std::runtime_error("Cannot create plugin worker state directory");
         PrivateSecurity security;

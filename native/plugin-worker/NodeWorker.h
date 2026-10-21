@@ -77,6 +77,7 @@ inline int runNodeWorker(const String& name,const File& directory) {
                 for(const auto& side:sides)require(std::isfinite(side.getSample(ch,(int)i)),"Non-finite graph sidechain");
             }
             const auto started=Time::getHighResolutionTicks();
+            if(shared->chase)shared->chaseCount.fetch_add(1);
             renderer->graphBlock(shared->sample,shared->inputDelay,shared->origin,shared->chase!=0,shared->looping!=0,
                 shared->loopStart,shared->loopEnd,main,sides,output,(int)count);
             const auto latencies=renderer->reportedLatencies();

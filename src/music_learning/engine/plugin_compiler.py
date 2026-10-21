@@ -100,4 +100,4 @@ def compile_track(service, db, revision, track_id, directory, *, sidechains=()):
         pending.write_bytes(content)
         os.replace(pending,path)
     return dict(runtime_signature=signature,storage_key=storage_key,plugin_project_path=str(path),
-        plugin_count=len(project["tracks"][0]["plugins"]))
+        plugin_count=len(project["tracks"][0]["plugins"]),audio_clip_count=len(project["tracks"][0]["audio_clips"]))

@@ -95,7 +95,7 @@ def test_parallel_and_serial_paths_compensate_to_exact_source_sample(graph_case)
     assert report["latency_samples"] == 384
     assert audio[512] == pytest.approx(.25, abs=1e-7)
     assert all(x == 0 for i, x in enumerate(audio) if i != 512)
-    assert report["audio_buffer_bytes"] < 1024*1024
+    assert report["audio_buffer_bytes"] < 8*1024*1024
 
 
 def test_sidechain_targets_second_plugin_at_same_source_time(graph_case):

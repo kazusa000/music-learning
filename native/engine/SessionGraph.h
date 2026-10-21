@@ -21,6 +21,7 @@ class FileTimeline final : public AudioSource {
     bool loop;
 public:
     std::atomic<bool> failed{false};
+    size_t bytesBound()const{return (size_t)scratch.getNumSamples()*2*sizeof(float)+clips.size()*1024*1024;}
     FileTimeline(const var& track, double rate, int64 start, bool looping, int64 begin, int64 end)
         : cursor(start), loopStart(begin), loopEnd(end), loop(looping) {
         if (auto* items = track.getProperty("clips", {}).getArray()) for (const auto& item : *items) {
@@ -96,7 +97,7 @@ public:
     double sourceRate, deviceRate, duration, songDuration, origin, loopStart, loopEnd;
     bool looping;
 
-    SessionGraph(const var& value, double outputRate, int quantum, double start, bool loop, double begin, double end,PluginPool* pool=nullptr)
+    SessionGraph(const var& value, double outputRate, int quantum, double start, bool loop, double begin, double end,PluginPool* pool=nullptr,size_t available=256ull*1024*1024)
         : manifest(value), frames(quantum), sourceRate((double)value["sample_rate"]), deviceRate(outputRate),
           duration((double)value["duration_samples"] + (double)value.getProperty("tail_samples", 0)),
           songDuration((double)value["duration_samples"]), origin(start), loopStart(begin), loopEnd(end), looping(loop) {
@@ -104,12 +105,29 @@ public:
         if (looping && !(begin >= 0 && end > begin && end <= songDuration)) throw std::runtime_error("Invalid file loop");
         if (start < 0 || start > duration) throw std::runtime_error("Invalid file position");
         playedSample.store(start);
-        listening.prepare(outputRate,quantum);
         if(value.hasProperty("routing_graph")){
+            if(available<=listening.bufferBytesBound())throw std::runtime_error("No available native graph audio budget");
             if(auto* items=value["tracks"].getArray())for(const auto& item:*items)
                 if(item["id"]!=value["routing_graph"]["master"]){auto track=std::make_unique<Track>();track->id=item["id"].toString();tracks.push_back(std::move(track));}
-            routed=std::make_unique<GraphSession>(value,outputRate,quantum,start,loop,begin,end);return;
+            routed=std::make_unique<GraphSession>(value,outputRate,quantum,start,loop,begin,end,available-listening.bufferBytesBound());return;
         }
+        const auto* nodes=value["tracks"].getArray();
+        if(!nodes||nodes->isEmpty()||nodes->size()>128)throw std::runtime_error("File graph needs 1..128 tracks");
+        size_t estimate=(size_t)capacity*frames*2*sizeof(float)*(size_t)nodes->size()+ListeningProcessor::bufferBytesBoundFor(frames);
+        for(const auto& item:*nodes){
+            if(item.hasProperty("plugin_project_path")){
+                const auto key=value["project_id"].toString()+":"+item["id"].toString()+":"+item["runtime_signature"].toString();
+                const auto found=pool?pool->find(key):PluginPool::iterator{};
+                if(!pool||found==pool->end()||!found->second||found->second->retryRequired())
+                    estimate+=PluginSource::bytesBound(frames,sourceRate,deviceRate,(size_t)(int)item.getProperty("audio_clip_count",0));
+            }else{
+                const auto* clips=item["clips"].getArray();
+                estimate+=(clips?(size_t)clips->size():0)*1024*1024+4096*2*sizeof(float)
+                    +((size_t)std::ceil(frames*sourceRate/deviceRate)+64)*2*sizeof(float);
+            }
+            if(estimate>available)throw std::runtime_error("Native playback exceeds available audio-buffer budget");
+        }
+        listening.prepare(outputRate,quantum);
         if (auto* items = value["tracks"].getArray()) for (const auto& item : *items) {
             auto track = std::make_unique<Track>(); track->id = item["id"].toString();
             track->gainDb.store((float)(double)item.getProperty("gain_db", 0.0));
@@ -228,9 +246,12 @@ public:
     }
     bool ended() const { return routed?routed->ended():!looping && playedSample.load() >= duration; }
     int64 cacheBytes() const {
-        if(routed)return (int64)routed->bytes();
-        int64 total=(int64)capacity * frames * 2 * sizeof(float) * (int64)tracks.size();
-        for(const auto& track:tracks)if(track->plugin)total+=(int64)sizeof(PluginRing);
+        if(routed)return (int64)routed->bytes()+(int64)listening.bufferBytesBound();
+        int64 total=(int64)capacity * frames * 2 * sizeof(float) * (int64)tracks.size()+(int64)listening.bufferBytesBound();
+        for(const auto& track:tracks){
+            if(track->plugin)total+=(int64)track->plugin->bytes();
+            else total+=(int64)track->source->bytesBound()+(int64)((size_t)std::ceil(frames*sourceRate/deviceRate)+64)*2*sizeof(float);
+        }
         return total;
     }
 };

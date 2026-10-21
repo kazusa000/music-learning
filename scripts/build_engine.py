@@ -33,7 +33,7 @@ def main():
     binaries = output / "bin"
     files = {name: hashlib.sha256((binaries / name).read_bytes()).hexdigest() for name in
         ("ml_engine.exe", "ml_plugin_worker.exe", "ml_graph_runner.exe", "ml_engine_loopback.exe")}
-    content = json.dumps(dict(schema_version=1, node_protocol=1, plugin_protocol=1, files=files), sort_keys=True)
+    content = json.dumps(dict(schema_version=1, node_protocol=2, plugin_protocol=1, files=files), sort_keys=True)
     pending = binaries / "bundle.partial.json"
     pending.write_text(content, encoding="utf-8")
     os.replace(pending, binaries / "bundle.json")

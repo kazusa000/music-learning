@@ -49,6 +49,7 @@ def compile_graph(service, db, revision, directory, calibration):
             signature = hashlib.sha256(canonical(program).encode()).hexdigest()
             key = hashlib.sha256((track.id + signature).encode()).hexdigest()[:24]
             spec = dict(runtime_signature=signature, storage_key=key,
+                plugin_count=0, audio_clip_count=1,
                 plugin_project_path=save_program(program, directory, key),
                 baked_gain_db=stem["baked_gain_db"], baked_pan=stem["baked_pan"])
             automation = []
@@ -74,7 +75,8 @@ def export_manifest(project, directory, calibration=None, mixing_version=None):
     master = project["graph"]["master"]
     for node in project["tracks"]:
         spec = dict(id=node["id"], gain_db=node.get("gain_db", 0), pan=node.get("pan", 0),
-            mute=node.get("muted", False), mix_automation=node.get("mix_automation", []))
+            mute=node.get("muted", False), mix_automation=node.get("mix_automation", []),
+            plugin_count=len(node.get("plugins", [])),audio_clip_count=len(node.get("audio_clips", [])))
         if node["id"] == master:
             spec["monitor_gain_db"] = calibration.get("mix_gain_db", 0)
         else:

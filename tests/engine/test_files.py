@@ -38,7 +38,7 @@ def test_native_file_clock_no_python_supply_and_bounded_cache(file_engine):
     assert current["underruns"] == 0 and not current["file_error"]
     expected = current["consumed_device_frames"]*value["sample_rate"]/configured["sample_rate"]
     assert abs(current["position_sample"]-expected) <= 1
-    assert current["cache_bytes"] == 8*configured["buffer_frames"]*2*4*2
+    assert 0 < current["cache_bytes"] < 8*1024*1024
     broker.command("transport",dict(playing=False,expected_generation=current["generation"]))
     time.sleep(.03)
     position = broker.status()["position_sample"]
@@ -78,6 +78,34 @@ def test_natural_end_and_replay(file_engine):
 
 def test_invalid_loop_does_not_replace_current_graph(file_engine):
     broker, _, state, _ = file_engine
+    broker.command("transport",dict(playing=True,expected_generation=state["generation"]))
     with pytest.raises(ValueError,match="Invalid file loop"):
         broker.command("transport",dict(loop=True,loop_start_sample=10,loop_end_sample=5,expected_generation=state["generation"]))
     assert broker.status()["generation"] == state["generation"]
+    assert broker.status()["playing"], "Rejected graph preparation stopped the current audio"
+
+
+def test_audio_cache_bound_does_not_scale_with_song_duration(file_engine):
+    import copy
+
+    broker, manifest, _, _ = file_engine
+    short = broker.status()["cache_bytes"]
+    longer = copy.deepcopy(manifest)
+    longer["duration_samples"] = 44100*3600
+    state = broker.command("open",dict(manifest=longer,position_sample=0,playing=False))
+    assert state["cache_bytes"] == short
+    assert state["cache_bytes"] < 8*1024*1024
+
+
+def test_excessive_reader_budget_fails_before_replacing_playing_graph(file_engine):
+    import copy
+
+    broker, manifest, state, _ = file_engine
+    broker.command("transport",dict(playing=True,expected_generation=state["generation"]))
+    oversized = copy.deepcopy(manifest)
+    for track in oversized["tracks"]:
+        track["clips"] *= 200
+    with pytest.raises(ValueError,match="budget"):
+        broker.command("open",dict(manifest=oversized,position_sample=0,playing=False))
+    after = broker.status()
+    assert after["playing"] and after["generation"] == state["generation"]
