@@ -97,6 +97,10 @@ def snapshot_assets(snapshot):
     required.update(v["asset_id"] for v in snapshot["clips"] if v.get("asset_id"))
     required.update(v["asset_id"] for v in snapshot["stems"])
     required.update(snapshot.get("frozen_tracks", {}).values())
+    reference = snapshot.get("source_reference") or {}
+    required.update(c["asset_id"] for c in reference.get("clips",[]) if c.get("asset_id"))
+    required.update(reference.get("waveforms",{}).values())
+    required.update(reference.get("raw_asset_ids",[]))
     for track in snapshot["tracks"]:
         required.update(track.get("stem_asset_ids", []))
     for plugin in snapshot["plugins"]:

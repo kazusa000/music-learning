@@ -200,11 +200,12 @@ class Adapter:
             "source_sha256": self.source["id"],
         }
 
-    def run_model(self, model):
+    def run_model(self, model, source=None):
+        source = source or self.input_file("normalize", "normalized.wav")
         python = (
             self.settings.model_runtime
             / "envs"
-            / "transcription"
+            / ({"sheetsage":"reference","leap":"separation"}.get(model,"transcription"))
             / "Scripts/python.exe"
         )
         output = self.out / "model"
@@ -215,7 +216,7 @@ class Adapter:
             "--model",
             model,
             "--input",
-            str(self.input_file("normalize", "normalized.wav")),
+            str(source),
             "--output",
             str(output),
         ]
@@ -252,9 +253,7 @@ class Adapter:
             if process.wait() != 0:
                 raise RuntimeError(model + " model failed; inspect this stage's local model.stderr.log")
         report = json.loads((output / "worker-result.json").read_text(encoding="utf-8"))
-        if report["status"] != "completed" or report["input"]["sha256"] != digest(
-            self.input_file("normalize", "normalized.wav")
-        ):
+        if report["status"] != "completed" or report["input"]["sha256"] != digest(source):
             raise ValueError("model result does not match normalized source")
         for file in sorted(output.rglob("*")):
             if file.is_file() and file.suffix != ".log":
@@ -273,8 +272,60 @@ class Adapter:
                         "covered_samples": self.frames, "settings": result["settings"],
                         "cuda": report["cuda"], "elapsed_seconds": report["elapsed_seconds"]}
 
+    def sheetsage(self):
+        output, report = self.run_model("sheetsage")
+        if abs(report["result"]["processed_duration_seconds"]-self.duration) > 1/self.rate:
+            raise ValueError("SheetSage did not cover the whole recording")
+        cursor = 0.
+        for window in report["result"]["model_result"]["windows"]:
+            if abs(window["accept_start"]-cursor)>1/self.rate or window["accept_end"]<=cursor:
+                raise ValueError("SheetSage windows overlap or leave gaps")
+            cursor = window["accept_end"]
+        if abs(cursor-self.duration)>1/self.rate:
+            raise ValueError("SheetSage window coverage is incomplete")
+        melody = []
+        for voice in normalize(output/"analysis/melody_vocal.mid",self.rate)["tracks"]:
+            melody.extend(voice["notes"])
+        annotations = []
+        for kind in ("chord","key","structure"):
+            for line in (output/"analysis"/(kind+".lab")).read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                a,b,label = line.split(maxsplit=2)
+                begin, end = max(0,round(float(a)*self.rate)), min(self.frames,round(float(b)*self.rate))
+                if end>begin:
+                    annotations.append(dict(start_sample=begin,end_sample=end,kind=kind,text=label))
+        write_json(self.out/"reference-analysis.json",dict(notes=melody,annotations=annotations))
+        self.add(self.out/"reference-analysis.json")
+        self.summary = dict(covered_samples=self.frames,melody_notes=len(melody),annotations=len(annotations),
+                            cuda=report["cuda"],elapsed_seconds=report["elapsed_seconds"])
+
+    def separate(self):
+        from music_learning.vocal_decision import decide
+        analysis = self.input_json("sheetsage","reference-analysis.json")
+        decision = decide(self.args.get("vocal_mode","auto"),analysis["notes"],self.frames,self.rate)
+        self.summary = decision
+        if not decision["has_vocals"]:
+            write_json(self.out/"decision.json",decision)
+            self.add(self.out/"decision.json")
+            return
+        output, report = self.run_model("leap")
+        for name in ("vocals","accompaniment"):
+            path = self.out/(name+".wav")
+            shutil.copyfile(output/(name+".wav"),path)
+            item = self.add(path,audio=True)
+            if item["metadata"]["duration_samples"] != self.frames or item["metadata"]["sample_rate"] != self.rate:
+                raise ValueError("Separated source lost original sample alignment")
+            self.add_waveform(path,name)
+        self.summary.update(report["result"],cuda=report["cuda"],elapsed_seconds=report["elapsed_seconds"])
+        if self.summary["sum_max_error"] > 2e-6:
+            raise ValueError("Separated sources do not reconstruct the original")
+        # WAVs are published once, at the stage root; model report records their SHA.
+        self.files = [f for f in self.files if not f["name"].startswith("model/") or not f["name"].endswith(".wav")]
+
     def muscriptor(self):
-        output, report = self.run_model("muscriptor")
+        source = self.input_file("separate", "accompaniment.wav") if self.completed["separate"]["summary"]["has_vocals"] else None
+        output, report = self.run_model("muscriptor", source)
         result = report["result"]
         if result["completed_chunks"] != result["total_chunks"] or result["total_chunks"] != int(
             np.ceil(self.duration / 5)
@@ -416,6 +467,27 @@ class Adapter:
             issues.append(
                 "Native plugin transport uses explicit fallback 120 BPM / 4/4; performed note times unchanged."
             )
+        from music_learning.source_reference import build
+        analysis = self.input_json("sheetsage","reference-analysis.json")
+        has_vocals = self.completed["separate"]["summary"]["has_vocals"]
+        def item(stage,name):
+            return next(f["sha256"] for f in self.completed[stage]["files"] if f["name"]==name)
+        audio = [(role,name,item("separate",role+".wav"),item("separate","waveforms/"+role+".json"))
+                 for role,name in (("vocals","人声"),("accompaniment","伴奏"))] if has_vocals else [
+                    ("original","原曲",item("normalize","normalized.wav"),item("normalize","waveforms/source.json"))]
+        snapshot.source_reference = build(namespace=self.args["target_revision"],source=self.source["id"],frames=self.frames,
+            run_id=self.args["run_ids"]["sheetsage"],decision=self.completed["separate"]["summary"]["decision"],
+            audio=audio,melody=analysis["notes"],annotations=analysis["annotations"],
+            raw_assets=[f["sha256"] for f in self.completed["sheetsage"]["files"]])
+        if has_vocals:
+            tid = stable(self.args["target_revision"],"reconstruction-vocals")
+            provenance = c.Provenance(origin="model",source_id=self.args["run_ids"]["separate"])
+            vocal_asset = item("separate","vocals.wav")
+            snapshot.tracks.append(c.Track(id=tid,name="人声",kind="audio",role="vocals",gain_db=-12,provenance=provenance))
+            snapshot.clips.append(c.Clip(id=stable(tid,"vocal-clip"),track_id=tid,asset_id=vocal_asset,
+                start_sample=0,duration_samples=self.frames,provenance=provenance))
+            native["tracks"].append(dict(id=tid,gain_db=-12,pan=0,plugins=[],notes=[],controllers=[],
+                audio_clips=[dict(path=str(self.input_file("separate","vocals.wav")),sample=0,duration_samples=self.frames)]))
         write_json(
             self.out / "musical.json",
             {
@@ -440,6 +512,16 @@ class Adapter:
         musical = self.input_json("assemble", "musical.json")
         snapshot = c.Snapshot.model_validate(musical["snapshot"])
         project = self.input_json("assemble", "native-project.json")
+        from music_learning.audio_materialization import wave_alias
+        # JUCE's file reader selects a format by extension. The CAS filename is
+        # extensionless; provide a verified local WAV link, just as live playback does.
+        for native_track in project["tracks"]:
+            clips = [clip for clip in snapshot.clips if clip.track_id==native_track["id"] and clip.asset_id]
+            audio_clips = native_track.get("audio_clips",[])
+            if len(clips)!=len(audio_clips):
+                raise ValueError("Native audio clips differ from the editable snapshot")
+            for spec, clip in zip(audio_clips,clips):
+                spec["path"] = str(wave_alias(self.store,clip.asset_id,self.out/"audio"))
         resources = {}
         for item in self.completed["assemble"]["files"]:
             if item["name"].startswith("resources/"):
@@ -449,6 +531,8 @@ class Adapter:
                 shutil.copyfile(self.store.verify(item["sha256"]), target)
                 resources[relative.relative_to("resources").as_posix()] = item["sha256"]
         for track in project["tracks"]:
+            if not track["plugins"]:
+                continue
             assignment = next(
                 a
                 for a in musical["assignments"]
@@ -639,8 +723,18 @@ class Adapter:
                 raise ValueError("render length/rate/layout differs from revision")
             if m["clipped_samples"] or m["rms"] <= 1e-8:
                 raise ValueError("clipped or silent reconstruction")
-        if snapshot.stems or len(snapshot.tracks) != len(snapshot.plugins) or not snapshot.routing:
+        if len([t for t in snapshot.tracks if t.kind=="instrument"]) != len(snapshot.plugins) or not snapshot.routing:
             raise ValueError("incomplete editable snapshot")
+        reference = snapshot.source_reference
+        if reference is None or reference.has_vocals != self.completed["separate"]["summary"]["has_vocals"]:
+            raise ValueError("Missing original workspace or inconsistent separation decision")
+        if reference.has_vocals:
+            vocals = [t for t in snapshot.tracks if t.kind=="audio" and t.role=="vocals"]
+            if len(vocals)!=1 or any(p.track_id==vocals[0].id for p in snapshot.plugins):
+                raise ValueError("Reconstructed vocals must be an audio track without an instrument")
+            vocal_asset = next(f["sha256"] for f in self.completed["separate"]["files"] if f["name"]=="vocals.wav")
+            if not any(c.track_id==vocals[0].id and c.asset_id==vocal_asset for c in snapshot.clips):
+                raise ValueError("Reconstruction does not use the verified vocal stem")
         kinds = {a.kind for a in snapshot.annotations}
         if kinds != {"beat"} or not snapshot.timing_map:
             raise ValueError("missing required music candidates")
@@ -658,7 +752,7 @@ class Adapter:
             "sample_rate": self.rate,
             "tracks": len(snapshot.tracks),
             "notes": len(snapshot.notes),
-            "stems": 0,
+            "stems": int(bool(snapshot.source_reference and snapshot.source_reference.has_vocals))*2,
             "render_frames": expected_frames,
             "timing_map_available": snapshot.timing_map is not None,
             "issues": issues,

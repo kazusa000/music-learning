@@ -220,10 +220,10 @@ def test_partial_failure_retries_reuse_validated_checkpoints_and_reject_late_wri
     assert invoke(service, "jobs.get", {"job_id": first["id"]})["error"]["code"] == fault
     retry = invoke(service, "jobs.retry", {"job_id": first["id"]}, project["current_revision"])
     Worker(service.database).run_once()
-    assert calls == ["normalize", "beat_this", "muscriptor", "muscriptor"]
+    assert calls == ["normalize", "beat_this", "sheetsage", "separate", "muscriptor", "muscriptor"]
     saved = invoke(service, "jobs.stages", {"job_id": retry["id"]})
     assert saved[0]["cache_hit"] and saved[1]["cache_hit"]
-    assert saved[2]["status"] == "failed"
+    assert next(s for s in saved if s["stage"]=="muscriptor")["status"] == "failed"
     assert (
         invoke(service, "projects.get", {"project_id": project["id"]})["current_revision"]
         == project["current_revision"]

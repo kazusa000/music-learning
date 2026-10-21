@@ -751,6 +751,15 @@
     "Citation": {
       "additionalProperties": false,
       "properties": {
+        "view": {
+          "default": "arrangement",
+          "enum": [
+            "original",
+            "arrangement"
+          ],
+          "title": "View",
+          "type": "string"
+        },
         "id": {
           "pattern": "^[a-f0-9]{32}$",
           "title": "Id",
@@ -2783,6 +2792,15 @@
           "default": null,
           "title": "End Sample"
         },
+        "view": {
+          "default": "arrangement",
+          "enum": [
+            "arrangement",
+            "original"
+          ],
+          "title": "View",
+          "type": "string"
+        },
         "action": {
           "default": "summary",
           "enum": [
@@ -4223,6 +4241,64 @@
       "title": "RecommendInstruments",
       "type": "object"
     },
+    "ReferenceUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/NoteEvent"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "annotations": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Annotation"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annotations"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "ReferenceUpdate",
+      "type": "object"
+    },
     "RegisterAnalysis": {
       "additionalProperties": false,
       "properties": {
@@ -4858,6 +4934,17 @@
     "Snapshot": {
       "additionalProperties": false,
       "properties": {
+        "source_reference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "listening_calibration": {
           "anyOf": [
             {
@@ -5007,6 +5094,79 @@
         }
       },
       "title": "Snapshot",
+      "type": "object"
+    },
+    "SourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "source_asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Source Asset Id",
+          "type": "string"
+        },
+        "has_vocals": {
+          "title": "Has Vocals",
+          "type": "boolean"
+        },
+        "decision": {
+          "title": "Decision",
+          "type": "string"
+        },
+        "tracks": {
+          "items": {
+            "$ref": "#/$defs/Track"
+          },
+          "title": "Tracks",
+          "type": "array"
+        },
+        "clips": {
+          "items": {
+            "$ref": "#/$defs/Clip"
+          },
+          "title": "Clips",
+          "type": "array"
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/NoteEvent"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "annotations": {
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotations",
+          "type": "array"
+        },
+        "waveforms": {
+          "patternProperties": {
+            "^[a-f0-9]{32}$": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            }
+          },
+          "title": "Waveforms",
+          "type": "object"
+        },
+        "raw_asset_ids": {
+          "items": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "title": "Raw Asset Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_asset_id",
+        "has_vocals",
+        "decision",
+        "tracks",
+        "clips"
+      ],
+      "title": "SourceReference",
       "type": "object"
     },
     "StageRecord": {
@@ -5178,6 +5338,28 @@
           ],
           "default": null,
           "title": "Revision Id"
+        },
+        "workspace": {
+          "default": "arrangement",
+          "enum": [
+            "original",
+            "arrangement"
+          ],
+          "title": "Workspace",
+          "type": "string"
+        },
+        "reference_track_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Track Id"
         },
         "edit_mode": {
           "default": "auto",
@@ -7111,6 +7293,83 @@
         "type": "array"
       },
       "mutates": false
+    },
+    "reference.get": {
+      "arguments": "RevisionRef",
+      "result": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/SourceReference"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "mutates": false
+    },
+    "reference.update": {
+      "arguments": "ReferenceUpdate",
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "snapshot_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Snapshot Sha256",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/$defs/Snapshot"
+          },
+          "author": {
+            "title": "Author",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "parent_id",
+          "snapshot_sha256",
+          "snapshot",
+          "author",
+          "description",
+          "created_at"
+        ],
+        "title": "Revision",
+        "type": "object"
+      },
+      "mutates": true
     },
     "preprocessing.get": {
       "arguments": "RevisionRef",

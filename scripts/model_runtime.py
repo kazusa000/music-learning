@@ -97,7 +97,7 @@ def main() -> None:
     init.add_argument("--root", type=Path, required=True)
     sub.add_parser("login")
     fetch = sub.add_parser("download")
-    fetch.add_argument("model", choices=("muscriptor", "beat_this"))
+    fetch.add_argument("model", choices=("muscriptor", "beat_this", "sheetsage", "mert", "leap"))
     sub.add_parser("status")
     args = parser.parse_args()
     if args.command == "init":
@@ -123,7 +123,7 @@ def main() -> None:
             "token_present": bool(os.environ.get("HF_TOKEN")) or (runtime_root() / "huggingface/token").is_file(),
             "models": {name: {"path": str(model_path(name)),
                 "download_verified": (model_path(name) / "verified.json").is_file()}
-                for name in ("muscriptor", "beat_this")}}, indent=2))
+                for name in json.loads(MANIFEST.read_text(encoding="utf-8"))["models"]}}, indent=2))
 
 
 if __name__ == "__main__":

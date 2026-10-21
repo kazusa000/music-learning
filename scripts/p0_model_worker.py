@@ -102,7 +102,7 @@ def transcribe(audio: Path, out: Path) -> dict:
 
 def main() -> None:
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model",choices=("cuda","beat_this","muscriptor"),required=True)
+    parser.add_argument("--model",choices=("cuda","beat_this","muscriptor","sheetsage","leap"),required=True)
     parser.add_argument("--input",type=Path)
     parser.add_argument("--output",type=Path,required=True)
     args=parser.parse_args()
@@ -123,7 +123,8 @@ def main() -> None:
         elif args.model!="cuda":
             raise ValueError("--input is required")
         if args.model!="cuda":
-            report["result"]={"beat_this":track_beats,"muscriptor":transcribe}[args.model](args.input,out)
+            from reference_models import analyze, separate
+            report["result"]={"beat_this":track_beats,"muscriptor":transcribe,"sheetsage":analyze,"leap":separate}[args.model](args.input,out)
         torch.cuda.synchronize()
         report["cuda_peak_allocated_bytes"]=torch.cuda.max_memory_allocated()
         report["cuda_peak_reserved_bytes"]=torch.cuda.max_memory_reserved()

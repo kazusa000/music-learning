@@ -1,0 +1,7 @@
+# Separate from transcription and SheetSage; no GUI or system-wide installs.
+torch==2.8.0
+torchaudio==2.8.0
+bs-roformer-infer==0.1.5
+huggingface-hub==0.36.0
+psutil==7.2.2
+scipy==1.13.1

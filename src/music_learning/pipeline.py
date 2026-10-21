@@ -18,8 +18,8 @@ from .service import DomainError, canonical, emit, row
 from .settings import ROOT
 from .storage import digest
 
-STAGES = ("normalize", "beat_this", "muscriptor", "assemble", "render", "calibrate", "validate")
-MODEL_STAGES = ("beat_this", "muscriptor")
+STAGES = ("normalize", "beat_this", "sheetsage", "separate", "muscriptor", "assemble", "render", "calibrate", "validate")
+MODEL_STAGES = ("beat_this", "sheetsage", "separate", "muscriptor")
 
 
 def identifier(namespace, name):
@@ -72,6 +72,7 @@ def submit_pipeline(
         updated_at=now,
         payload={
             "use_cache": options.use_cache,
+            "vocal_mode": options.vocal_mode,
             "target_revision": target,
             "source_asset_id": base.source_asset_id,
             "adopt": not (base.tracks or base.notes or base.analysis_run_ids),
@@ -149,7 +150,7 @@ def runtime_fingerprint(settings):
     if not host.is_file():
         raise DomainError("native_host_missing", "Build the pinned native VST3 host first", 422)
     packages = {}
-    for environment in ("transcription",):
+    for environment in ("transcription", "reference", "separation"):
         python = settings.model_runtime / "envs" / environment / "Scripts/python.exe"
         if not python.is_file():
             raise DomainError("model_environment_missing", f"Missing isolated {environment} environment", 422)
@@ -190,6 +191,9 @@ def runtime_fingerprint(settings):
         ROOT / "scripts/pipeline_adapter.py",
         ROOT / "scripts/p0_model_worker.py",
         ROOT / "scripts/stream_weights.py",
+        ROOT / "scripts/reference_models.py",
+        ROOT / "requirements-reference.lock",
+        ROOT / "requirements-separation.lock",
         ROOT / "scripts/midi_to_native.py",
         ROOT / "scripts/native_host.py",
         ROOT / "scripts/model_runtime.py",
@@ -341,6 +345,7 @@ class PipelineRunner:
             for self.stage in STAGES:
                 request = {
                     "stage": self.stage,
+                    "vocal_mode": self.job["payload"].get("vocal_mode","auto"),
                     "source": source,
                     "completed": self.completed,
                     "target_revision": self.job["payload"]["target_revision"],
@@ -350,6 +355,7 @@ class PipelineRunner:
                 # Early stages are reusable across projects; IDs only enter assembly/render.
                 cache_request = {
                     "stage": self.stage,
+                    "vocal_mode": self.job["payload"].get("vocal_mode","auto"),
                     "source": source["id"],
                     "fingerprint": fingerprint,
                     "inputs": {s: m for s, m in self.completed.items()},
@@ -463,7 +469,9 @@ def publish_pipeline(service, db, job, result):
         or not snapshot.notes
         or not snapshot.routing
         or snapshot.stems
-        or len(snapshot.plugins) != len(snapshot.tracks)
+        or snapshot.source_reference is None
+        or snapshot.source_reference.has_vocals != stages["separate"]["summary"].get("has_vocals")
+        or len(snapshot.plugins) != len([t for t in snapshot.tracks if t.kind=="instrument"])
     ):
         raise ValueError("completeness report does not match the actual immutable snapshot")
     if set(snapshot.analysis_run_ids) != set(job["payload"]["run_ids"].values()):
@@ -480,10 +488,13 @@ def publish_pipeline(service, db, job, result):
     models = json.loads((ROOT / "config/model-dependencies.json").read_text(encoding="utf-8"))["models"]
     for name in MODEL_STAGES:
         raw_files = [x["sha256"] for x in stages[name]["files"]]
-        specs = [models[name]]
+        specs = [models["leap" if name=="separate" else name]]
+        if name=="sheetsage":
+            specs.append(models["mert"])
         run = c.AnalysisRun(
             id=job["payload"]["run_ids"][name],
-            input_asset_id=job["payload"]["source_asset_id"],
+            input_asset_id=(artifact(stages,"separate","accompaniment.wav")["sha256"]
+                if name=="muscriptor" and stages["separate"]["summary"].get("has_vocals") else job["payload"]["source_asset_id"]),
             adapter="p2:" + name,
             model_version=" / ".join(s["revision"] for s in specs),
             weights_sha256=[f["sha256"] for s in specs for f in s["files"] if f.get("sha256") and f["path"].endswith((".safetensors", ".ckpt"))],

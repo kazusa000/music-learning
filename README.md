@@ -1,5 +1,9 @@
 # Music Learning
 
+原曲／重建双编排：原曲显示人声波形、静音旋律 MIDI、伴奏波形及和弦／段落；重建使用真实人声加 MuScriptor 伴奏分轨。纯音乐跳过分离。模型、AI 对照读取及验收见[双编排说明](docs/50-original-and-reconstruction.md)。旧工程可在原曲页按新流程建立副本，保留原工程。
+
+主页工程可永久删除，不创建备份；清理范围及恢复执行见[永久删除说明](docs/49-permanent-project-deletion.md)。
+
 历史试听回收后不再阻止当前工程加载；播放复用会跳过过期来源，主页成功刷新后清除旧加载错误。诊断、共享规则与正式部署见[过期试听与工程加载](docs/46-expired-playback-sources.md)。
 
 桌面入口现为无浏览器标题栏的 WebView2 窗口，工作台合并顶栏、固定标尺、隐藏原生滚动条，并支持右键擦除/中键平移。4K/250%缩放已修正为实际240 DPI、2.5倍像素渲染；已打开的旧窗口须关闭后重启。构建、操作与验证见[桌面工作区与鼠标](docs/43-desktop-workspace-and-mouse.md)。
@@ -109,7 +113,7 @@ P4 已完成：真实 Codex 整曲/局部讨论、受限工具查询、有效引
 - React、TypeScript、Vite；结果时间线、事件展示、讨论和试听；浏览器播放原曲或已渲染产物。
 - C++20 原生 VST3 宿主与处理图，P0a 已选择 JUCE 9.0.4 headless。制作优先离线渲染，不依赖浏览器处理插件音频。
 - Python 3.11、FastAPI、Pydantic；SQLite 元数据和磁盘文件；独立任务进程。
-- MuScriptor large 多乐器转录＋Beat This 拍点/小节网格；不运行音频分离、和弦或曲式模型。导入进度和响度校准见 [新导入流程](docs/47-large-beat-import.md)。
+- MuScriptor large 转录伴奏＋Beat This 拍点/小节网格＋SheetSage2 原曲旋律／和声／结构＋可选 Leap Xe 人声分离。当前流程见[双编排](docs/50-original-and-reconstruction.md)，既有响度校准见[large 导入](docs/47-large-beat-import.md)。
 - 原生处理图统一执行 VST3 乐器、效果链、自动化和渲染；FluidSynth 仅作可选参考后端，FFmpeg 负责媒体转换。
 - AI 通过统一命令服务读取并操作工程、回读结果、渲染和测量；API/SDK/CLI 使用同一契约，具体 AI 供应商可替换。
 

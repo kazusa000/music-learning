@@ -1,6 +1,6 @@
 import type {Job,StageRecord} from '../../../packages/contracts/types';
 
-const steps=[['normalize','整理音频',5],['beat_this','识别速度与小节',10],['muscriptor','还原多乐器音符',65],['assemble','建立音轨与音色',5],['render','准备重建试听',8],['calibrate','校准试听响度',4],['validate','检查完整工程',3]] as const;
+const steps=[['normalize','整理音频',3],['beat_this','识别速度与小节',5],['sheetsage','分析原曲旋律与和声',12],['separate','分离人声与伴奏',15],['muscriptor','还原伴奏音符',48],['assemble','建立音轨与音色',4],['render','准备重建试听',7],['calibrate','校准试听响度',3],['validate','检查完整工程',3]] as const;
 
 export function ImportProgress({job,stages,onCancel}:{job:Job;stages:StageRecord[];onCancel:()=>void}){
   const finished=job.status==='succeeded';
@@ -18,7 +18,7 @@ export function ImportProgress({job,stages,onCancel}:{job:Job;stages:StageRecord
     <div className="import-progress-heading"><span className="import-orbit" aria-hidden="true">♪</span><div><span className="import-eyebrow">整曲导入</span><h3>{finished?'工程已准备好':failed?(job.status==='cancelled'?'导入已取消':'导入未完成'):active?.[1]??'正在等待处理'}</h3></div><strong>{progress}<small>%</small></strong></div>
     <div className="import-progress-track" role="progressbar" aria-label="工程准备进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><i style={{width:progress+'%'}}/></div>
     <div className="import-progress-meta"><span>{typeof done==='number'&&typeof total==='number'&&active?.[0]==='muscriptor'?`已转录 ${done} / ${total} 个音频块`:typeof done==='number'&&typeof total==='number'?`已完成 ${done} / ${total} ${active?.[0]==='render'?'份音频':'个声部'}`:'音频 → 音符 → 可编辑工程'}</span>{['queued','running'].includes(job.status)&&<button onClick={onCancel}>取消</button>}</div>
-    <ol className="import-steps">{steps.map(([key,label],i)=>{const stage=stages.find(s=>s.stage===key);return <li key={key} data-status={stage?.status??'pending'}><i>{stage?.status==='succeeded'?'✓':i+1}</i><span>{label}</span></li>;})}</ol>
+    <ol className="import-steps">{steps.map(([key,label],i)=>{const stage=stages.find(s=>s.stage===key);return <li key={key} data-status={stage?.status??'pending'}><i>{stage?.status==='succeeded'?'✓':i+1}</i><span>{key==='separate'&&(stage?.manifest?.summary as {separation_skipped?:boolean}|undefined)?.separation_skipped?'纯音乐 · 跳过分离':label}</span></li>;})}</ol>
     {job.error&&<p className="failure">{String(job.error.message??'请查看处理记录后重试。')}</p>}
   </section>;
 }

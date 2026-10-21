@@ -42,6 +42,12 @@ def bounds(snapshot, start, end, track):
 def music_query(service, db, args):
     revision = service._revision(db, args)
     snapshot = revision["snapshot"]
+    reference = snapshot.get("source_reference")
+    if args.view == "original":
+        if not reference:
+            raise DomainError("reference_unavailable","此工程尚未生成原曲分析。",422)
+        snapshot = {**snapshot,"tracks":reference["tracks"],"notes":reference["notes"],
+                    "annotations":reference["annotations"],"plugins":[]}
     start, end = bounds(snapshot, args.start_sample, args.end_sample, args.track_id)
 
     def stats(a, b):
@@ -175,6 +181,10 @@ def music_query(service, db, args):
                 "analysis_run_ids": snapshot["analysis_run_ids"],
             }
         )
+    if args.action == "summary":
+        result["original_reference"] = ({"has_vocals":reference["has_vocals"],
+            "annotations":[a for a in reference["annotations"] if a["start_sample"]<end and a["end_sample"]>start][:args.limit],
+            "melody_note_count":sum(n["start_sample"]<end and n["end_sample"]>start for n in reference["notes"])} if reference else None)
     intervals = [(start, end)]
     if args.action == "metrics":
         intervals = (
@@ -192,11 +202,12 @@ def music_query(service, db, args):
     citations = []
     for a, b in intervals:
         ident = hashlib.sha256(
-            canonical([args.project_id, revision["id"], args.action, a, b, args.track_id, entities]).encode()
+            canonical([args.project_id, revision["id"], args.view, args.action, a, b, args.track_id, entities]).encode()
         ).hexdigest()[:32]
         citations.append(
             c.Citation(
                 id=ident,
+                view=args.view,
                 project_id=args.project_id,
                 revision_id=revision["id"],
                 start_sample=a,
@@ -212,6 +223,7 @@ def music_query(service, db, args):
         "revision_id": revision["id"],
         "snapshot_sha256": revision["snapshot_sha256"],
         "sample_rate": snapshot["sample_rate"],
+        "view": args.view,
         "evidence": result,
         "citations": citations,
     }
@@ -232,6 +244,10 @@ def submit(service, db, args, request, *, retry_of=None):
     if changes:
         args = args.model_copy(update=changes)
     revision = service._revision(db, args)
+    reference = revision["snapshot"].get("source_reference") or {}
+    selected_reference = next((t for t in reference.get("tracks",[]) if t["id"]==args.reference_track_id),None)
+    if args.reference_track_id and (args.workspace!="original" or selected_reference is None):
+        raise DomainError("reference_track_mismatch","原曲声部不属于当前原曲工作区。",422)
     a, b = bounds(revision["snapshot"], args.start_sample, args.end_sample, args.track_id)
     if args.session_id:
         from .schema_v7 import sessions
@@ -265,6 +281,10 @@ def submit(service, db, args, request, *, retry_of=None):
         if not scope.track_ids:
             raise DomainError("edit_tracks_required", "Select explicit tracks to authorize edits", 422)
     context = {
+        "workspace": args.workspace,
+        "reference_track_id": args.reference_track_id,
+        "selected_reference_track": selected_reference,
+        "original_reference_available": bool(reference),
         "project_id": args.project_id,
         "revision_id": revision["id"],
         "snapshot_sha256": revision["snapshot_sha256"],

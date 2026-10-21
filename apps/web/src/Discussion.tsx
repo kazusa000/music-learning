@@ -24,7 +24,7 @@ const mergeTurns=(current:DialogueTurn[],items:DialogueTurn[])=>items.map(item=>
   const previous=current.find(t=>t.id===item.id);return previous&&previous.updated_at>item.updated_at?previous:item;
 });
 
-export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCompare,instrumentDraft,onConsumeDraft,expanded=false,onToggleExpand}:{revision:Revision;headId:string;start:number;end:number;trackId:string|null;onLocate:(citation:Citation)=>void;jobs:Job[];onCompare:(id:string)=>void;instrumentDraft?:InstrumentDraft|null;onConsumeDraft?:()=>void;expanded?:boolean;onToggleExpand?:()=>void}){
+export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCompare,instrumentDraft,onConsumeDraft,expanded=false,onToggleExpand,workspace='arrangement',referenceTrackId=null}:{revision:Revision;headId:string;start:number;end:number;trackId:string|null;onLocate:(citation:Citation)=>void;jobs:Job[];onCompare:(id:string)=>void;instrumentDraft?:InstrumentDraft|null;onConsumeDraft?:()=>void;expanded?:boolean;onToggleExpand?:()=>void;workspace?:'original'|'arrangement';referenceTrackId?:string|null}){
   const {prefs,update:updatePreferences}=usePreferences();
   type ChatSession={id:string;title:string;created_at:number};
   const sessionKey='discussion.session.'+revision.project_id;
@@ -58,8 +58,8 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
   useEffect(()=>{follow.current=true;},[last?.id,showNotes]);
   useEffect(()=>{if(follow.current&&history.current)history.current.scrollTop=history.current.scrollHeight;},[last?.id,last?.text,last?.status,showNotes,notes.length]);
   const rate=revision.snapshot.sample_rate??44100,duration=revision.snapshot.duration_samples??0;
-  const selectedTrack=revision.snapshot.tracks?.find(t=>t.id===trackId);
-  const scopeName=selectedTrack?trackName(selectedTrack):'整首音乐';
+  const selectedTrack=workspace==='original'?revision.snapshot.source_reference?.tracks.find(t=>t.id===referenceTrackId):revision.snapshot.tracks?.find(t=>t.id===trackId);
+  const scopeName=selectedTrack?trackName(selectedTrack):workspace==='original'?'原曲':'整首音乐';
   const a=scope==='whole'?0:Math.round(start*rate),b=scope==='whole'?duration:Math.round(end*rate);
   const refresh=useCallback(async()=>{
     const [items,messages]=await Promise.all([call<DialogueTurn[]>('dialogue.list',{project_id:revision.project_id,session_id:sessionId,limit:1000}),
@@ -89,7 +89,7 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
     const timer=setInterval(()=>void update().catch(()=>{}),900);
     return()=>{live=false;clearInterval(timer);};
   },[revision.project_id,activeIds,sessionId]);
-  function questionArgs(question:string){return {project_id:revision.project_id,revision_id:revision.id,session_id:sessionId,model:model||null,text:question,start_sample:a,end_sample:b,track_id:trackId,login_mode:login,edit_mode:'auto'};}
+  function questionArgs(question:string){return {project_id:revision.project_id,revision_id:revision.id,session_id:sessionId,model:model||null,text:question,start_sample:a,end_sample:b,track_id:trackId,workspace,reference_track_id:referenceTrackId,login_mode:login,edit_mode:'auto'};}
   async function submit(){if(!text.trim())return;const submittedSession=sessionId;setBusy(true);setError('');try{
     if(draftBinding&&(draftBinding.revisionId!==revision.id||draftBinding.trackId!==trackId))throw new Error('乐器草稿绑定的版本或声部已改变，请重新选择乐器。');
     await call('dialogue.submit',questionArgs(text),headId,true);if(sessionRef.current===submittedSession){setText('');setDraftBinding(null);await refresh();}
@@ -112,6 +112,7 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
   }
   function reply(turn:DialogueTurn){return <MusicMarkdown text={turn.text} citations={turn.citations} onLocate={onLocate}/>;}
   function turnTrackName(turn:DialogueTurn){
+    if(turn.context.workspace==='original'){const t=turn.context.selected_reference_track as Track|undefined;return t?'原曲 · '+trackName(t):'原曲';}
     if(!turn.context.track_id)return '全部声部';
     const stored=turn.context.selected_track as Track|undefined;
     const track=stored??revision.snapshot.tracks?.find(t=>t.id===turn.context.track_id);

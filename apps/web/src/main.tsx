@@ -43,6 +43,7 @@ function App() {
   const [error, setError] = useState('');
   const [refreshError,setRefreshError]=useState('');
   const [busy, setBusy] = useState(false);
+  const [vocalMode,setVocalMode]=useState('auto');
   const [uploadProgress,setUploadProgress]=useState<number|null>(null);
   const [connected, setConnected] = useState(false);
   const [publication, setPublication] = useState<PreprocessingResult | null>(null);
@@ -153,7 +154,7 @@ function App() {
         xhr.send(file);
       });
       setUploadProgress(null);
-      await call('jobs.submit', {project_id: created.id, kind: 'asset.import', payload: {upload_id: upload.upload_id, preprocess:true}}, created.current_revision, true);
+      await call('jobs.submit', {project_id: created.id, kind: 'asset.import', payload: {upload_id: upload.upload_id, preprocess:true,vocal_mode:vocalMode}}, created.current_revision, true);
       await refresh();
     } catch (e) {setError((e as Error).message);} finally {setBusy(false);setUploadProgress(null);}
   }
@@ -168,7 +169,7 @@ function App() {
     if (!project) return;
     try {
       if (job) await call('jobs.retry', {job_id:job.id}, project.current_revision, true);
-      else await call('jobs.submit', {project_id:project.id, kind:'project.preprocess', payload:{}}, project.current_revision, true);
+      else await call('jobs.submit', {project_id:project.id, kind:'project.preprocess', payload:{vocal_mode:vocalMode}}, project.current_revision, true);
       await refresh();
     } catch(e) {setError((e as Error).message);}
   }
@@ -202,10 +203,11 @@ function App() {
       {d.status==='failed'&&<button disabled={deleteSubmitting} onClick={()=>void deleteProject({id:d.project_id,current_revision:d.revision_id})}>重试删除</button>}
     </div>)}
     {deleteTarget&&<DeleteProjectDialog title={deleteTarget.display_title??deleteTarget.title} busy={deleteSubmitting} onCancel={()=>setDeleteTarget(null)} onConfirm={()=>void deleteProject(deleteTarget)}/>}
-    {settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh}
+    {settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh} onReimport={async()=>{const sha=revision.snapshot.source_asset_id;if(!sha)throw new Error('此工程没有原曲');const response=await fetch('/v1/assets/'+sha);if(!response.ok)throw new Error('原曲读取失败');const blob=await response.blob();setWorkspace(false);history.replaceState(null,'','/');await importFile(new File([blob],(project.display_title??project.title)+' · 新编排.audio',{type:blob.type}));}}
       onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
       <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? `上传音频 ${uploadProgress??100}%` : '选择音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
           disabled={busy} onChange={e => {const file = e.target.files?.[0]; if (file) void importFile(file); e.target.value = '';}}/></label>
+      <label className="import-vocal-mode">导入类型<select aria-label="导入人声类型" disabled={busy} value={vocalMode} onChange={e=>setVocalMode(e.target.value)}><option value="auto">自动判断</option><option value="vocal">有人声</option><option value="instrumental">纯音乐 · 跳过分离</option></select></label>
       <div className="list-title">歌曲 <span>{projects.length}</span></div><label className="archive-toggle"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/>显示归档工程</label>
       <nav aria-label="工程列表">{projects.map(p => <div className="project-row" key={p.id}><button className="project-open" aria-pressed={selected === p.id} disabled={deletions.some(d=>d.project_id===p.id&&d.status!=='completed')} onClick={() => {
         selectProject(p.id);

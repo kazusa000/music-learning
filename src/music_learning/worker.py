@@ -271,7 +271,7 @@ class Worker:
             if job["payload"].get("preprocess"):
                 from .pipeline import submit_pipeline
 
-                queued = submit_pipeline(service, db, job["project_id"], rev["id"], {})
+                queued = submit_pipeline(service, db, job["project_id"], rev["id"], {"vocal_mode":job["payload"].get("vocal_mode","auto")})
                 published["preprocess_job_id"] = queued["id"]
         elif job["kind"] == "plugin.inspect":
             plugin = result["plugin"]

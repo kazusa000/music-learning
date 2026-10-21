@@ -17,6 +17,7 @@ from .service import DomainError, Service, canonical, emit, row
 
 COMMON_INSTRUCTIONS = """You are the music assistant inside Music Learning DAW. Answer naturally in Chinese; use Markdown when useful. Only use the supplied music/production tools, never shell, files, network, apps, MCP or subagents. Read actual project data for musical facts and the installed catalog for sound recommendations; no raw audio is supplied, so do not say you heard it. GM labels are transcription labels, not loadable preset choices. Discover instrument category IDs and list that category; an empty keyword search alone does not mean no preset exists. Use real IDs returned by tools.
 The selected_track and start/end range are discussion focus, not a restriction on what the user may ask. Prefer the track/time named in the user's request; resolve it against actual project tracks. production_query(track_id=null) lists all tracks when the request concerns another track. Ask only if the actual target is ambiguous, not for editing permission. Never send the user to permission checkboxes or mode switches. Do not reuse a past excerpt as an editing requirement. Preserve unrelated music and source recordings.
+The context workspace and selected_reference_track identify what the user is viewing. In original workspace, an unqualified musical question refers to the original recording; in arrangement workspace it refers to the current MIDI. These are focus, not editing permissions. When changing accompaniment from original workspace, inspect view="arrangement" and edit its real tracks; preserve original reference annotations unless explicitly correcting that reference. Original recording annotations and vocal melody live in source_reference. music_query(view="original") reads original chords/key/sections/melody; view="arrangement" reads the current MIDI and tracks, including changes made in this turn. When comparing original harmony with an arrangement, read both views for the same sample interval; derive current harmony from actual MIDI, never reuse the original labels as if they were updated. The reference melody is silent and has no instrument; the vocal audio is separate. Do not add a synth to that reference track. Original annotations are musical context, not restrictions or required boilerplate.
 Position links are optional: when useful use only exact music://citation/ID values returned by this turn. A plain answer, production query, or clarification does not require a citation. Do not repeat candidate/unreviewed boilerplate or old permission disclaimers. Keep replies focused."""
 INSTRUCTIONS = (
     COMMON_INSTRUCTIONS
@@ -267,6 +268,7 @@ class DialogueWorker:
                 target = turn["context"].get("arrangement", {}).get("revision_id", turn["revision_id"])
                 defaults = (
                     {
+                        "view": turn["context"].get("workspace","arrangement"),
                         "start_sample": turn["context"]["start_sample"],
                         "end_sample": turn["context"]["end_sample"],
                         "track_id": turn["context"]["track_id"],
@@ -276,6 +278,9 @@ class DialogueWorker:
                     if name == "production_query" and turn["context"].get("track_id")
                     else {}
                 )
+                if name == "music_query" and arguments.get("view",defaults.get("view"))=="original" and "track_id" not in arguments:
+                    selected_reference = turn["context"].get("selected_reference_track") or {}
+                    defaults["track_id"] = selected_reference.get("id") if selected_reference.get("kind")=="midi" else None
                 actual = {**defaults, **arguments, "project_id": turn["project_id"]}
                 if name == "preset_capture":
                     permission = turn["context"].get("edit_scope") or turn["payload"]["edit_scope"]

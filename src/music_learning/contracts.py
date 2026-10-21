@@ -289,7 +289,20 @@ class ListeningCalibration(Model):
     tracks: dict[Id, LoudnessMeasurement]
 
 
+class SourceReference(Model):
+    source_asset_id: Hash
+    has_vocals: bool
+    decision: str
+    tracks: list[Track]
+    clips: list[Clip]
+    notes: list[NoteEvent] = Field(default_factory=list)
+    annotations: list[Annotation] = Field(default_factory=list)
+    waveforms: dict[Id, Hash] = Field(default_factory=dict)
+    raw_asset_ids: list[Hash] = Field(default_factory=list)
+
+
 class Snapshot(Model):
+    source_reference: SourceReference | None = None
     listening_calibration: ListeningCalibration | None = None
     schema_version: Literal[1] = 1
     sample_rate: int = Field(default=44100, ge=8000, le=192000)
@@ -311,6 +324,9 @@ class Snapshot(Model):
 
     @model_validator(mode="after")
     def references(self):
+        if self.source_reference:
+            from .source_reference import validate_reference
+            validate_reference(self.source_reference, self.source_asset_id, self.duration_samples)
         if self.listening_calibration and self.listening_calibration.source_asset_id != self.source_asset_id:
             raise ValueError("Listening calibration belongs to a different source")
         collections = [
@@ -600,6 +616,7 @@ class SubmitJob(ProjectRef):
 class ImportPayload(Model):
     upload_id: Id
     preprocess: bool = False
+    vocal_mode: Literal["auto", "vocal", "instrumental"] = "auto"
 
 
 class BackupPayload(Model):
@@ -618,6 +635,12 @@ class RestorePayload(BackupPayload):
 
 class PreprocessPayload(Model):
     use_cache: bool = True
+    vocal_mode: Literal["auto", "vocal", "instrumental"] = "auto"
+
+
+class ReferenceUpdate(RevisionRef):
+    notes: list[NoteEvent] | None = None
+    annotations: list[Annotation] | None = None
 
 
 class AdoptPreprocessing(ProjectRef):
@@ -1009,6 +1032,7 @@ class ReportAudition(ProjectRef):
 
 
 class MusicQuery(QueryEvents):
+    view: Literal["arrangement", "original"] = "arrangement"
     action: Literal["summary", "events", "annotations", "compare", "metrics"] = "summary"
     compare_start_sample: Sample | None = None
     compare_end_sample: Sample | None = None
@@ -1048,6 +1072,8 @@ class ModelCatalog(Model):
 
 
 class SubmitDialogue(RevisionRef):
+    workspace: Literal["original", "arrangement"] = "arrangement"
+    reference_track_id: Id | None = None
     edit_mode: Literal["auto", "read_only"] = "auto"
     session_id: Id | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
@@ -1091,6 +1117,7 @@ class SaveNote(RevisionRef):
 
 
 class Citation(Model):
+    view: Literal["original", "arrangement"] = "arrangement"
     id: Id
     project_id: Id
     revision_id: Id
@@ -1201,6 +1228,8 @@ OPERATIONS = {
     "jobs.cancel": (JobRef, True),
     "jobs.retry": (JobRef, True),
     "jobs.stages": (JobRef, False),
+    "reference.get": (RevisionRef, False),
+    "reference.update": (ReferenceUpdate, True),
     "preprocessing.get": (RevisionRef, False),
     "preprocessing.adopt": (AdoptPreprocessing, True),
     "events.list": (EventPage, False),
@@ -1282,6 +1311,8 @@ RESULT_TYPES = {
     "jobs.cancel": Job,
     "jobs.retry": Job,
     "jobs.stages": list[StageRecord],
+    "reference.get": SourceReference | None,
+    "reference.update": Revision,
     "preprocessing.get": PreprocessingView,
     "preprocessing.adopt": Project,
     "events.list": list[EventRecord],

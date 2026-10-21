@@ -319,6 +319,10 @@ class Service:
                 asset_ids.add(plugin.descriptor_asset_id)
         asset_ids.update(stem.asset_id for stem in snapshot.stems)
         asset_ids.update(snapshot.frozen_tracks.values())
+        if snapshot.source_reference:
+            asset_ids.update(x.asset_id for x in snapshot.source_reference.clips)
+            asset_ids.update(snapshot.source_reference.waveforms.values())
+            asset_ids.update(snapshot.source_reference.raw_asset_ids)
         for sha in asset_ids:
             asset = self._asset(db, sha, project_id)
             if sha == snapshot.source_asset_id:
@@ -875,6 +879,9 @@ class Service:
                     .order_by(v2.job_stages.c.ordinal)
                 ).mappings()
             ]
+        if op in ("reference.get", "reference.update"):
+            from .source_reference import dispatch
+            return dispatch(self, db, op, args, request)
         if op in ("preprocessing.get", "preprocessing.adopt"):
             from .pipeline import preprocessing_view, adopt_preprocessing
 

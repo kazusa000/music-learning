@@ -44,7 +44,7 @@ def test_new_assembly_keeps_notes_without_old_analysis_or_quantization():
     assert snapshot.notes[0].start_sample==23001 and snapshot.notes[0].end_sample==73001
     assert snapshot.tracks[0].gain_db==-12
     assert not snapshot.stems and {a.kind for a in snapshot.annotations}=={"beat"}
-    assert tuple(MODEL_STAGES)==("beat_this","muscriptor")
+    assert tuple(MODEL_STAGES)==("beat_this","sheetsage","separate","muscriptor")
     assert "calibrate" in STAGES
 
 
