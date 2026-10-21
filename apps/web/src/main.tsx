@@ -5,13 +5,14 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {CSSProperties} from 'react';
 import {PanelResize,usePanelSize} from './PanelResize';
-import type {Project, Job, Revision, StageRecord, PreprocessingView, PreprocessingResult, PlaybackPlan} from '../../../packages/contracts/types';
+import type {Project, ProjectDeletion, Job, Revision, StageRecord, PreprocessingView, PreprocessingResult, PlaybackPlan} from '../../../packages/contracts/types';
 import {call, connect} from './api';
 import {Workbench} from './Workbench';
 import {publishDomain} from './events';
 import {AudioPreview} from './AudioPreview';
 import {Icon} from './Icon';
 import {ImportProgress} from './ImportProgress';
+import {DeleteProjectDialog} from './DeleteProjectDialog';
 import {listeningCalibration} from './listeningCalibration';
 import {WindowControls,dragWindow} from './WindowChrome';
 import {useStudioMouse} from './useStudioMouse';
@@ -29,6 +30,11 @@ function App() {
   const [settingsOpen,setSettingsOpen]=useState(new URLSearchParams(location.search).get('view')==='settings');
   const [libraryWidth,setLibraryWidth]=usePanelSize('library.sidebar-width',260,180,500);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [deletions,setDeletions]=useState<ProjectDeletion[]>([]);
+  const [deleteTarget,setDeleteTarget]=useState<Project|null>(null);
+  const [deleteSubmitting,setDeleteSubmitting]=useState(false);
+  const [deleteNotice,setDeleteNotice]=useState('');
+  const watchedDeletes=useRef(new Set<string>());
   const [selected, setSelected] = useState<string | null>(new URLSearchParams(location.search).get('project') ?? localStorage.getItem('selected-project'));
   const activeSelection = useRef(selected);
   const [revision, setRevision] = useState<Revision | null>(null);
@@ -73,10 +79,22 @@ function App() {
   const refresh = useCallback(async () => {
     const generation = ++refreshGeneration.current;
     await connection;
-    const list = await call<Project[]>('projects.list', {limit:1000,include_archived:showArchived});
+    const [list,deleting]=await Promise.all([
+      call<Project[]>('projects.list', {limit:1000,include_archived:showArchived}),
+      call<ProjectDeletion[]>('projects.deletions.list',{limit:1000}),
+    ]);
     if (activeSelection.current !== selected || generation !== refreshGeneration.current) return;
     setProjects(list);
+    setDeletions(deleting);
+    for(const item of deleting){if(item.status==='completed'&&watchedDeletes.current.has(item.project_id)){
+      watchedDeletes.current.delete(item.project_id);setDeleteNotice(`已彻底删除「${item.title}」，未创建备份。`);
+    }}
     if(!list.some(p=>p.id===selected)&&list.length){selectProject(list[0].id);return;}
+    if(!list.length&&selected){
+      activeSelection.current=null;setSelected(null);localStorage.removeItem('selected-project');
+      setWorkspace(false);history.replaceState(null,'','/');detailCache.current=null;
+    }
+    if(deleting.some(d=>d.project_id===selected&&d.status!=='completed'))return;
     if (selected && list.some(p => p.id === selected)) {
       const headId = list.find(p => p.id === selected)!.current_revision;
       const cached = detailCache.current?.id === headId ? detailCache.current : null;
@@ -96,7 +114,7 @@ function App() {
       const details = await Promise.all(tasks.filter(j => j.kind === 'project.preprocess').map(async job =>
         [job.id, await call<StageRecord[]>('jobs.stages', {job_id:job.id})] as const));
       if (activeSelection.current === selected && generation === refreshGeneration.current) {setStages(Object.fromEntries(details));setRefreshError('');}
-    } else {setRevision(null); setJobs([]); setVersionCount(0);setRefreshError('');}
+    } else {setRevision(null); setJobs([]); setVersionCount(0);setPublication(null);setPlaybackReady(false);setRefreshError('');}
   }, [selected,showArchived]);
 
   useEffect(() => {
@@ -161,23 +179,42 @@ function App() {
     catch(e){setError((e as Error).message);}
   }
 
+  async function deleteProject(target:{id:string;current_revision:string}){
+    setDeleteSubmitting(true);setError('');setDeleteNotice('');
+    if(target.id===activeSelection.current){homeAudio.current?.pause();homeAudio.current=null;}
+    try{
+      watchedDeletes.current.add(target.id);
+      const receipt=await call<ProjectDeletion>('projects.delete',{project_id:target.id},target.current_revision,true);
+      setDeletions(items=>[receipt,...items.filter(d=>d.project_id!==target.id)]);
+      setDeleteTarget(null);detailCache.current=null;
+      await refresh();
+    }catch(e){setDeleteTarget(null);setError((e as Error).message);watchedDeletes.current.delete(target.id);}
+    finally{setDeleteSubmitting(false);}
+  }
+
   return <main className={workspace ? 'workspace-page' : 'library-page'}>
     <header hidden={workspace&&!settingsOpen&&!!project&&!!revision} onPointerDown={dragWindow}><a className="brand" href="/" aria-label="Music Learning 音乐库"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><b>Music Learning</b><span className="brand-divider"/><small>{workspace?'Studio':'音乐库'}</small></a>
       <div className="header-actions">{!workspace&&<button className="header-settings" onClick={()=>{homeAudio.current?.pause();setSettingsOpen(true);history.replaceState(null,'','/?view=settings');}}>设置</button>}<span className={'connection '+(connected?'is-connected':'')}><i/>{connected ? '本机已连接' : '正在连接'}</span><WindowControls/></div></header>
     {(error||refreshError) && <div role="alert">{error||refreshError}<button onClick={() => {setError('');setRefreshError('');}} aria-label="关闭提示">×</button></div>}
+    {!workspace&&deleteNotice&&<div className="deletion-notice" role="status">{deleteNotice}<button aria-label="关闭删除提示" onClick={()=>setDeleteNotice('')}>×</button></div>}
+    {!workspace&&deletions.filter(d=>d.status!=='completed').map(d=><div key={d.project_id} className={'deletion-notice '+(d.status==='failed'?'has-failed':'')} role={d.status==='failed'?'alert':'status'}>
+      <span>{d.status==='failed'?`「${d.title}」删除未完成：${d.error}`:`正在彻底删除「${d.title}」${d.status==='waiting'?' · 正在停止处理任务':' · 清理工程文件'}`}</span>
+      {d.status==='failed'&&<button disabled={deleteSubmitting} onClick={()=>void deleteProject({id:d.project_id,current_revision:d.revision_id})}>重试删除</button>}
+    </div>)}
+    {deleteTarget&&<DeleteProjectDialog title={deleteTarget.display_title??deleteTarget.title} busy={deleteSubmitting} onCancel={()=>setDeleteTarget(null)} onConfirm={()=>void deleteProject(deleteTarget)}/>}
     {settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh}
       onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
       <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? `上传音频 ${uploadProgress??100}%` : '选择音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
           disabled={busy} onChange={e => {const file = e.target.files?.[0]; if (file) void importFile(file); e.target.value = '';}}/></label>
       <div className="list-title">歌曲 <span>{projects.length}</span></div><label className="archive-toggle"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/>显示归档工程</label>
-      <nav aria-label="工程列表">{projects.map(p => <button key={p.id} aria-pressed={selected === p.id} onClick={() => {
+      <nav aria-label="工程列表">{projects.map(p => <div className="project-row" key={p.id}><button className="project-open" aria-pressed={selected === p.id} disabled={deletions.some(d=>d.project_id===p.id&&d.status!=='completed')} onClick={() => {
         selectProject(p.id);
-      }}><span className="project-miniature" aria-hidden="true"><Icon name="music" size={18}/></span><span className="project-list-copy"><strong>{p.display_title??p.title}</strong><span>{p.archived?'已归档 · ':''}{projectStatuses[p.status]}</span></span></button>)}</nav>
+      }}><span className="project-miniature" aria-hidden="true"><Icon name="music" size={18}/></span><span className="project-list-copy"><strong>{p.display_title??p.title}</strong><span>{p.archived?'已归档 · ':''}{projectStatuses[p.status]}</span></span></button><button className="project-delete" aria-label={'删除工程 '+(p.display_title??p.title)} title="彻底删除工程" disabled={busy||deleteSubmitting||deletions.some(d=>d.project_id===p.id&&d.status!=='completed')} onClick={()=>setDeleteTarget(p)}><Icon name="trash" size={15}/></button></div>)}</nav>
       {!projects.length && <p className="muted empty-list">还没有工程。选一首完整音乐，保存在本机。</p>}
     </aside><PanelResize label="调整歌曲列表宽度" value={libraryWidth} min={180} max={500} onChange={setLibraryWidth} reset={260}/><section className="detail" aria-label="工程详情">
       {!project ? <div className="welcome"><h2>选择歌曲</h2><p>导入音频，或打开左侧已有歌曲。</p></div> : <>
         <div className="project-heading"><div className="project-identity"><div className="project-art" aria-hidden="true"><Icon name="wave" size={29}/></div><div><p>音乐工程</p><h2>{project.display_title??project.title}</h2></div></div>
-          <div className="library-actions"><span className="badge">{projectStatuses[project.status]}</span><button onClick={()=>void organize()}>{project.archived?'恢复到歌曲列表':'归档工程'}</button></div></div>
+          <div className="library-actions"><span className="badge">{projectStatuses[project.status]}</span><button onClick={()=>void organize()}>{project.archived?'恢复到歌曲列表':'归档工程'}</button><button className="project-delete-label" disabled={busy||deleteSubmitting||deletions.some(d=>d.project_id===project.id&&d.status!=='completed')} onClick={()=>setDeleteTarget(project)}><Icon name="trash" size={13}/>删除工程</button></div></div>
         <div className="facts"><div><span>保存版本</span><b>{versionCount}</b></div>
           <div><span>原曲长度</span><b>{revision?.snapshot.duration_samples ? (revision.snapshot.duration_samples / (revision.snapshot.sample_rate ?? 44100)).toFixed(1) + ' 秒' : '—'}</b></div></div>
         {revision?.snapshot.source_asset_id && <section className="original"><h3>原曲试听</h3>

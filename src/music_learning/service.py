@@ -163,8 +163,13 @@ class Service:
                     if request.operation in ("jobs.cancel", "jobs.retry"):
                         project_id = row(db, t.jobs, "id", args.job_id)["project_id"]
                     if project_id:
-                        project = row(db, t.projects, "id", project_id)
+                        from .project_deletion import guard
+
+                        deletion = guard(db, project_id, request.operation, request.expected_revision)
+                        project = None if deletion else row(db, t.projects, "id", project_id)
                         if (
+                            not deletion
+                            and
                             request.operation != "mixing.save"
                             and request.expected_revision != project["current_revision"]
                         ):
@@ -228,7 +233,9 @@ class Service:
                             created_at=time.time(),
                         )
                     )
-                return response
+            if request.operation == "projects.delete" and self.live_playback is not None:
+                self.live_playback.close_project(args.project_id)
+            return response
         except ValidationError as error:
             raise DomainError(
                 "validation_error",
@@ -532,7 +539,11 @@ class Service:
         if op == "projects.delete":
             from .project_deletion import erase
 
-            return erase(self, db, args.project_id, request.request_id)
+            return erase(self, db, args.project_id, request)
+        if op == "projects.deletions.list":
+            from .project_deletion import listing
+
+            return listing(db, args)
         if op == "projects.organize":
             from .schema_v6 import library
 

@@ -3003,6 +3003,26 @@
       "title": "OrganizeProject",
       "type": "object"
     },
+    "Page": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "title": "Page",
+      "type": "object"
+    },
     "PatchNote": {
       "additionalProperties": false,
       "properties": {
@@ -3766,6 +3786,83 @@
         "created_at"
       ],
       "title": "Project",
+      "type": "object"
+    },
+    "ProjectDeletion": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "revision_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Revision Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "waiting",
+            "purging",
+            "failed",
+            "completed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "deleted": {
+          "title": "Deleted",
+          "type": "boolean"
+        },
+        "removed_rows": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Removed Rows",
+          "type": "object"
+        },
+        "removed_assets": {
+          "title": "Removed Assets",
+          "type": "integer"
+        },
+        "removed_bytes": {
+          "title": "Removed Bytes",
+          "type": "integer"
+        },
+        "retained_shared": {
+          "title": "Retained Shared",
+          "type": "integer"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        }
+      },
+      "required": [
+        "project_id",
+        "revision_id",
+        "title",
+        "status",
+        "deleted",
+        "removed_rows",
+        "removed_assets",
+        "removed_bytes",
+        "retained_shared"
+      ],
+      "title": "ProjectDeletion",
       "type": "object"
     },
     "ProjectList": {
@@ -5639,10 +5736,93 @@
     "projects.delete": {
       "arguments": "ProjectRef",
       "result": {
-        "additionalProperties": true,
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "revision_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "waiting",
+              "purging",
+              "failed",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "removed_rows": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Removed Rows",
+            "type": "object"
+          },
+          "removed_assets": {
+            "title": "Removed Assets",
+            "type": "integer"
+          },
+          "removed_bytes": {
+            "title": "Removed Bytes",
+            "type": "integer"
+          },
+          "retained_shared": {
+            "title": "Retained Shared",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "project_id",
+          "revision_id",
+          "title",
+          "status",
+          "deleted",
+          "removed_rows",
+          "removed_assets",
+          "removed_bytes",
+          "retained_shared"
+        ],
+        "title": "ProjectDeletion",
         "type": "object"
       },
       "mutates": true
+    },
+    "projects.deletions.list": {
+      "arguments": "Page",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/ProjectDeletion"
+        },
+        "type": "array"
+      },
+      "mutates": false
     },
     "projects.create": {
       "arguments": "CreateProject",

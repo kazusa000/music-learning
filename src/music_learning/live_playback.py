@@ -13,6 +13,7 @@ import queue
 import subprocess
 import threading
 import time
+import psutil
 
 from . import contracts as c
 from .graph import compile_project
@@ -41,6 +42,10 @@ class NativeSession:
         self.descriptors, self.resources = {}, {}
         self.midi_channel = None
         self.directory = service.settings.path("live", self.id)
+        self.owner_info = {"project_id":revision["project_id"], "api_pid":os.getpid(),
+            "api_created_at":psutil.Process().create_time(), "cleanup_ready":False}
+        self.directory.mkdir(parents=True,exist_ok=True)
+        (self.directory/"owner.json").write_text(json.dumps(self.owner_info),encoding="utf-8")
         self.signature = signature(revision["snapshot"], track_id)
 
     def view(self):
@@ -272,6 +277,10 @@ class NativeSession:
                 return
             from .retention import remove_tree
             with self.lock:
+                if self.directory.exists():
+                    pending = self.directory/"owner.next"
+                    pending.write_text(json.dumps(dict(self.owner_info,cleanup_ready=True)),encoding="utf-8")
+                    pending.replace(self.directory/"owner.json")
                 remove_tree(self.directory,self.service.settings.path('live'))
         if self.initialized.is_set():
             dispose()
@@ -298,6 +307,10 @@ class LivePlayback:
 
     def open(self, args):
         with self.service.database.transaction(write=False) as db:
+            from .project_deletion import find
+            intent = find(db,args.project_id)
+            if intent and intent["payload"]["status"] != "completed":
+                raise DomainError("project_deleting", "工程正在删除", 409)
             revision = self.service._revision(db, args)
             snapshot = revision["snapshot"]
             if not independent(snapshot):
@@ -431,6 +444,18 @@ class LivePlayback:
             if generation != session.generation:
                 raise DomainError("live_superseded", "音轨内容已更新", 409)
             return dict(result, generation=generation, revision_id=revision_id)
+
+    def close_project(self, project_id):
+        with self.lock:
+            sessions = [s for s in self.sessions.values() if s.revision["project_id"] == project_id]
+            for session in sessions:
+                self.sessions.pop(session.id,None)
+        for session in sessions:
+            try:
+                session.close()
+            except (OSError,ValueError):
+                # Durable project cleanup reports/retries locked resources.
+                pass
 
     def close(self):
         self.stopping.set()

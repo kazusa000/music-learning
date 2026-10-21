@@ -1,6 +1,7 @@
 import type {CSSProperties} from 'react';
 
 const paths = {
+  trash: <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></>,
   music: <><path d="M9 18V5l11-2v13M9 9l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="17" cy="16" rx="3" ry="2"/></>,
   upload: <><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></>,
   play: <path d="m8 5 11 7-11 7Z"/>,

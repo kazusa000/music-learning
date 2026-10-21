@@ -76,6 +76,25 @@ nav[aria-label="工程列表"] { display: grid; gap: 5px; }
 nav[aria-label="工程列表"] button { text-align: left; justify-content: start; gap: 10px; padding: 10px; width: 100%; background: transparent; border-radius: 8px; min-width: 0; }
 nav[aria-label="工程列表"] button:hover { background: #212123; }
 nav[aria-label="工程列表"] button[aria-pressed=true] { background: #2a2724; color: var(--text); }
+.project-row { display:flex; align-items:center; gap:3px; min-width:0; }
+.project-row .project-open { flex:1; min-width:0; }
+nav[aria-label="工程列表"] .project-delete { flex:none; width:28px; height:30px; padding:6px; justify-content:center; color:#8d7973; }
+nav[aria-label="工程列表"] .project-delete:hover,.library-actions .project-delete-label:hover { color:#f2a095; background:#392321; }
+.library-actions .project-delete-label { display:inline-flex; align-items:center; gap:5px; color:#ad8178; }
+.delete-project-dialog { width:min(420px,calc(100vw - 36px)); padding:27px; color:var(--text); background:#201e1e; border:1px solid #49332f; border-radius:13px; box-shadow:0 24px 90px #0009; }
+.delete-project-dialog::backdrop { background:#0009; backdrop-filter:blur(3px); }
+.delete-project-symbol { display:flex; align-items:center; justify-content:center; width:44px; height:44px; margin-bottom:17px; border-radius:12px; color:#efab9c; background:#3c2925; }
+.delete-project-dialog h2 { margin:0 0 13px; font-size:17px; font-weight:600; }
+.delete-project-dialog p { font-size:12px; line-height:1.8; color:#b8b0aa; }
+.delete-project-dialog .delete-project-name { color:#eee5db; font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.delete-project-dialog small { display:block; margin-top:10px; font-size:11px; line-height:1.7; color:#958c86; }
+.delete-project-dialog footer { display:flex; justify-content:flex-end; gap:9px; margin-top:25px; }
+.delete-project-dialog footer button { padding:8px 15px; font-size:12px; }
+.delete-project-dialog .danger-button { background:#a5493a; color:#fff2ed; }
+.delete-project-dialog .danger-button:hover { background:#bf5745; }
+.deletion-notice { display:flex; align-items:center; justify-content:space-between; gap:15px; padding:9px 18px; background:#26231e; color:#d5c5b2; font-size:12px; flex:none; }
+.deletion-notice.has-failed { background:#36231f; color:#efb8a8; }
+.deletion-notice button { flex:none; background:transparent; color:inherit; padding:3px 7px; font-size:11px; }
 .project-miniature { display: grid; place-items: center; flex: none; width: 36px; height: 38px; border-radius: 6px; background: #27272b; color: #a8a39a; }
 nav button[aria-pressed=true] .project-miniature { background: #453429; color: #ffbb8f; }
 .project-list-copy { min-width: 0; display: grid; gap: 4px; }

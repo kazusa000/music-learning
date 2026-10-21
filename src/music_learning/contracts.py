@@ -507,6 +507,18 @@ class ProjectRef(Model):
     project_id: Id
 
 
+class ProjectDeletion(ProjectRef):
+    revision_id: Id
+    title: str
+    status: Literal["waiting", "purging", "failed", "completed"]
+    deleted: bool
+    removed_rows: dict[str, int]
+    removed_assets: int
+    removed_bytes: int
+    retained_shared: int
+    error: str | None = None
+
+
 class ProjectList(Page):
     include_archived: bool = False
 
@@ -1164,6 +1176,7 @@ OPERATIONS = {
     "projects.list": (ProjectList, False),
     "projects.organize": (OrganizeProject, True),
     "projects.delete": (ProjectRef, True),
+    "projects.deletions.list": (Page, False),
     "projects.create": (CreateProject, True),
     "projects.get": (ProjectRef, False),
     "projects.rename": (RenameProject, True),
@@ -1243,7 +1256,8 @@ RESULT_TYPES = {
     "application.settings.set": dict,
     "projects.list": list[Project],
     "projects.organize": Project,
-    "projects.delete": dict,
+    "projects.delete": ProjectDeletion,
+    "projects.deletions.list": list[ProjectDeletion],
     "projects.create": Project,
     "projects.get": Project,
     "projects.rename": Project,

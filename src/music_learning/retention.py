@@ -239,6 +239,13 @@ def analyze(service, db):
     for project, owned in ownership.items():
         ownership[project] = closure(owned)
     keep = closure(keep)
+    # An accepted permanent delete owns its own bounded file manifest. Do not
+    # race it, or silently finish a failed deletion through ordinary GC.
+    from .project_deletion import INTENT
+    for value in db.execute(select(t.events.c.payload).where(t.events.c.project_id.is_(None),
+        t.events.c.type == INTENT,
+        t.events.c.payload["status"].as_string() != "completed")).scalars():
+        keep.update(set(value["asset_ids"]) & files.keys())
     for link in db.execute(select(t.project_assets)).mappings():
         if link["asset_id"] in keep and link["asset_id"] not in core:
             ownership.setdefault(link["project_id"], set()).add(link["asset_id"])

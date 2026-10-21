@@ -167,34 +167,39 @@ def create_app(settings: Settings | None = None):
                 os.fsync(stream.fileno())
             if size == 0:
                 raise DomainError("empty_upload", "Upload must contain bytes", 422)
-            digest = await asyncio.to_thread(service.storage.publish, temporary, sha.hexdigest())
-            with database.transaction() as db:
-                receipt_key = "upload:" + key
-                existing = (
-                    db.execute(select(t.receipts).where(t.receipts.c.key == receipt_key)).mappings().first()
-                )
-                if existing:
-                    if existing["request_sha256"] != digest:
-                        raise DomainError(
-                            "idempotency_conflict", "Upload key reused for different bytes", 409
+            def publish_upload():
+                with database.transaction() as db:
+                    # Publication and registration share the writer lock with
+                    # permanent deletion; a same-SHA upload cannot lose its object
+                    # between file publication and registering the upload token.
+                    digest = service.storage.publish(temporary, sha.hexdigest())
+                    receipt_key = "upload:" + key
+                    existing = (
+                        db.execute(select(t.receipts).where(t.receipts.c.key == receipt_key)).mappings().first()
+                    )
+                    if existing:
+                        if existing["request_sha256"] != digest:
+                            raise DomainError(
+                                "idempotency_conflict", "Upload key reused for different bytes", 409
+                            )
+                        return existing["response"]
+                    result = {
+                        "schema_version": 1,
+                        "ok": True,
+                        "result": {"upload_id": new_id(), "sha256": digest, "bytes": size},
+                    }
+                    db.execute(
+                        insert(t.uploads).values(
+                            id=result["result"]["upload_id"], sha256=digest, bytes=size, created_at=time.time()
                         )
-                    return existing["response"]
-                result = {
-                    "schema_version": 1,
-                    "ok": True,
-                    "result": {"upload_id": new_id(), "sha256": digest, "bytes": size},
-                }
-                db.execute(
-                    insert(t.uploads).values(
-                        id=result["result"]["upload_id"], sha256=digest, bytes=size, created_at=time.time()
                     )
-                )
-                db.execute(
-                    insert(t.receipts).values(
-                        key=receipt_key, request_sha256=digest, response=result, created_at=time.time()
+                    db.execute(
+                        insert(t.receipts).values(
+                            key=receipt_key, request_sha256=digest, response=result, created_at=time.time()
+                        )
                     )
-                )
-            return result
+                return result
+            return await asyncio.to_thread(publish_upload)
         finally:
             temporary.unlink(missing_ok=True)
 

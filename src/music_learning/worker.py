@@ -420,6 +420,9 @@ class Worker:
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGINT, stop)
         while not self.stopping:
+            from .project_deletion import run_once as delete_project
+            if delete_project(self.service):
+                continue
             if not self.run_once():
                 from .retention import run_once
                 try:
