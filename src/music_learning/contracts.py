@@ -509,6 +509,16 @@ class Empty(Model):
     pass
 
 
+class EngineConfigure(Model):
+    device: str = Field(default="", max_length=256)
+    sample_rate: Literal[44100, 48000] = 48000
+    buffer_frames: int = Field(default=512, ge=64, le=4096)
+
+
+class EngineProbe(Model):
+    seconds: float = Field(default=.5, gt=0, le=3)
+
+
 class Page(Model):
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=100, ge=1, le=1000)
@@ -1188,6 +1198,12 @@ class LiveChunk(LiveSession):
 
 
 OPERATIONS = {
+    "engine.devices": (Empty, False),
+    "engine.configure": (EngineConfigure, False),
+    "engine.status": (Empty, False),
+    "engine.probe": (EngineProbe, False),
+    "engine.stop": (Empty, False),
+    "engine.close": (Empty, False),
     "storage.plan": (ProjectRef, False),
     "storage.collect": (ProjectRef, True),
     "storage.status": (ProjectRef, False),
@@ -1271,6 +1287,12 @@ OPERATIONS = {
 }
 
 RESULT_TYPES = {
+    "engine.devices": list[dict],
+    "engine.configure": dict,
+    "engine.status": dict,
+    "engine.probe": dict,
+    "engine.stop": dict,
+    "engine.close": dict,
     "storage.plan": dict,
     "storage.collect": dict,
     "storage.status": dict,

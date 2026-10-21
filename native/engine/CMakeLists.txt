@@ -1,0 +1,24 @@
+cmake_minimum_required(VERSION 3.22)
+project(MusicLearningEngine VERSION 1.0 LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+get_filename_component(ML_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+set(JUCE_ROOT "${ML_ROOT}/runtime/third-party/JUCE" CACHE PATH "Pinned JUCE sources")
+set(ML_RUNTIME_LIBRARY "" CACHE FILEPATH "Validated immutable host runtime")
+if(NOT EXISTS "${ML_RUNTIME_LIBRARY}")
+    message(FATAL_ERROR "Use scripts/build_engine.py to select and verify the pinned runtime")
+endif()
+add_executable(ml_engine Main.cpp "${JUCE_ROOT}/modules/juce_audio_devices/juce_audio_devices.cpp")
+target_include_directories(ml_engine PRIVATE "${JUCE_ROOT}/modules")
+target_compile_definitions(ml_engine PRIVATE
+    JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 JUCE_MODAL_LOOPS_PERMITTED=1
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_WASAPI=1 JUCE_ASIO=0
+    JUCE_DIRECTSOUND=0 JUCE_USE_WINRT_MIDI=0 NOMINMAX)
+target_compile_options(ml_engine PRIVATE /utf-8 /EHsc /W4)
+target_link_libraries(ml_engine PRIVATE "${ML_RUNTIME_LIBRARY}"
+    kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32 winmm avrt cfgmgr32)
+set_target_properties(ml_engine PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+add_executable(ml_engine_loopback Loopback.cpp)
+target_compile_options(ml_engine_loopback PRIVATE /utf-8 /EHsc /W4)
+target_link_libraries(ml_engine_loopback PRIVATE ole32 uuid avrt)
+set_target_properties(ml_engine_loopback PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

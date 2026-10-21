@@ -1457,6 +1457,49 @@
       "title": "Empty",
       "type": "object"
     },
+    "EngineConfigure": {
+      "additionalProperties": false,
+      "properties": {
+        "device": {
+          "default": "",
+          "maxLength": 256,
+          "title": "Device",
+          "type": "string"
+        },
+        "sample_rate": {
+          "default": 48000,
+          "enum": [
+            44100,
+            48000
+          ],
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "buffer_frames": {
+          "default": 512,
+          "maximum": 4096,
+          "minimum": 64,
+          "title": "Buffer Frames",
+          "type": "integer"
+        }
+      },
+      "title": "EngineConfigure",
+      "type": "object"
+    },
+    "EngineProbe": {
+      "additionalProperties": false,
+      "properties": {
+        "seconds": {
+          "default": 0.5,
+          "exclusiveMinimum": 0,
+          "maximum": 3,
+          "title": "Seconds",
+          "type": "number"
+        }
+      },
+      "title": "EngineProbe",
+      "type": "object"
+    },
     "EventPage": {
       "additionalProperties": false,
       "properties": {
@@ -5731,6 +5774,57 @@
     }
   },
   "operations": {
+    "engine.devices": {
+      "arguments": "Empty",
+      "result": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "engine.configure": {
+      "arguments": "EngineConfigure",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "engine.status": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "engine.probe": {
+      "arguments": "EngineProbe",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "engine.stop": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "engine.close": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
     "storage.plan": {
       "arguments": "ProjectRef",
       "result": {

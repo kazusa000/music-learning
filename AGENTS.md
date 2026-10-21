@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新本地引擎N1（2026-10-21）：用户授权设目标完成N1–N7，目标active，继续推进而非只做方案。先读docs/benchmarks/native-engine-n1.md和迁移计划。新增独立native/engine（WASAPI设备/受当前SID ACL保护的管道/系统回环探针），EngineBroker只传控制，无PCM/工程写入；engine六操作共86、无迁移。实际48kHz/480帧/149回调/48,000样本自然停止，9973Hz回环背景比38.7、设备xrun/采集断续0；短探针不等于工程实时验收。282完整后端、10专项、Ruff/契约/前端构建通过。正式九表/head与14项保护SHA一致，无H写/NAS/Pianoteq控制/旧宿主替换。N1已完成，N2进行中，N3–N7未完成，尚未部署默认，不得提前标整个目标完成。旧997Hz背景对照失败保留；新探针独立run保存失败，不覆盖报告。当前正式仍旧WebAudio构建/未停启服务。
+
 最新本地DAW重构规划（2026-10-21）：用户选定本地C++设备引擎，先整理方案和开发顺序。本轮N0完成，N1–N7未开发；先读docs/architecture/native-daw.md、docs/plans/native-daw-migration.md、docs/development/repository-layout.md。设备时钟/音频/MIDI/VST3/混音由新ml_engine掌握，UI只控制与展示，Python共用Service/API/SDK/CLI及EngineBroker，不再让HTTP/WebAudio承担工程供声。新native/engine、plugin-worker及runtime/build/engine-v1隔离，旧固定宿主/静态库/Pianoteq实现不覆盖。保留SQLite修订/CAS为唯一持久权威，会话manifest仅派生；删除屏障、校准、原曲参考/重建、预览/混音语义保留。先设备→音频文件→隔离VST3→前端/AI→生命周期→完整图导出→默认切换，实际设备/回环与冷暖性能分别验收。先前未部署浏览器PCM实验9文件已存Git stash 542936842326d8f47c72203fea0c925213048128，当前源码回已提交基线，不整份apply混入重构。README精简、历史存docs/history/README-before-native-daw.md，docs/README.md为导航；其余目录只明确职责和渐进迁移，未搬数据/模型/库/固定文件、未重启服务或新建工程、未触碰拒绝清理路径。分支保留feat/user-instrument-intake。
 
 最新播放缓存修复（2026-10-21）：先读docs/51-playback-buffer-ownership.md。397秒重建duration空值来自解码完成后voice重新读取可回收缓存，warm与1GiB回收均可删除条目。play持有本次AudioBuffer并直接传首次/preserve换源voice，不提高缓存上限，保留流式预取及代次取消。f2a26a7独立重现相同异常；397秒8轨元数据回收/真实warm交错/换源取消与7组相关单元、真实Edge8轨PCM及播放中监听/循环/A-B/重播通过，构建已由8765提供。无正式API写入、模型/插件调用、H库/NAS/Pianoteq/原生或历史拒绝路径变更。

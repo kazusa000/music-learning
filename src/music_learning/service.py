@@ -69,6 +69,7 @@ class Service:
         self.storage = Storage(self.settings)
         self.live_playback = None
         self.instrument_previews = None
+        self.engine_broker = None
         import threading
 
         self.live_lock = threading.Lock()
@@ -83,6 +84,21 @@ class Service:
             args = model.model_validate(request.arguments)
             if mutates and not request.idempotency_key:
                 raise DomainError("idempotency_required", "Writes require idempotency_key", 422)
+            if request.operation.startswith("engine."):
+                from .engine.broker import EngineBroker
+
+                with self.live_lock:
+                    if self.engine_broker is None:
+                        self.engine_broker = EngineBroker(self.settings)
+                action = request.operation.split(".", 1)[1]
+                try:
+                    result = (self.engine_broker.status() if action == "status" else
+                              self.engine_broker.close() if action == "close" else
+                              self.engine_broker.command(action, args.model_dump()))
+                except (RuntimeError, OSError, ValueError) as error:
+                    raise DomainError("engine_error", str(error), 409) from error
+                TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
+                return {"schema_version": 1, "request_id": request.request_id, "ok": True, "result": result}
             if request.operation.startswith("instruments.preview."):
                 result = self.previews().dispatch(request.operation, args, request.idempotency_key)
                 TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)

@@ -65,6 +65,8 @@ def create_app(settings: Settings | None = None):
                 await asyncio.gather(runner, return_exceptions=True)
             if service.live_playback is not None:
                 service.live_playback.close()
+            if service.engine_broker is not None:
+                await asyncio.to_thread(service.engine_broker.close)
             database.close()
 
     app = FastAPI(
