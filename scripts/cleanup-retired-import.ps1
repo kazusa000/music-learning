@@ -1,7 +1,8 @@
 # User-run cleanup only. Without -Execute this script prints the exact whitelist.
 [CmdletBinding()]
-param([switch]$Execute)
+param([switch]$Execute, [switch]$CheckOnly)
 $ErrorActionPreference = 'Stop'
+if ($Execute -and $CheckOnly) { throw 'Choose either -Execute or -CheckOnly.' }
 $projectRoot = 'E:\Intrest\music-learning'
 if ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')) -ne $projectRoot) {
     throw 'This whitelist belongs only to E:\Intrest\music-learning.'
@@ -61,8 +62,8 @@ foreach ($entry in $plan.files) {
 Write-Host 'Directories/files on the fixed whitelist:'
 $targets | ForEach-Object { Write-Host $_ }
 Write-Host "CAS: $($casTargets.Count) exact files listed in $planPath"
-if (-not $Execute) {
-    Write-Host 'Preview only. Add -Execute to delete these targets.'
+if (-not $Execute -and -not $CheckOnly) {
+    Write-Host 'Preview only. Use -CheckOnly to verify the database and CAS, or -Execute to delete.'
     return
 }
 
@@ -86,22 +87,26 @@ try {
     $env:MUSIC_APP_CONFIG = Join-Path $projectRoot 'runtime\app.local.json'
     $env:PYTHONPATH = Join-Path $projectRoot 'src'
     $env:PYTHONUTF8 = '1'
-    & $python -c $checkDatabase $projectRoot
+    # Send source through stdin: Windows PowerShell 5.1 strips embedded quotes
+    # from native -c arguments. The source is ASCII and never shell-expanded.
+    $checkDatabase | & $python - $projectRoot
     if ($LASTEXITCODE -ne 0) { throw 'Database preflight failed; nothing deleted.' }
     # This manager owns only the application, not the independent Pianoteq verifier.
-    & $python $manager stop
-    if ($LASTEXITCODE -ne 0) { throw 'Application stop failed.' }
-    $stopped = $true
-    foreach ($port in @(8765, 8779)) {
-        $listener = New-Object Net.Sockets.TcpClient
-        try {
-            $connection = $listener.BeginConnect('127.0.0.1', $port, $null, $null)
-            if ($connection.AsyncWaitHandle.WaitOne(300) -and $listener.Connected) {
-                throw "Application port $port is still active; nothing deleted."
-            }
-        } finally { $listener.Dispose() }
+    if ($Execute) {
+        & $python $manager stop
+        if ($LASTEXITCODE -ne 0) { throw 'Application stop failed.' }
+        $stopped = $true
+        foreach ($port in @(8765, 8779)) {
+            $listener = New-Object Net.Sockets.TcpClient
+            try {
+                $connection = $listener.BeginConnect('127.0.0.1', $port, $null, $null)
+                if ($connection.AsyncWaitHandle.WaitOne(300) -and $listener.Connected) {
+                    throw "Application port $port is still active; nothing deleted."
+                }
+            } finally { $listener.Dispose() }
+        }
     }
-    & $python -c $checkDatabase $projectRoot
+    $checkDatabase | & $python - $projectRoot
     if ($LASTEXITCODE -ne 0) { throw 'Database changed; nothing deleted.' }
     foreach ($entry in $plan.files) {
         if (Test-Path -LiteralPath $entry.path) {
@@ -110,6 +115,10 @@ try {
                 throw "CAS evidence changed; nothing deleted: $($entry.path)"
             }
         }
+    }
+    if ($CheckOnly) {
+        Write-Host 'Database and CAS checks passed. No services stopped; nothing deleted.'
+        return
     }
     $freeBefore = (Get-PSDrive -Name E).Free
     foreach ($target in $targets) {

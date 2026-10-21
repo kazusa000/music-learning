@@ -52,3 +52,16 @@
 ## 本轮验证
 
 PowerShell语法解析和默认预览均通过，预览列出12个固定路径及2782个精确CAS目标；没有运行-Execute。占用证据在忽略的 `data\maintenance\large-beats-migration\storage-audit.json` 和 `cleanup-size-audit.json`。磁盘剩余会变化，不能将预估当作已释放。
+
+
+## Windows PowerShell 5.1 修正
+
+用户首次运行-Execute在Python数据库预检处遇到SyntaxError，尚未停止服务或执行删除。原因是Windows PowerShell 5.1向原生程序传递 `python -c` 多行代码时剥离了SQL字符串中的双引号。两处预检统一改为通过标准输入传递Python源码，不再把源码作为命令行参数。
+
+新增只读完整预检（不停止服务、不删除文件）：
+
+```powershell
+& 'E:\Intrest\music-learning\scripts\cleanup-retired-import.ps1' -CheckOnly
+```
+
+已用系统自带Windows PowerShell 5.1实际执行该预检：两处数据库查询及2782个CAS目标的大小/SHA核对均通过。实际删除仍由用户执行原来的-Execute命令；不能将预检通过表述为文件已删除。
