@@ -234,7 +234,7 @@ def main():
                     from music_learning.engine.bundle import pin
 
                     pin(settings.native_audio_bundle)
-                if not (ROOT / "apps/web/dist/index.html").is_file() or not settings.native_host.is_file():
+                if not ((settings.web_root or ROOT / "apps/web/dist") / 'index.html').is_file() or not settings.native_host.is_file():
                     raise SystemExit(
                         "Missing web build or native host; run bootstrap_app.py and build_native.py"
                     )

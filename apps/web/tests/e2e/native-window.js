@@ -11,7 +11,7 @@
   const state=await until(async()=>{const s=await call('engine.status');return s.status==='ready'&&s.project_id===project?s:null;},'Native engine not ready');
   report.checks.push('Real WebView2 and native engine ready');
   const button=label=>[...document.querySelectorAll('button')].find(el=>el.getAttribute('aria-label')===label||el.title===label||el.textContent.trim()===label);
-  const play=button('播放');if(!play)throw Error('Play button missing');play.click();
+  const play=await until(()=>{const el=button('播放');return el&&!el.disabled?el:null;},'Play button unavailable');play.click();
   await until(async()=>{const s=await call('engine.status');return s.playing&&s.peak>0;},'Native window did not start actual device output');
   const id=Object.keys(state.monitor)[0];
   const solo=document.querySelector('[aria-label="独奏 1"]');if(!solo)throw Error('Track solo missing');solo.click();
@@ -23,7 +23,7 @@
   const arrangement=[...document.querySelectorAll('.mode-switch button')].find(el=>el.textContent.includes('重建'));arrangement.click();
   await until(async()=>{const s=await call('engine.status');return s.view==='arrangement'&&s.playing;},'Native reconstruction switch failed');
   report.checks.push('Original and reconstruction maintain transport');
-  const pause=button('暂停');if(!pause)throw Error('Pause button missing');pause.click();
+  const pause=await until(()=>{const el=button('暂停');return el&&!el.disabled?el:null;},'Pause button unavailable');pause.click();
   await until(async()=>!(await call('engine.status')).playing,'Native pause failed');
   report.final=await call('engine.status');
   if((await call('jobs.list',{project_id:project})).length)throw Error('Playback created a render job');

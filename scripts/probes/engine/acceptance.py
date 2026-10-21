@@ -181,6 +181,17 @@ def main():
                     save(directory / 'progress.json', report)
                 if not looping:
                     assert not state['playing'] and state['position_sample'] == source['duration_samples'], state
+                else:
+                    broker.command('transport', dict(playing=False, expected_generation=state['generation']))
+                    state = broker.status()
+                # Capture a stable pair after stop; querying two independent
+                # atomics during a callback can straddle adjacent blocks.
+                raw = state['consumed_device_frames'] * source['sample_rate']
+                device_rate = round(state['sample_rate'])
+                expected = ((raw % (source['duration_samples'] * device_rate)) // device_rate if looping
+                    else min(source['duration_samples'], raw // device_rate))
+                clock_error = abs(state['position_sample'] - expected)
+                assert clock_error <= 1, (state, expected)
                 meter.process.wait(timeout=5)
                 stderr = meter.process.stderr.read().decode('utf-8', 'replace')
                 assert meter.process.returncode == 0, stderr
@@ -189,9 +200,9 @@ def main():
                 windows = [json.loads(line) for line in metrics.read_text().splitlines()]
                 final = windows[-1]
                 assert final['kind'] == 'final' and final['frames'] > 0, final
-                assert all(final[k] == 0 for k in ('gap_frames', 'out_of_order_packets', 'invalid_samples', 'discontinuities')), final
+                assert all(final[k] == 0 for k in ('gap_frames', 'out_of_order_packets', 'invalid_samples', 'discontinuities', 'timestamp_errors')), final
                 report['phases'].append(dict(name=name, seconds=seconds, native_ready_ms=ready_ms,
-                    final=state, loopback=final, observations=observations))
+                    final=state, loopback=final, source_clock_error_samples=clock_error, observations=observations))
                 save(directory / 'progress.json', report)
         report['status'] = 'succeeded'
     except BaseException as error:
