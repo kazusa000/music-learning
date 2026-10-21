@@ -1,6 +1,7 @@
 import {listeningGain,type Level} from './listeningLevel';
 import {channelGains,type MixChannel,type LiveTrack} from './liveMix';
 import {call} from './api';
+import {peakLimiter} from './listeningCalibration';
 /** One audio clock schedules every stem, including loops and A/B switches. */
 export class Transport {
   monitorGain=typeof window==='undefined'?1:((window as Window & {instrumentPreviewGain?:number}).instrumentPreviewGain??1);
@@ -88,7 +89,7 @@ export class Transport {
             if(prior){clearTimeout(prior.timer);for(const n of prior.nodes){try{n.stop(nextWhen+.02);}catch{/* ended */}}if(prior.session.session_id!==live.session_id)void call('playback.live.close',{session_id:prior.session.session_id}).catch(()=>{});}
             gain=context.createGain();left=context.createGain();right=context.createGain();meter=context.createAnalyser();meter.fftSize=512;
             const merger=context.createChannelMerger(2);left.connect(merger,0,0);right.connect(merger,0,1);merger.connect(gain);gain.connect(meter);
-            if(!this.output){this.attachMonitoring();this.output=context.createGain();this.output.gain.value=this.monitorGain;this.output.connect(context.destination);}meter.connect(this.output);
+            if(!this.output){this.attachMonitoring();this.output=context.createGain();this.output.gain.value=this.monitorGain;const limiter=peakLimiter(context);this.output.connect(limiter);limiter.connect(context.destination);}meter.connect(this.output);
             this.voices.set(id,{source:context.createBufferSource(),gain,left,right,meter,assetId:this.channels.get(id)?.assetId});connected=true;delete this.liveErrors[id];this.route(this.activeIds);
           }
           const source=context.createBufferSource(),split=context.createChannelSplitter(2);source.buffer=buffer;source.connect(split);split.connect(left!,0);split.connect(right!,1);
@@ -114,6 +115,7 @@ export class Transport {
   analyzer:Worker|null=null;
   matched=true;
   matchedGains:Record<string,number>={};
+  calibratedGains:Record<string,number>={};
   abort=new AbortController();
   warmGeneration=0;
   switches:Array<{at:number;ids:string[];reused:boolean}>=[];
@@ -129,7 +131,7 @@ export class Transport {
     const result=new Promise<Level>((resolve,reject)=>this.levelPending.set(id,{resolve,reject}));
     this.analyzer.postMessage({id,channels},channels.map(c=>c.buffer));return result;
   }
-  gain(id:string){return this.matched?(this.matchedGains[this.families.get(id)??id]??listeningGain(this.levels.get(this.families.get(id)??id)??this.levels.get(id)??{rms:0,peak:0})):1;}
+  gain(id:string){if(this.calibratedGains[id]!==undefined)return this.calibratedGains[id];return this.matched?(this.matchedGains[this.families.get(id)??id]??listeningGain(this.levels.get(this.families.get(id)??id)??this.levels.get(id)??{rms:0,peak:0})):1;}
   setMatched(value:boolean){if(this.matched===value)return;this.matched=value;this.route(this.activeIds);}
   activeIds:string[]=[];
   route(ids:string[]){
@@ -139,7 +141,10 @@ export class Transport {
     // Mixer faders must not be cancelled by automatic renormalization.
     const ceiling=ids.some(id=>this.channels.has(id))?1:this.matched&&bound>.794?.794/bound:1;
     const soloed=Array.from(this.channels.entries()).some(([id,c])=>ids.includes(id)&&c.values.solo);
-    for(const [id,voice] of this.voices){const gain=ids.includes(id)?this.gain(id)*ceiling:0;
+    const audible=ids.filter(id=>{const c=this.channels.get(id);return c&&!c.values.mute&&(!soloed||c.values.solo);});
+    for(const [id,voice] of this.voices){const c=this.channels.get(id);
+      const trim=c?(audible.length===1?c.soloGainDb:c.monitorGainDb)??0:0;
+      const gain=ids.includes(id)?this.gain(id)*ceiling*10**(trim/20):0;
       voice.gain.gain.cancelScheduledValues(context.currentTime);
       voice.gain.gain.setTargetAtTime(gain,context.currentTime,.003);
       const channel=this.channels.get(id);
@@ -166,7 +171,7 @@ export class Transport {
       const splitter=context.createChannelSplitter(2),merger=context.createChannelMerger(2);left=context.createGain();right=context.createGain();
       source.connect(splitter);splitter.connect(left,0);splitter.connect(right,1);left.connect(merger,0,0);right.connect(merger,0,1);merger.connect(gain);
     }else source.connect(gain);
-    if(!this.output){this.attachMonitoring();this.output=context.createGain();this.output.gain.value=this.monitorGain;this.output.connect(context.destination);}
+    if(!this.output){this.attachMonitoring();this.output=context.createGain();this.output.gain.value=this.monitorGain;const limiter=peakLimiter(context);this.output.connect(limiter);limiter.connect(context.destination);}
     const meter=context.createAnalyser();meter.fftSize=512;gain.connect(meter);meter.connect(this.output);
     source.start(when,Math.min(position,Math.max(0,buffer.duration-.001)));
     source.onended=()=>{source.disconnect();gain.disconnect();meter.disconnect();this.sources=this.sources.filter(s=>s!==source);if(this.voices.get(id)?.source===source)this.voices.delete(id);};

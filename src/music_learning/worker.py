@@ -368,6 +368,18 @@ class Worker:
                                 response["ok"] = False
         except Exception as error:
             response = {"ok": False, "error": {"code": "executor_failed", "message": type(error).__name__}}
+        if not response.get("ok"):
+            # Terminal work directories are collectible. Preserve bounded local
+            # diagnostics, excluding inputs, credentials and large audio files.
+            diagnostic = self.settings.path("logs", "failed-tasks", job["id"])
+            diagnostic.mkdir(parents=True, exist_ok=True)
+            logs = {}
+            for path in sorted(directory.rglob("*.log"))[:16]:
+                with path.open("rb") as stream:
+                    stream.seek(max(0, path.stat().st_size-8192))
+                    logs[path.relative_to(directory).as_posix()] = stream.read(8192).decode("utf-8",errors="replace")
+            (diagnostic / ((suffix or "task")+".json")).write_text(
+                canonical({"error":response.get("error"),"logs":logs}),encoding="utf-8")
         return response, directory
 
     def run_once(self):

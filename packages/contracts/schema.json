@@ -526,24 +526,10 @@
             "original",
             "mix",
             "tracks",
-            "reference",
-            "hybrid"
+            "reference"
           ],
           "title": "Mode",
           "type": "string"
-        },
-        "hybrid_job_id": {
-          "anyOf": [
-            {
-              "pattern": "^[a-f0-9]{32}$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Hybrid Job Id"
         },
         "reference_revision_id": {
           "anyOf": [
@@ -4674,6 +4660,19 @@
     "Snapshot": {
       "additionalProperties": false,
       "properties": {
+        "listening_calibration": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Listening Calibration"
+        },
         "schema_version": {
           "const": 1,
           "default": 1,
@@ -5534,6 +5533,14 @@
           "created_at"
         ],
         "title": "Project",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "projects.delete": {
+      "arguments": "ProjectRef",
+      "result": {
+        "additionalProperties": true,
         "type": "object"
       },
       "mutates": true

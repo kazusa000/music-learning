@@ -1,323 +1,39 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "models": {
     "muscriptor": {
-      "repo": "MuScriptor/muscriptor-medium",
-      "revision": "f32236969308476e01fd3aae67357de5feb05a2d",
+      "repo": "MuScriptor/muscriptor-large",
+      "revision": "8809fdfbed2affa7ade94a7059e746e3880720e7",
       "gated": "auto",
       "license": "cc-by-nc-4.0",
       "files": [
         {
-          "path": "README.md",
-          "size": 10198,
-          "sha256": null,
-          "git_blob": "0b3a33165491dca0dd99dafa360e7daca03458cc"
+          "path": "config.json",
+          "size": 125,
+          "sha256": "16bedd02b18770e43740419b0d5777f231047e96e8987f498e8a1123c39c9852"
         },
         {
-          "path": "config.json",
-          "size": 126,
-          "sha256": null,
-          "git_blob": "3862558703a8c30630ff1149b58e2f070179c774"
+          "path": "README.md",
+          "size": 10255,
+          "sha256": "4644b3b280b664073cc6fdc9685712640ebf3a87144c0affb25f38d449f5fcbd"
         },
         {
           "path": "model.safetensors",
-          "size": 1228144472,
-          "sha256": "ac80adbdf85d87231735fd948af7013441c0afced316c4e9067fd5d8a7fb97ec",
-          "git_blob": null
+          "size": 5465642136,
+          "sha256": "ac4eb6ea87dfc26b6ca6b954c6b967ab87ad4c7d08e078b25214f13ed051f397"
         }
       ]
     },
-    "demucs": {
-      "repo": "adefossez/HTDemucs",
-      "revision": "cbc8a9b1a87023b7fd74e7b3412e6321c0eab003",
-      "gated": false,
-      "license": null,
+    "beat_this": {
+      "revision": "final0",
+      "repo": null,
+      "license": "MIT",
       "files": [
         {
-          "path": "955717e8.safetensors",
-          "size": 84025440,
-          "sha256": "d9fa14133cfcc034a6758923bb3a8ca9f8dfd0b582134643bbf83f72c17576dd",
-          "git_blob": null
-        },
-        {
-          "path": "README.md",
-          "size": 647,
-          "sha256": null,
-          "git_blob": "0c1beee7c19039f9d98c7a81f9efab8116e0f06a"
-        },
-        {
-          "path": "htdemucs.yaml",
-          "size": 21,
-          "sha256": null,
-          "git_blob": "0d5f2089fa3e1a0335d93de070f6802598cd4a4d"
-        }
-      ]
-    },
-    "sheetsage": {
-      "repo": "m-a-p/SheetSage2",
-      "revision": "b83c3d79a6d98bcffaf8f9ed112c90aa887887bc",
-      "gated": false,
-      "license": "cc-by-nc-4.0",
-      "files": [
-        {
-          "path": "LICENSE",
-          "size": 20000,
-          "sha256": null,
-          "git_blob": "ce18e5ba29e6ad24f24b0bfaa4a682a6cf824ff6"
-        },
-        {
-          "path": "README.md",
-          "size": 17655,
-          "sha256": null,
-          "git_blob": "7a64836bbddb830014089603dd2d374106841fe9"
-        },
-        {
-          "path": "THIRD_PARTY_NOTICES.md",
-          "size": 589,
-          "sha256": null,
-          "git_blob": "d7f9bf8726ca519dc86a42f5464d47fa91354bb4"
-        },
-        {
-          "path": "__init__.py",
-          "size": 39,
-          "sha256": null,
-          "git_blob": "534c8db9ea190d93c0fd41b7b683cd516988b7c3"
-        },
-        {
-          "path": "audio_sheetsage2.py",
-          "size": 4289,
-          "sha256": null,
-          "git_blob": "264af19012fc986101c17ff002bb6ba5310f14ea"
-        },
-        {
-          "path": "benchmark_results.json",
-          "size": 13616,
-          "sha256": null,
-          "git_blob": "54894722469eaa5937e1bc0b1122033bde8c9b58"
-        },
-        {
-          "path": "chord_spelling_sheetsage2.py",
-          "size": 9330,
-          "sha256": null,
-          "git_blob": "a14a268805080b63c8586fbf767c72e05c1f0bd1"
-        },
-        {
-          "path": "config.json",
-          "size": 2060,
-          "sha256": null,
-          "git_blob": "e8eb3dc877ce5dcac60b3570e343634e0afbc44e"
-        },
-        {
-          "path": "configuration_mert2.py",
-          "size": 3860,
-          "sha256": null,
-          "git_blob": "f07208f8a08b8743d47026956c622eaa062d6963"
-        },
-        {
-          "path": "configuration_sheetsage2.py",
-          "size": 4119,
-          "sha256": null,
-          "git_blob": "48b1954971c6d853a2fc641c0c69a4398f5b0ac8"
-        },
-        {
-          "path": "durations_sheetsage2.py",
-          "size": 296,
-          "sha256": null,
-          "git_blob": "2ad9c7eabb63733502ebd8cddd94f139b61100fd"
-        },
-        {
-          "path": "exports_sheetsage2.py",
-          "size": 10405,
-          "sha256": null,
-          "git_blob": "4bdfaa1f918bb426642d972fecc6f7f4a68d5401"
-        },
-        {
-          "path": "generation_sheetsage2.py",
-          "size": 24722,
-          "sha256": null,
-          "git_blob": "da4ee0cd59f4122a1309dec7d8f58e2213de2af5"
-        },
-        {
-          "path": "infer.py",
-          "size": 4253,
-          "sha256": null,
-          "git_blob": "0dc1570f28f13263d660df0b018933fbde8de93c"
-        },
-        {
-          "path": "io_sheetsage2.py",
-          "size": 1830,
-          "sha256": null,
-          "git_blob": "0e27cc72233ce5b029a01c6d2a5f45ed5f159be6"
-        },
-        {
-          "path": "labels_sheetsage2.py",
-          "size": 978,
-          "sha256": null,
-          "git_blob": "879999de3642e95c6f703d7fbe85167cca5c19fa"
-        },
-        {
-          "path": "midi_sheetsage2.py",
-          "size": 4230,
-          "sha256": null,
-          "git_blob": "7cc393644c4165b16e93c2cbe9cf5109ef6907ab"
-        },
-        {
-          "path": "model.safetensors",
-          "size": 228738564,
-          "sha256": "b235f68091a5f5b644000f2b5acb57d1e70432aca2b34ab1b9cf27236e1f4274",
-          "git_blob": null
-        },
-        {
-          "path": "modeling_mert2.py",
-          "size": 17081,
-          "sha256": null,
-          "git_blob": "0369f732d561917d8d1a4d252f802ad4e23f3d4c"
-        },
-        {
-          "path": "modeling_sheetsage2.py",
-          "size": 24664,
-          "sha256": null,
-          "git_blob": "374e822c18f79f05eec08c2f72bd91f55811d30c"
-        },
-        {
-          "path": "notation_sheetsage2.py",
-          "size": 55775,
-          "sha256": null,
-          "git_blob": "a4a6da099b05e7ff956e913a6ab366d96e23f1ce"
-        },
-        {
-          "path": "pipeline_sheetsage2.py",
-          "size": 15022,
-          "sha256": null,
-          "git_blob": "bdeb9da32ae4a97b8ddcc66ec9a134c3ab4a9d1c"
-        },
-        {
-          "path": "processing_sheetsage2.py",
-          "size": 5408,
-          "sha256": null,
-          "git_blob": "e5dfaa3813484b333bf4d93351627294bb5dc2b6"
-        },
-        {
-          "path": "processor_config.json",
-          "size": 277,
-          "sha256": null,
-          "git_blob": "8dbba2cc459657bf4f17e1c684bd41c636e4e24f"
-        },
-        {
-          "path": "render.py",
-          "size": 1927,
-          "sha256": null,
-          "git_blob": "a0c6b690e180ef57b5b5f73b475f981adb513b84"
-        },
-        {
-          "path": "rendering_sheetsage2.py",
-          "size": 15862,
-          "sha256": null,
-          "git_blob": "ae3ea8b3cbb62a5b03dce17c336b7c7e46d8332b"
-        },
-        {
-          "path": "requirements-render.txt",
-          "size": 58,
-          "sha256": null,
-          "git_blob": "62924031791cb03af9f3dc115d216f8a64a07dc1"
-        },
-        {
-          "path": "requirements.txt",
-          "size": 190,
-          "sha256": null,
-          "git_blob": "641a1f9495a5be42a9afe699c89deec5e0508e47"
-        },
-        {
-          "path": "schema_sheetsage2.py",
-          "size": 3893,
-          "sha256": null,
-          "git_blob": "a8b21fcd28098af1bee0894f6de4f81ab32ec007"
-        },
-        {
-          "path": "setup_render.py",
-          "size": 1540,
-          "sha256": null,
-          "git_blob": "fc0d2cd683a94fd1e434f2ece1277a88f66156bf"
-        },
-        {
-          "path": "tensors_sheetsage2.py",
-          "size": 4645,
-          "sha256": null,
-          "git_blob": "aff5b3dff79c21fd26e7674cf7421d65aad764c4"
-        },
-        {
-          "path": "tokenization_sheetsage2.py",
-          "size": 30043,
-          "sha256": null,
-          "git_blob": "65c3d2cc13163b69794b6a1c46aa6934aeced47f"
-        }
-      ]
-    },
-    "mert": {
-      "repo": "m-a-p/MERT-v2-FullSong",
-      "revision": "d8ba1c745e733b3908ce6ad16ebeb17ac7600a42",
-      "gated": false,
-      "license": "cc-by-nc-4.0",
-      "files": [
-        {
-          "path": "LICENSE",
-          "size": 20000,
-          "sha256": null,
-          "git_blob": "ce18e5ba29e6ad24f24b0bfaa4a682a6cf824ff6"
-        },
-        {
-          "path": "README.md",
-          "size": 10419,
-          "sha256": null,
-          "git_blob": "063f1a1110355e04e0b3921a0c1e95c9bd7b9a34"
-        },
-        {
-          "path": "THIRD_PARTY_NOTICES.md",
-          "size": 541,
-          "sha256": null,
-          "git_blob": "b330a93214b6516f4721fa91521332383484a1f0"
-        },
-        {
-          "path": "config.json",
-          "size": 882,
-          "sha256": null,
-          "git_blob": "e6adbdaf587c162a7d1e03a252372f90ce0efe8f"
-        },
-        {
-          "path": "configuration_mert2.py",
-          "size": 3860,
-          "sha256": null,
-          "git_blob": "f07208f8a08b8743d47026956c622eaa062d6963"
-        },
-        {
-          "path": "marble_results.json",
-          "size": 8997,
-          "sha256": null,
-          "git_blob": "8b7519c12ab259ef6dc0ac067e610a3b431528aa"
-        },
-        {
-          "path": "model.safetensors",
-          "size": 2529812848,
-          "sha256": "e6dd2ab187d6dd62b6521cd7d8f932e237acf0c5757745a7232082e28391350d",
-          "git_blob": null
-        },
-        {
-          "path": "modeling_mert2.py",
-          "size": 17081,
-          "sha256": null,
-          "git_blob": "0369f732d561917d8d1a4d252f802ad4e23f3d4c"
-        },
-        {
-          "path": "preprocessor_config.json",
-          "size": 215,
-          "sha256": null,
-          "git_blob": "54daaeee6f791c77a0057800b1ec1da60190cfb6"
-        },
-        {
-          "path": "weights_manifest.json",
-          "size": 241,
-          "sha256": null,
-          "git_blob": "1b7d41ec8430dea4fa6f29e4c146a7cb99f12895"
+          "path": "final0.ckpt",
+          "url": "https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/final0.ckpt",
+          "size": 81058141,
+          "sha256": "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331"
         }
       ]
     }

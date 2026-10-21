@@ -1,5 +1,7 @@
 # 第一阶段技术方案
 
+2026-10-21 当前导入方案已改为 MuScriptor large＋Beat This，移除分轨、和弦和曲式，保留速度小节网格；旧工程清空与并发保护见 [新流程](47-large-beat-import.md)。下文历史阶段描述以该文覆盖。
+
 2026-10-20 型号目录更新：乐器类别→库内稳定型号→预设变体，前端确认后复用既有加载链路。API/SDK/CLI、AI 查询和后续导入共用 `model_spec`，详见 [型号与变体](44-instrument-models-and-variants.md)。
 
 2026-10-20 最新覆盖：普通编辑仅自动保存工作状态，用户版本由显式保存；换音色/改音符走常驻逐轨播放，整曲混音仅显式导出。设置、65统一操作及实际限制见 [设置与常驻音轨](36-settings-and-live-tracks.md)，此约定替代下文每次编辑需整曲渲染的旧前提。
@@ -49,9 +51,9 @@ flowchart TB
 | 任务 | SQLite 任务表 + 单个独立 worker，模型由受控子进程执行 | 可重启、取消、重试；第一阶段限制 GPU 并发为 1 |
 | 操作与反馈 | 类型化 HTTP API + SDK/CLI + SSE | 操作能力发现、实际状态回读、单条事务/顺序批处理和断线补发；前端/Agent 同源 |
 | 音频处理 | FFmpeg/ffprobe | 解码、重采样、混音、编码和元数据提取 |
-| 分轨 | Demucs `htdemucs`，通过 SeparationAdapter | 基线分离 vocals/drums/bass/other；质量与速度在 P0 测定 |
-| 多乐器转录 | MuScriptor medium 起步，通过 TranscriptionAdapter | 整曲 MIDI 初稿；small/large 仅在测量后调整 |
-| 和声及结构 | SheetSage2，通过 AnalysisAdapter | 旋律、和弦、拍点、调性和结构候选；与转录事件交叉检查 |
+| 拍点网格 | Beat This `final0` | 原曲逐拍/小节首拍，生成可变速度网格 |
+| 多乐器转录 | MuScriptor large | 保留原始演奏时序的整曲 MIDI |
+| 监听校准 | 原曲参考 EBU R128 | 共同合奏增益、逐轨独奏增益与推子分开 |
 | MIDI 与音乐逻辑 | mido + music21 | MIDI 读写、符号分析与候选验证；不把规则推断当成原曲事实 |
 | 重建渲染 | 原生引擎执行 VST3 音源与效果链 | 每轨/总线/整曲 WAV，插件状态与资源可回溯；FluidSynth 仅保留为可选参考适配器 |
 | AI | Codex App Server + 应用领域工具，保留供应商适配器 | P0b 已用既有 ChatGPT 登录实测；正式服务/对话持久化后续接入，详见 docs/13-codex-integration.md |
@@ -63,7 +65,7 @@ flowchart TB
 
 本机已检测到 Windows、RTX 5080（16303 MiB 显存）、约 31.1 GiB 可见内存。先采用本机 GPU 推理；不能仅凭硬件规格承诺模型峰值内存或处理时长。
 
-API 使用独立 Python 环境。MuScriptor、Demucs、SheetSage2 允许各自使用单独 uv 环境，避免 PyTorch、音频解码库和 Transformers 的版本冲突。API 与适配器子进程通过 JSON 请求清单、状态事件和文件产物交换数据，不共享 Python 对象。
+API 使用独立 Python 环境。MuScriptor large、Beat This 使用同一独立 transcription uv 环境，避免 PyTorch、音频解码库和 Transformers 的版本冲突。API 与适配器子进程通过 JSON 请求清单、状态事件和文件产物交换数据，不共享 Python 对象。
 
 VST3 扫描器与渲染宿主使用独立原生进程；工程服务通过版本化 JSON 请求与产物 manifest 交互，不在 Python 内直接加载插件。宿主按 SDK 提供消息循环；扫描崩溃/超时隔离插件，渲染崩溃只令当前任务失败。插件目录使用受控配置，凭据和用户采样库独立于源码。
 

@@ -46,7 +46,7 @@ def main():
         else:
             raise TimeoutError("Pipeline never reached a real transcription progress event")
         checkpoints = [s["stage"] for s in stages if s["status"] == "succeeded"]
-        assert checkpoints == ["normalize", "demucs"]
+        assert checkpoints == ["normalize", "beat_this"]
     manifest = json.loads(settings.path("processes.local.json").read_text(encoding="utf-8"))
     assert Path(manifest["repository"]).resolve() == ROOT
     supervisor = psutil.Process(manifest["supervisor_pid"])
@@ -80,7 +80,7 @@ def main():
             checkpoint_stages=checkpoints,
             attempt_before=job["attempt"],
             attempt_after=final["attempt"],
-            normalized_and_demucs_reused=True,
+            normalized_and_beat_grid_reused=True,
             partial_transcription_recomputed=True,
             status=final["status"],
             revision_id=final["result"]["revision_id"],

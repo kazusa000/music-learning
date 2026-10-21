@@ -109,7 +109,7 @@ P4 已完成：真实 Codex 整曲/局部讨论、受限工具查询、有效引
 - React、TypeScript、Vite；结果时间线、事件展示、讨论和试听；浏览器播放原曲或已渲染产物。
 - C++20 原生 VST3 宿主与处理图，P0a 已选择 JUCE 9.0.4 headless。制作优先离线渲染，不依赖浏览器处理插件音频。
 - Python 3.11、FastAPI、Pydantic；SQLite 元数据和磁盘文件；独立任务进程。
-- MuScriptor 多乐器转录、Demucs 分轨、SheetSage2 和声及结构分析，分别通过可替换适配器接入。
+- MuScriptor large 多乐器转录＋Beat This 拍点/小节网格；不运行音频分离、和弦或曲式模型。导入进度和响度校准见 [新导入流程](docs/47-large-beat-import.md)。
 - 原生处理图统一执行 VST3 乐器、效果链、自动化和渲染；FluidSynth 仅作可选参考后端，FFmpeg 负责媒体转换。
 - AI 通过统一命令服务读取并操作工程、回读结果、渲染和测量；API/SDK/CLI 使用同一契约，具体 AI 供应商可替换。
 

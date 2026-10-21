@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "profile": "p6-instrument-library-v1",
+  "profile": "muscriptor-large-beat-this-v1",
   "surge": "plugins/surge-xt-1.3.4/Surge Synth Team/Surge XT.vst3",
   "surge_binary_sha256": "49794ad99d899a869b97416024283d74baf2c517bac15db0fde511bc99624e20",
   "sfizz": "plugins/sfizz-1.2.3/commoncf/VST3/sfizz.vst3",
@@ -8,5 +8,87 @@
   "drum_map": "samples/diagnostic-kit-v1/drum-map.json",
   "tail_seconds": 2,
   "block_size": 512,
-  "timbre_note": "Explicit installed and audio-verified per-voice presets; unresolved GM families require selection. Sampled and synth timbres remain substitutes; original timbres and singing are not restored."
+  "timbre_note": "Explicit installed and audio-verified per-voice presets; unresolved GM families require selection. Sampled and synth timbres remain substitutes; original timbres and singing are not restored.",
+  "factory_substitutions": {
+    "0": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Keys/EP 1.fxp",
+      "sha256": "1cb3f361e494951b0d7e6076072c19ea287235f455026361448f24889568754e",
+      "name": "合成键盘"
+    },
+    "1": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Pads/Bell Pad.fxp",
+      "sha256": "530296d4697c601f24955b1b5f88e510e7eab3ae1034e31418de4a3bda9920ab",
+      "name": "合成钟琴"
+    },
+    "2": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Keys/Organ 1.fxp",
+      "sha256": "fce0dacadec69ca8dbc98fc326937c127cbb2fd4cc12346d374854dfee5032e9",
+      "name": "合成风琴"
+    },
+    "3": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Leads/Synth Guitar 1.fxp",
+      "sha256": "5af9f59896bfea862b24fdd372ea31227843180aa4d4166f94e6be7e4dbdc746",
+      "name": "合成电吉他"
+    },
+    "4": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Basses/E-Bass.fxp",
+      "sha256": "31967eb728c5e2072090afdea2046647730def28fc4b599776b54494917ddf19",
+      "name": "合成电贝斯"
+    },
+    "5": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Pads/Subtle Comb Strings.fxp",
+      "sha256": "6cb8bd7b92e10a77ae7f008bcc15328bc2a7b2b1b9dcf8a1c9325a7de51b7e9d",
+      "name": "合成弦乐"
+    },
+    "6": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Pads/Choir Pad Thing.fxp",
+      "sha256": "d5822442ca92c54d6870566bcf5ea95a7752370db8c6360eacc2582d164ea960",
+      "name": "合唱垫音"
+    },
+    "7": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Pads/Bright.fxp",
+      "sha256": "da1ae93ffd9cbe45dc7b644707408b256606b08b689dca8042a41897331b8e74",
+      "name": "合成铜管"
+    },
+    "8": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Leads/Sine Lead.fxp",
+      "sha256": "b4b09913f51419799558b040d8b40708073b791e27272b80b5087d3427a4a6dd",
+      "name": "合成管乐"
+    },
+    "9": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Leads/Sine Lead.fxp",
+      "sha256": "b4b09913f51419799558b040d8b40708073b791e27272b80b5087d3427a4a6dd",
+      "name": "合成管乐"
+    },
+    "10": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Leads/Classic Lead 1.fxp",
+      "sha256": "01e5d0f3e6ea542b50b0d98aeb0ac4e229b7296535e993dc456230b36e1ac204",
+      "name": "合成主奏"
+    },
+    "11": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Pads/Pad 1.fxp",
+      "sha256": "dfc922f8c4897f7a014d606f35d672298741366ca0d1471dbd1fcb8f26ed5bd2",
+      "name": "合成铺底"
+    },
+    "12": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Pads/Bell Pad.fxp",
+      "sha256": "530296d4697c601f24955b1b5f88e510e7eab3ae1034e31418de4a3bda9920ab",
+      "name": "氛围音色"
+    },
+    "13": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Keys/Digi Harpsi.fxp",
+      "sha256": "3ec4d3de523cfaf1857a375e62c51c0e7c1ae951f2062f7615db93b1f664248e",
+      "name": "拨弦键盘"
+    },
+    "14": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Pads/Bell Pad.fxp",
+      "sha256": "530296d4697c601f24955b1b5f88e510e7eab3ae1034e31418de4a3bda9920ab",
+      "name": "敲击音色"
+    },
+    "15": {
+      "path": "plugins/surge-xt-1.3.4/Surge Synth Team/SurgeXTData/patches_factory/Pads/Pad 1.fxp",
+      "sha256": "dfc922f8c4897f7a014d606f35d672298741366ca0d1471dbd1fcb8f26ed5bd2",
+      "name": "合成效果"
+    }
+  }
 }

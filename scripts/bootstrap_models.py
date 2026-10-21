@@ -24,7 +24,7 @@ def main() -> None:
         raise RuntimeError("At least 12 GiB free space required for initial model setup")
     base=ROOT/"runtime/tooling/Scripts/python.exe"
     if not base.is_file():raise RuntimeError("First prepare the P0a Python tooling environment")
-    for name in ("transcription","sheetsage"):
+    for name in ("transcription",):
         directory=root/"envs"/name;python=directory/"Scripts/python.exe"
         if not python.exists():subprocess.run([uv,"venv",str(directory),"--python",str(base)],env=env,check=True)
         subprocess.run([uv,"pip","sync",str(ROOT/f"requirements-{name}.lock"),"--python",str(python),

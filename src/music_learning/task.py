@@ -97,13 +97,14 @@ def execute(settings, job, directory=None):
         env = environment(settings.model_runtime)
         env["MUSIC_MODEL_RUNTIME"] = str(settings.model_runtime)
         env["PYTHONPATH"] = str(ROOT / "src")
-        subprocess.run(
-            [str(python), str(ROOT / "scripts/pipeline_adapter.py"), str(directory)],
-            check=True,
-            env=env,
-            timeout=settings.pipeline_stage_timeout_seconds,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
+        with (directory / "adapter.stdout.log").open("xb") as out, (directory / "adapter.stderr.log").open("xb") as err:
+            subprocess.run(
+                [str(python), str(ROOT / "scripts/pipeline_adapter.py"), str(directory)],
+                check=True, stdout=out, stderr=err,
+                env=env,
+                timeout=settings.pipeline_stage_timeout_seconds,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
         return json.loads((directory / "stage-result.json").read_text(encoding="utf-8"))
     if job["kind"] == "asset.import":
         from media_runtime import verify_tool

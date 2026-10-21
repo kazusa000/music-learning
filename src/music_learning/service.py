@@ -126,8 +126,6 @@ class Service:
             # New optional P5 permissions must not invalidate P3/P4 replay receipts.
             if isinstance(args, c.SubmitDialogue) and args.edit_scope is None:
                 hash_arguments.pop("edit_scope", None)
-            if isinstance(args, c.SetAudition) and args.state.hybrid_job_id is None:
-                hash_arguments["state"].pop("hybrid_job_id", None)
             if isinstance(args, c.SubmitDialogue):
                 if args.edit_mode == "auto":
                     hash_arguments.pop("edit_mode", None)
@@ -531,6 +529,10 @@ class Service:
                     project.pop("archived")
                     project.pop("display_title")
             return result
+        if op == "projects.delete":
+            from .project_deletion import erase
+
+            return erase(self, db, args.project_id, request.request_id)
         if op == "projects.organize":
             from .schema_v6 import library
 

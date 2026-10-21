@@ -36,7 +36,7 @@ def environment(root: Path | None = None) -> dict[str, str]:
 
 def model_path(name: str) -> Path:
     spec = json.loads(MANIFEST.read_text(encoding="utf-8"))["models"][name]
-    return runtime_root() / "models" / (name + "-" + spec["revision"][:12])
+    return runtime_root() / "models" / (("beat-this-" if name == "beat_this" else name + "-") + spec["revision"][:12])
 
 
 def digest(path: Path) -> str:
@@ -73,8 +73,17 @@ def download(name: str) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     verified = []
     for file in spec["files"]:
-        path = Path(hf_hub_download(spec["repo"], file["path"], revision=spec["revision"],
-                                   local_dir=destination))
+        if file.get("url"):
+            import urllib.request
+            path = destination / file["path"]
+            if not path.exists():
+                partial = path.with_suffix(".partial")
+                urllib.request.urlretrieve(file["url"], partial)
+                verify_file(partial, file)
+                os.replace(partial, path)
+        else:
+            path = Path(hf_hub_download(spec["repo"], file["path"], revision=spec["revision"],
+                                       local_dir=destination))
         verified.append({"path": file["path"], "sha256": verify_file(path, file)})
         print(json.dumps({"verified": file["path"]}), flush=True)
     (destination / "verified.json").write_text(json.dumps({"revision": spec["revision"],
@@ -88,7 +97,7 @@ def main() -> None:
     init.add_argument("--root", type=Path, required=True)
     sub.add_parser("login")
     fetch = sub.add_parser("download")
-    fetch.add_argument("model", choices=("muscriptor", "demucs", "sheetsage", "mert"))
+    fetch.add_argument("model", choices=("muscriptor", "beat_this"))
     sub.add_parser("status")
     args = parser.parse_args()
     if args.command == "init":
@@ -114,7 +123,7 @@ def main() -> None:
             "token_present": bool(os.environ.get("HF_TOKEN")) or (runtime_root() / "huggingface/token").is_file(),
             "models": {name: {"path": str(model_path(name)),
                 "download_verified": (model_path(name) / "verified.json").is_file()}
-                for name in ("muscriptor", "demucs", "sheetsage", "mert")}}, indent=2))
+                for name in ("muscriptor", "beat_this")}}, indent=2))
 
 
 if __name__ == "__main__":

@@ -40,58 +40,45 @@ def verify_model(name: str) -> None:
         verify_file(model_path(name)/file["path"], file)
 
 
-def separate(audio: Path, out: Path) -> dict:
-    import numpy as np
+def track_beats(audio: Path, out: Path) -> dict:
     import soundfile as sf
-    import torch
-    from demucs.apply import apply_model
-    from demucs.audio import convert_audio
-    from demucs.hf import load_safetensors_model
-    verify_model("demucs")
-    checkpoint=next(model_path("demucs").glob("*.safetensors"))
-    model=load_safetensors_model(checkpoint).eval()
-    wave,rate=sf.read(audio,dtype="float32",always_2d=True)
-    wave=convert_audio(torch.from_numpy(wave.T.copy()),rate,model.samplerate,model.audio_channels)
-    ref=wave.mean(0); mean=ref.mean(); std=ref.std()+1e-8
-    torch.manual_seed(20261018)
-    with torch.inference_mode():
-        separated=apply_model(model,((wave-mean)/std)[None],device="cuda",shifts=1,
-                              split=True,overlap=.25,progress=True,num_workers=0)[0]
-    separated=separated*std+mean
-    stems=[]
-    for name,stem in zip(model.sources,separated):
-        values=stem.T.cpu().numpy()
-        if not np.isfinite(values).all():raise ValueError("Non-finite stem")
-        sf.write(out/(name+".wav"),values,model.samplerate,subtype="FLOAT")
-        stems.append({"name":name,"frames":len(values),"sample_rate":model.samplerate,
-                      "rms":float(np.sqrt(np.mean(values.astype(np.float64)**2)))})
-    return {"input_frames_at_model_rate":wave.shape[-1],"stems":stems,
-            "processed_duration_seconds":wave.shape[-1]/model.samplerate,
-            "settings":{"shifts":1,"overlap":.25,"seed":20261018,"split":True}}
-
-
-def analyze(audio: Path, out: Path) -> dict:
-    from media_runtime import verify_tool
-    verify_tool("ffmpeg")
-    import torch
-    from transformers import AutoModel
-    verify_model("sheetsage"); verify_model("mert")
-    model=AutoModel.from_pretrained(str(model_path("sheetsage")),
-        base_model_path=str(model_path("mert")),local_files_only=True,
-        trust_remote_code=True,attn_implementation="sdpa").eval().to("cuda")
-    def progress(value):print(json.dumps(value),flush=True)
-    result=model.transcribe(str(audio),output_dir=str(out/"analysis"),dtype="bf16",
-                            preset="default",progress=progress)
-    return {"processed_duration_seconds":result["duration_seconds"],
-            "settings":{"dtype":"bf16","preset":"default","max_seconds":None},
-            "model_result":json.loads((out/"analysis/result.json").read_text(encoding="utf-8"))}
+    from beat_this.inference import Audio2Beats
+    verify_model("beat_this")
+    wave, rate = sf.read(audio, dtype="float32", always_2d=True)
+    print(json.dumps({"phase": "detecting", "completed": 0, "total": 1}), flush=True)
+    beats, downbeats = Audio2Beats(checkpoint_path=str(model_path("beat_this") / "final0.ckpt"),
+                                  device="cuda", dbn=False)(wave.mean(axis=1), rate)
+    result = {"beats": [float(x) for x in beats], "downbeats": [float(x) for x in downbeats],
+              "duration_seconds": len(wave) / rate, "processed_frames": len(wave),
+              "sample_rate": rate, "settings": {"checkpoint": "final0", "dbn": False}}
+    (out / "beats.json").write_text(json.dumps(result), encoding="utf-8")
+    print(json.dumps({"phase": "detected", "completed": 1, "total": 1}), flush=True)
+    return result
 
 
 def transcribe(audio: Path, out: Path) -> dict:
     from muscriptor.transcription_model import TranscriptionModel
     from muscriptor.events import ProgressEvent
     verify_model("muscriptor")
-    model=TranscriptionModel.load_model(model_path("muscriptor")/"model.safetensors",device="cuda")
+    # Windows file mappings can exhaust commit space while another sampler is
+    # active. Read the same pinned tensors without mapping the whole checkpoint.
+    import muscriptor.transcription_model as implementation
+    original_loader = implementation.load_file
+    original_builder = implementation._build_model
+    target_model = []
+    def build(*args, **kwargs):
+        model = original_builder(*args, **kwargs)
+        target_model.append(model)
+        return model
+    implementation._build_model = build
+    from stream_weights import load_weights
+    implementation.load_file = lambda path, device: load_weights(
+        path, device, target_model[0].state_dict(), implementation._remap_single_codebook_keys)
+    try:
+        model=TranscriptionModel.load_model(model_path("muscriptor")/"model.safetensors",device="cuda")
+    finally:
+        implementation.load_file = original_loader
+        implementation._build_model = original_builder
     completed=total=0
     def events():
         nonlocal completed,total
@@ -108,13 +95,13 @@ def transcribe(audio: Path, out: Path) -> dict:
     (out/"transcription.mid").write_bytes(model.events_to_midi_bytes(events(),beat_grid=None))
     if completed != total or total == 0:raise ValueError("Incomplete transcription chunks")
     return {"completed_chunks":completed,"total_chunks":total,
-            "settings":{"model":"medium","prelude_forcing":True,"batch_size":1,
+            "settings":{"model":"large","prelude_forcing":True,"batch_size":1,
                         "beat_detection":False,"quantization":False}}
 
 
 def main() -> None:
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model",choices=("cuda","demucs","sheetsage","muscriptor"),required=True)
+    parser.add_argument("--model",choices=("cuda","beat_this","muscriptor"),required=True)
     parser.add_argument("--input",type=Path);parser.add_argument("--output",type=Path,required=True)
     args=parser.parse_args();os.environ.update(environment());out=args.output
     out.mkdir(parents=True,exist_ok=True)
@@ -130,7 +117,7 @@ def main() -> None:
                              "frames":info.frames,"sample_rate":info.samplerate,"seconds":info.duration}
         elif args.model!="cuda":raise ValueError("--input is required")
         if args.model!="cuda":
-            report["result"]={"demucs":separate,"sheetsage":analyze,"muscriptor":transcribe}[args.model](args.input,out)
+            report["result"]={"beat_this":track_beats,"muscriptor":transcribe}[args.model](args.input,out)
         torch.cuda.synchronize()
         report["cuda_peak_allocated_bytes"]=torch.cuda.max_memory_allocated()
         report["cuda_peak_reserved_bytes"]=torch.cuda.max_memory_reserved()

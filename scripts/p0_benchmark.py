@@ -16,14 +16,14 @@ from model_runtime import ROOT, environment, runtime_root
 def main() -> None:
     import psutil
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model",choices=("cuda","demucs","sheetsage","muscriptor"),required=True)
+    parser.add_argument("--model",choices=("cuda","beat_this","muscriptor"),required=True)
     parser.add_argument("--input",type=Path);parser.add_argument("--output",type=Path)
     parser.add_argument("--timeout",type=float,default=3600)
     args=parser.parse_args()
     if not math.isfinite(args.timeout) or args.timeout <= 0:parser.error("--timeout must be finite and positive")
     out=(args.output or runtime_root()/"benchmarks"/(args.model+"-"+uuid.uuid4().hex[:8])).resolve()
     out.mkdir(parents=True,exist_ok=False)
-    env_name="sheetsage" if args.model=="sheetsage" else "transcription"
+    env_name="transcription"
     python=runtime_root()/"envs"/env_name/"Scripts/python.exe"
     command=[str(python),str(ROOT/"scripts/p0_model_worker.py"),"--model",args.model,"--output",str(out)]
     if args.input:command += ["--input",str(args.input.resolve())]

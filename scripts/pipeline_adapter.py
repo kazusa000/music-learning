@@ -19,7 +19,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from music_learning import contracts as c  # noqa: E402
-from music_learning.musical import assemble_candidates, coverage, stable, raw_note_diagnostics  # noqa: E402
+from music_learning.musical import coverage, stable, raw_note_diagnostics  # noqa: E402
 from music_learning.settings import Settings  # noqa: E402
 from music_learning.storage import Storage, digest  # noqa: E402
 from music_learning.instruments import preset_spec, PRESET_FIELDS  # noqa: E402
@@ -116,9 +116,6 @@ class Adapter:
                 )
         if digest(self.settings.native_host) != self.args["fingerprint"]["native_host_sha256"]:
             raise ValueError("native host changed during preprocessing")
-        library_sha = self.args["fingerprint"].get("instrument_catalog_sha256")
-        if library_sha and digest(self.settings.instrument_library / "catalog.json") != library_sha:
-            raise ValueError("instrument catalog changed during preprocessing")
 
     def add(self, path, *, audio=False):
         path = path.resolve()
@@ -203,7 +200,7 @@ class Adapter:
         python = (
             self.settings.model_runtime
             / "envs"
-            / ("sheetsage" if model == "sheetsage" else "transcription")
+            / "transcription"
             / "Scripts/python.exe"
         )
         output = self.out / "model"
@@ -260,28 +257,17 @@ class Adapter:
                 self.add(file, audio=file.suffix.lower() == ".wav")
         return output, report
 
-    def demucs(self):
-        output, report = self.run_model("demucs")
-        stems = {s["name"]: s for s in report["result"]["stems"]}
-        if set(stems) != {"vocals", "drums", "bass", "other"}:
-            raise ValueError("missing or duplicate separated stems")
-        for name, item in stems.items():
-            if abs(
-                Fraction(item["frames"], item["sample_rate"]) - Fraction(self.frames, self.rate)
-            ) > Fraction(1, item["sample_rate"]):
-                raise ValueError("Demucs did not cover the whole source")
-            target = self.out / "stems" / (name + ".wav")
-            self.convert_audio(output / (name + ".wav"), target, self.rate, expected_frames=self.frames)
-            self.add(target, audio=True)
-            self.add_waveform(target, "stem-" + name)
-        self.summary = {
-            "stems": list(stems),
-            "covered_samples": self.frames,
-            "offset_samples": 0,
-            "settings": report["result"]["settings"],
-            "cuda": report["cuda"],
-            "elapsed_seconds": report["elapsed_seconds"],
-        }
+    def beat_this(self):
+        output, report = self.run_model("beat_this")
+        result = report["result"]
+        if abs(result["duration_seconds"] - self.duration) > 1 / self.rate:
+            raise ValueError("Beat This did not cover the complete source")
+        from music_learning.beat_grid import detected_timing
+        detected_timing(result, self.args["target_revision"], self.rate, self.frames,
+                        c.Provenance(origin="model", source_id=self.args["run_ids"]["beat_this"]))
+        self.summary = {"beats": len(result["beats"]), "downbeats": len(result["downbeats"]),
+                        "covered_samples": self.frames, "settings": result["settings"],
+                        "cuda": report["cuda"], "elapsed_seconds": report["elapsed_seconds"]}
 
     def muscriptor(self):
         output, report = self.run_model("muscriptor")
@@ -313,69 +299,17 @@ class Adapter:
             "elapsed_seconds": report["elapsed_seconds"],
         }
 
-    def sheetsage(self):
-        output, report = self.run_model("sheetsage")
-        result = report["result"]["model_result"]
-        coverage(result["windows"], self.duration)
-        events = json.loads((output / "analysis/events.json").read_text(encoding="utf-8"))
-        if not events["events"] or not events["has_eos"] or result["warnings"]:
-            raise ValueError("SheetSage incomplete or generation limit reached")
-        required = ("beat.lab", "chord.lab", "key.lab", "structure.lab")
-        if any(not (output / "analysis" / f).read_text(encoding="utf-8").strip() for f in required):
-            raise ValueError("missing full-song structure candidates")
-        self.summary = {
-            "windows": result["windows"],
-            "covered_samples": self.frames,
-            "events": result["events"],
-            "diagnostics": result["diagnostics"],
-            "warnings": result["warnings"],
-            "cuda": report["cuda"],
-            "elapsed_seconds": report["elapsed_seconds"],
-        }
-
     def assemble(self):
         if not self.settings.instrument_library:
             raise ValueError(
                 "Install and verify an instrument library before product preprocessing; diagnostic INIT mapping is not a production fallback"
             )
         normalized = self.input_json("muscriptor", "normalized-midi.json")
-        beats = [
-            [float(a), int(b), int(n), int(d)]
-            for a, b, n, d in (
-                line.split()
-                for line in self.input_file("sheetsage", "model/analysis/beat.lab").read_text().splitlines()
-                if line.strip()
-            )
-        ]
-        labels = {}
-        for kind, name in (("chord", "chord.lab"), ("key", "key.lab"), ("section", "structure.lab")):
-            labels[kind] = []
-            for line in (
-                self.input_file("sheetsage", "model/analysis/" + name)
-                .read_text(encoding="utf-8")
-                .splitlines()
-            ):
-                if line.strip():
-                    a, b, label = line.split(maxsplit=2)
-                    labels[kind].append((float(a), float(b), label))
-        stems = {
-            name: next(
-                f["sha256"]
-                for f in self.completed["demucs"]["files"]
-                if f["name"] == "stems/" + name + ".wav"
-            )
-            for name in ("vocals", "drums", "bass", "other")
-        }
-        snapshot, issues = assemble_candidates(
-            normalized,
-            stems,
-            beats,
-            labels,
-            namespace=self.args["target_revision"],
-            run_ids=self.args["run_ids"],
-            source_asset_id=self.source["id"],
-            sample_rate=self.rate,
-            duration_samples=self.frames,
+        from music_learning.beat_grid import assemble_transcription
+        snapshot, issues = assemble_transcription(
+            normalized, self.input_json("beat_this", "model/beats.json"),
+            namespace=self.args["target_revision"], run_ids=self.args["run_ids"],
+            source_asset_id=self.source["id"], sample_rate=self.rate, duration_samples=self.frames,
         )
         profile = self.args["fingerprint"]["profile"]
         mapping = load_drum_map(self.settings.model_runtime / profile["drum_map"])
@@ -390,14 +324,25 @@ class Adapter:
             self.add(target)
         instrument_assignments = None
         if self.settings.instrument_library:
-            from music_learning.instruments import materialize, voice_preset
+            from music_learning.instruments import materialize, choose
 
             instrument_assignments = {}
             for voice in normalized["tracks"]:
                 if not voice["notes"]:
                     continue
-                entry = voice_preset(self.settings, {**voice, "sample_rate": self.rate})
                 destination = self.out / "resources" / voice["id"]
+                entry, _ = choose(self.args["fingerprint"]["instrument_import_presets"],
+                    voice["program"], voice["is_drum"], [n["duration_samples"]/self.rate for n in voice["notes"]])
+                if entry and any(not entry["key_range"][0] <= n["note"] <= entry["key_range"][1] for n in voice["notes"]):
+                    entry = None
+                if entry is None:
+                    from music_learning.import_instruments import factory_assignment
+                    instrument_assignments[voice["id"]] = factory_assignment(
+                        voice, destination, profile, self.settings.model_runtime, mapping)
+                    for path in destination.rglob("*"):
+                        if path.is_file():
+                            self.add(path)
+                    continue
                 target = materialize(self.settings, entry, destination)
                 for path in destination.rglob("*"):
                     if path.is_file():
@@ -633,17 +578,37 @@ class Adapter:
             "timbre_note": self.args["fingerprint"]["profile"]["timbre_note"],
         }
 
+    def calibrate(self):
+        from music_learning.listening_calibration import measure, gains
+        snapshot = self.input_json("render", "full-snapshot.json")
+        ffmpeg = verify_tool("ffmpeg")
+        source = measure(self.input_file("normalize", "normalized.wav"), ffmpeg)
+        mix = measure(self.input_file("render", "mix.wav"), ffmpeg)
+        tracks = {}
+        for i, track in enumerate(snapshot["tracks"]):
+            tracks[track["id"]] = measure(self.input_file("render", "tracks/"+track["id"]+".wav"), ffmpeg)
+            progress = self.out / "progress.partial"
+            progress.write_text(json.dumps({"completed":i+1,"total":len(snapshot["tracks"])}))
+            os.replace(progress, self.out / "progress.json")
+        calibration = gains(source, mix, tracks)
+        calibration["source_asset_id"] = self.source["id"]
+        snapshot["listening_calibration"] = calibration
+        write_json(self.out / "full-snapshot.json", snapshot)
+        write_json(self.out / "listening-calibration.json", calibration)
+        self.add(self.out / "full-snapshot.json")
+        self.add(self.out / "listening-calibration.json")
+        self.summary = calibration
+
     def validate(self):
-        snapshot = c.Snapshot.model_validate(self.input_json("render", "full-snapshot.json"))
+        snapshot = c.Snapshot.model_validate(self.input_json("calibrate", "full-snapshot.json"))
         issues = list(self.completed["assemble"]["summary"]["issues"])
-        issues.extend(self.completed["sheetsage"]["summary"]["diagnostics"])
         mu = self.completed["muscriptor"]["summary"]
         if mu["raw_to_midi_note_difference"]:
             issues.append(
                 f"Raw MuScriptor NoteStart count differs from exported MIDI by {mu['raw_to_midi_note_difference']}; raw events retained."
             )
         issues.append(
-            "Model processing coverage does not establish note/chord accuracy; separation leakage may remain."
+            "Note timing and beat positions are stored separately; no automatic quantization."
         )
         expected_frames = self.frames + int(self.args["fingerprint"]["profile"]["tail_seconds"] * self.rate)
         renders = [f for f in self.completed["render"]["files"] if f["name"].endswith(".wav")]
@@ -659,10 +624,10 @@ class Adapter:
                 raise ValueError("render length/rate/layout differs from revision")
             if m["clipped_samples"] or m["rms"] <= 1e-8:
                 raise ValueError("clipped or silent reconstruction")
-        if len(snapshot.stems) != 4 or len(snapshot.tracks) != len(snapshot.plugins) or not snapshot.routing:
+        if snapshot.stems or len(snapshot.tracks) != len(snapshot.plugins) or not snapshot.routing:
             raise ValueError("incomplete editable snapshot")
         kinds = {a.kind for a in snapshot.annotations}
-        if not {"beat", "chord", "key", "section"} <= kinds:
+        if kinds != {"beat"} or not snapshot.timing_map:
             raise ValueError("missing required music candidates")
         for stage, manifest in self.completed.items():
             if not manifest.get("validated"):
@@ -678,7 +643,7 @@ class Adapter:
             "sample_rate": self.rate,
             "tracks": len(snapshot.tracks),
             "notes": len(snapshot.notes),
-            "stems": 4,
+            "stems": 0,
             "render_frames": expected_frames,
             "timing_map_available": snapshot.timing_map is not None,
             "issues": issues,

@@ -219,7 +219,7 @@ def to_project(
         tracks.append(
             {
                 "id": track["id"],
-                "gain_db": -20,
+                "gain_db": -12,
                 "notes": notes,
                 "controllers": track["controllers"],
                 "plugins": [plugin],

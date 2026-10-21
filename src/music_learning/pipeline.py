@@ -18,8 +18,8 @@ from .service import DomainError, canonical, emit, row
 from .settings import ROOT
 from .storage import digest
 
-STAGES = ("normalize", "demucs", "muscriptor", "sheetsage", "assemble", "render", "validate")
-MODEL_STAGES = ("demucs", "muscriptor", "sheetsage")
+STAGES = ("normalize", "beat_this", "muscriptor", "assemble", "render", "calibrate", "validate")
+MODEL_STAGES = ("beat_this", "muscriptor")
 
 
 def identifier(namespace, name):
@@ -149,7 +149,7 @@ def runtime_fingerprint(settings):
     if not host.is_file():
         raise DomainError("native_host_missing", "Build the pinned native VST3 host first", 422)
     packages = {}
-    for environment in ("transcription", "sheetsage"):
+    for environment in ("transcription",):
         python = settings.model_runtime / "envs" / environment / "Scripts/python.exe"
         if not python.is_file():
             raise DomainError("model_environment_missing", f"Missing isolated {environment} environment", 422)
@@ -189,12 +189,12 @@ def runtime_fingerprint(settings):
         *sorted((ROOT / "src/music_learning").glob("*.py")),
         ROOT / "scripts/pipeline_adapter.py",
         ROOT / "scripts/p0_model_worker.py",
+        ROOT / "scripts/stream_weights.py",
         ROOT / "scripts/midi_to_native.py",
         ROOT / "scripts/native_host.py",
         ROOT / "scripts/model_runtime.py",
         ROOT / "scripts/media_runtime.py",
         ROOT / "requirements-transcription.lock",
-        ROOT / "requirements-sheetsage.lock",
         ROOT / "config/model-dependencies.json",
         ROOT / "config/media-runtime.json",
     ]
@@ -205,11 +205,15 @@ def runtime_fingerprint(settings):
         "plugin_sha256": plugin_hashes,
         "drum_map_sha256": digest(drum_map),
         "resources": resources,
-        "instrument_catalog_sha256": digest(settings.instrument_library / "catalog.json")
-        if settings.instrument_library
-        else None,
+        "instrument_import_presets": import_presets(settings),
         "code": {str(path.relative_to(ROOT)): digest(path) for path in paths},
     }
+
+
+def import_presets(settings):
+    from .instruments import catalog
+    return [entry for entry in catalog(settings)
+            if entry.get("audio_verified") and (entry.get("default") or entry["id"]=="strings-staccato")]
 
 
 class PipelineRunner:
@@ -350,7 +354,7 @@ class PipelineRunner:
                     "fingerprint": fingerprint,
                     "inputs": {s: m for s, m in self.completed.items()},
                 }
-                if self.stage in ("assemble", "render", "validate"):
+                if self.stage in ("assemble", "render", "calibrate", "validate"):
                     cache_request.update(
                         target_revision=request["target_revision"], run_ids=request["run_ids"]
                     )
@@ -445,7 +449,7 @@ def publish_pipeline(service, db, job, result):
             service.storage.verify(artifact(stages, stage, name)["sha256"]).read_text(encoding="utf-8")
         )
 
-    bundle = load("render", "full-snapshot.json")
+    bundle = load("calibrate", "full-snapshot.json")
     report = load("validate", "completeness.json")
     if report.get("ready") is not True:
         raise ValueError("completeness gate rejected publication")
@@ -458,12 +462,10 @@ def publish_pipeline(service, db, job, result):
         or report.get("sample_rate") != snapshot.sample_rate
         or not snapshot.notes
         or not snapshot.routing
-        or len(snapshot.stems) != 4
+        or snapshot.stems
         or len(snapshot.plugins) != len(snapshot.tracks)
     ):
         raise ValueError("completeness report does not match the actual immutable snapshot")
-    if {stem.name for stem in snapshot.stems} != {"vocals", "drums", "bass", "other"}:
-        raise ValueError("incomplete full-song stems")
     if set(snapshot.analysis_run_ids) != set(job["payload"]["run_ids"].values()):
         raise ValueError("analysis provenance does not match this execution")
     required = {
@@ -478,7 +480,7 @@ def publish_pipeline(service, db, job, result):
     models = json.loads((ROOT / "config/model-dependencies.json").read_text(encoding="utf-8"))["models"]
     for name in MODEL_STAGES:
         raw_files = [x["sha256"] for x in stages[name]["files"]]
-        specs = [models[name]] + ([models["mert"]] if name == "sheetsage" else [])
+        specs = [models[name]]
         run = c.AnalysisRun(
             id=job["payload"]["run_ids"][name],
             input_asset_id=job["payload"]["source_asset_id"],

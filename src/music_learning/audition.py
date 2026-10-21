@@ -23,18 +23,6 @@ def dispatch(service, db, op, args, request):
             from .application_settings import defaults
 
             state = state.model_copy(update={"level_match": defaults(db)["preferences"]["level_match"]})
-        if state.mode == "hybrid":
-            if not state.hybrid_job_id:
-                raise ValueError("hybrid audition requires a specific completed job")
-            job = row(db, v1.jobs, "id", state.hybrid_job_id)
-            if (
-                job["project_id"] != args.project_id
-                or job["revision_id"] != state.revision_id
-                or job["status"] != "succeeded"
-                or job["kind"] != "project.export"
-                or job["payload"].get("format") != "hybrid"
-            ):
-                raise ValueError("hybrid audio does not belong to this revision or is not complete")
         if state.mode == "reference":
             if not state.reference_revision_id:
                 raise ValueError("reference mode requires a specific revision")

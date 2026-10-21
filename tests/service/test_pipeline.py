@@ -10,7 +10,7 @@ from sqlalchemy import insert, update
 from music_learning import contracts as c
 from music_learning import schema_v1 as t
 from music_learning.database import Database
-from music_learning.musical import candidate_timing, coverage, assemble_candidates, raw_note_diagnostics
+from music_learning.musical import candidate_timing, coverage, raw_note_diagnostics
 from music_learning.pipeline import PipelineRunner, STAGES
 from music_learning.service import DomainError, Service, canonical
 from music_learning.settings import ROOT
@@ -157,42 +157,6 @@ def test_candidate_timing_handles_pickup_meter_and_flagged_end_projection():
         )
 
 
-def test_candidate_assembly_keeps_sample_timing_and_ambiguous_grid_visible():
-    rows = beat_rows()
-    rows[3][1] = 4
-    normalized = {
-        "tracks": [
-            dict(
-                id="raw-voice",
-                program=0,
-                is_drum=False,
-                notes=[
-                    dict(
-                        id="raw-note", sample=23001, duration_samples=50000, note=60, velocity=0.8, channel=1
-                    )
-                ],
-                controllers=[],
-            )
-        ]
-    }
-    snapshot, issues = assemble_candidates(
-        normalized,
-        {n: "a" * 64 for n in ["vocals", "drums", "bass", "other"]},
-        rows,
-        {"chord": [(0, 5, "C:maj")], "section": [(0, 5, "intro")], "key": [(0, 5, "C:major")]},
-        namespace=c.new_id(),
-        run_ids={name: c.new_id() for name in ["muscriptor", "sheetsage", "demucs"]},
-        source_asset_id="b" * 64,
-        sample_rate=48000,
-        duration_samples=240000,
-    )
-    assert snapshot.timing_map is None
-    assert snapshot.notes[0].start_sample == 23001 and snapshot.notes[0].end_sample == 73001
-    assert all(a.provenance.review == "unreviewed" for a in snapshot.annotations)
-    assert any("Timing map unavailable" in i for i in issues)
-    assert len(snapshot.stems) == 4
-
-
 def test_atomic_import_queues_pipeline_once_and_cancel_retry_retains_target(service, project, upload):
     args = {
         "project_id": project["id"],
@@ -303,7 +267,7 @@ def test_partial_failure_retries_reuse_validated_checkpoints_and_reject_late_wri
     assert invoke(service, "jobs.get", {"job_id": first["id"]})["error"]["code"] == fault
     retry = invoke(service, "jobs.retry", {"job_id": first["id"]}, project["current_revision"])
     Worker(service.database).run_once()
-    assert calls == ["normalize", "demucs", "muscriptor", "muscriptor"]
+    assert calls == ["normalize", "beat_this", "muscriptor", "muscriptor"]
     saved = invoke(service, "jobs.stages", {"job_id": retry["id"]})
     assert saved[0]["cache_hit"] and saved[1]["cache_hit"]
     assert saved[2]["status"] == "failed"

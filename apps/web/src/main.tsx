@@ -6,11 +6,13 @@ import {createRoot} from 'react-dom/client';
 import type {CSSProperties} from 'react';
 import {PanelResize,usePanelSize} from './PanelResize';
 import type {Project, Job, Revision, StageRecord, PreprocessingView, PreprocessingResult, PlaybackPlan} from '../../../packages/contracts/types';
-import {call, connect, result} from './api';
+import {call, connect} from './api';
 import {Workbench} from './Workbench';
 import {publishDomain} from './events';
 import {AudioPreview} from './AudioPreview';
 import {Icon} from './Icon';
+import {ImportProgress} from './ImportProgress';
+import {listeningCalibration} from './listeningCalibration';
 import {WindowControls,dragWindow} from './WindowChrome';
 import {useStudioMouse} from './useStudioMouse';
 
@@ -19,7 +21,7 @@ const statuses: Record<string, string> = {queued: '排队中', running: '正在�
   cancelled: '已取消', succeeded: '已完成', failed: '处理失败'};
 const kinds: Record<string, string> = {'asset.import': '原曲导入与检查', 'plugin.inspect': '读取插件状态', 'plugin.scan': '扫描插件', 'project.preprocess': '整曲预处理', 'project.render':'导出混音', 'audio.measure':'音频测量', 'instrument.capture':'准备音色', 'project.export':'导出指定版本', 'application.backup':'完整工程备份', 'application.restore':'恢复到独立目录', 'application.diagnose':'本机环境诊断'};
 const projectStatuses: Record<string, string> = {empty:'等待导入', imported:'原曲已保存', queued:'等待整曲处理', processing:'整曲处理中', ready:'可编辑 · 可试听', failed:'处理失败', cancelled:'处理已取消'};
-const stageNames: Record<string, string> = {normalize:'音频规范化', demucs:'音频分轨', muscriptor:'多声部转录', sheetsage:'节拍与和声结构', assemble:'事件对齐', render:'VST3 整曲与逐轨重建', validate:'完整性检查'};
+const stageNames: Record<string, string> = {normalize:'音频规范化', beat_this:'速度与小节网格', muscriptor:'多乐器音符转录', assemble:'事件对齐', render:'VST3 整曲与逐轨重建', calibrate:'校准试听响度', validate:'完整性检查'};
 
 
 function App() {
@@ -35,6 +37,7 @@ function App() {
   const [error, setError] = useState('');
   const [refreshError,setRefreshError]=useState('');
   const [busy, setBusy] = useState(false);
+  const [uploadProgress,setUploadProgress]=useState<number|null>(null);
   const [connected, setConnected] = useState(false);
   const [publication, setPublication] = useState<PreprocessingResult | null>(null);
   const [playbackReady,setPlaybackReady]=useState(false);
@@ -119,15 +122,22 @@ function App() {
   }, [refresh]);
 
   async function importFile(file: File) {
-    setBusy(true); setError('');
+    setBusy(true); setError('');setUploadProgress(0);
     try {
       const created = await call<Project>('projects.create', {title: file.name.replace(/\.[^.]+$/, ''), kind: 'research'}, undefined, true);
       selectProject(created.id);
-      const upload = await result<{upload_id: string}>(await fetch('/v1/uploads', {method: 'PUT', body: file,
-        headers: {'Content-Type': 'application/octet-stream', 'Idempotency-Key': crypto.randomUUID()}}));
+      const upload = await new Promise<{upload_id:string}>((resolve,reject)=>{
+        const xhr=new XMLHttpRequest();xhr.open('PUT','/v1/uploads');
+        xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('Idempotency-Key',crypto.randomUUID());
+        xhr.upload.onprogress=event=>{if(event.lengthComputable)setUploadProgress(Math.round(event.loaded/event.total*100));};
+        xhr.onerror=()=>reject(new Error('音频上传中断，请重试。'));
+        xhr.onload=()=>{try{const data=JSON.parse(xhr.responseText);if(xhr.status>=200&&xhr.status<300&&data.ok)resolve(data.result);else reject(new Error(data.error?.message??'音频上传失败'));}catch{reject(new Error('无法读取上传结果'));}};
+        xhr.send(file);
+      });
+      setUploadProgress(null);
       await call('jobs.submit', {project_id: created.id, kind: 'asset.import', payload: {upload_id: upload.upload_id, preprocess:true}}, created.current_revision, true);
       await refresh();
-    } catch (e) {setError((e as Error).message);} finally {setBusy(false);}
+    } catch (e) {setError((e as Error).message);} finally {setBusy(false);setUploadProgress(null);}
   }
 
   async function cancel(job: Job) {
@@ -157,7 +167,7 @@ function App() {
     {(error||refreshError) && <div role="alert">{error||refreshError}<button onClick={() => {setError('');setRefreshError('');}} aria-label="关闭提示">×</button></div>}
     {settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh}
       onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
-      <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? '正在导入…' : '选择音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
+      <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? `上传音频 ${uploadProgress??100}%` : '选择音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
           disabled={busy} onChange={e => {const file = e.target.files?.[0]; if (file) void importFile(file); e.target.value = '';}}/></label>
       <div className="list-title">歌曲 <span>{projects.length}</span></div><label className="archive-toggle"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/>显示归档工程</label>
       <nav aria-label="工程列表">{projects.map(p => <button key={p.id} aria-pressed={selected === p.id} onClick={() => {
@@ -172,12 +182,13 @@ function App() {
           <div><span>原曲长度</span><b>{revision?.snapshot.duration_samples ? (revision.snapshot.duration_samples / (revision.snapshot.sample_rate ?? 44100)).toFixed(1) + ' 秒' : '—'}</b></div></div>
         {revision?.snapshot.source_asset_id && <section className="original"><h3>原曲试听</h3>
           <AudioPreview key={'source-'+revision.id} label="原曲试听" assetId={revision.snapshot.source_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial={!publication} onSelect={a=>{homeAudio.current=a;}}/>
-          {publication&&<><h3>重建试听</h3><AudioPreview key={'mix-'+publication.mix_asset_id} label="重建试听" assetId={publication.mix_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial onSelect={a=>{homeAudio.current=a;}}/></>}
+          {publication&&<><h3>重建试听</h3><AudioPreview key={'mix-'+publication.mix_asset_id} label="重建试听" gainDb={listeningCalibration(revision.snapshot.listening_calibration)?.mix_gain_db??0} assetId={publication.mix_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial onSelect={a=>{homeAudio.current=a;}}/></>}
           <p className="muted">{publication ? '已可播放重建、独奏声部、编辑音符和与 AI 讨论。' : playbackReady?'工程已可试听，打开工程继续编曲。':'正在准备可编辑的音乐工程。'}</p>
           {(publication || (revision.snapshot.tracks?.length ?? 0)>0) && <button className="primary-button" onClick={() => {setWorkspace(true); history.replaceState(null,'',`/?project=${project.id}&view=workbench`);}}><span>打开工程</span><Icon name="arrow" size={15}/></button>}
           {!publication && !(revision.snapshot.tracks?.length??0) && !jobs.some(j => j.kind === 'project.preprocess' && ['queued','running','cancel_requested'].includes(j.status)) &&
             <button className="primary-button" onClick={() => void startPreprocessing()}>开始整曲分析</button>}
         </section>}
+        {jobs.filter(j=>j.kind==='project.preprocess').sort((a,b)=>b.created_at-a.created_at).slice(0,1).map(job=><ImportProgress key={job.id} job={job} stages={stages[job.id]??[]} onCancel={()=>void cancel(job)}/>)}
         <details className="tasks"><summary>处理记录 · {jobs.length}</summary>
           {!jobs.length && <p className="muted">暂无任务。</p>}
           {jobs.map(job => <div className="task" key={job.id} data-job-id={job.id} data-status={job.status}>

@@ -163,7 +163,7 @@ def analyze(service, db):
             ).scalar()
             if initial:
                 owned.update(refs(initial, known))
-            for format in ("wav", "midi", "hybrid"):
+            for format in ("wav", "midi"):
                 jobs = db.execute(
                     select(t.jobs)
                     .where(

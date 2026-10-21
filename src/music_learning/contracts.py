@@ -274,6 +274,7 @@ class ControlEvent(Model):
 
 
 class Snapshot(Model):
+    listening_calibration: dict | None = None
     schema_version: Literal[1] = 1
     sample_rate: int = Field(default=44100, ge=8000, le=192000)
     duration_samples: Sample = 0
@@ -894,7 +895,7 @@ class MeasurePayload(Model):
 
 class ExportPayload(Model):
     revision_id: Id | None = None
-    format: Literal["midi", "wav", "hybrid"]
+    format: Literal["midi", "wav"]
     render_job_id: Id | None = None
     replacement_track_id: Id | None = None
     start_sample: Sample = 0
@@ -908,8 +909,7 @@ class AuditionState(Model):
     revision_id: Id
     level_match: bool = True
     position_sample: Sample = 0
-    mode: Literal["original", "mix", "tracks", "reference", "hybrid"] = "original"
-    hybrid_job_id: Id | None = None
+    mode: Literal["original", "mix", "tracks", "reference"] = "original"
     reference_revision_id: Id | None = None
     track_ids: list[Id] = Field(default_factory=list)
     loop_start_sample: Sample = 0
@@ -1149,6 +1149,7 @@ OPERATIONS = {
     "application.settings.set": (UpdateApplicationSettings, True),
     "projects.list": (ProjectList, False),
     "projects.organize": (OrganizeProject, True),
+    "projects.delete": (ProjectRef, True),
     "projects.create": (CreateProject, True),
     "projects.get": (ProjectRef, False),
     "projects.rename": (RenameProject, True),
@@ -1228,6 +1229,7 @@ RESULT_TYPES = {
     "application.settings.set": dict,
     "projects.list": list[Project],
     "projects.organize": Project,
+    "projects.delete": dict,
     "projects.create": Project,
     "projects.get": Project,
     "projects.rename": Project,
