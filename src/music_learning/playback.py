@@ -51,6 +51,37 @@ def retarget(service, db, before, updated, request, *, mixer=False):
 MIX_FIELDS = {"gain_db", "pan", "mute", "solo", "name", "order", "provenance"}
 
 
+def wav_extent(path):
+    """Read the bounded RIFF header of verified native PCM/float output."""
+    import struct
+    with path.open("rb") as stream:
+        header = stream.read(12)
+        if len(header)!=12 or header[:4]!=b"RIFF" or header[8:]!=b"WAVE":
+            raise ValueError("Unsupported native WAV header")
+        layout = None
+        for _ in range(64):
+            chunk = stream.read(8)
+            if len(chunk)!=8:
+                break
+            name,size = struct.unpack("<4sI",chunk)
+            if name==b"fmt ":
+                if not 16<=size<=1024**2:
+                    raise ValueError("Invalid WAV layout chunk")
+                values=struct.unpack("<HHIIHH",stream.read(16))
+                if values[0] not in (1,3,65534) or not values[4]:
+                    raise ValueError("Unsupported WAV encoding")
+                layout=(values[2],values[4])
+                stream.seek(size-16+(size%2),1)
+            elif name==b"data" and layout:
+                rate,alignment=layout
+                if size%alignment or stream.tell()+size>path.stat().st_size:
+                    raise ValueError("Truncated WAV sample data")
+                return rate,size//alignment
+            else:
+                stream.seek(size+(size%2),1)
+    raise ValueError("No native WAV audio chunk")
+
+
 def independent(snapshot):
     if any(t["kind"] == "bus" for t in snapshot["tracks"]):
         return False
@@ -183,12 +214,21 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
         else {}
     )
     for source_revision, rendered in publications(db, revision):
+        derived_tail = rendered.get("tail_samples")
         routing_current = False
         if routing_sha and rendered.get("report_asset_id"):
             try:
                 report = json.loads(service.storage.verify(rendered["report_asset_id"]).read_bytes())
                 routing_current = report.get("implementation_sha256", {}).get(routing_path) == routing_sha
             except (ValueError, OSError):
+                pass
+        if routing_sha and not routing_current and rendered.get("manifest_asset_id"):
+            try:
+                manifest = json.loads(service.storage.verify(rendered["manifest_asset_id"]).read_bytes())
+                code = {key.replace("\\", "/"):value for key,value in manifest["fingerprint"]["code"].items()}
+                summary = manifest["stages"]["render"]["summary"]
+                routing_current = ("playback_channel_routing" in summary and code.get(routing_path)==routing_sha)
+            except (ValueError, OSError, KeyError):
                 pass
         if host_sha:
             report_id = rendered.get("report_asset_id")
@@ -208,7 +248,7 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
             not independent(old)
             or rendered.get("start_sample", 0) != 0
             or rendered.get("end_sample", old["duration_samples"]) != snapshot["duration_samples"]
-            or (tail_samples is not None and rendered.get("tail_samples") != tail_samples)
+            or (tail_samples is not None and derived_tail is not None and derived_tail != tail_samples)
         ):
             continue
         for track in old["tracks"]:
@@ -244,13 +284,22 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
             for sha in required - verified:
                 service._asset(db, sha, revision["project_id"])
                 verified.add(sha)
+            if derived_tail is None:
+                # Initial preprocessing publications predate the Render tail
+                # field. Derive it from the verified audio, never a guessed 2s.
+                rate,frames = wav_extent(service.storage.object_path(rendered["mix_asset_id"]))
+                if rate != snapshot["sample_rate"] or frames < old["duration_samples"]:
+                    raise ValueError("Published audio does not cover this source timeline")
+                derived_tail = frames-old["duration_samples"]
+            if tail_samples is not None and derived_tail != tail_samples:
+                continue
             found[id] = dict(
                 asset_id=asset,
                 source_revision_id=source_revision["id"],
                 baked_gain_db=track.get("gain_db", 0),
                 baked_pan=track.get("pan", 0),
                 mix_asset_id=rendered["mix_asset_id"],
-                tail_samples=rendered["tail_samples"],
+                tail_samples=derived_tail,
             )
         if len(found) == len(signatures):
             break

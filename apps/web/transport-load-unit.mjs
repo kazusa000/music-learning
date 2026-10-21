@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import ts from 'typescript';
 let source=await readFile(new URL('./src/transport.ts',import.meta.url),'utf8');
-for(const name of ['api','listeningLevel','liveMix'])source=source.replace(`'./${name}'`,JSON.stringify(new URL('./src/'+name+'.ts',import.meta.url).href));
+for(const name of ['api','listeningCalibration','listeningLevel','liveMix'])source=source.replace(`'./${name}'`,JSON.stringify(new URL('./src/'+name+'.ts',import.meta.url).href));
 const {Transport}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText).toString('base64'));
 const calls=[];let statuses=0;
 globalThis.fetch=async(_url,options)=>{const command=JSON.parse(options.body);calls.push(command);const op=command.operation;

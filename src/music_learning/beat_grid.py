@@ -16,7 +16,7 @@ def coherent_grid(result):
     downbeats = result["downbeats"]
     if len(beats) < 3 or len(downbeats) < 2:
         return result
-    if any(not math.isfinite(x) for x in beats + downbeats) or any(a >= b for a, b in zip(beats, beats[1:])):
+    if any(not math.isfinite(x) for x in beats + downbeats) or any(a >= b for a, b in zip(beats, beats[1:])) or any(a>=b for a,b in zip(downbeats,downbeats[1:])):
         raise ValueError("Non-finite or unordered detections")
     period = median(b-a for a,b in zip(beats, beats[1:]))
     bars = []

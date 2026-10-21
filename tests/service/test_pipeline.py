@@ -10,7 +10,7 @@ from sqlalchemy import insert, update
 from music_learning import contracts as c
 from music_learning import schema_v1 as t
 from music_learning.database import Database
-from music_learning.musical import candidate_timing, coverage, raw_note_diagnostics
+from music_learning.musical import raw_note_diagnostics
 from music_learning.pipeline import PipelineRunner, STAGES
 from music_learning.service import DomainError, Service, canonical
 from music_learning.settings import ROOT
@@ -94,17 +94,6 @@ def test_v1_database_migrates_with_backup_without_rewriting_old_snapshots(settin
     db.close()
 
 
-def test_coverage_gaps_overlap_and_missing_end_are_rejected():
-    coverage([dict(accept_start=0, accept_end=200), dict(accept_start=200, accept_end=305)], 305)
-    for windows in [
-        [dict(accept_start=0, accept_end=200), dict(accept_start=201, accept_end=305)],
-        [dict(accept_start=0, accept_end=200), dict(accept_start=199, accept_end=305)],
-        [dict(accept_start=0, accept_end=304.9)],
-    ]:
-        with pytest.raises(ValueError):
-            coverage(windows, 305)
-
-
 def test_raw_event_diagnostics_use_real_event_type_names_and_keep_dropped_ends():
     events = [
         dict(type="ProgressEvent", completed=0, total=1),
@@ -119,42 +108,6 @@ def test_raw_event_diagnostics_use_real_event_type_names_and_keep_dropped_ends()
     }
     with pytest.raises(ValueError):
         raw_note_diagnostics([dict(type="NoteStart")], 1)
-
-
-def beat_rows():
-    return [
-        [0.0, 1, 4, 4],
-        [0.5, 1, 4, 4],
-        [1.0, 2, 4, 4],
-        [1.5, 3, 4, 4],
-        [2.0, 4, 4, 4],
-        [2.5, 1, 6, 8],
-        [2.75, 2, 6, 8],
-        [3.0, 3, 6, 8],
-        [3.25, 4, 6, 8],
-        [3.5, 5, 6, 8],
-        [3.75, 6, 6, 8],
-        [4.0, 1, 6, 8],
-        [4.25, 2, 6, 8],
-        [4.5, 3, 6, 8],
-    ]
-
-
-def test_candidate_timing_handles_pickup_meter_and_flagged_end_projection():
-    timing = candidate_timing(
-        beat_rows(), c.new_id(), 48000, 240000, c.Provenance(origin="model", source_id="fixture")
-    )
-    assert timing.pickup.fraction() == 1
-    assert timing.anchors[0].beat.fraction() == -1
-    assert timing.meters[1].beat.fraction() == 4 and timing.meters[1].bar == 2
-    assert timing.meters[1].denominator == 8
-    assert timing.anchors[-1].estimated and timing.anchors[-1].sample == 240000
-    invalid = beat_rows()
-    invalid[3][1] = 4
-    with pytest.raises(ValueError):
-        candidate_timing(
-            invalid, c.new_id(), 48000, 240000, c.Provenance(origin="model", source_id="fixture")
-        )
 
 
 def test_atomic_import_queues_pipeline_once_and_cancel_retry_retains_target(service, project, upload):

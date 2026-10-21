@@ -24,6 +24,23 @@ def test_empty_track_does_not_start_a_native_audio_session(service,project):
     assert rev['snapshot']['tracks'][0]['id']==empty.id
 
 
+def test_initial_preprocessing_without_render_tail_opens_and_derives_real_duration(service,project):
+    from music_learning import schema_v2 as p2
+    from sqlalchemy import delete, select
+    revision=base(service,project)
+    publication=publish_fixture(service,project,revision)
+    publication.pop("tail_samples")
+    with service.database.transaction() as db:
+        db.execute(delete(v3.renders).where(v3.renders.c.job_id==publication["job_id"]))
+        db.execute(insert(p2.preprocessing).values(revision_id=revision["id"],project_id=project["id"],
+            job_id=publication["job_id"],payload=publication))
+    plan=invoke(service,"playback.get",dict(project_id=project["id"]))
+    assert plan["available"] and not plan["pending_track_ids"]
+    assert {track["tail_samples"] for track in plan["tracks"].values()}=={0}
+    with service.database.engine.connect() as db:
+        assert db.execute(select(p2.preprocessing.c.payload)).scalar()==publication
+
+
 def commit(service, project, snapshot, head):
     return invoke(
         service,

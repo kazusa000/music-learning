@@ -29,6 +29,14 @@ try{
   await page.reload();await progress.waitFor({timeout:30000});
   assert.equal(errors.length,0,errors.join('\n'));
   results.push({viewport,dpr:await page.evaluate(()=>devicePixelRatio),progress:value,refreshRestored:true,errors});
+  await page.getByRole('button',{name:'打开工程',exact:true}).click();
+  await page.locator('.studio').waitFor();
+  await page.getByRole('spinbutton',{name:'音轨音量数值 1',exact:true}).focus();
+  const geometry=await page.locator('.track-panel').evaluate(panel=>({width:panel.clientWidth,content:panel.scrollWidth,left:panel.scrollLeft}));
+  assert(geometry.content<=geometry.width+1&&geometry.left===0,JSON.stringify(geometry));
+  results.at(-1).trackPanel=geometry;
+  await page.locator('.studio-song-title').click();
+  await page.screenshot({path:path.join(root,`workbench-layout-${viewport.width}.png`)});
   await context.close();
  }
  await writeFile(path.join(root,'import-browser.json'),JSON.stringify(results,null,2));

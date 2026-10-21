@@ -93,7 +93,8 @@ def transcribe(audio: Path, out: Path) -> dict:
     # Preserve performed timing. Beat tracking is an independent stage here;
     # do not silently download a second unpinned beat model or quantize notes.
     (out/"transcription.mid").write_bytes(model.events_to_midi_bytes(events(),beat_grid=None))
-    if completed != total or total == 0:raise ValueError("Incomplete transcription chunks")
+    if completed != total or total == 0:
+        raise ValueError("Incomplete transcription chunks")
     return {"completed_chunks":completed,"total_chunks":total,
             "settings":{"model":"large","prelude_forcing":True,"batch_size":1,
                         "beat_detection":False,"quantization":False}}
@@ -102,10 +103,14 @@ def transcribe(audio: Path, out: Path) -> dict:
 def main() -> None:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model",choices=("cuda","beat_this","muscriptor"),required=True)
-    parser.add_argument("--input",type=Path);parser.add_argument("--output",type=Path,required=True)
-    args=parser.parse_args();os.environ.update(environment());out=args.output
+    parser.add_argument("--input",type=Path)
+    parser.add_argument("--output",type=Path,required=True)
+    args=parser.parse_args()
+    os.environ.update(environment())
+    out=args.output
     out.mkdir(parents=True,exist_ok=True)
-    started=time.monotonic();report={"schema_version":1,"model":args.model,"status":"failed"}
+    started=time.monotonic()
+    report={"schema_version":1,"model":args.model,"status":"failed"}
     try:
         report["cuda"]=cuda_probe()
         import torch
@@ -115,7 +120,8 @@ def main() -> None:
             info=sf.info(args.input)
             report["input"]={"path":str(args.input.resolve()),"sha256":digest(args.input),
                              "frames":info.frames,"sample_rate":info.samplerate,"seconds":info.duration}
-        elif args.model!="cuda":raise ValueError("--input is required")
+        elif args.model!="cuda":
+            raise ValueError("--input is required")
         if args.model!="cuda":
             report["result"]={"beat_this":track_beats,"muscriptor":transcribe}[args.model](args.input,out)
         torch.cuda.synchronize()
@@ -134,4 +140,5 @@ def main() -> None:
     raise SystemExit(0 if report["status"]=="completed" else 1)
 
 
-if __name__=="__main__":main()
+if __name__=="__main__":
+    main()

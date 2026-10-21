@@ -103,14 +103,10 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
       track_id:turn?.context.track_id??(scope==='whole'?null:trackId),source_turn_id:turn?.id??null,state:'draft'},headId,true);
     if(!turn)setText('');await refresh();setShowNotes(true);
   }catch(e){setError((e as Error).message);}}
-  async function exportVersion(turn:DialogueTurn,format:'midi'|'wav'|'hybrid'){
+  async function exportVersion(turn:DialogueTurn,format:'midi'|'wav'){
     const receipt=turn.context.arrangement as {revision_id:string;render_job_id:string}|undefined;
     if(!receipt)return;try{
-      const scope=turn.context.edit_scope as {track_ids:string[];start_sample:number;end_sample:number};
-      const bass=revision.snapshot.tracks?.find(t=>scope.track_ids.includes(t.id)&&(t.role==='bass'||t.instrument_candidates?.includes('GM:33')));
-      if(format==='hybrid'&&!bass)throw new Error('该次修改未授权一个可识别的贝斯声部。');
-      await call('jobs.submit',{project_id:revision.project_id,kind:'project.export',payload:{revision_id:receipt.revision_id,format,render_job_id:receipt.render_job_id,
-        ...(format==='hybrid'?{replacement_track_id:bass!.id,start_sample:scope.start_sample,end_sample:scope.end_sample}:{} )}},headId,true);
+      await call('jobs.submit',{project_id:revision.project_id,kind:'project.export',payload:{revision_id:receipt.revision_id,format,render_job_id:receipt.render_job_id}},headId,true);
       setError('导出任务已保存，完成后可下载或试听。');
     }catch(e){setError((e as Error).message);}
   }

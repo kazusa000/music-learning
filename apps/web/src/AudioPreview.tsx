@@ -5,7 +5,7 @@ const time=(n:number)=>`${Math.floor(n/60)}:${Math.floor(n%60).toString().padSta
 export function AudioPreview({label,assetId,duration,onSelect,initial=false,gainDb=0}:{label:string;assetId:string;duration:number;onSelect:(audio:HTMLAudioElement)=>void;initial?:boolean;gainDb?:number}){
   const graph=useRef<{context:AudioContext;gain:GainNode}|null>(null);
   useEffect(()=>()=>{void graph.current?.context.close();},[]);
-  const activate=async()=>{if(!audio.current)return;if(!graph.current){const context=new AudioContext();const source=context.createMediaElementSource(audio.current),gain=context.createGain(),limiter=peakLimiter(context);source.connect(gain);gain.connect(limiter);limiter.connect(context.destination);graph.current={context,gain};}graph.current.gain.gain.value=10**(gainDb/20);await graph.current.context.resume();};
+  const activate=async()=>{if(!audio.current)return;if(!graph.current){const context=new AudioContext();const source=context.createMediaElementSource(audio.current),gain=context.createGain(),limiter=peakLimiter(context);source.connect(gain);gain.connect(limiter.input);limiter.output.connect(context.destination);graph.current={context,gain};}graph.current.gain.gain.value=10**(gainDb/20);await graph.current.context.resume();};
   const audio=useRef<HTMLAudioElement>(null),[playing,setPlaying]=useState(false),[position,setPosition]=useState(0),[length,setLength]=useState(duration),[error,setError]=useState('');
   useEffect(()=>{if(initial&&audio.current)onSelect(audio.current);},[initial,assetId]);
   useEffect(()=>{const element=audio.current;return()=>element?.pause();},[assetId]);

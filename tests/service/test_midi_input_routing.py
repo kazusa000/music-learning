@@ -58,11 +58,27 @@ def test_custom_multi_and_multi_channel_tracks_are_not_collapsed(monkeypatch):
 def test_omni_unknown_plugins_and_bypass_keep_original_channels(monkeypatch):
     snapshot, descriptors, resources = setup(monkeypatch, channel=16)
     assert midi_input.instrument_channel(snapshot.plugins, descriptors, resources, [5]) is None
+
     snapshot, descriptors, resources = setup(monkeypatch)
     descriptors[snapshot.plugins[0].id]['name'] = 'Other synth'
     assert midi_input.instrument_channel(snapshot.plugins, descriptors, resources, [5]) is None
     snapshot.plugins[0].bypass = True
     assert midi_input.instrument_channel(snapshot.plugins, descriptors, resources, [5]) is None
+
+
+def test_import_path_uses_captured_single_part_route_without_modifying_score(monkeypatch):
+    from music_learning.import_instruments import prepare_channels
+    snapshot, descriptors, _ = setup(monkeypatch, channel=2)
+    score = snapshot.model_dump()
+    descriptor = dict(next(iter(descriptors.values())),state_base64="fixture")
+    host = SimpleNamespace(call=lambda request,timeout:{"plugin":descriptor})
+    native = {"tracks":[dict(id=snapshot.tracks[0].id,plugins=[{}],
+        notes=[dict(channel=5)],controllers=[dict(channel=5)])]}
+    route = prepare_channels(native,[dict(expected_keyscape=True)],host,1)
+    assert native["tracks"][0]["notes"][0]["channel"] == 3
+    assert native["tracks"][0]["controllers"][0]["channel"] == 3
+    assert route[snapshot.tracks[0].id]["source_channels"] == [5]
+    assert snapshot.model_dump() == score
 
 
 def test_live_note_patches_keep_routing_and_recompile_channel_layout_changes(monkeypatch):
@@ -107,3 +123,28 @@ def test_old_keyscape_audio_is_invalidated_without_discarding_other_tracks(monke
     key = 'src/music_learning/midi_input.py'
     report.write_text(json.dumps(dict(implementation_sha256={key:digest(ROOT/key)})))
     assert set(playback.sources(service,registered,revision)) == {piano,other.id}
+
+
+def test_initial_manifest_only_reuses_keyscape_with_matching_shared_route_proof(monkeypatch, tmp_path):
+    from music_learning import playback
+    from music_learning.settings import ROOT
+    from music_learning.storage import digest
+
+    snapshot, _, _ = setup(monkeypatch)
+    snapshot.plugins[0].class_id = CLASS_ID
+    piano = snapshot.tracks[0].id
+    revision = dict(id=c.new_id(), snapshot=snapshot.model_dump(), project_id=c.new_id())
+    report, manifest = tmp_path/'report.json', tmp_path/'manifest.json'
+    report.write_text('{}')
+    publication = dict(track_renders={piano:'a'*64},mix_asset_id='b'*64,
+                       report_asset_id='c'*64,manifest_asset_id='d'*64,tail_samples=0)
+    monkeypatch.setattr(playback, 'publications', lambda *_: [(revision,publication)])
+    service = SimpleNamespace(storage=SimpleNamespace(verify=lambda id:manifest if id=='d'*64 else report,
+                              object_path=lambda _:report), _asset=lambda *_:None)
+    registered = SimpleNamespace(execute=lambda _:SimpleNamespace(scalars=lambda:iter(['a'*64,'b'*64])))
+    key = 'src/music_learning/midi_input.py'
+    for sha, summary, expected in [(digest(ROOT/key),{},False),('0'*64,{'playback_channel_routing':{}},False),
+                                  (digest(ROOT/key),{'playback_channel_routing':{}},True)]:
+        manifest.write_text(json.dumps(dict(fingerprint={'code':{key.replace('/','\\'):sha}},
+                                            stages={'render':{'summary':summary}})))
+        assert (piano in playback.sources(service,registered,revision)) is expected

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import base64
 import copy
-from fractions import Fraction
 import json
 import os
 from pathlib import Path
@@ -19,7 +18,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from music_learning import contracts as c  # noqa: E402
-from music_learning.musical import coverage, stable, raw_note_diagnostics  # noqa: E402
+from music_learning.musical import stable, raw_note_diagnostics  # noqa: E402
 from music_learning.settings import Settings  # noqa: E402
 from music_learning.storage import Storage, digest  # noqa: E402
 from music_learning.instruments import preset_spec, PRESET_FIELDS  # noqa: E402
@@ -149,6 +148,11 @@ class Adapter:
 
     def input_json(self, stage, name):
         return json.loads(self.input_file(stage, name).read_text(encoding="utf-8"))
+
+    def progress(self, **value):
+        temporary = self.out / "progress.partial"
+        temporary.write_text(json.dumps(value),encoding="utf-8")
+        os.replace(temporary,self.out / "progress.json")
 
     def convert_audio(self, source, destination, rate, *, expected_frames=None):
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -469,6 +473,9 @@ class Adapter:
                         else str(self.out / "resources/kit.sfz")
                     )
         host = NativeHost(self.settings.native_host, self.out / "native-calls")
+        from music_learning.import_instruments import prepare_channels
+        routed_channels = prepare_channels(project, musical["assignments"], host, self.settings.pipeline_stage_timeout_seconds)
+        self.progress(phase="mix",completed=0,total=len(snapshot.tracks)+1)
         mix = self.out / "mix.wav"
         result = host.call(
             {"schema_version": 1, "action": "render", "project": project, "output_path": str(mix)},
@@ -477,6 +484,8 @@ class Adapter:
         if result["snapshot"]["revision_id"] != self.args["target_revision"]:
             raise ValueError("native render belongs to another revision")
         master = stable(self.args["target_revision"], "master")
+        self.progress(phase="tracks",completed=1,total=len(snapshot.tracks)+1)
+        rendered_tracks = 0
         nodes, edges = [master], []
         for track, native_track in zip(snapshot.tracks, result["snapshot"]["tracks"]):
             if track.id != native_track["id"]:
@@ -559,6 +568,8 @@ class Adapter:
                 raise ValueError("plugin state did not restore for individual track rendering")
             self.add(target, audio=True)
             self.add_waveform(target, "track-" + track.id)
+            rendered_tracks += 1
+            self.progress(phase="tracks",completed=rendered_tracks+1,total=len(snapshot.tracks)+1)
         snapshot.routing = c.RoutingGraph(
             id=stable(self.args["target_revision"], "routing"), nodes=nodes, edges=edges
         )
@@ -574,6 +585,7 @@ class Adapter:
             "revision_id": snapshot and self.args["target_revision"],
             "tracks": len(snapshot.tracks),
             "plugins": len(snapshot.plugins),
+            "playback_channel_routing": routed_channels,
             "tail_samples": project["tail_samples"],
             "timbre_note": self.args["fingerprint"]["profile"]["timbre_note"],
         }
@@ -586,7 +598,10 @@ class Adapter:
         mix = measure(self.input_file("render", "mix.wav"), ffmpeg)
         tracks = {}
         for i, track in enumerate(snapshot["tracks"]):
-            tracks[track["id"]] = measure(self.input_file("render", "tracks/"+track["id"]+".wav"), ffmpeg)
+            try:
+                tracks[track["id"]] = measure(self.input_file("render", "tracks/"+track["id"]+".wav"), ffmpeg)
+            except ValueError as error:
+                raise ValueError("音轨没有有效声音，尚未完成导入："+track["name"]) from error
             progress = self.out / "progress.partial"
             progress.write_text(json.dumps({"completed":i+1,"total":len(snapshot["tracks"])}))
             os.replace(progress, self.out / "progress.json")
@@ -649,6 +664,10 @@ class Adapter:
             "issues": issues,
             "processed_coverage_samples": [0, self.frames],
             "model_outputs_reviewed": False,
+            "implementation_sha256": {
+                **{key.replace("\\", "/"):value for key,value in self.args["fingerprint"]["code"].items()},
+                "native_host": self.args["fingerprint"]["native_host_sha256"],
+            },
             "ready_meaning": "all required full-song artifacts validated; not a claim of musical accuracy",
         }
         write_json(self.out / "completeness.json", report)
@@ -670,4 +689,13 @@ class Adapter:
 
 
 if __name__ == "__main__":
-    Adapter(Path(sys.argv[1])).run()
+    try:
+        Adapter(Path(sys.argv[1])).run()
+    except Exception as error:
+        import traceback
+        traceback.print_exc()
+        # Only our validation messages are public; third-party failures keep
+        # their raw diagnostic in bounded local logs.
+        message = str(error)[:500] if isinstance(error, ValueError) else "整曲处理未完成，请查看本机任务诊断。"
+        write_json(Path(sys.argv[1]) / "stage-error.json", {"code":"preprocessing_failed", "message":message})
+        raise SystemExit(1)

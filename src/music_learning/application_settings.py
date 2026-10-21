@@ -28,9 +28,8 @@ def view(service, db):
         plugin_roots=[str(p) for p in service.settings.plugin_roots],
     )
     result["analysis_models"] = [
-        dict(id="muscriptor", name="MuScriptor medium", purpose="多声部扒谱"),
-        dict(id="demucs", name="HTDemucs", purpose="原曲分轨"),
-        dict(id="sheetsage", name="SheetSage2", purpose="节拍与和声结构"),
+        dict(id="muscriptor", name="MuScriptor large", purpose="多声部扒谱"),
+        dict(id="beat_this", name="Beat This!", purpose="速度与小节网格"),
     ]
     result["background_verification"] = None
     pointer = ROOT / "runtime/keyscape-full-job.local.json"

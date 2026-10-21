@@ -3,10 +3,28 @@
 The user's library is read only. These resources are copied into the project
 workspace and must pass real native rendering and state restoration before ready.
 """
-from pathlib import Path
 import shutil
 from .settings import ROOT
 from .storage import digest
+
+
+def prepare_channels(project, assignments, host, timeout):
+    """Apply the same captured single-part routing as live and graph playback."""
+    from types import SimpleNamespace
+    from .midi_input import instrument_channel
+    routed = {}
+    for track, assignment in zip(project["tracks"], assignments):
+        if not assignment.get("expected_keyscape"):
+            continue
+        descriptor = host.call({"schema_version":1, "action":"inspect", "plugin":track["plugins"][0]}, timeout=timeout)["plugin"]
+        source = [event["channel"] for event in track["notes"]+track["controllers"]]
+        channel = instrument_channel([SimpleNamespace(id="instrument",bypass=False)],
+            {"instrument":descriptor}, {"instrument":descriptor},source)
+        if channel is not None:
+            for event in track["notes"]+track["controllers"]:
+                event["channel"] = channel
+            routed[track["id"]] = {"source_channels":sorted(set(source)),"playback_channel":channel}
+    return routed
 
 
 def factory_assignment(voice, destination, profile, runtime, drum_map):
@@ -23,7 +41,7 @@ def factory_assignment(voice, destination, profile, runtime, drum_map):
             sfizz_sfz_path=str(target))
         return dict(plugin=plugin, usage=drum_map["description"], preset_id="import-installed-drum-kit",
             preset_name="电子鼓组", resource_entrypoint=target.name, backend="sfz")
-    family = voice["program"] // 8
+    family = 5 if voice["program"] in (48,49,50,51) else voice["program"] // 8
     spec = profile["factory_substitutions"].get(str(family))
     if not spec:
         raise ValueError("No installed instrument for this GM family")

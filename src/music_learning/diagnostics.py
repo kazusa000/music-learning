@@ -84,7 +84,7 @@ def collect(settings, directory, use_existing_login=False):
         spec = json.loads((ROOT / "config/model-dependencies.json").read_text(encoding="utf-8"))
         result = {}
         for name, value in spec["models"].items():
-            base = settings.model_runtime / "models" / (name + "-" + value["revision"][:12])
+            base = settings.model_runtime / "models" / value.get("directory", name + "-" + value["revision"][:12])
             files = value.get("files", [])
             result[name] = {
                 "revision": value["revision"],
@@ -100,7 +100,7 @@ def collect(settings, directory, use_existing_login=False):
         return result
 
     check("models", models)
-    for name in ("transcription", "sheetsage"):
+    for name in ("transcription",):
 
         def probe(name=name):
             code = "import torch,json; ok=torch.cuda.is_available(); out={'cuda_available':ok,'torch_version':torch.__version__}; out.update(device=torch.cuda.get_device_name(0),tensor_probe=float((torch.ones((32,32),device='cuda')@torch.ones((32,32),device='cuda'))[0,0])==32) if ok else None; print(json.dumps(out))"

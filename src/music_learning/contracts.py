@@ -273,8 +273,24 @@ class ControlEvent(Model):
     provenance: Provenance
 
 
+class LoudnessMeasurement(Model):
+    integrated_lufs: float = Field(ge=-120, le=20)
+    true_peak_dbtp: float = Field(ge=-120, le=24)
+
+
+class ListeningCalibration(Model):
+    algorithm: Literal["source-ebu-r128-v1"]
+    source_asset_id: Hash
+    target_lufs: float = Field(ge=-120, le=20)
+    mix_gain_db: float = Field(ge=-60, le=60)
+    solo_gain_db: dict[Id, Annotated[float, Field(ge=-60, le=60)]]
+    source: LoudnessMeasurement
+    mix: LoudnessMeasurement
+    tracks: dict[Id, LoudnessMeasurement]
+
+
 class Snapshot(Model):
-    listening_calibration: dict | None = None
+    listening_calibration: ListeningCalibration | None = None
     schema_version: Literal[1] = 1
     sample_rate: int = Field(default=44100, ge=8000, le=192000)
     duration_samples: Sample = 0
@@ -295,6 +311,8 @@ class Snapshot(Model):
 
     @model_validator(mode="after")
     def references(self):
+        if self.listening_calibration and self.listening_calibration.source_asset_id != self.source_asset_id:
+            raise ValueError("Listening calibration belongs to a different source")
         collections = [
             self.tracks,
             self.clips,
@@ -608,6 +626,7 @@ class StageRecord(Model):
 
 
 class PreprocessingResult(Model):
+    tail_samples: Sample | None = None
     project_id: Id
     revision_id: Id
     job_id: Id
@@ -897,11 +916,6 @@ class ExportPayload(Model):
     revision_id: Id | None = None
     format: Literal["midi", "wav"]
     render_job_id: Id | None = None
-    replacement_track_id: Id | None = None
-    start_sample: Sample = 0
-    end_sample: Sample | None = None
-    fade_seconds: float = Field(default=0.02, ge=0, le=1)
-    replacement_gain_db: float = Field(default=0, ge=-120, le=24)
     mixing_version: int | None = Field(default=None, ge=0, strict=True)
 
 

@@ -98,13 +98,18 @@ def execute(settings, job, directory=None):
         env["MUSIC_MODEL_RUNTIME"] = str(settings.model_runtime)
         env["PYTHONPATH"] = str(ROOT / "src")
         with (directory / "adapter.stdout.log").open("xb") as out, (directory / "adapter.stderr.log").open("xb") as err:
-            subprocess.run(
+            completed = subprocess.run(
                 [str(python), str(ROOT / "scripts/pipeline_adapter.py"), str(directory)],
-                check=True, stdout=out, stderr=err,
+                check=False, stdout=out, stderr=err,
                 env=env,
                 timeout=settings.pipeline_stage_timeout_seconds,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
+        if completed.returncode:
+            error_path = directory / "stage-error.json"
+            if error_path.is_file():
+                raise AdapterError(json.loads(error_path.read_text(encoding="utf-8")))
+            raise AdapterError({"code":"preprocessing_failed","message":"整曲处理进程退出，已保留本机诊断。"})
         return json.loads((directory / "stage-result.json").read_text(encoding="utf-8"))
     if job["kind"] == "asset.import":
         from media_runtime import verify_tool

@@ -2308,6 +2308,71 @@
       "title": "JobRef",
       "type": "object"
     },
+    "ListeningCalibration": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "source-ebu-r128-v1",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "source_asset_id": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Source Asset Id",
+          "type": "string"
+        },
+        "target_lufs": {
+          "maximum": 20,
+          "minimum": -120,
+          "title": "Target Lufs",
+          "type": "number"
+        },
+        "mix_gain_db": {
+          "maximum": 60,
+          "minimum": -60,
+          "title": "Mix Gain Db",
+          "type": "number"
+        },
+        "solo_gain_db": {
+          "patternProperties": {
+            "^[a-f0-9]{32}$": {
+              "maximum": 60,
+              "minimum": -60,
+              "type": "number"
+            }
+          },
+          "title": "Solo Gain Db",
+          "type": "object"
+        },
+        "source": {
+          "$ref": "#/$defs/LoudnessMeasurement"
+        },
+        "mix": {
+          "$ref": "#/$defs/LoudnessMeasurement"
+        },
+        "tracks": {
+          "patternProperties": {
+            "^[a-f0-9]{32}$": {
+              "$ref": "#/$defs/LoudnessMeasurement"
+            }
+          },
+          "title": "Tracks",
+          "type": "object"
+        }
+      },
+      "required": [
+        "algorithm",
+        "source_asset_id",
+        "target_lufs",
+        "mix_gain_db",
+        "solo_gain_db",
+        "source",
+        "mix",
+        "tracks"
+      ],
+      "title": "ListeningCalibration",
+      "type": "object"
+    },
     "LiveChunk": {
       "additionalProperties": false,
       "properties": {
@@ -2401,6 +2466,29 @@
         "session_id"
       ],
       "title": "LiveSession",
+      "type": "object"
+    },
+    "LoudnessMeasurement": {
+      "additionalProperties": false,
+      "properties": {
+        "integrated_lufs": {
+          "maximum": 20,
+          "minimum": -120,
+          "title": "Integrated Lufs",
+          "type": "number"
+        },
+        "true_peak_dbtp": {
+          "maximum": 24,
+          "minimum": -120,
+          "title": "True Peak Dbtp",
+          "type": "number"
+        }
+      },
+      "required": [
+        "integrated_lufs",
+        "true_peak_dbtp"
+      ],
+      "title": "LoudnessMeasurement",
       "type": "object"
     },
     "Meter": {
@@ -3347,6 +3435,19 @@
     "PreprocessingResult": {
       "additionalProperties": false,
       "properties": {
+        "tail_samples": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tail Samples"
+        },
         "project_id": {
           "pattern": "^[a-f0-9]{32}$",
           "title": "Project Id",
@@ -4663,15 +4764,13 @@
         "listening_calibration": {
           "anyOf": [
             {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/$defs/ListeningCalibration"
             },
             {
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Listening Calibration"
+          "default": null
         },
         "schema_version": {
           "const": 1,

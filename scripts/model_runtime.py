@@ -36,7 +36,7 @@ def environment(root: Path | None = None) -> dict[str, str]:
 
 def model_path(name: str) -> Path:
     spec = json.loads(MANIFEST.read_text(encoding="utf-8"))["models"][name]
-    return runtime_root() / "models" / (("beat-this-" if name == "beat_this" else name + "-") + spec["revision"][:12])
+    return runtime_root() / "models" / spec.get("directory", name + "-" + spec["revision"][:12])
 
 
 def digest(path: Path) -> str:

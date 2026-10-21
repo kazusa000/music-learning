@@ -13,14 +13,15 @@ assert.deepEqual(channelGains({...channel,bakedPan:.5,values:{gain_db:-12,pan:0}
 // Exercise actual transport routing, independent voices for identical PCM, and
 // source replacement with a deterministic Web Audio contract double.
 let sourceCode=await readFile(new URL('./src/transport.ts',import.meta.url),'utf8');
-for(const module of ['listeningLevel','liveMix','api'])sourceCode=sourceCode.replace(`'./${module}'`,JSON.stringify(new URL('./src/'+module+'.ts',import.meta.url).href));
+for(const module of ['listeningCalibration','listeningLevel','liveMix','api'])sourceCode=sourceCode.replace(`'./${module}'`,JSON.stringify(new URL('./src/'+module+'.ts',import.meta.url).href));
 const javascript=ts.transpileModule(sourceCode,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText;
 const {Transport}=await import('data:text/javascript;base64,'+Buffer.from(javascript).toString('base64'));
 const starts=[];
 const param=()=>({value:0,cancelScheduledValues(){},setTargetAtTime(value){this.value=value;}});
 const node=()=>({connect(){},disconnect(){},gain:param()});
 let resumes=0;
-const context={state:'running',currentTime:0,destination:node(),resume:async()=>{resumes++;},createGain:node,createChannelSplitter:node,createChannelMerger:node,
+const compressor=()=>({...node(),threshold:{},knee:{},ratio:{},attack:{},release:{}});
+const context={createDynamicsCompressor:compressor,createWaveShaper:node,state:'running',currentTime:0,destination:node(),resume:async()=>{resumes++;},createGain:node,createChannelSplitter:node,createChannelMerger:node,
   createAnalyser:()=>({...node(),fftSize:512,getFloatTimeDomainData(values){values.fill(0);}}),
   createBufferSource:()=>({...node(),start(when,offset){starts.push({when,offset});},stop(){}})};
 const transport=new Transport();transport.context=context;transport.matched=false;

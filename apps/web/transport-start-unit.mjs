@@ -3,13 +3,14 @@ import {readFile} from 'node:fs/promises';
 import ts from 'typescript';
 
 let source=await readFile(new URL('./src/transport.ts',import.meta.url),'utf8');
-for(const name of ['api','listeningLevel','liveMix'])source=source.replace(`'./${name}'`,JSON.stringify(new URL('./src/'+name+'.ts',import.meta.url).href));
+for(const name of ['api','listeningCalibration','listeningLevel','liveMix'])source=source.replace(`'./${name}'`,JSON.stringify(new URL('./src/'+name+'.ts',import.meta.url).href));
 const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText;
 const {Transport}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 const starts=[];
 const param=()=>({cancelScheduledValues(){},setTargetAtTime(){}});
 const node=()=>({connect(){},disconnect(){},gain:param()});
-const context={state:'running',currentTime:0,destination:node(),createGain:node,createChannelSplitter:node,createChannelMerger:node,
+const compressor=()=>({...node(),threshold:{},knee:{},ratio:{},attack:{},release:{}});
+const context={createDynamicsCompressor:compressor,createWaveShaper:node,state:'running',currentTime:0,destination:node(),createGain:node,createChannelSplitter:node,createChannelMerger:node,
   createAnalyser:()=>({...node(),fftSize:512,getFloatTimeDomainData(values){values.fill(.1);}}),
   createBufferSource:()=>({...node(),start(when,offset=0){starts.push({when,offset,now:context.currentTime});},stop(){}})};
 const transport=new Transport();transport.context=context;transport.matched=false;

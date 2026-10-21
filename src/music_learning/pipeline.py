@@ -486,7 +486,7 @@ def publish_pipeline(service, db, job, result):
             input_asset_id=job["payload"]["source_asset_id"],
             adapter="p2:" + name,
             model_version=" / ".join(s["revision"] for s in specs),
-            weights_sha256=[f["sha256"] for s in specs for f in s["files"] if f.get("sha256")],
+            weights_sha256=[f["sha256"] for s in specs for f in s["files"] if f.get("sha256") and f["path"].endswith((".safetensors", ".ckpt"))],
             code_version=hashlib.sha256(canonical(fingerprint["code"]).encode()).hexdigest(),
             configuration={
                 "fingerprint": fingerprint,
@@ -543,6 +543,7 @@ def publish_pipeline(service, db, job, result):
         report_asset_id=artifact(stages, "validate", "completeness.json")["sha256"],
         mix_asset_id=artifact(stages, "render", "mix.wav")["sha256"],
         native_snapshot_asset_id=artifact(stages, "render", "native-snapshot.json")["sha256"],
+        tail_samples=stages["render"]["summary"]["tail_samples"],
         track_renders={
             track.id: artifact(stages, "render", "tracks/" + track.id + ".wav")["sha256"]
             for track in snapshot.tracks

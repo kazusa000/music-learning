@@ -23,7 +23,8 @@ def test_variable_tempo_retains_observed_beats_and_sample_coordinates():
 
 
 def test_spurious_nearby_downbeat_does_not_create_a_tiny_bar():
-    result=detection();result["downbeats"].insert(2,2.25)
+    result=detection()
+    result["downbeats"].insert(2,2.25)
     grid=coherent_grid(result)
     assert grid["downbeats"]==detection()["downbeats"]
     assert len(result["downbeats"])==6  # original evidence stays untouched
