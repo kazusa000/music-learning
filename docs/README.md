@@ -22,7 +22,7 @@
 | 桌面外壳、4K、鼠标与固定工作区 | [43 桌面与鼠标](43-desktop-workspace-and-mouse.md) |
 | 音源分类、型号/变体、中文、试听 | [44 型号](44-instrument-models-and-variants.md)、[45 试听](45-chinese-instrument-previews.md) |
 | Keyscape / Pianoteq与验证证据 | [35 Keyscape](35-keyscape-integration.md)、[41 Pianoteq](41-pianoteq-integration.md)、[benchmarks](benchmarks/) |
-| 重构期间的新音源预检、Kontakt/Ample/MODO兼容待办 | [独立音源接入记录](benchmarks/instrument-intake-staging.md)；尚未发布新音色 |
+| 重构期间的新音源预检、Kontakt/Ample/MODO兼容待办 | [独立音源接入记录](benchmarks/instrument-intake-staging.md)、[加载排查与磁盘繁忙处理](benchmarks/instrument-intake-loading-followup.md)；尚未发布新音色 |
 | 对话会话/模型/Markdown与自动编辑 | [28 对话](28-conversation-usability.md)、[31 自动操作](31-automatic-actions.md) |
 | 永久删除、无备份与清理屏障 | [49 永久删除](49-permanent-project-deletion.md) |
 

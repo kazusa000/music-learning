@@ -6,6 +6,7 @@ The evidence run includes explicit inventory versus actual audio-test counts.
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 from pathlib import Path
 import sys
@@ -17,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from music_learning.instrument_capture import native_probe  # noqa: E402
 from music_learning.modo_bass_presets import model_identity, prepare  # noqa: E402
+from music_learning.instrument_probe_budget import loading_budget, timeout_outcome  # noqa: E402
+from music_learning.modo_bass_resources import registered_resource_preflight  # noqa: E402
 
 
 def main():
@@ -26,6 +29,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--native-host", type=Path)
     parser.add_argument("--model", action="append")
+    parser.add_argument("--resource-drive", default="H:")
     args = parser.parse_args()
     run = output_root(args.output)
     run.mkdir(parents=True)
@@ -49,7 +53,24 @@ def main():
     host = NativeHost(executable=args.native_host, diagnostics=run / "calls")
     report["host_sha256"] = sha(host.executable)
     try:
+        report["storage_budget"] = loading_budget(args.resource_drive)
+        if not report["storage_budget"]["allowed"]:
+            report.update(status="deferred", reason=report["storage_budget"]["reason"],
+                          pending_models=list(groups))
+            print("Deferred sample loading: " + report["reason"], flush=True)
+            return
+        resources = registered_resource_preflight()
+        report["resource_preflight"] = asdict(resources)
+        if not resources.ready:
+            report.update(status="blocked", reason="resource_preflight",
+                          pending_models=list(groups))
+            return
         for index, (model, item) in enumerate(groups.items()):
+            budget = loading_budget(args.resource_drive, idle_samples=1)
+            if not budget["allowed"]:
+                report.update(status="deferred", reason=budget["reason"], storage_budget=budget,
+                              pending_models=list(groups)[index:])
+                return
             print("Verify model " + model, flush=True)
             directory = run / f"model-{index:02}"
             directory.mkdir()
@@ -73,6 +94,8 @@ def main():
                 result.update(status="failed", error=str(error))
                 if isinstance(error, NativeHostError):
                     result["diagnostics"] = str(error.diagnostics)
+                    if error.status == "timeout":
+                        result.update(timeout_outcome(str(error), error.diagnostics))
             report["results"].append(result)
             write_json(run / "report.json", report)
         report["status"] = "completed"
@@ -84,6 +107,7 @@ def main():
         write_json(run / "formal-after.json", after)
         report.update(formal_unchanged=before == after,
                       passed=sum(x["status"] == "passed" for x in report["results"]),
+                      inconclusive=sum(x["status"] == "inconclusive" for x in report["results"]),
                       failed=sum(x["status"] == "failed" for x in report["results"]))
         write_json(run / "report.json", report)
     print(json.dumps(dict(status=report["status"], passed=report["passed"], failed=report["failed"],

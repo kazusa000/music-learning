@@ -18,7 +18,8 @@ from native_host import NativeHost, NativeHostError
 
 sys.path.insert(0, str(ROOT / "src"))
 from music_learning.instrument_capture import native_probe  # noqa: E402
-
+from music_learning.ample_library import inspect_sample_directory  # noqa: E402
+from music_learning.instrument_probe_budget import loading_budget, timeout_outcome  # noqa: E402
 
 @contextmanager
 def sample_path(config, library, instrument):
@@ -27,9 +28,7 @@ def sample_path(config, library, instrument):
         raise ValueError("Only the instrument sample-path config may be changed")
     if config.is_symlink() or not library.is_dir():
         raise ValueError("Expected regular config and existing sample directory")
-    samples = list(library.glob(instrument + "*.ascf"))
-    if not samples or any(not x.is_file() or x.stat().st_size == 0 for x in samples):
-        raise ValueError("Missing or empty matching sample files")
+    inventory = inspect_sample_directory(library, instrument)
     original = config.read_bytes()
     if b"<!DOCTYPE" in original.upper() or b"<!ENTITY" in original.upper():
         raise ValueError("Unsupported config XML")
@@ -41,8 +40,7 @@ def sample_path(config, library, instrument):
     configured = ET.tostring(root, encoding="utf-8", xml_declaration=True)
     config.write_bytes(configured)
     try:
-        yield dict(original_sha256=hashlib.sha256(original).hexdigest(), samples=len(samples),
-                   path=str(library))
+        yield dict(original_sha256=hashlib.sha256(original).hexdigest(), **inventory)
     finally:
         if config.read_bytes() != configured:
             raise RuntimeError("Sample config changed externally; refusing to overwrite it")
@@ -53,6 +51,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--resource-drive", default="H:")
     args = parser.parse_args()
     run = output_root(args.output)
     items = json.loads(args.manifest.read_bytes())
@@ -62,6 +61,12 @@ def main():
     report = dict(status="running", items=[], formal_project_writes=0, admissions=0)
     try:
         for item in items:
+            budget = loading_budget(args.resource_drive)
+            report["storage_budget"] = budget
+            if not budget["allowed"]:
+                report.update(status="deferred", reason=budget["reason"])
+                print("Deferred sample loading: " + report["reason"], flush=True)
+                return
             instrument = item["instrument"]
             print("Scoped sample-path probe " + instrument, flush=True)
             config = Path(item["config"])
@@ -85,6 +90,8 @@ def main():
                 result.update(status="failed", error=str(error))
                 if isinstance(error, NativeHostError):
                     result["diagnostics"] = str(error.diagnostics)
+                    if error.status == "timeout":
+                        result.update(timeout_outcome(str(error), error.diagnostics))
             finally:
                 result["config_restored"] = sha(config) == config_sha
                 report["items"].append(result)

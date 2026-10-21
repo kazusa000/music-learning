@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 from native_host import NativeHost, NativeHostError  # noqa: E402
 from music_learning.instrument_capture import native_probe  # noqa: E402
+from music_learning.instrument_probe_budget import loading_budget, timeout_outcome  # noqa: E402
 
 MAINTENANCE = ROOT / "data/maintenance/instrument-intake"
 
@@ -107,6 +108,8 @@ def is_reparse(path):
 def error_result(error):
     result = dict(status="failed", error=str(error))
     if isinstance(error, NativeHostError):
+        if error.status == "timeout":
+            return timeout_outcome(str(error), error.diagnostics)
         result.update(status=error.status, diagnostics=str(error.diagnostics))
     return result
 
@@ -155,6 +158,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--probe-defaults", action="store_true")
+    parser.add_argument("--resource-drive", default="H:")
     args = parser.parse_args()
     run = output_root(args.output)
     manifest = json.loads(args.manifest.read_bytes())
@@ -171,6 +175,11 @@ def main():
     report = dict(status="running", catalog_before_sha256=catalog_sha, libraries=[], plugins=[],
                   formal_project_writes=0, catalog_writes=0)
     try:
+        report["storage_budget"] = loading_budget(args.resource_drive)
+        if not report["storage_budget"]["allowed"]:
+            report.update(status="deferred", reason=report["storage_budget"]["reason"])
+            print("Deferred sample loading: " + report["reason"], flush=True)
+            return
         for source in manifest["libraries"]:
             result = inventory(source["path"])
             entries = result.pop("entries", [])
@@ -178,6 +187,10 @@ def main():
             report["libraries"].append(dict(id=source["id"], **result))
         write_json(run / "report.json", report)
         for plugin in manifest["plugins"]:
+            budget = loading_budget(args.resource_drive, idle_samples=1)
+            if not budget["allowed"]:
+                report.update(status="deferred", reason=budget["reason"], storage_budget=budget)
+                return
             print("Inspecting " + plugin["id"], flush=True)
             report["plugins"].append(inspect_plugin(plugin, run, args.timeout, args.probe_defaults))
             write_json(run / "report.json", report)
