@@ -1,4 +1,5 @@
 #include "Host.h"
+#include "../include/MainOutputBus.h"
 #include <iostream>
 #include <stdexcept>
 #include <cmath>
@@ -298,6 +299,8 @@ std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int bloc
             require(std::abs(p->getValue() - value) <= 1e-4f,
                     "Plugin did not retain the requested normalized parameter value");
         }
+    require(activateMainOutput(*plugin, AudioChannelSet::stereo()),
+            "Plugin rejected main output bus activation");
     return plugin;
 }
 

@@ -143,6 +143,18 @@ def test_header_reader_requests_only_eight_bytes():
     reader().read.assert_called_once_with(8)
 
 
+def test_application_resource_bundle_can_use_its_older_format():
+    paths = registry_fixture()
+    result = preflight_resource_paths(paths, is_file=lambda _: True, is_dir=lambda _: True,
+        read_header=lambda path: b"IKMPAK\x01\x00" if path.endswith(".app.pak") else b"IKMPAK\x03\x00")
+    assert result.ready
+    assert not result.members_verified
+    result = preflight_resource_paths(paths, is_file=lambda _: True, is_dir=lambda _: True,
+        read_header=lambda _: b"IKMPAK\x01\x00")
+    assert not result.ready
+    assert {p.key for p in result.problems} == {"ResPath", "ConfigPath", "PatternsPath"}
+
+
 def test_x64_registration_is_authoritative_even_with_a_different_x86_install():
     paths = registry_fixture()
     files = {

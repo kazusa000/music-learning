@@ -19,7 +19,21 @@ from native_host import NativeHost, NativeHostError
 sys.path.insert(0, str(ROOT / "src"))
 from music_learning.instrument_capture import native_probe  # noqa: E402
 from music_learning.ample_library import inspect_sample_directory  # noqa: E402
+from music_learning.ample_presets import prepare, verify_state  # noqa: E402
 from music_learning.instrument_probe_budget import loading_budget, timeout_outcome  # noqa: E402
+from music_learning.vst3_state import LIMIT  # noqa: E402
+
+
+def factory_spec(host, spec, path, directory):
+    """Prepare a vendor XML variant from this exact plugin's own envelope."""
+    path = Path(path)
+    if path.stat().st_size > LIMIT:
+        raise ValueError("Factory preset exceeds the state size limit")
+    baseline = host.call(dict(schema_version=1, action="inspect", plugin=spec))["plugin"]
+    state, expected = prepare(baseline, path.read_bytes())
+    preset = directory / "factory.vstpreset"
+    preset.write_bytes(state)
+    return dict(spec, preset_path=str(preset)), expected
 
 @contextmanager
 def sample_path(config, library, instrument):
@@ -51,6 +65,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--native-host", type=Path)
+    parser.add_argument("--scan-timeout", type=float, default=60)
     parser.add_argument("--resource-drive", default="H:")
     args = parser.parse_args()
     run = output_root(args.output)
@@ -77,15 +93,22 @@ def main():
             try:
                 with sample_path(config, item["library"], instrument) as path_result:
                     result["sample_path"] = path_result
-                    host = NativeHost(diagnostics=directory / "calls")
+                    host = NativeHost(executable=args.native_host, diagnostics=directory / "calls")
                     spec = dict(id=instrument, path=item["plugin"])
-                    scan = host.call(dict(schema_version=1, action="scan", plugin_path=item["plugin"]), timeout=60)
+                    scan = host.call(dict(schema_version=1, action="scan", plugin_path=item["plugin"]), timeout=args.scan_timeout)
                     plugin = scan["plugins"][0]
                     spec["identifier"] = plugin["identifier"]
-                    captured, metrics = native_probe(host, spec, directory, [40, 84])
+                    validator = None
+                    scope = "default patch with scoped sample path; not library admission"
+                    if item.get("factory_xml"):
+                        spec, expected = factory_spec(host, spec, item["factory_xml"], directory)
+                        def validator(state):
+                            return verify_state(state, expected)
+                        result["factory_preset"] = expected["name"]
+                        scope = "factory variant first/reopen audio, sample database and parameter readback; not library admission"
+                    captured, metrics = native_probe(host, spec, directory, [40, 84], validate_state=validator)
                     write_json(directory / "captured-state.json", captured)
-                    result.update(status="passed", metrics=metrics,
-                                  scope="default patch with scoped sample path; not library admission")
+                    result.update(status="passed", metrics=metrics, scope=scope)
             except (OSError, ValueError, NativeHostError) as error:
                 result.update(status="failed", error=str(error))
                 if isinstance(error, NativeHostError):

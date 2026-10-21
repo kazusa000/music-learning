@@ -44,6 +44,8 @@ add_test(NAME host_capabilities COMMAND ml_audio_host --capabilities)
 add_executable(ml_test_vst3_bus_info native/tests/Vst3BusInfo.cpp)
 target_include_directories(ml_test_vst3_bus_info PRIVATE "${CMAKE_SOURCE_DIR}/native/include")
 add_test(NAME vst3_bus_info COMMAND ml_test_vst3_bus_info)
+add_executable(ml_test_main_output_bus native/tests/MainOutputBus.cpp)
+add_test(NAME main_output_bus COMMAND ml_test_main_output_bus)
 
 juce_add_plugin(MLFixture
     COMPANY_NAME "Music Learning"

@@ -25,7 +25,7 @@ _PATTERN_BUNDLES = (
 )
 _PAK_HEADER_SIZE = 8
 _PAK_MAGIC = b"IKMPAK"
-_PAK_VERSION = 3
+_PAK_VERSIONS = {"AppResPath": {1, 3}}
 
 
 @dataclass(frozen=True)
@@ -94,7 +94,7 @@ def _check_pak_header(
         problems.append(ResourceProblem(key, "truncated-bundle-header", path))
     elif header[:6] != _PAK_MAGIC:
         problems.append(ResourceProblem(key, "unexpected-bundle-format", path))
-    elif int.from_bytes(header[6:8], "little") != _PAK_VERSION:
+    elif int.from_bytes(header[6:8], "little") not in _PAK_VERSIONS.get(key, {3}):
         problems.append(ResourceProblem(key, "unsupported-bundle-version", path))
 
 
