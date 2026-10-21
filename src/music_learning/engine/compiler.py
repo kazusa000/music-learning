@@ -38,22 +38,32 @@ def compile_files(service, args):
                     clips=[dict(path=str(path), asset_id=sha, start_sample=0, source_offset_samples=0,
                                 duration_samples=duration, gain=1)]))
         else:
-            playback = plan(service, db, revision)
-            if playback["reason"]:
-                raise ValueError(playback["reason"])
+            playback = plan(service, db, revision) if snapshot.get("frozen_tracks") else {"tracks":{}}
             calibration = snapshot.get("listening_calibration") or {}
             for track in snapshot["tracks"]:
                 stem = playback["tracks"].get(track["id"])
                 if not stem:
                     if not any(e["track_id"] == track["id"] for name in ("notes", "clips") for e in snapshot[name]):
                         continue
-                    from .plugin_compiler import compile_track
+                    plugins=[p for p in snapshot["plugins"] if p["track_id"]==track["id"] and not p.get("bypass")]
+                    compiled = {}
+                    clips=[]
+                    if plugins or any(n["track_id"]==track["id"] for n in snapshot["notes"]):
+                        from .plugin_compiler import compile_track
 
-                    compiled = compile_track(service,db,revision,track["id"],directory)
+                        compiled = compile_track(service,db,revision,track["id"],directory)
+                        tail=max(tail,round(rate*2))
+                    else:
+                        for clip in snapshot["clips"]:
+                            if clip["track_id"]!=track["id"]:
+                                continue
+                            service._asset(db,clip["asset_id"],revision["project_id"])
+                            clips.append(dict(path=str(service.storage.verify(clip["asset_id"])),asset_id=clip["asset_id"],
+                                start_sample=clip["start_sample"],duration_samples=clip["duration_samples"],
+                                source_offset_samples=clip.get("source_offset_samples",0),gain=10**(clip.get("gain_db",0)/20)))
                     tracks.append(dict(id=track["id"],gain_db=track.get("gain_db",0),pan=track.get("pan",0),
                         baked_gain_db=0,baked_pan=0,monitor_gain_db=calibration.get("mix_gain_db",0),
-                        solo_gain_db=calibration.get("solo_gain_db",{}).get(track["id"],0),clips=[],**compiled))
-                    tail=max(tail,round(rate*2))
+                        solo_gain_db=calibration.get("solo_gain_db",{}).get(track["id"],0),clips=clips,**compiled))
                     continue
                 path = service.storage.object_path(stem["asset_id"])
                 file_rate, frames = wav_extent(path)

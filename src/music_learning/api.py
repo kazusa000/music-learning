@@ -49,7 +49,7 @@ def create_app(settings: Settings | None = None):
     async def lifespan(_):
         from .dialogue_worker import DialogueWorker
 
-        dialogue = DialogueWorker(database)
+        dialogue = DialogueWorker(database, service=service)
         runner = asyncio.create_task(dialogue.run())
         previews = service.previews()
         previews.start()
@@ -269,7 +269,7 @@ def create_app(settings: Settings | None = None):
             stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
         )
 
-    web = ROOT / "apps/web/dist"
+    web = settings.web_root or ROOT / "apps/web/dist"
     if web.is_dir():
         app.mount("/", StaticFiles(directory=web, html=True), name="web")
     return app

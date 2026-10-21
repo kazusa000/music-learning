@@ -61,8 +61,6 @@ def test_note_update_changes_only_one_worker_while_device_keeps_playing(service,
         changed=invoke(service,"edits.apply",dict(project_id=project["id"],
             scope=dict(track_ids=[a],start_sample=0,end_sample=44100*305),
             operations=[dict(op="put",collection="notes",entity=note)],description="Shorten native held note"),revision["id"])
-        invoke(service,"engine.update",dict(project_id=project["id"],revision_id=changed["id"],
-            engine_session=state["engine_session"],generation=state["generation"]))
         updated=ready(service)
         time.sleep(.1)
         after=invoke(service,"engine.status")
@@ -93,7 +91,6 @@ def test_bad_worker_isolated_and_deadline_does_not_stop_other_audio(service,proj
         plugin["parameters"][parameter]=mode
         changed=invoke(service,"edits.apply",dict(project_id=project["id"],scope=dict(track_ids=[a],start_sample=0,end_sample=44100*305,structural=True),
             operations=[dict(op="put",collection="plugins",entity=plugin)],description="Isolated native fault fixture"),revision["id"])
-        invoke(service,"engine.update",dict(project_id=project["id"],revision_id=changed["id"],engine_session=state["engine_session"],generation=state["generation"]))
         deadline=time.monotonic()+8
         while time.monotonic()<deadline:
             current=invoke(service,"engine.status")
@@ -110,7 +107,6 @@ def test_bad_worker_isolated_and_deadline_does_not_stop_other_audio(service,proj
         plugin["parameters"][parameter]=.25
         restored=invoke(service,"edits.apply",dict(project_id=project["id"],scope=dict(track_ids=[a],start_sample=0,end_sample=44100*305,structural=True),
             operations=[dict(op="put",collection="plugins",entity=plugin)],description="Restore isolated fixture"),changed["id"])
-        invoke(service,"engine.update",dict(project_id=project["id"],revision_id=restored["id"],engine_session=current["engine_session"],generation=current["generation"]))
         recovered=ready(service)
         assert recovered["plugins"][a]["pid"]!=failed_pid
         assert recovered["plugins"][b]["pid"]==state["plugins"][b]["pid"]

@@ -1457,6 +1457,79 @@
       "title": "Empty",
       "type": "object"
     },
+    "EngineClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_session": {
+          "pattern": "^[a-f0-9]{48}$",
+          "title": "Engine Session",
+          "type": "string"
+        },
+        "generation": {
+          "minimum": 0,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "owner_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Owner Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine_session",
+        "generation",
+        "owner_id"
+      ],
+      "title": "EngineClaim",
+      "type": "object"
+    },
+    "EngineClose": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_session": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{48}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Engine Session"
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generation"
+        },
+        "owner_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Id"
+        }
+      },
+      "title": "EngineClose",
+      "type": "object"
+    },
     "EngineConfigure": {
       "additionalProperties": false,
       "properties": {
@@ -1557,12 +1630,78 @@
           "default": false,
           "title": "Playing",
           "type": "boolean"
+        },
+        "owner_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Id"
         }
       },
       "required": [
         "project_id"
       ],
       "title": "EngineOpen",
+      "type": "object"
+    },
+    "EnginePreview": {
+      "additionalProperties": false,
+      "properties": {
+        "client_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Client Id",
+          "type": "string"
+        },
+        "client_sequence": {
+          "minimum": 1,
+          "title": "Client Sequence",
+          "type": "integer"
+        },
+        "preview_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preview Id"
+        },
+        "stop": {
+          "default": false,
+          "title": "Stop",
+          "type": "boolean"
+        },
+        "volume": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Volume"
+        }
+      },
+      "required": [
+        "client_id",
+        "client_sequence"
+      ],
+      "title": "EnginePreview",
       "type": "object"
     },
     "EngineProbe": {
@@ -1577,6 +1716,27 @@
         }
       },
       "title": "EngineProbe",
+      "type": "object"
+    },
+    "EngineSession": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_session": {
+          "pattern": "^[a-f0-9]{48}$",
+          "title": "Engine Session",
+          "type": "string"
+        },
+        "generation": {
+          "minimum": 0,
+          "title": "Generation",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "engine_session",
+        "generation"
+      ],
+      "title": "EngineSession",
       "type": "object"
     },
     "EngineTrackValues": {
@@ -5142,6 +5302,17 @@
         },
         "state": {
           "$ref": "#/$defs/AuditionState"
+        },
+        "engine_ack": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EngineSession"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -6112,6 +6283,14 @@
       },
       "mutates": false
     },
+    "engine.preview": {
+      "arguments": "EnginePreview",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
     "engine.stop": {
       "arguments": "Empty",
       "result": {
@@ -6121,7 +6300,15 @@
       "mutates": false
     },
     "engine.close": {
-      "arguments": "Empty",
+      "arguments": "EngineClose",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "engine.claim": {
+      "arguments": "EngineClaim",
       "result": {
         "additionalProperties": true,
         "type": "object"

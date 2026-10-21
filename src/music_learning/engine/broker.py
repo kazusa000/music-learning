@@ -19,6 +19,20 @@ class EngineBroker:
         self.sequence = 0
         self.identity = secrets.token_hex(24)
         self.executable = ROOT / "runtime/build/engine-v1/bin/ml_engine.exe"
+        self.preview_sequences = {}
+
+    def preview(self, arguments):
+        with self.lock:
+            client, sequence = arguments["client_id"], arguments["client_sequence"]
+            if sequence <= self.preview_sequences.get(client, 0):
+                raise ValueError("Stale preview command")
+            self.preview_sequences[client] = sequence
+            if "manifest" in arguments:
+                if self.status()["status"] in ("stopped", "closed"):
+                    self.command("configure", dict(sample_rate=arguments["manifest"]["sample_rate"],buffer_frames=512))
+            elif self.status()["status"] in ("stopped", "closed"):
+                return self.status()
+            return self.command("preview", arguments)
 
     def _start(self):
         if self.owner and self.owner.process.poll() is None:
@@ -121,6 +135,15 @@ class EngineBroker:
             finally:
                 self._close()
         return {"protocol_version": 1, "status": "stopped", "playing": False}
+
+    def release(self, arguments):
+        with self.lock:
+            if not self.owner:
+                return self.status()
+            result = self.command("release",arguments)
+            if result.get("status")=="closed":
+                self._close()
+            return result
 
     def _close(self):
         # Killing our job first releases a pending pipe read before closing it.

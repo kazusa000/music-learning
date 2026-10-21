@@ -13,6 +13,7 @@ from music_learning.settings import ROOT, Settings
 def settings(tmp_path):
     return Settings(
         data_root=tmp_path / "application",
+        native_audio_enabled=False,
         lease_seconds=3,
         # These independent short fixtures produce small bounded outputs. Keep
         # a fixture reserve without requiring production's 3 GiB on the test drive.

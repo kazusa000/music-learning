@@ -56,9 +56,9 @@ def edit_recovery(arguments):
 
 
 class DialogueWorker:
-    def __init__(self, database, provider=CodexAppServer):
+    def __init__(self, database, provider=CodexAppServer, service=None):
         self.database = database
-        self.service = Service(database)
+        self.service = service or Service(database)
         self.provider = provider
         self.stopping = asyncio.Event()
 
@@ -324,6 +324,15 @@ class DialogueWorker:
                             idempotency_key="preset:" + turn["id"] + ":" + arguments.get("preset_id", ""),
                         )
                     value = self.service.execute(envelope)["result"]
+                    if name in ("music_edit", "production_query") and self.service.engine_broker:
+                        native = self.service.engine_broker.status()
+                        if native.get("project_id") == turn["project_id"]:
+                            value = dict(value, native_playback=dict(
+                                status=native["status"], desired_revision=native.get("desired_revision"),
+                                applied_revision=native.get("applied_revision"),
+                                loading_tracks=[key for key,item in native.get("plugins",{}).items() if item["status"]=="loading"],
+                                failed_tracks={key:item.get("error") for key,item in native.get("plugins",{}).items() if item["status"]=="failed"},
+                                error=self.service.engine_sync_error))
                     if name == "preset_capture":
                         capture_id = value["id"]
                         turn["context"].setdefault("preset_captures", []).append(capture_id)

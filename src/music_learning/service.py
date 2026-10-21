@@ -70,6 +70,7 @@ class Service:
         self.live_playback = None
         self.instrument_previews = None
         self.engine_broker = None
+        self.engine_sync_error = None
         import threading
 
         self.live_lock = threading.Lock()
@@ -93,6 +94,15 @@ class Service:
                 action = request.operation.split(".", 1)[1]
                 try:
                     arguments = args.model_dump(exclude_none=True)
+                    if action == "preview":
+                        if args.preview_id:
+                            from .playback import wav_extent
+
+                            path = self.previews().audio(args.preview_id)
+                            rate, frames = wav_extent(path)
+                            arguments["manifest"] = dict(project_id="preview",revision_id=args.preview_id,view="preview",
+                                sample_rate=rate,duration_samples=frames,tracks=[dict(id="preview",gain_db=0,pan=0,
+                                    clips=[dict(path=str(path),start_sample=0,duration_samples=frames,source_offset_samples=0,gain=1)])])
                     if action in ("open", "update"):
                         from .engine.compiler import compile_files
 
@@ -105,15 +115,22 @@ class Service:
                         arguments = dict(manifest=manifest)
                         if action == "open":
                             arguments.update(position_sample=args.position_sample,playing=args.playing)
-                    if action in ("transport", "monitor", "update"):
+                            if args.owner_id:
+                                arguments["owner_id"]=args.owner_id
+                    if action in ("transport", "monitor", "update", "claim") or action=="close" and args.owner_id:
                         if args.engine_session != self.engine_broker.identity:
                             raise ValueError("引擎会话已变更，请刷新状态")
                         arguments["expected_generation"] = arguments.pop("generation",args.generation)
                     result = (self.engine_broker.status() if action == "status" else
+                              self.engine_broker.preview(arguments) if action == "preview" else
+                              self.engine_broker.release(arguments) if action=="close" and args.owner_id else
                               self.engine_broker.close() if action == "close" else
                               self.engine_broker.command(action, arguments))
                     if action in ("open", "update"):
                         result["compile_ms"] = compile_ms
+                        self.engine_sync_error = None
+                    if action == "status" and self.engine_sync_error:
+                        result["control_error"] = self.engine_sync_error
                 except (RuntimeError, OSError, ValueError) as error:
                     raise DomainError("engine_error", str(error), 409) from error
                 TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
@@ -144,6 +161,8 @@ class Service:
                 TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
                 return {"schema_version": 1, "request_id": request.request_id, "ok": True, "result": result}
             hash_arguments = args.model_dump(mode="json")
+            if request.operation == "audition.set" and args.engine_ack is None:
+                hash_arguments.pop("engine_ack",None)
             plugin_entities = list(hash_arguments.get("snapshot", {}).get("plugins", []))
             if request.operation in ("edits.apply", "arrangements.apply"):
                 for operation in hash_arguments.get("operations", []):
@@ -270,6 +289,10 @@ class Service:
                     )
             if request.operation == "projects.delete" and self.live_playback is not None:
                 self.live_playback.close_project(args.project_id)
+            if mutates:
+                from .engine.sync import after_write
+
+                after_write(self, request, args, result)
             return response
         except ValidationError as error:
             raise DomainError(

@@ -70,6 +70,8 @@ public:
         std::atomic<bool> mute{false}, solo{false};
         std::atomic<float> peak{0};
         float bakedGain=0, bakedPan=0, monitorGain=0, soloGain=0, left=0, right=0;
+        float targetLeft=0,targetRight=0;
+        int rampRemaining=0;
     };
     struct Block { std::vector<AudioBuffer<float>> tracks; double endSample=0; };
     var manifest;
@@ -183,10 +185,11 @@ public:
                 std::pow(10.0f, (track.gainDb.load() - track.bakedGain + (audible == 1 ? track.soloGain : track.monitorGain)) / 20.0f);
             const float left = level * (pan > 0 ? 1-pan : 1) / jmax(.0001f, track.bakedPan > 0 ? 1-track.bakedPan : 1);
             const float right = level * (pan < 0 ? 1+pan : 1) / jmax(.0001f, track.bakedPan < 0 ? 1+track.bakedPan : 1);
-            const float ramp = (float)(1.0-std::exp(-1.0/(deviceRate*.003)));
+            if(left!=track.targetLeft||right!=track.targetRight){track.targetLeft=left;track.targetRight=right;track.rampRemaining=jmax(1,(int)std::ceil(deviceRate*.003));}
             float trackPeak=0;
             for (int i = 0; i < count; ++i) {
-                track.left += (left-track.left)*ramp; track.right += (right-track.right)*ramp;
+                if(track.rampRemaining>0){track.left+=(left-track.left)/(float)track.rampRemaining;track.right+=(right-track.right)/(float)track.rampRemaining;--track.rampRemaining;}
+                else {track.left=left;track.right=right;}
                 const float l=(mapped?mapped[i*2]:block.tracks[t].getSample(0,i))*track.left;
                 const float r=(mapped?mapped[i*2+1]:block.tracks[t].getSample(1,i))*track.right;
                 trackPeak=jmax(trackPeak,jmax(std::abs(l),std::abs(r)));

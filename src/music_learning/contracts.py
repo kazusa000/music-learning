@@ -519,6 +519,14 @@ class EngineProbe(Model):
     seconds: float = Field(default=.5, gt=0, le=3)
 
 
+class EnginePreview(Model):
+    client_id: Id
+    client_sequence: int = Field(ge=1)
+    preview_id: Hash | None = None
+    stop: bool = False
+    volume: float | None = Field(default=None, ge=0, le=1)
+
+
 class Page(Model):
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=100, ge=1, le=1000)
@@ -562,11 +570,22 @@ class EngineOpen(RevisionRef):
     view: Literal["original", "arrangement"] = "arrangement"
     position_sample: Sample = 0
     playing: bool = False
+    owner_id: Id | None = None
 
 
 class EngineSession(Model):
     engine_session: str = Field(pattern=r"^[a-f0-9]{48}$")
     generation: int = Field(ge=0)
+
+
+class EngineClaim(EngineSession):
+    owner_id: Id
+
+
+class EngineClose(Model):
+    engine_session: str | None = Field(default=None,pattern=r"^[a-f0-9]{48}$")
+    generation: int | None = Field(default=None,ge=0)
+    owner_id: Id | None = None
 
 
 class EngineTransport(EngineSession):
@@ -1013,6 +1032,7 @@ class AuditionState(Model):
 
 class SetAudition(ProjectRef):
     state: AuditionState
+    engine_ack: EngineSession | None = None
 
 
 class MixerPatch(Model):
@@ -1240,8 +1260,10 @@ OPERATIONS = {
     "engine.configure": (EngineConfigure, False),
     "engine.status": (Empty, False),
     "engine.probe": (EngineProbe, False),
+    "engine.preview": (EnginePreview, False),
     "engine.stop": (Empty, False),
-    "engine.close": (Empty, False),
+    "engine.close": (EngineClose, False),
+    "engine.claim": (EngineClaim, False),
     "storage.plan": (ProjectRef, False),
     "storage.collect": (ProjectRef, True),
     "storage.status": (ProjectRef, False),
@@ -1333,8 +1355,10 @@ RESULT_TYPES = {
     "engine.configure": dict,
     "engine.status": dict,
     "engine.probe": dict,
+    "engine.preview": dict,
     "engine.stop": dict,
     "engine.close": dict,
+    "engine.claim": dict,
     "storage.plan": dict,
     "storage.collect": dict,
     "storage.status": dict,

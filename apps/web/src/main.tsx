@@ -10,10 +10,10 @@ import {call, connect} from './api';
 import {Workbench} from './Workbench';
 import {publishDomain} from './events';
 import {AudioPreview} from './AudioPreview';
+import type {PreviewControl} from './AudioPreview';
 import {Icon} from './Icon';
 import {ImportProgress} from './ImportProgress';
 import {DeleteProjectDialog} from './DeleteProjectDialog';
-import {listeningCalibration} from './listeningCalibration';
 import {WindowControls,dragWindow} from './WindowChrome';
 import {useStudioMouse} from './useStudioMouse';
 
@@ -51,7 +51,7 @@ function App() {
   const [stages, setStages] = useState<Record<string, StageRecord[]>>({});
   const [workspace, setWorkspace] = useState(new URLSearchParams(location.search).get('view') === 'workbench');
   const detailCache = useRef<{id:string; revision:Revision; publication:PreprocessingResult | null;playbackReady:boolean} | null>(null);
-  const homeAudio=useRef<HTMLAudioElement|null>(null);
+  const homeAudio=useRef<PreviewControl|null>(null);
   useEffect(()=>{
     if(workspace||settingsOpen)return;
     const key=(event:KeyboardEvent)=>{
@@ -220,8 +220,8 @@ function App() {
         <div className="facts"><div><span>保存版本</span><b>{versionCount}</b></div>
           <div><span>原曲长度</span><b>{revision?.snapshot.duration_samples ? (revision.snapshot.duration_samples / (revision.snapshot.sample_rate ?? 44100)).toFixed(1) + ' 秒' : '—'}</b></div></div>
         {revision?.snapshot.source_asset_id && <section className="original"><h3>原曲试听</h3>
-          <AudioPreview key={'source-'+revision.id} label="原曲试听" assetId={revision.snapshot.source_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial={!publication} onSelect={a=>{homeAudio.current=a;}}/>
-          {publication&&<><h3>重建试听</h3><AudioPreview key={'mix-'+publication.mix_asset_id} label="重建试听" gainDb={listeningCalibration(revision.snapshot.listening_calibration)?.mix_gain_db??0} assetId={publication.mix_asset_id} duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial onSelect={a=>{homeAudio.current=a;}}/></>}
+          <AudioPreview key={'source-'+revision.id} label="原曲试听" projectId={revision.project_id} revisionId={revision.id} view="original" duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial={!publication} onSelect={a=>{homeAudio.current=a;}}/>
+          {publication&&<><h3>重建试听</h3><AudioPreview key={'mix-'+publication.mix_asset_id} label="重建试听" projectId={revision.project_id} revisionId={revision.id} view="arrangement" duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial onSelect={a=>{homeAudio.current=a;}}/></>}
           <p className="muted">{publication ? '已可播放重建、独奏声部、编辑音符和与 AI 讨论。' : playbackReady?'工程已可试听，打开工程继续编曲。':'正在准备可编辑的音乐工程。'}</p>
           {(publication || (revision.snapshot.tracks?.length ?? 0)>0) && <button className="primary-button" onClick={() => {setWorkspace(true); history.replaceState(null,'',`/?project=${project.id}&view=workbench`);}}><span>打开工程</span><Icon name="arrow" size={15}/></button>}
           {!publication && !(revision.snapshot.tracks?.length??0) && !jobs.some(j => j.kind === 'project.preprocess' && ['queued','running','cancel_requested'].includes(j.status)) &&
