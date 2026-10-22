@@ -463,6 +463,20 @@ def test_receipt_native_metrics_must_match_decoded_probe(tmp_path):
         record_receipt(queue_path, "modo-test-model-natural", receipt_path, evidence, VERIFIER, VALIDATOR_PIN)
 
 
+@pytest.mark.parametrize("artifact", ["state", "response"])
+def test_native_getter_cannot_be_substituted_in_only_one_snapshot(tmp_path, artifact):
+    _, queue_path, evidence, receipt_path, receipt = _setup(tmp_path)
+    path = evidence / receipt["first"][artifact]["path"]
+    value = json.loads(path.read_bytes())
+    plugin = value if artifact == "state" else value["result"]["snapshot"]["tracks"][0]["plugins"][0]
+    plugin["native_identity"] = {"instrument_count": 1, "instruments": [{"index": 0, "name": "Substituted"}]}
+    path.write_text(json.dumps(value), encoding="utf8")
+    receipt["first"][artifact] = artifact_ref(path, evidence)
+    receipt_path.write_text(json.dumps(receipt), encoding="utf8")
+    with pytest.raises(ValueError, match="captured native getter identities differ"):
+        record_receipt(queue_path, "modo-test-model-natural", receipt_path, evidence, VERIFIER, VALIDATOR_PIN)
+
+
 def test_resource_hash_and_manifest_are_required_for_receipt(tmp_path):
     catalog_path, queue_path, evidence, receipt_path, _ = _setup(tmp_path)
     candidate = json.loads(queue_path.read_bytes())["items"][0]["candidate"]

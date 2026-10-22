@@ -46,6 +46,9 @@ target_include_directories(ml_test_vst3_bus_info PRIVATE "${CMAKE_SOURCE_DIR}/na
 add_test(NAME vst3_bus_info COMMAND ml_test_vst3_bus_info)
 add_executable(ml_test_main_output_bus native/tests/MainOutputBus.cpp)
 add_test(NAME main_output_bus COMMAND ml_test_main_output_bus)
+add_executable(ml_test_kontakt_identity native/tests/KontaktIdentity.cpp)
+target_include_directories(ml_test_kontakt_identity PRIVATE "${CMAKE_SOURCE_DIR}/native/include")
+add_test(NAME kontakt_identity_reader COMMAND ml_test_kontakt_identity)
 
 juce_add_plugin(MLFixture
     COMPANY_NAME "Music Learning"

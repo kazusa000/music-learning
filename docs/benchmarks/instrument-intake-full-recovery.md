@@ -125,3 +125,23 @@ Kontakt旧通用程序列表控制实际上来自空机架，不能外推所有�
 另一次`km22/context-state/control-a/`用标准IStreamAttributes对照普通IBStream，Kontakt两次getState均返回0/78042字节，但属性接口查询次数为0，未读取StateType=Default。该SDK实验在已记录terminate后以`0xC000000D`退出，故只作为“本次未读取属性”的诊断观察，不计生命周期通过。没有把不同状态字节或上下文标记当作NKM兼容/身份成功。
 
 官方Lua的空机架只读introspection已实际正常完成，约3.80秒、190.1MB逻辑Job I/O、rack_count=0、自有树退出；没有加载NKI/NKM或处理音频。四个getter均为带两个upvalue的C函数，userdata类型明确指向`ni::kontakt::lua::api::bindInstrument(..., BEngine&)`及`bindFileInfo`的Sol lambda绑定。首次观察时进程已自然退出，没有取得模块映射，因此函数tostring给出的堆地址尚不能当作代码地址。下一步只在自有实例读少量closure/userdata与模块映射，定位真实只读getter；该步骤仍不等于VST3身份检查已接通。证据为`20261022-resume/kontakt/lua-introspection-20261022/run-20261022-01/`。
+
+### 实际组件身份与稀疏索引（2026-10-22 晚间，未全量入库）
+
+`km22/component-grand-c/`实际从全新VST3实例的独立空机架恢复先前捕获的Grand状态。通过公开IComponent指针及真实getState实现，确认`component+0xAC0 → receiver+0x140 → BEngine`，并核对core vtable/COL/`.?AVBEngine@@`类型。读取器沿已确认的名称表路径读回`Grand Piano`，不是在堆中搜索标签，也不是从候选文件名返回名称。该控制退出0、约1.77秒、约26.8MB逻辑Job I/O，仅1992字节定向内存读取；私有default恢复且自有进程退出。
+
+实际加载core `Kontakt 8.vst3plugin`的完整SHA为`6e6abad7518574e4f4e5e20779860f7c789041df63b75e0f03c29a18d701aeab`；旧`75cdaa…`识别的是portable wrapper，不能代替core。新`native/include/KontaktIdentity.h`按core/version/组件vtable及BEngine RTTI绑定，使用可注入、有限读取回调。名称支持MSVC SSO及堆字符串、严格UTF-8；索引按原厂standalone已确认的64 bank、signed-int16向量和全局重映射规则读取，不生成`[0,count)`。活动bank计数与记录索引长度是不同数量，不强加代码没有保证的等式。损坏指针、向量、RTTI、重复索引和越界读取仍拒绝。core中对应indices helper的精确RVA尚待空闲窗口核对，不能声称已经定位该core函数或直接调用了官方getter。
+
+`km22/source-controls-b/`通过官方Lua真实装载长名称音色`Clavinet Stereo Auto Wah`，以及`Grand Piano + Clavinet Stereo Auto Wah`双乐器组合；源接口分别返回count1/index0与count2/indices`0,128`，已保存独立NKM及原始回执。约5.55秒、约197.4MB逻辑Job I/O，源NKI/程序SHA不变，自有树退出。此前`source-controls-a`只在进程冲突预检阶段延期，没有启动Kontakt；原目录保留。上述成功只证明官方源装载，不冒充新读取器的长名/双款VST3发声验收。
+
+新增独立`native/instrument-probe/KontaktProbe.h`、`scripts/instruments/build_kontakt_probe.py`及`scripts/probes/instruments/kontakt_identity.py`，在新E构建目录复制并严格挂接快照读取，不覆盖固定宿主/链接库。每个新进程顺序缓冲校验实际core SHA，前后快照复用本进程仍未变化的文件pin；快照读取内存上限64KiB。首次原厂Multi/空机架重开分别捕获真实身份，音频后再次核对；空机架另有零身份控制。`kontakt_native_identity.py`从同实例读回内容取名称，候选源哈希只承担独立来源链，不用候选标签冒充观测。共享publisher同时核对response与保存state中的native identity，防止只替换语义字段而保留相同状态/参数。
+
+原生离线夹具及44项相关Python回归通过；另2项真实子进程测试验证非零退出保留与超时后自有孙进程退出。独立probe构建`kontakt-reader-b`成功，SHA为`470fb1cdc57e89ea7c78e2eb5fc23f1772cd303ff9a60c4891b4401145739d69`，Ruff通过。实际新空架/长名/双款控制因其他任务N7 endurance-v8的真实engine/六worker仍活动而延期，没有启动第二个采样器。新增有界一次性控制监督入口`run_kontakt_identity_controls.py`可等待原生通道，按固定输入串行执行，实际失败不自动重试；它不是全库验证器，也不发布目录。992项全量转换/资源验证/发声/入库仍未启动。
+
+### MODO实际可用集合与用户激活说明
+
+`20261021-all/modo/callback-trace/prelude-trace/run/model-set-20261022-01/`记录两次真实恢复：目标`Y70sJBass`已经写入，但查询的完整unordered_set只有`Y60sPBass`，declared_size1、链完整，contains(target)=false，随后程序自身重置到默认。该探针退出0、约0.94秒、约11.9MB逻辑Job I/O，插件和源预设SHA不变，所有自有进程退出。之前“异步队列覆盖”已被后续精确窗口排除，不能继续按旧推测修补setter。
+
+用户明确表示已付费激活，因此不能从这个单型号集合反推其账户或授权状态。只读核对VST3、moduleinfo和standalone均2.0.4；四个资源注册路径存在并指向同一H包目录，尚无简单版本错配/资源路径缺失证据。继续比较standalone与VST3实际初始化后的型号集合，检查合法安装/宿主差异；不修改授权检查、不强行插入型号、不修改插件二进制或把未发声项入库。独立standalone的布局与VST3不同，使用唯一代码特征匹配，不能套同RVA。该对照准备和失败均保留在`20261021-all/modo/standalone-compare/`，实际运行需等N7通道空闲。
+
+代码收口时`km22/protection-before-deferred-controls.json`只读复核正式九表/head和E侧12项保护SHA，均与恢复前一致。另2项H固定文件及catalog最后完整核对仍是`protection-after-native-introspection.json`；本次因v8活动没有额外重读H，不能把旧核对时间写成新的14项全验。实际后续控制结束后再作完整前后检查。

@@ -37,8 +37,9 @@ _INSTALLED_MANIFEST_CACHE: dict[tuple[str, str, tuple[int, ...]], dict] = {}
 class IdentityVerifier:
     """Plugin-specific parser pinned by the external receipt.
 
-    ``verify`` must parse captured native state instead of returning a label
-    copied from the receipt. Its implementation SHA is part of the attestation.
+    ``verify`` must parse captured native state or a pinned getter result from
+    that same live instance, instead of returning a label copied from the
+    candidate. Its implementation SHA is part of the attestation.
     """
 
     name: str
@@ -576,6 +577,11 @@ def _verify_run(candidate, root, run, verifier, phase):
     _verify_state_blob(state_plugin)
     if response_plugin.get("state_sha256") != state_plugin.get("state_sha256"):
         raise ValueError(f"{phase} response and captured-state hashes differ")
+    # Getters from opaque plugin states must stay bound to the same host
+    # response. Matching only state bytes/parameters would allow substituting
+    # a different semantic identity in the separately saved snapshot.
+    if _canonical(response_plugin.get("native_identity")) != _canonical(state_plugin.get("native_identity")):
+        raise ValueError(f"{phase} response and captured native getter identities differ")
     if response_plugin.get("binary_sha256") != candidate["plugin_sha256"]:
         raise ValueError(f"{phase} host loaded a different plugin binary")
     if response_plugin.get("identifier") != candidate.get("identifier"):
