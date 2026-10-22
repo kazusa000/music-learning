@@ -18,7 +18,12 @@ from music_learning import kontakt_validation as validation
 from music_learning.kontakt_import import build_batch
 from music_learning import kontakt_catalog_metadata
 from scripts.instruments import prepare_kontakt_full_job as prepare_job
-from scripts.instruments.run_kontakt_full_intake import SUCCESS_STATUSES, validate_coverage
+from scripts.instruments.run_kontakt_full_intake import (
+    SUCCESS_STATUSES,
+    reverify_conversion,
+    resume_evidence,
+    validate_coverage,
+)
 
 
 _MEMORY_ALPHABET = ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
@@ -438,6 +443,123 @@ def test_fullrunner_resume_coverage_rejects_omitted_added_or_retargeted_sources(
 
     with pytest.raises(ValueError):
         validate_coverage(records, conversion, work)
+
+
+def _conversion_resume_fixture(tmp_path):
+    from music_learning.kontakt_import import SCHEMA_VERSION, verify_conversion
+
+    batch_root = tmp_path / "library-run"
+    batch_root.mkdir()
+    source_bytes = b"factory source fixture"
+    item = build_batch("resume-fixture", "kontakt-factory", [{
+        "path": "Factory/Resume.nki",
+        "format": "nki",
+        "bytes": len(source_bytes),
+        "sha256": hashlib.sha256(source_bytes).hexdigest(),
+    }])["items"][0]
+    output = batch_root / item["output"]["path"]
+    output.parent.mkdir(parents=True)
+    output.write_bytes(b"converted multi fixture")
+    receipt = batch_root / item["receipt"]["path"]
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text("".join((
+        f"schema_version={SCHEMA_VERSION}\n",
+        f"job_id={item['id']}\n",
+        f"source_sha256={item['source']['sha256']}\n",
+        f"source_format={item['source']['format']}\n",
+        "status=completed\n",
+        "instrument_count=1\n",
+        "instrument_indices=0\n",
+        "loaded_slot=0\n",
+        "instrument_names_utf8_hex=46697874757265\n",
+        f"output_relative_path={item['output']['path']}\n",
+        f"output_bytes={output.stat().st_size}\n",
+        "error_utf8_hex=\n",
+    )), encoding="ascii")
+    attempt_root = batch_root / "rr" / "conversion"
+    attempt = attempt_root / "i" / item["id"][-12:] / "attempt-1"
+    attempt.mkdir(parents=True)
+    execution = {"status": "completed", "job_id": item["id"], "exit_code": 0}
+    (attempt / "execution.json").write_text(json.dumps(execution), encoding="utf-8")
+    item["status"] = "converted_pending_validation"
+    item["attempts"] = [verify_conversion(item, receipt, batch_root, execution)]
+    return item, batch_root
+
+
+def test_fullrunner_reverifies_conversion_from_original_receipt_and_execution(tmp_path):
+    item, batch_root = _conversion_resume_fixture(tmp_path)
+
+    result = reverify_conversion(item, batch_root)
+
+    assert result == item["attempts"][-1]
+    assert result["status"] == "converted_pending_validation"
+    assert result["output"]["sha256"] == hashlib.sha256(
+        (batch_root / item["output"]["path"]).read_bytes()
+    ).hexdigest()
+
+
+@pytest.mark.parametrize("mutation", ["identity", "output_digest", "output_path"])
+def test_fullrunner_rejects_tampered_saved_conversion_attempt(tmp_path, mutation):
+    from copy import deepcopy
+
+    item, batch_root = _conversion_resume_fixture(tmp_path)
+    item = deepcopy(item)
+    if mutation == "identity":
+        item["attempts"][-1]["observed_identity"]["instruments"][0]["name"] = "Forged Instrument"
+    elif mutation == "output_digest":
+        item["attempts"][-1]["output"]["sha256"] = "0" * 64
+    else:
+        item["attempts"][-1]["output"]["path"] = "../../outside.nkm"
+
+    with pytest.raises(ValueError, match="differs from its original receipt/output"):
+        reverify_conversion(item, batch_root)
+
+
+def test_fullrunner_rejects_conversion_output_path_escape(tmp_path):
+    item, batch_root = _conversion_resume_fixture(tmp_path)
+    item["output"]["path"] = "../outside.nkm"
+
+    with pytest.raises(ValueError, match="Unsafe relative path"):
+        reverify_conversion(item, batch_root)
+
+
+def _resume_evidence_fixture(tmp_path):
+    library_run = tmp_path / "kontakt-factory"
+    item_id = "kontakt-0123456789abcdef01234567"
+    item_root = library_run / "i" / item_id[-12:]
+    audio = item_root / "a"
+    audio.mkdir(parents=True)
+    (item_root / "candidate.json").write_text("{}", encoding="utf-8")
+    (audio / "receipt.json").write_text("{}", encoding="utf-8")
+    return library_run, {
+        "id": item_id,
+        "candidate": str(item_root / "candidate.json"),
+        "receipt": str(audio / "receipt.json"),
+        "evidence_root": str(audio),
+    }
+
+
+def test_fullrunner_resume_evidence_accepts_only_the_owned_item_tree(tmp_path):
+    library_run, item = _resume_evidence_fixture(tmp_path)
+
+    paths = resume_evidence(item, library_run)
+
+    assert paths == {
+        "candidate": f"i/{item['id'][-12:]}/candidate.json",
+        "receipt": f"i/{item['id'][-12:]}/a/receipt.json",
+        "evidence_root": f"i/{item['id'][-12:]}/a",
+    }
+
+
+@pytest.mark.parametrize("field", ["candidate", "receipt", "evidence_root"])
+def test_fullrunner_resume_evidence_rejects_checkpoint_path_escape(tmp_path, field):
+    library_run, item = _resume_evidence_fixture(tmp_path)
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}", encoding="utf-8")
+    item[field] = str(outside)
+
+    with pytest.raises(ValueError, match="evidence escaped its owned item directory"):
+        resume_evidence(item, library_run)
 
 
 def test_fullrunner_treats_publication_pending_preview_handoff_as_a_successful_terminal_state():
