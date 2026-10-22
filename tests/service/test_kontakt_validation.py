@@ -23,6 +23,10 @@ from scripts.instruments.run_kontakt_full_intake import SUCCESS_STATUSES, valida
 
 _MEMORY_ALPHABET = ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
 _SOURCE_SHA = hashlib.sha256(b"fixture factory source").hexdigest()
+_PARAMETER_IDS = [str(index) for index in range(2049)] + [
+    str(1295056896 + 256 * controller + channel)
+    for controller in range(131) for channel in range(16)
+]
 
 
 def _encode_memory_block(value: bytes) -> str:
@@ -41,7 +45,7 @@ def _encode_memory_block(value: bytes) -> str:
     return f"{len(value)}.{''.join(encoded)}"
 
 
-def _native_plugin(*, count=4145, name="Factory Instrument"):
+def _native_plugin(*, count=4145, name="Factory Instrument", parameter_ids=None):
     component = b"fixture component bytes"
     controller = b"fixture controller bytes"
     xml = (
@@ -70,8 +74,8 @@ def _native_plugin(*, count=4145, name="Factory Instrument"):
             "memory_budget_bytes": 65536,
         },
         "parameters_readback": [
-            {"id": f"kontakt-param-{index:04d}", "value": float(index % 127) / 127}
-            for index in range(count)
+            {"id": parameter_id, "value": float(index % 127) / 127}
+            for index, parameter_id in enumerate((parameter_ids or _PARAMETER_IDS[:count])[:count])
         ],
     }
 
@@ -215,6 +219,24 @@ def test_preset_serialization_contains_the_captured_component_and_controller_sta
     assert validation.preset_bytes(changed_state) != serialized
 
 
+def test_full_parameter_readback_requires_exact_count_and_pinned_id_set():
+    assert len(_PARAMETER_IDS) == 4145
+    assert hashlib.sha256(json.dumps(sorted(_PARAMETER_IDS), separators=(",", ":")).encode()).hexdigest() \
+        == validation.PARAMETER_IDS_SHA256
+    complete = _native_plugin()
+    assert len(validation._full_parameters(complete)) == 4145
+
+    missing = _native_plugin(count=4144)
+    with pytest.raises(ValueError, match="complete pinned 4145-parameter"):
+        validation._full_parameters(missing)
+
+    substituted = list(_PARAMETER_IDS)
+    substituted[-1] = "9999999999"
+    forged_same_count = _native_plugin(parameter_ids=substituted)
+    with pytest.raises(ValueError, match="complete pinned 4145-parameter"):
+        validation._full_parameters(forged_same_count)
+
+
 def test_make_candidate_freezes_native_identity_and_all_source_parameters(monkeypatch, tmp_path):
     plugin = _native_plugin()
     observed = {}
@@ -317,6 +339,31 @@ def test_validate_captured_rejects_native_identity_change_after_midi_in_either_p
         tmp_path, monkeypatch, first_plugin=first, reopen_plugin=reopen,
     )
     with pytest.raises(ValueError, match="native instrument identity"):
+        validation.validate_captured(
+            object(), candidate, source, output, empty_startup=empty_startup, validator_pin=pin,
+            resource_root=tmp_path,
+        )
+    assert not (output / "receipt.json").exists()
+
+
+@pytest.mark.parametrize("phase", ["first", "reopen"])
+@pytest.mark.parametrize("mutation", ["missing_parameter", "changed_parameter"])
+def test_validate_captured_rejects_incomplete_or_changed_parameter_readback_after_midi(
+    tmp_path, monkeypatch, phase, mutation,
+):
+    from copy import deepcopy
+
+    changed = deepcopy(_native_plugin())
+    if mutation == "missing_parameter":
+        changed["parameters_readback"].pop()
+    else:
+        changed["parameters_readback"][0]["value"] = 0.987654
+    first, reopen = (changed, None) if phase == "first" else (None, changed)
+    source, candidate, output, empty_startup, _starts, pin = _validation_fixture(
+        tmp_path, monkeypatch, first_plugin=first, reopen_plugin=reopen,
+    )
+    expected_error = "complete pinned 4145-parameter" if mutation == "missing_parameter" else "parameters changed"
+    with pytest.raises(ValueError, match=expected_error):
         validation.validate_captured(
             object(), candidate, source, output, empty_startup=empty_startup, validator_pin=pin,
             resource_root=tmp_path,
