@@ -32,3 +32,5 @@
 编号文档记录当时设计与实测，不代表所有段落都仍适用。[整理前README](history/README-before-native-daw.md)保存旧阶段状态。当前架构方向以architecture/native-daw为准；当前**已实现**模型/产品行为以50和后续实测修复为准；旧03/05/07保留为历史和兼容入口。历史47中移除SheetSage等描述已被50覆盖，不应据此再次删除当前模型。
 
 工程数量、队列进度、可选音色数和进程状态需要现场回读，不能把历史验收数字当成当前实时状态。开发与目录整理必须遵守仓库AGENTS中的固定宿主、H库、NAS及拒绝清理路径边界。
+
+当前本地DAW目标逐项收口与剩余工作见[最终核对表](benchmarks/native-engine-completion.md)。
