@@ -28,6 +28,8 @@
 
 ## 开发入口
 
+开发测试使用`scripts/maintenance/run-tests.ps1`，临时工程和录音默认退出即清理，小报告集中在`runtime/test-reports/`；不要再往根目录、`data/t`散落测试产物。规则见[测试收尾](docs/development/test-cleanup.md)。
+
 | 目录 | 用途 |
 | --- | --- |
 | `apps/web/` | React 界面与前端验证 |

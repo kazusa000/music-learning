@@ -48,6 +48,10 @@ test-results/
 *.tsbuildinfo
 CMakeFiles/
 CMakeCache.txt
+*.obj
+*.pdb
+*.ilk
+*.exp
 cmake-build-*/
 vcpkg_installed/
 .vs/
