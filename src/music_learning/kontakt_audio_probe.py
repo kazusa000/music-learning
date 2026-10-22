@@ -79,6 +79,33 @@ def audio_roundtrip(host, plugin_spec: dict, output_root: Path, *,
     """
     if any(plugin_spec.get(key) for key in ("state_base64", "preset_path")):
         raise ValueError("Initial Kontakt probe must use startup Multi, not a second hidden preset")
+    return _run_roundtrip(host, plugin_spec, output_root, first_startup=first_startup,
+                          empty_startup=empty_startup, profile=profile, timeout_seconds=timeout_seconds)
+
+
+def captured_state_roundtrip(host, source_state: dict, output_root: Path, *,
+                             empty_startup: Callable[[], AbstractContextManager],
+                             profile: ProbeProfile = ProbeProfile(), timeout_seconds=180) -> dict:
+    """Validate a separately captured source state in TWO fresh empty racks.
+
+    Unlike a startup-source control, neither validation process may obtain its
+    instrument from the default Multi. Both must restore the captured bytes.
+    The complete source parameter map is checked before recording any success.
+    """
+    _verify_state_blob(source_state)
+    expected = _parameters(source_state)
+    if source_state.get("preset_path"):
+        raise ValueError("Captured-state validation cannot hide another preset path")
+    result = _run_roundtrip(host, source_state, output_root, first_startup=empty_startup,
+                            empty_startup=empty_startup, profile=profile, timeout_seconds=timeout_seconds,
+                            expected_parameters=expected)
+    result["first_startup"] = "independently_verified_empty_multi"
+    atomic_write_json(Path(output_root) / "evidence-index.json", result)
+    return result
+
+
+def _run_roundtrip(host, plugin_spec, output_root, *, first_startup, empty_startup,
+                   profile, timeout_seconds, expected_parameters=None):
     if not all(plugin_spec.get(key) for key in ("identifier", "binary_sha256", "path")):
         raise ValueError("Kontakt native probe must pin plugin binary and class identifier")
     output = Path(output_root).resolve()
@@ -114,7 +141,9 @@ def audio_roundtrip(host, plugin_spec: dict, output_root: Path, *,
         snapshot = result["snapshot"]
         plugin = snapshot["tracks"][0]["plugins"][0]
         _verify_state_blob(plugin)
-        _parameters(plugin)
+        parameters = _parameters(plugin)
+        if expected_parameters is not None and parameters != expected_parameters:
+            raise ValueError("Kontakt validation parameter map differs from the independent source capture")
         if plugin["identifier"] != plugin_spec["identifier"] or plugin["binary_sha256"] != plugin_spec["binary_sha256"]:
             raise ValueError("Kontakt native binary/class changed during the audio probe")
         state_path = output / (phase + "-state.json")

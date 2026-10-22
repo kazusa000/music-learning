@@ -141,13 +141,14 @@ def _write_wav(path, amplitude=4096):
     return path
 
 
-def _write_run(root, name, identity="60 Model", parameter=0.25, amplitude=4096):
+def _write_run(root, name, identity="60 Model", parameter=0.25, amplitude=4096, plugin_path=None):
     folder = root / name
     folder.mkdir(parents=True)
     raw_state = f"factory={identity}".encode("ascii")
     state_sha = sha256_bytes(raw_state)
     parameter_map = [{"id": "BassModel", "value": parameter}]
     plugin = {
+        "path": plugin_path,
         "state_base64": base64.b64encode(raw_state).decode("ascii"),
         "state_sha256": state_sha,
         "parameters_readback": parameter_map,
@@ -206,8 +207,8 @@ def _make_receipt(candidate, evidence_root):
             "binary_sha256": candidate["plugin_sha256"],
             "identifier": candidate["identifier"],
         },
-        "first": _write_run(evidence_root, "first"),
-        "reopen": _write_run(evidence_root, "reopen"),
+        "first": _write_run(evidence_root, "first", plugin_path=candidate["plugin_path"]),
+        "reopen": _write_run(evidence_root, "reopen", plugin_path=candidate["plugin_path"]),
         "status": "failed",  # Informational only: it is never used as proof.
     }
 
@@ -271,6 +272,9 @@ def test_verified_receipt_builds_addition_only_plan_and_keeps_1252(tmp_path):
     ]
     assert plan["additions"][0]["source"]["display_name"] == "MODO BASS 2"
     assert plan["additions"][0]["display_variant_name"] == "自然（Natural）"
+    admission = plan["additions"][0]["native_admission"]
+    assert admission["state_sha256"] == item["admission"]["state_sha256"]
+    assert not (tmp_path / "modo-bass-2" / admission["path"]).exists()
     written = tmp_path / "plan.json"
     write_publication_plan(written, plan)
     assert json.loads(written.read_bytes())["plan_sha256"] == plan["plan_sha256"]
@@ -293,6 +297,13 @@ def test_publish_atomic_uses_cas_and_preserves_existing_entries(tmp_path):
         validator_pins={VALIDATOR_PIN.name: VALIDATOR_PIN},
         allowed_library_root=tmp_path,
     )
+    from types import SimpleNamespace
+    from music_learning.preset_import import admitted_native
+
+    added = plan["additions"][0]
+    native = admitted_native(SimpleNamespace(instrument_library=tmp_path), added)
+    assert native["state_sha256"] == added["state_sha256"]
+    assert native["parameters_readback"] == [{"id": "BassModel", "value": 0.25}]
     updated = json.loads(catalog_path.read_bytes())
     assert result["published"] == 1 and result["catalog_count"] == 1253
     assert updated["presets"][:1252] == base["presets"]

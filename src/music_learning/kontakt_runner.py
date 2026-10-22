@@ -365,7 +365,7 @@ def run_batch(queue_path: Path, source_root: Path, batch_root: Path, *,
               kontakt_executable: Path, runtime_root: Path = DEFAULT_RUNTIME_ROOT,
               timeout_seconds: float = 900, poll_seconds: float = 0.1,
               command_factory: Callable[[Path], list[str]] | None = None,
-              budget_probe: Callable[[], Mapping] | None = None) -> dict:
+              budget_probe: Callable[[], Mapping] | None = None, max_items: int | None = None) -> dict:
     """Run every pending source serially; only validated Lua conversions are recorded.
 
     ``command_factory`` is a test seam for short self-owned helper processes. It
@@ -375,6 +375,8 @@ def run_batch(queue_path: Path, source_root: Path, batch_root: Path, *,
         raise ValueError("Kontakt item timeout is outside the supported bound")
     if poll_seconds <= 0 or poll_seconds > 2:
         raise ValueError("Kontakt poll interval is outside the supported bound")
+    if max_items is not None and (type(max_items) is not int or max_items < 1):
+        raise ValueError("Kontakt serial item limit must be a positive integer")
     queue, source, batch = _safe_queue_paths(queue_path, source_root, batch_root)
     executable = Path(kontakt_executable).resolve(strict=True)
     runtime = Path(runtime_root).resolve(strict=True)
@@ -404,6 +406,8 @@ def run_batch(queue_path: Path, source_root: Path, batch_root: Path, *,
             _preflight_contact_process(executable)
 
         while True:
+            if max_items is not None and state["processed"] >= max_items:
+                break
             remaining = json.loads(queue.read_bytes())
             if not any(entry.get("status") == "pending" for entry in remaining["items"]):
                 break
@@ -459,7 +463,7 @@ def run_batch(queue_path: Path, source_root: Path, batch_root: Path, *,
         state["finished_at_utc"] = _now()
         state["status"] = "completed" if not any(
             entry.get("status") in {"pending", "running"} for entry in final_queue["items"]
-        ) else "needs_recovery"
+        ) else "partial" if max_items is not None and state["processed"] >= max_items else "needs_recovery"
         state["counts"] = {
             status: sum(entry.get("status") == status for entry in final_queue["items"])
             for status in ("pending", "running", "failed", "converted_pending_validation")

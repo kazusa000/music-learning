@@ -10,7 +10,7 @@ import wave
 import pytest
 
 from music_learning.instrument_intake_publication import _audio_measure
-from music_learning.kontakt_audio_probe import ProbeProfile, audio_roundtrip
+from music_learning.kontakt_audio_probe import ProbeProfile, audio_roundtrip, captured_state_roundtrip
 
 
 SPEC = {"id": "kontakt", "identifier": "fixture-kontakt", "path": "fixture.vst3",
@@ -122,3 +122,33 @@ def test_initial_hidden_state_rejected_before_profile_changes(tmp_path):
     with pytest.raises(ValueError, match="hidden preset"):
         audio_roundtrip(EvidenceHost(tmp_path / "probe", []), dict(SPEC, preset_path="hidden"),
                         tmp_path / "probe", first_startup=forbidden, empty_startup=forbidden)
+
+
+@pytest.mark.parametrize("source_value,passes", [(0.5, True), (0.25, False)])
+def test_captured_source_is_loaded_in_two_empty_racks_and_exact_parameters_required(tmp_path, source_value, passes):
+    output, events = tmp_path / "captured", []
+    host = EvidenceHost(output, events)
+    raw = b"independent source capture"
+    source = dict(SPEC, state_base64=base64.b64encode(raw).decode(),
+                  state_sha256=hashlib.sha256(raw).hexdigest(),
+                  parameters_readback=[dict(id="volume", value=source_value)])
+
+    @contextmanager
+    def empty():
+        phase = "first" if not host.requests else "reopen"
+        events.append(phase + ":enter")
+        try:
+            yield
+        finally:
+            events.append(phase + ":exit")
+
+    if passes:
+        report = captured_state_roundtrip(host, source, output, empty_startup=empty)
+        assert report["first_startup"] == report["reopen_startup"] == "independently_verified_empty_multi"
+        assert host.requests[0]["project"]["tracks"][0]["plugins"][0]["state_base64"] == source["state_base64"]
+        assert events == ["first:enter", "first:exit", "reopen:enter", "reopen:exit"]
+    else:
+        with pytest.raises(ValueError, match="independent source capture"):
+            captured_state_roundtrip(host, source, output, empty_startup=empty)
+        assert len(host.requests) == 1
+        assert not (output / "evidence-index.json").exists()

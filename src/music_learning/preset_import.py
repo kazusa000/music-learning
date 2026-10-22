@@ -130,6 +130,11 @@ def attach_descriptor(service, db, payload, revision):
 
 def admitted_native(settings, entry):
     """Read the immutable full-state artifact of an already admitted library preset."""
+    from .external_preset_state import load_admitted
+
+    external = load_admitted(settings, entry)
+    if external is not None:
+        return external
     from .preset_verification import cached_result
 
     bank = resource_path(settings.instrument_library, entry["bank_root"])

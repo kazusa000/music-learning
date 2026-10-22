@@ -55,7 +55,7 @@ else:
     return script
 
 
-def _case(tmp_path: Path, mode: str, budget_probe=None):
+def _case(tmp_path: Path, mode: str, budget_probe=None, *, max_items=None, source_count=1):
     source_root = tmp_path / "source-library"
     source_root.mkdir()
     source = source_root / "Factory" / "Test Piano.nki"
@@ -65,7 +65,12 @@ def _case(tmp_path: Path, mode: str, budget_probe=None):
 
     batch_root = tmp_path / "batch-evidence"
     batch_root.mkdir()
-    batch = build_batch("runner-test-v3", "test-library", [record])
+    records = [record]
+    for number in range(1, source_count):
+        additional = source.parent / (str(number) + " Additional.nki")
+        additional.write_bytes(b"additional test-only source")
+        records.append(source_record(additional, source_root))
+    batch = build_batch("runner-test-v3", "test-library", records)
     queue_path = batch_root / "jobs.json"
     write_batch(queue_path, batch)
 
@@ -88,6 +93,7 @@ def _case(tmp_path: Path, mode: str, budget_probe=None):
         poll_seconds=0.02,
         command_factory=command_factory,
         budget_probe=budget_probe,
+        max_items=max_items,
     )
     queue = json.loads(queue_path.read_bytes())
     return result, queue, child_pid_path
@@ -149,3 +155,9 @@ def test_busy_storage_defers_without_launching_or_marking_a_preset_failed(tmp_pa
     assert queue["items"][0]["status"] == "pending"
     assert queue["items"][0]["attempts"] == []
     assert not child_pid_path.exists()
+
+
+def test_positive_item_limit_yields_pending_remainder_without_calling_it_recovery(tmp_path):
+    result, queue, _ = _case(tmp_path, "ack", max_items=1, source_count=2)
+    assert result["status"] == "partial" and result["processed"] == 1
+    assert [row["status"] for row in queue["items"]] == ["converted_pending_validation", "pending"]

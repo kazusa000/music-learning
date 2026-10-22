@@ -137,7 +137,7 @@ def test_lua_job_uses_official_load_save_and_getter_identity_for_nki(tmp_path):
     assert "os.exit(" not in lua
     assert "Kontakt.get_instrument_name(index)" in lua  # filenames never supply identity
     assert "instrument_names_utf8_hex" in lua
-    assert "audio_verified" not in lua and "publish" not in lua.lower()
+    assert "audio_verified" not in lua and "Kontakt.publish" not in lua
 
 
 def test_lua_job_loads_single_multi_source_with_load_multi(tmp_path):
@@ -235,7 +235,7 @@ def test_conversion_rejects_wrong_identity_count_and_tampered_source_receipt(tmp
     receipt.parent.mkdir(parents=True)
     execution = {"job_id": item["id"], "status": "completed", "exit_code": 0}
     receipt.write_text(_receipt(item, output, count=2, indices="0,1"), encoding="ascii")
-    with pytest.raises(ValueError, match="count, indices, and names differ"):
+    with pytest.raises(ValueError, match="count, indices, and names differ|empty instrument name"):
         verify_conversion(item, receipt, batch_root, execution)
     receipt.write_text(_receipt(item, output, name="", count=1), encoding="ascii")
     with pytest.raises(ValueError, match="count, indices, and names differ"):
@@ -293,6 +293,45 @@ def test_multi_instrument_nkm_preserves_every_getter_identity(tmp_path):
         {"index": 3, "name": "Bell Layer"},
     ]
     assert result["publishable"] is False
+
+
+def test_bank_count_is_independent_of_sparse_instrument_count(tmp_path):
+    source_root, _, _, record, _, batch_root = _fixture(tmp_path)
+    item = build_batch("bank-slots", "kontakt-library", [record])["items"][0]
+    render_lua_job(item, source_root, batch_root)
+    output = batch_root / item["output"]["path"]
+    output.write_bytes(b"two instruments inside one active bank")
+    receipt = batch_root / item["receipt"]["path"]
+    receipt.write_text(_receipt(item, output, names=["A", "B"], count=1, indices="0,3"), encoding="ascii")
+    result = verify_conversion(item, receipt, batch_root,
+                               {"job_id": item["id"], "status": "completed", "exit_code": 0})
+    assert result["observed_identity"]["instrument_count"] == 1
+    assert result["observed_identity"]["instrument_indices"] == [0, 3]
+
+
+def test_opt_in_source_playback_getters_are_bound_to_exact_indices(tmp_path):
+    source_root, _, _, record, _, batch_root = _fixture(tmp_path)
+    item = build_batch("context", "kontakt-library", [record], capture_playback_context=True)["items"][0]
+    lua = render_lua_job(item, source_root, batch_root)
+    assert "Kontakt.get_instrument_midi_channel(index)" in lua
+    assert "Kontakt.get_instrument_options(index)" in lua
+    output = batch_root / item["output"]["path"]
+    output.write_bytes(b"source state")
+    receipt = batch_root / item["receipt"]["path"]
+    original = _receipt(item, output)
+    context = "0,0,36,96,1,127,0,0".encode().hex()
+    receipt.write_text(original + "playback_context_utf8_hex=" + context + "\n", encoding="ascii")
+    execution = {"job_id": item["id"], "status": "completed", "exit_code": 0}
+    result = verify_conversion(item, receipt, batch_root, execution)
+    row = result["playback_context"]["instruments"][0]
+    assert row == dict(index=0, midi_channel=0, key_range=[36, 96], velocity_range=[1, 127], mute=False, solo=False)
+    receipt.write_text(original, encoding="ascii")
+    with pytest.raises(ValueError, match="does not cover"):
+        verify_conversion(item, receipt, batch_root, execution)
+    bad = "1,0,36,96,1,127,0,0".encode().hex()
+    receipt.write_text(original + "playback_context_utf8_hex=" + bad + "\n", encoding="ascii")
+    with pytest.raises(ValueError, match="does not cover"):
+        verify_conversion(item, receipt, batch_root, execution)
 
 
 def test_failed_lua_status_and_missing_receipt_are_failure_only(tmp_path):

@@ -344,6 +344,9 @@ def _parse_installed_manifest(candidate: Mapping, bank_root: Path, cache: dict |
 
 def _verify_candidate_resources(candidate: Mapping, resource_root: Path, *, file_cache=None, manifest_cache=None):
     """Verify actual bank files against both candidate and immutable library manifest."""
+    from types import SimpleNamespace
+    from .installed_libraries import verify_installed_library
+
     plugin_binary = _resolve_plugin_binary(candidate["plugin_path"])
     plugin_bytes = plugin_binary.stat().st_size
     _hash_stable_resource(plugin_binary, plugin_bytes, candidate["plugin_sha256"], file_cache)
@@ -377,6 +380,7 @@ def _verify_candidate_resources(candidate: Mapping, resource_root: Path, *, file
             ):
                 raise ValueError("Candidate resource differs from installed-library manifest: " + relative)
         _hash_stable_resource(actual_path, metadata["bytes"], metadata["sha256"], file_cache)
+    verify_installed_library(SimpleNamespace(instrument_library=Path(resource_root)), candidate["installed_library"])
 
 
 def _candidate_for_catalog(candidate: Mapping) -> dict:
@@ -597,6 +601,8 @@ def _verify_run(candidate, root, run, verifier, phase):
         raise ValueError(f"{phase} host loaded a different plugin binary")
     if response_plugin.get("identifier") != candidate.get("identifier"):
         raise ValueError(f"{phase} host loaded a different plugin identifier")
+    if response_plugin.get("path") != candidate.get("plugin_path"):
+        raise ValueError(f"{phase} host loaded a different plugin path")
     if candidate.get("vst3_class_id") and response_plugin.get("vst3_class_id") != candidate["vst3_class_id"]:
         raise ValueError(f"{phase} host loaded a different VST3 class ID")
     reported_rms = result.get("rms")
@@ -886,6 +892,14 @@ def build_publication_plan(queue_path: Path, state_verifiers: Mapping[str, objec
                           "probe_sha256": summary["first"]["probe_sha256"],
                           "reopened_state_sha256": summary["reopen"]["state_sha256"]})
         admission = prepare_import(classify(admission))
+        # An external validator already proved this complete native state. Pin
+        # its exact bytes for ordinary capture/reuse instead of pretending it
+        # came from one of the fixed legacy verification caches. Plan building
+        # stays read-only; the explicit publisher writes the small artifact.
+        from .external_preset_state import admission_bytes
+
+        native = _state_plugin(_read_json_artifact(evidence_root, receipt["first"]["state"]))
+        _, admission["native_admission"] = admission_bytes(native)
         additions.append(admission)
         preview_ids.append(admission["id"])
     if len({p["id"] for p in additions}) != len(additions):
@@ -969,6 +983,14 @@ def publish_catalog_atomic(catalog_path: Path, plan: Mapping, *, expected_sha256
             raise ValueError("Publication would overwrite or duplicate a catalog entry")
         if plan.get("result_count") != len(base["presets"]) + len(additions):
             raise ValueError("Publication plan count is inconsistent")
+        from .external_preset_state import publish_state
+
+        evidence_by_id = {item["preset_id"]: item for item in queue["items"]}
+        for entry in additions:
+            attempt = evidence_by_id[entry["id"]]["attempts"][-1]
+            native = _state_plugin(_read_json_artifact(Path(attempt["evidence_root"]),
+                                                       attempt["receipt"]["first"]["state"]))
+            publish_state(catalog_path.parent, entry, native)
         updated = dict(base)
         updated["presets"] = [*base["presets"], *additions]
         data = json.dumps(updated, ensure_ascii=False, allow_nan=False, indent=2).encode("utf-8")
