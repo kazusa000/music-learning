@@ -27,7 +27,8 @@ from music_learning.kontakt_native_identity import make_kontakt_native_verifier 
 CORE_SHA = "6e6abad7518574e4f4e5e20779860f7c789041df63b75e0f03c29a18d701aeab"
 WRAPPER_SHA = "75cdaa3b4d187e0e2f21b9057ebd5759400a27988df11301d703922018babe4f"
 NATIVE_NAMES = {"ml_engine.exe", "ml_plugin_worker.exe", "ml_audio_host.exe", "ml_kontakt_probe.exe",
-                "instrument_probe_host.exe", "kontakt 8.exe", "modo_prelude_trace_probe.exe"}
+                "ml_graph_runner.exe", "ml_track_host.exe", "instrument_probe_host.exe", "kontakt 8.exe",
+                "modo bass 2.exe", "modo_standalone_model_set_debugger.exe", "modo_prelude_trace_probe.exe"}
 
 
 def sha(path: Path) -> str:
