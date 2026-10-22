@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 并行后台已启动
+
+最新授权允许跨来源并行。Ample 持续监督器继续同一原始队列；IO 暂缓时保持 24 小时有界等待，恢复 deferred/pending，不重测或改写已经失败/通过的条目。定位仍为 `runtime/ample-factory-chain.local.json`。00:12 只读快照为 LP 原批 17 通过/18 失败；AGM 3 通过、1 原失败、27 待测、1 IO 暂缓、1 缺 AGMPk，尚非整批终态。后续失败独立重试仍待原批结束。
+
+Kontakt 资源监督器 `path-fix-01` 已实际启动，定位 `runtime/kontakt-preparation-job-path-fix-01.local.json`；正确来源为 H 库旧 `.staging/20261021-kontakt-runtime`，新目标 `Kontakt/Runtime`，三库为 `Kontakt/Libraries/{css,css-solo,kontakt-factory}`。00:12 记录已完成运行时文件 2,176/8,481，因 H IO 压力等待，不能算成完成资源 SHA 审计或完成音色验证。进度仅为该时点快照，后续须读 E 检查点与实际进程，不拿 PID/旧 locator 当存活证明。
+
+完整 992 款来源对应 163 个已核对型号，静态双语/型号一致性无冲突。固定全量监督器 `kf22/full-b` 已启动，定位 `runtime/kontakt-full-job.local.json`，当前等待资源准备结果；依次处理 CSS 7、CSS Solo 11、Factory 974，尚未开始逐款发声验证。该批先保存完整验证结果，目录发布和正式 API 部署需在结果核对后执行；不能提前称已入库。代码、预设/空机架输入及原生宿主 SHA 已固定，运行中不修改此快照。
+
+首次资源准备存在 Python 路径转义错误，旧 `runtime-fail.json` 与 `kf22/full-a` 的阻塞报告完整保留；full-a 没有运行逐款验证、没有写入 catalog，正式表与 14 项固定文件前后相同。修正使用独立 attempt；full-b 只忽略启动前已固定 SHA 的那份历史准备失败，当前 attempt 新失败仍会阻断，不抹掉失败记录。
+
+新增恢复检查固定整份 plan 与代码 pin 清单，逐库对照全部来源路径，重放原始 Lua 回执与执行记录并复算 NKM SHA；候选、WAV、回执路径限于自有证据根且拒绝目录联接。固定 Kontakt 版本的全部 4,145 个参数 ID 集合也参与校验。发布恢复需要 catalog 与原已核对 additions 逐项相同才识别已发布，不覆盖外部变更。外部入库后的完整状态已经通过实际 `task.execute → import_admitted` 夹具回归，Ample Riffer 与 Kontakt MIDI 上下文均不回退旧验证器；这些是软件回归，不冒充实际新库发声验收。
+
 ## 2026-10-22 继续：原生控制通过、全量队列准备与并行授权
 
 用户确认 N7 已结束后恢复本任务，随后明确要求“不要串行，可以并行”。Ample 与 Kontakt 可以并行推进；每个来源使用独立进程、资源准备目录、固定输入及报告。H 盘繁忙仅推迟新的大文件读取，不中断已有条目。MODO 仍按用户要求暂缓；正式工程、NAS、旧报告、固定验证实现和清理拒绝目录不动。N7 已部署，不能再按旧长测 locator 等待。
