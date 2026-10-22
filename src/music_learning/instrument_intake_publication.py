@@ -73,7 +73,7 @@ FINGERPRINT_FIELDS = (
     "family", "instrument_ids", "classification_basis", "backend", "entrypoint", "bank_root",
     "key_range", "gm_programs", "identifier", "plugin_path", "plugin_sha256", "resources",
     "runtime_dependencies", "installed_library", "source_manifest_sha256", "expected_identity",
-    "vst3_class_id",
+    "source_factory_sha256", "performance_profile", "vst3_class_id",
     "expected_parameters", "source_category", "tags", "usage", "default",
 )
 
@@ -393,6 +393,17 @@ def _candidate_for_catalog(candidate: Mapping) -> dict:
         raise ValueError("An adapter must declare exact factory identity from its source inventory")
     if not isinstance(value.get("expected_parameters"), dict):
         raise ValueError("An adapter must declare the source parameter map, including an explicit empty map")
+    source_factory_sha256 = value.get("source_factory_sha256")
+    if source_factory_sha256 is not None and not SHA256_RE.fullmatch(str(source_factory_sha256)):
+        raise ValueError("Invalid source factory SHA-256")
+    if value.get("performance_profile") is not None:
+        if source_factory_sha256 is None:
+            raise ValueError("Performance profile must pin its source factory state")
+        from .instrument_performance_profiles import validate as validate_performance_profile
+
+        value["performance_profile"] = validate_performance_profile(
+            value["performance_profile"], expected_source_sha256=source_factory_sha256
+        )
     if not isinstance(value.get("plugin_sha256"), str) or not SHA256_RE.fullmatch(value["plugin_sha256"]):
         raise ValueError("A pinned plugin SHA-256 is required")
     if not isinstance(value.get("plugin_path"), str) or not value["plugin_path"]:

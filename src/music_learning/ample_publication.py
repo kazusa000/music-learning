@@ -11,7 +11,7 @@ from .ample_identity import (
     factory_identity, native_factory_identity, parse_factory_xml,
 )
 from .instrument_intake_publication import (
-    IdentityVerifier, ValidatorPin, _candidate_for_catalog, _plugin_from_response,
+    SHA256_RE, IdentityVerifier, ValidatorPin, _candidate_for_catalog, _plugin_from_response,
     artifact_ref, candidate_fingerprint, resource_manifest_fingerprint, sha256_file,
 )
 from .instrument_localization import translate
@@ -214,11 +214,8 @@ def candidate_for_factory(item: Mapping, first_plugin: Mapping, *, bank_root: st
     including Ample's internal parameters that VST3 does not expose through its
     standard host parameter list. The latter list is also pinned separately.
     """
-    if item.get("event_profile") is not None or item.get("performance_profile") is not None:
-        # The current public preview/AI catalog has ordinary MIDI playback
-        # semantics. A special trigger passing a diagnostic must not silently
-        # lose that trigger when selected or previewed in the product.
-        raise ValueError("Performance-profile catalog/preview integration is pending; retain diagnostic evidence")
+    from .instrument_performance_profiles import validate as validate_performance_profile
+
     code = item.get("instrument")
     product = PRODUCTS.get(code)
     if product is None:
@@ -231,6 +228,18 @@ def candidate_for_factory(item: Mapping, first_plugin: Mapping, *, bank_root: st
     if expected["name"] != item.get("name") or expected["database"] != item.get("db_name"):
         raise ValueError("Ample factory XML identity differs from the frozen queue")
     labels = {"model": product["model_label"], "variant": variant_label(item["name"])}
+    source_factory_sha256 = item.get("factory_sha256")
+    if not isinstance(source_factory_sha256, str) or not SHA256_RE.fullmatch(source_factory_sha256):
+        raise ValueError("Ample factory source must carry its frozen SHA-256")
+    event_profile = item.get("event_profile")
+    performance_profile = item.get("performance_profile")
+    if event_profile is not None and performance_profile is not None:
+        raise ValueError("Ample factory item has ambiguous performance profiles")
+    raw_profile = performance_profile if performance_profile is not None else event_profile
+    normalized_profile = (
+        validate_performance_profile(raw_profile, expected_source_sha256=source_factory_sha256)
+        if raw_profile is not None else None
+    )
     candidate = {
         "id": f"{product['library_id']}:{item['id']}",
         "name": item["name"],
@@ -247,9 +256,10 @@ def candidate_for_factory(item: Mapping, first_plugin: Mapping, *, bank_root: st
         "bank_root": bank_root,
         "entrypoint": entrypoint,
         "resources": dict(resources),
-        "runtime_dependencies": [],
+        "runtime_dependencies": {},
         "installed_library": dict(installed_library),
         "source_manifest_sha256": source_manifest_sha256,
+        "source_factory_sha256": source_factory_sha256,
         "expected_identity": expected,
         "expected_parameters": _native_parameters(first_plugin),
         "plugin_path": first_plugin.get("path"),
@@ -262,6 +272,8 @@ def candidate_for_factory(item: Mapping, first_plugin: Mapping, *, bank_root: st
         "usage": "Factory preset from the Ample product library.",
         "default": item["name"] == "Default",
     }
+    if normalized_profile is not None:
+        candidate["performance_profile"] = normalized_profile
     return _candidate_for_catalog(candidate)
 
 

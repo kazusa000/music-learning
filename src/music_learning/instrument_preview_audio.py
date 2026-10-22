@@ -13,7 +13,7 @@ VERSION = "musical-preview-v1"
 RATE = 44100
 
 
-def phrase(entry):
+def _ordinary_phrase(entry):
     ids = entry.get("instrument_ids", [entry["family"]])
     low, high = entry["key_range"]
     if high < low or low < 0 or high > 127:
@@ -65,6 +65,32 @@ def phrase(entry):
                 )
             )
     return notes, "低音线" if bass else "鼓组节奏" if drums else "敲击短句" if mallet else "分解和弦与和弦"
+
+
+def phrase_spec(entry, *, sample_rate=RATE):
+    """Return the exact MIDI and transport contract for a catalog preview."""
+    profile = entry.get("performance_profile")
+    if profile is not None:
+        from .instrument_performance_profiles import trigger_phrase, validate
+
+        profile = validate(profile, expected_source_sha256=entry.get("source_factory_sha256"))
+        return trigger_phrase(profile, sample_rate=sample_rate)
+    notes, description = _ordinary_phrase(entry)
+    return {
+        "notes": notes,
+        "controllers": [],
+        "duration_samples": 6 * sample_rate,
+        "tail_samples": sample_rate,
+        "tempo": [],
+        "meter": [],
+        "phrase": description,
+    }
+
+
+def phrase(entry):
+    """Compatibility view used by the preview API's human-readable field."""
+    result = phrase_spec(entry)
+    return result["notes"], result["phrase"]
 
 
 def read_pcm(path):

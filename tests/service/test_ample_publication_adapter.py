@@ -121,6 +121,8 @@ def test_factory_candidate_uses_explicit_product_model_bilingual_label_and_full_
     assert candidate["labels_zh"] == {"model": "电吉他", "variant": "秋叶（布鲁斯）"}
     assert candidate["expected_identity"]["database"] == "AGSCNk"
     assert candidate["expected_parameters"] == {"7": 0.8}
+    assert candidate["runtime_dependencies"] == {}
+    assert candidate["source_factory_sha256"] == factory_hash
     assert candidate["audio_verified"] is False
 
 
@@ -139,12 +141,100 @@ def test_every_factory_queue_name_has_a_reviewed_chinese_variant_label():
 
 
 @pytest.mark.parametrize("field", ["event_profile", "performance_profile"])
-def test_diagnostic_trigger_is_not_dropped_into_an_ordinary_midi_catalog(field):
-    with pytest.raises(ValueError, match="catalog/preview integration"):
+def test_incomplete_diagnostic_trigger_is_rejected(field):
+    from music_learning.instrument_performance_profiles import validate
+
+    payload = {"kind": "riff_toggle", "trigger_note": 94}
+    with pytest.raises(ValueError, match="performance profile"):
+        validate(payload)
+
+
+def test_diagnostic_trigger_is_pinned_and_carried_into_the_candidate(tmp_path):
+    product = PRODUCTS["AGSC"]
+    factory = (b'<AEG_STATE Name="Autumn Leaves(Blues)"><DBName Value="AGSCNk"/>'
+               b'<Parameter Name="Volume" Value="0.8"/></AEG_STATE>')
+    factory_path = tmp_path / "factory.agscstate"
+    factory_path.write_bytes(factory)
+    factory_hash = hashlib.sha256(factory).hexdigest()
+    profile = {
+        "schema_version": 1,
+        "kind": "riff_toggle",
+        "factory_riff_sha256": factory_hash,
+        "riff_name": "Autumn Leaves",
+        "riff_type": "Riff",
+        "tempo_bpm": 95,
+        "numerator": 4,
+        "denominator": 4,
+        "bars": 4,
+        "trigger_note": 94,
+        "trigger_velocity": 1,
+        "stop_velocity": 1 / 127,
+    }
+    plugin = {
+        "name": "Ample Guitar SC", "version": "4.0.1",
+        "path": r"H:\music\Sound Library\Ample Sound\AGSC 4.0.1\AGSC.vst3",
+        "binary_sha256": "a" * 64, "identifier": "VST3-Ample Guitar SC-test",
+        "vst3_class_id": "ABCDEF019182FAEB4170736441677363",
+        "parameters_readback": [{"id": "7", "value": 0.8}],
+    }
+    manifest_sha = "b" * 64
+    candidate = candidate_for_factory(
+        {"id": "factory-id", "instrument": "AGSC", "name": "Autumn Leaves(Blues)",
+         "db_name": "AGSCNk", "factory_xml": str(factory_path),
+         "factory_sha256": factory_hash, "event_profile": profile},
+        plugin,
+        bank_root=product["bank_root"],
+        entrypoint="Presets4/Autumn Leaves(Blues).vstpreset",
+        resources={
+            "Presets4/Autumn Leaves(Blues).vstpreset": {"bytes": 1, "sha256": "c" * 64},
+            "manifests/installed.json": {"bytes": 1, "sha256": manifest_sha},
+        },
+        installed_library={"library_id": product["library_id"],
+                           "bank_root": product["bank_root"],
+                           "manifest_path": "manifests/installed.json",
+                           "manifest_sha256": manifest_sha},
+        source_manifest_sha256="d" * 64,
+    )
+
+    assert candidate["performance_profile"] == profile | {"tempo_bpm": 95.0,
+                                                            "trigger_velocity": 1.0,
+                                                            "stop_velocity": 1 / 127}
+    changed = {**candidate, "performance_profile": {**candidate["performance_profile"],
+                                                      "trigger_note": 95}}
+    from music_learning.instrument_intake_publication import candidate_fingerprint
+
+    assert candidate_fingerprint(candidate) != candidate_fingerprint(changed)
+
+
+def test_diagnostic_trigger_source_must_match_frozen_factory_state(tmp_path):
+    product = PRODUCTS["AGSC"]
+    factory = (b'<AEG_STATE Name="Autumn Leaves(Blues)"><DBName Value="AGSCNk"/>'
+               b'<Parameter Name="Volume" Value="0.8"/></AEG_STATE>')
+    factory_path = tmp_path / "factory.agscstate"
+    factory_path.write_bytes(factory)
+    profile = {
+        "schema_version": 1, "kind": "riff_toggle", "factory_riff_sha256": "e" * 64,
+        "riff_name": "Autumn Leaves", "riff_type": "Riff", "tempo_bpm": 95,
+        "numerator": 4, "denominator": 4, "bars": 4, "trigger_note": 94,
+        "trigger_velocity": 1, "stop_velocity": 1 / 127,
+    }
+    plugin = {
+        "name": "Ample Guitar SC", "version": "4.0.1",
+        "path": r"H:\music\Sound Library\Ample Sound\AGSC 4.0.1\AGSC.vst3",
+        "binary_sha256": "a" * 64, "identifier": "VST3-Ample Guitar SC-test",
+        "vst3_class_id": "ABCDEF019182FAEB4170736441677363",
+        "parameters_readback": [{"id": "7", "value": 0.8}],
+    }
+    with pytest.raises(ValueError, match="source does not match"):
         candidate_for_factory(
-            {"instrument": "AGLP", field: {"kind": "riff_toggle", "trigger_note": 94}}, {},
-            bank_root="unused", entrypoint="unused", resources={}, installed_library={},
-            source_manifest_sha256="d" * 64)
+            {"id": "factory-id", "instrument": "AGSC", "name": "Autumn Leaves(Blues)",
+             "db_name": "AGSCNk", "factory_xml": str(factory_path),
+             "factory_sha256": hashlib.sha256(factory).hexdigest(), "event_profile": profile},
+            plugin,
+            bank_root=product["bank_root"],
+            entrypoint="Presets4/Autumn Leaves(Blues).vstpreset",
+            resources={}, installed_library={}, source_manifest_sha256="d" * 64,
+        )
 
 
 def test_receipt_bridge_references_each_phase_without_trusting_queue_status(tmp_path):

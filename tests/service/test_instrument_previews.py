@@ -10,8 +10,8 @@ from conftest import invoke
 from test_instruments import installed
 from music_learning.contracts import PrepareInstrumentPreview
 from music_learning.instrument_localization import prepare_import, translate
-from music_learning.instrument_preview_audio import RATE, phrase, normalize, read_pcm
-from music_learning.instrument_previews import InstrumentPreviews
+from music_learning.instrument_preview_audio import RATE, phrase, phrase_spec, normalize, read_pcm
+from music_learning.instrument_previews import InstrumentPreviews, render_preview
 from music_learning.instrument_taxonomy import classify
 from music_learning.service import DomainError
 
@@ -168,6 +168,172 @@ def test_phrases_respect_ranges_and_normalization_is_nonzero_and_peak_safe(tmp_p
     tone(raw, 0)
     with pytest.raises(ValueError, match="silent"):
         normalize(raw, target)
+
+
+def test_riff_profile_phrase_and_native_request_keep_trigger_and_transport(tmp_path, monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    import music_learning.instrument_previews as preview_module
+
+    profile = {
+        "schema_version": 1,
+        "kind": "riff_toggle",
+        "factory_riff_sha256": "a" * 64,
+        "riff_name": "Autumn Leaves",
+        "riff_type": "Riff",
+        "tempo_bpm": 95,
+        "numerator": 4,
+        "denominator": 4,
+        "bars": 2,
+        "trigger_note": 94,
+        "trigger_velocity": 1.0,
+        "stop_velocity": 1 / 127,
+    }
+    entry = {
+        "id": "riff",
+        "family": "electric-guitar",
+        "instrument_ids": ["electric-guitar"],
+        "key_range": [40, 88],
+        "performance_profile": profile,
+        "plugin_path": "fake-plugin.vst3",
+        "plugin_sha256": "b" * 64,
+        "backend": "vst3-preset",
+    }
+    expected = phrase_spec(entry)
+    notes, description = phrase(entry)
+    assert notes == expected["notes"] and description == expected["phrase"]
+    assert expected["tempo"] == [dict(sample=0, bpm=95.0)]
+    assert expected["meter"] == [dict(sample=0, numerator=4, denominator=4)]
+    assert "Autumn Leaves" in description and "2 小节" in description
+
+    observed = {}
+
+    class FakeProcess:
+        pid = 123
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+    class FakeOwnedProcess:
+        def __init__(self, command, *, stdout, stderr):
+            self.command = command
+            self.process = FakeProcess()
+
+        def __enter__(self):
+            request_path, response_path = map(Path, self.command[1:3])
+            request = json.loads(request_path.read_bytes())
+            observed.update(request["project"])
+            tone(Path(request["output_path"]))
+            response_path.write_text(json.dumps({
+                "ok": True,
+                "result": {
+                    "clipped_samples": 0,
+                    "snapshot": {"tracks": [{"plugins": [{"binary_sha256": "b" * 64}]}]},
+                },
+            }))
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(preview_module, "validate_entry", lambda *_args: None)
+    monkeypatch.setattr(preview_module, "materialize", lambda _settings, _entry, _target: tmp_path / "entry.vstpreset")
+    monkeypatch.setattr(preview_module, "preset_spec", lambda _entry, path: {"preset_path": str(path)})
+    monkeypatch.setattr(preview_module, "OwnedProcess", FakeOwnedProcess)
+    import psutil
+    monkeypatch.setattr(psutil, "Process", lambda _pid: SimpleNamespace(nice=lambda *_args: None,
+                                                                          create_time=lambda: 0.0))
+    settings = SimpleNamespace(native_host=tmp_path / "host.exe", plugin_path=lambda value: value)
+    output, metrics = render_preview(settings, entry, tmp_path / "preview", lambda: False)
+
+    assert output.is_file() and metrics["duration"] == 1
+    assert observed["duration_samples"] == expected["duration_samples"]
+    assert observed["tempo"] == expected["tempo"]
+    assert observed["meter"] == expected["meter"]
+    assert observed["tracks"][0]["notes"] == expected["notes"]
+    assert observed["tracks"][0]["controllers"] == []
+
+
+def test_kontakt_midi_context_profile_dispatches_cc_to_preview_request(tmp_path, monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    import music_learning.instrument_previews as preview_module
+
+    profile = {
+        "schema_version": 1,
+        "kind": "midi_context",
+        "source_factory_sha256": "a" * 64,
+        "instruments": [{
+            "index": 0,
+            "midi_channel": 1,
+            "key_range": [48, 84],
+            "velocity_range": [24, 112],
+            "mute": False,
+            "solo": False,
+        }],
+        "controllers": [{"controller": 1, "value": 32}],
+    }
+    entry = {
+        "id": "kontakt-midi-context",
+        "family": "acoustic-piano",
+        "instrument_ids": ["acoustic-piano"],
+        "key_range": [48, 84],
+        "source_factory_sha256": "a" * 64,
+        "performance_profile": profile,
+        "plugin_path": "fake-plugin.vst3",
+        "plugin_sha256": "b" * 64,
+        "backend": "vst3-preset",
+    }
+    expected = phrase_spec(entry)
+    assert expected["controllers"] == [{"sample": 0, "channel": 1, "controller": 1, "value": 32}]
+
+    observed = {}
+
+    class FakeProcess:
+        pid = 123
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+    class FakeOwnedProcess:
+        def __init__(self, command, *, stdout, stderr):
+            self.command = command
+            self.process = FakeProcess()
+
+        def __enter__(self):
+            request_path, response_path = map(Path, self.command[1:3])
+            request = json.loads(request_path.read_bytes())
+            observed.update(request["project"])
+            tone(Path(request["output_path"]))
+            response_path.write_text(json.dumps({
+                "ok": True,
+                "result": {
+                    "clipped_samples": 0,
+                    "snapshot": {"tracks": [{"plugins": [{"binary_sha256": "b" * 64}]}]},
+                },
+            }))
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    monkeypatch.setattr(preview_module, "validate_entry", lambda *_args: None)
+    monkeypatch.setattr(preview_module, "materialize", lambda _settings, _entry, _target: tmp_path / "entry.vstpreset")
+    monkeypatch.setattr(preview_module, "preset_spec", lambda _entry, path: {"preset_path": str(path)})
+    monkeypatch.setattr(preview_module, "OwnedProcess", FakeOwnedProcess)
+    import psutil
+    monkeypatch.setattr(psutil, "Process", lambda _pid: SimpleNamespace(nice=lambda *_args: None,
+                                                                          create_time=lambda: 0.0))
+    settings = SimpleNamespace(native_host=tmp_path / "host.exe", plugin_path=lambda value: value)
+    output, metrics = render_preview(settings, entry, tmp_path / "preview", lambda: False)
+
+    assert output.is_file() and metrics["duration"] == 1
+    assert observed["tracks"][0]["controllers"] == expected["controllers"]
+    assert observed["tracks"][0]["notes"] == expected["notes"]
 
 
 def test_import_localization_preserves_identity_and_supports_new_libraries():

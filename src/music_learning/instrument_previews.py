@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 
-from .instrument_preview_audio import VERSION, RATE, phrase, normalize
+from .instrument_preview_audio import VERSION, RATE, phrase, phrase_spec, normalize
 from .instruments import catalog, materialize, preset_spec, resource_path
 from .installed_libraries import verify_installed_library
 from .processes import OwnedProcess
@@ -73,12 +73,17 @@ def fingerprint(settings, entry):
         "expected_keyscape",
         "expected_pianoteq",
     )
+    preset = {k: entry.get(k) for k in fields}
+    # Keep legacy cache IDs stable, while ensuring a trigger profile cannot
+    # reuse audio produced with ordinary piano-roll events or another trigger.
+    if entry.get("performance_profile") is not None:
+        preset["performance_profile"] = entry["performance_profile"]
     return hashlib.sha256(
         encoded(
             dict(
                 policy=VERSION,
                 host=file_digest(settings.native_host),
-                preset={k: entry.get(k) for k in fields},
+                preset=preset,
             )
         ).encode()
     ).hexdigest()
@@ -88,7 +93,8 @@ def render_preview(settings, entry, directory, cancelled):
     directory.mkdir(parents=True, exist_ok=True)
     validate_entry(settings, entry)
     path = materialize(settings, entry, directory / "resources")
-    notes, _ = phrase(entry)
+    musical_phrase = phrase_spec(entry)
+    notes = musical_phrase["notes"]
     spec = dict(
         preset_spec(entry, path), id="instrument", path=str(settings.plugin_path(entry["plugin_path"]))
     )
@@ -101,11 +107,16 @@ def render_preview(settings, entry, directory, cancelled):
             revision_id="library-preview",
             sample_rate=RATE,
             block_size=512,
-            duration_samples=6 * RATE,
-            tail_samples=RATE,
-            tracks=[dict(id="preview", gain_db=-12, plugins=[spec], notes=notes)],
+            duration_samples=musical_phrase["duration_samples"],
+            tail_samples=musical_phrase["tail_samples"],
+            tracks=[dict(id="preview", gain_db=-12, plugins=[spec], notes=notes,
+                         controllers=musical_phrase.get("controllers", []))],
         ),
     )
+    if musical_phrase["tempo"]:
+        request["project"]["tempo"] = musical_phrase["tempo"]
+    if musical_phrase["meter"]:
+        request["project"]["meter"] = musical_phrase["meter"]
     req = directory / "request.json"
     response = directory / "response.json"
     req.write_text(encoded(request), encoding="utf-8")
