@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新N7固定v8（2026-10-22）：目标active/正式未部署。d4852c6/f056完整后端510过/1权限跳过/0败230.20s；immutable desktop五文件实际4K四组过（240DPI/DPR2.5/foreground保持），设备恢复再过。端点20次P95冷开60.25/播放58.04/定位59.59/音量57.41/静音55.72/独奏55.39ms，后三项仍未达初始50ms，原失败保留不放宽。当前唯一endurance-v8于20:38:56 UTC开始，wrapper19320/Python43616，已实查reference305-full；固定d4852c6源码/f056，locator runtime/engine-acceptance-job.local.json。启动H三次busy0/1/1%、queue0，音源只装一次保留PID；两整曲+1800s未终态不称通过，运行固定文件/报告不改、不开二批。正式前九表14pin一致；H/NAS/他人工作/固定验证/历史拒绝边界同前。
+
 最新N7真实AI与桌面固定（2026-10-22）：目标active/正式未部署，暂无长测。57dc8bd固定源码/f056的ai-process真实gpt-6.1-sol通过：唯一音符93→105，applied=desired新修订，进程流1760→3520Hz，旧频3.53e-7/新频0.001682，原阈值不变，0render；只改音高、其他音乐字段逐项相同，捕获QPC/断续0。新增桌面五文件不可变发布与启动校验，避免发布后使用旧mutable bin；11发布回归过，实际包桌面及最终固定套件/长测待做。H仅串行按需读，不叠加扫库；正式九表/14pin/NAS/固定验证/他人工作/历史拒绝路径不动。
 
 最新N7隔离回环（2026-10-22）：目标active/正式未部署，无长测。ai-reuse-v2真实Codex已改105/applied及倍频出现，但旧频残留超阈值，原失败保留，事前弱背景载波不能解30秒后混音；AI改为标准1760/3520Hz并仅抓自有engine进程树。新增独立ml_process_loopback诊断（build_engine --process-capture，不入生产4文件）按Windows官方接口，不改音量/其他应用；源码/EXE SHA固定、核对自有PID/EXE、0.2–5秒有界、拒覆盖。process-isolation-v2真实双进程4组过，目标9973幅0.001776/旁路7919仅2.53e-7，暂停目标RMS精确0而端点仍有旁路。虚拟流devicePosition0如实留raw，只用包QPC检查，不冒充端点时钟；原端点meter未改。PCM16量化噪声旧失败保留，float32保持静音阈值，包/时间戳/非有限全0。f056生产四SHA不变，待新固定源码AI/长测；H/正式/14pin/NAS/固定验证/其他工作/拒绝路径不动。

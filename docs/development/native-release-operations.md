@@ -2,11 +2,13 @@
 
 此流程只更新程序版本指针和本机配置，不迁移、复制或降级工程数据库，不移动音源和模型。正式发布前先完成 N7 对该原生 bundle 的整曲及长循环验收。
 
-## 三份固定资源
+## 固定发布资源
 
 - `runtime/releases/<Git commit>`：从已提交 Git 内容提取的独立源码；清单逐文件校验，开发中的未提交修改不会进入正式服务。
 - `runtime/web-releases/<内容SHA>`：与源码配套的前端静态资源。
 - `runtime/engine-bundles/<内容SHA>`：固定的设备引擎、插件 worker、导出 runner 和回环工具。
+- `runtime/desktop-releases/<内容SHA>`：已测WebView2外壳及四个配套文件；发布启动逐文件核对，不再使用可变旧bin。
+- `runtime/engine-diagnostics/<内容SHA>`：仅验收使用的进程隔离捕获工具，独立于生产四文件。
 
 发布描述保存在 `runtime/engine-release.*.local.json`。它只是候选；`runtime/application-release.local.json` 才是正式指针。源码目录中的 `runtime`、`plugins` 是明确的资源联接，禁止递归跟随它们扫描或删除发布树。
 
@@ -15,9 +17,9 @@
 在项目根目录 PowerShell 执行。下面以当前候选描述为例；它仍在长测、尚未激活，必须等完整验收通过后才执行激活。后续发布使用对应验收记录里的描述路径。
 
 ```powershell
-& data/envs/app/Scripts/python.exe scripts/deploy_app_release.py runtime/engine-release.io-aware-v2.local.json
+& data/envs/app/Scripts/python.exe scripts/deploy_app_release.py runtime/engine-release.desktop-final.local.json
 .\stop.cmd
-& data/envs/app/Scripts/python.exe scripts/deploy_app_release.py runtime/engine-release.io-aware-v2.local.json --apply
+& data/envs/app/Scripts/python.exe scripts/deploy_app_release.py runtime/engine-release.desktop-final.local.json --apply
 .\start.cmd
 ```
 

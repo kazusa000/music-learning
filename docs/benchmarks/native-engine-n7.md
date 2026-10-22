@@ -2,6 +2,14 @@
 
 ## 2026-10-22 恢复执行
 
+### d485固定包与当前唯一v8
+
+`runtime/engine-release.desktop-final.local.json`固定d4852c6源码、f056生产bundle、658f639e前端和已测桌面五文件。`full-desktop-final`完整后端510通过/1权限跳过/0失败（230.20秒）；`desktop-package`实际不可变目录EXE四组通过，240DPI/DPR2.5/foreground保持。`device-recovery-packaged.json`再次真实设备恢复通过，范围仍为模拟stop回调和真实不存在设备拒绝，不声称物理拔插。
+
+`latency-packaged`各20次端点回环，P95冷文件60.25ms、播放58.04ms、定位59.59ms、音量57.41ms、静音55.72ms、独奏55.39ms。后三项未达首次50ms目标，整项状态保留failed；无包断续/时间戳错误，未更换系统设备或放宽阈值。
+
+唯一新长测`endurance-v8`于20:38:56 UTC开始，wrapper19320、实际Python43616，源码/导入身份在`endurance-v8-code.json`。先reference305-full，再一次采样器装载、20次播放定位/三次A-B、current-full和1800秒循环，严格PID复用/时钟/缓存/丢块检查不变。启动H三次只读性能计数busy0/1/1%、queue0，正式前九表14pin一致。当前未终态，禁止改固定源码/bundle/原报告或并发开第二批；正式尚未激活。
+
 ### 实际AI已通过与桌面包
 
 `ai-process/report.json`在57dc8bd固定源码及f056生产bundle上实际通过。真实gpt-6.1-sol将唯一音符93改105，新head/applied/desired一致，0render；读回旧新快照，仅pitch变化。进程隔离流的1760/3520背景均0，修改前1760幅0.0017089，修改后1760仅3.53e-7、3520为0.0016822，保留原声学阈值。捕获包/QPC/非有限错误0；不把虚拟devicePosition0当硬件时钟。原端点失败及中间实验保留。

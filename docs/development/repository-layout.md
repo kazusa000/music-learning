@@ -59,7 +59,7 @@ runtime/
 
 ## 物理迁移规则与顺序
 
-N7发布资源新增 `runtime/releases/<Git commit>/`（独立源码）、`runtime/web-releases/<内容SHA>/`（前端）、`runtime/engine-bundles/<内容SHA>/`（设备/worker/runner/回环），当前正式数据仍为配置中的原 `data/app-data`。`application-release.local.json`是已激活版本指针，`app.local.json`固定web与native；开发构建不直接覆盖正式输出。源码副本仅runtime/plugins是明确的资源联接，验证按源码清单读取，不能未排除reparse递归扫描/清理发布树。构建/校验入口为 `scripts/build_app_release.py`、`scripts/deploy_app_release.py`；只有应用停止后激活，`start.cmd`入口不变。`repair-audio.cmd`仅恢复自有音频进程，不改工程。
+N7发布资源新增 `runtime/releases/<Git commit>/`（独立源码）、`runtime/web-releases/<内容SHA>/`（前端）、`runtime/engine-bundles/<内容SHA>/`（设备/worker/runner/回环），`runtime/desktop-releases/<内容SHA>/`（桌面已测五文件）和`runtime/engine-diagnostics/<内容SHA>/`（独立诊断）。当前正式数据仍为配置中的原 `data/app-data`。`application-release.local.json`是已激活版本指针，`app.local.json`固定web与native；开发构建不直接覆盖正式输出。源码副本仅runtime/plugins是明确的资源联接，验证按源码清单读取，不能未排除reparse递归扫描/清理发布树。构建/校验入口为 `scripts/build_app_release.py`、`scripts/deploy_app_release.py`；只有应用停止后激活，`start.cmd`入口不变。`repair-audio.cmd`仅恢复自有音频进程，不改工程。
 
 1. **本轮已做：**重写README为当前入口，创建文档导航和架构/计划/目录文档，将整理前README存为历史说明。归档未部署的浏览器分块实验到Git stash。源码、运行资源与受保护路径没有批量搬动。
 2. **N1–N2：**新引擎使用新目录与独立构建目标，增加统一build/probe入口；不为了目录美观移动已有固定实现。
