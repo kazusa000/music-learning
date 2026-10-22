@@ -55,6 +55,40 @@ def validate_coverage(expected_records, conversion, work):
     return len(expected)
 
 
+def reverify_conversion(item, batch_root):
+    """Rebuild conversion from original Lua receipt and owned-process evidence."""
+    from music_learning.kontakt_import import _resolve_under, verify_conversion
+
+    root = Path(batch_root).resolve(strict=True)
+    receipt = _resolve_under(root, item["receipt"]["path"], must_exist=True)
+    outputs = list(root.glob("rr/*/i/" + item["id"][-12:] + "/a*/execution.json"))
+    if len(outputs) != 1:
+        raise ValueError("Converted Kontakt item lacks one unique original execution record")
+    execution_path = _resolve_under(root, outputs[0].relative_to(root).as_posix(), must_exist=True)
+    verified = verify_conversion(item, receipt, root, load(execution_path))
+    if (verified.get("status") != "converted_pending_validation" or not item.get("attempts")
+            or verified != item["attempts"][-1] or verified["output"]["path"] != item["output"]["path"]):
+        raise ValueError("Kontakt converted queue result differs from its original receipt/output")
+    _resolve_under(root, verified["output"]["path"], must_exist=True)
+    return verified
+
+
+def resume_evidence(item, library_run):
+    from music_learning.kontakt_import import _resolve_under
+
+    root = Path(library_run).resolve(strict=True)
+    prefix = "i/" + item["id"][-12:]
+    expected = dict(candidate=prefix + "/candidate.json", receipt=prefix + "/a/receipt.json", evidence_root=prefix + "/a")
+    for key, relative in expected.items():
+        # Compare the literal absolute normalized path before resolving it, so
+        # a corrupted checkpoint cannot cause an external/UNC read first.
+        actual = Path(item.get(key, ""))
+        if not actual.is_absolute() or actual != root / relative:
+            raise ValueError("Kontakt resumed evidence escaped its owned item directory")
+        _resolve_under(root, relative, must_exist=True)
+    return expected
+
+
 def formal_snapshot(repo):
     tables = load(repo / "data/maintenance/native-engine/n1/before.json")["formal"]
     result = {}
@@ -72,10 +106,20 @@ def formal_snapshot(repo):
     return result
 
 
-def execute(plan_path):
+def execute(plan_path, expected_plan_sha256):
+    if digest(plan_path) != expected_plan_sha256:
+        raise ValueError("Kontakt full plan changed after launch")
     plan = load(plan_path)
     repo, run = Path(plan["repo_root"]), Path(plan["run_root"])
     code = Path(plan["code_root"])
+    allowed = Path(r"E:\Intrest\music-learning")
+    if (repo != allowed or run != Path(plan_path).absolute().parent
+            or not run.is_relative_to(repo / "data/maintenance/instrument-intake") or code != run / "code"
+            or Path(plan["pins_path"]) != run / "pins.json"
+            or Path(plan["resource_root"]) != Path(r"H:\music\Sound Library")
+            or set(plan["libraries"]) != {"css", "css-solo", "kontakt-factory"}
+            or (plan.get("preview_handoff") and not plan.get("publish"))):
+        raise ValueError("Kontakt job plan paths/publication scope differ from the authorized workspace")
     sys.path[:0] = [str(code / "src"), str(code / "scripts")]
     import psutil
     from native_host import NativeHost
@@ -103,6 +147,10 @@ def execute(plan_path):
     started = time.monotonic()
     deadline = started + plan.get("max_seconds", 24 * 3600)
     pins = load(plan["pins_path"])
+    if digest(plan["pins_path"]) != plan["pins_sha256"]:
+        raise ValueError("Kontakt code/native pin manifest changed after plan creation")
+    if str(Path(plan["probe"])) not in pins["files"] or str(Path(plan["empty_multi"])) not in pins["files"]:
+        raise ValueError("Kontakt native host/empty Multi are absent from the frozen job pins")
 
     def save(**updates):
         state.update(updates, updated_at_utc=datetime.now(timezone.utc).isoformat())
@@ -158,6 +206,9 @@ def execute(plan_path):
                 before = load(run / "protection-before.json")
             runtime = wait_result(plan["runtime_result"])
             runtime_root = Path(runtime["runtime_root"])
+            expected_runtime = Path(plan["resource_root"]) / "Kontakt/Runtime"
+            if (runtime_root != expected_runtime or Path(runtime["plugin_path"]) != expected_runtime / "Kontakt 8/x64/VST3/Kontakt 8 Portable.vst3"):
+                raise ValueError("Kontakt prepared runtime/plugin escaped its designated installation")
             profile_dir = runtime_root / "UserData/Kontakt 8/default"
             host_path = Path(plan["probe"])
             validator = ValidatorPin(name="kontakt-full-validator", version="1", code_path=Path(plan["pins_path"]),
@@ -172,6 +223,13 @@ def execute(plan_path):
                 audit = wait_result(plan["libraries"][library_id]["result"])
                 lib_run = run / library_id
                 lib_run.mkdir(exist_ok=True)
+                destination = "Libraries/" + LIBRARIES[library_id]
+                if (audit.get("library_id") != library_id or audit.get("bank_root") != "Kontakt"
+                        or audit.get("installed_library", {}).get("bank_root") != "Kontakt"
+                        or audit.get("library_destination") != destination
+                        or audit.get("source_manifest_sha256") != plan["libraries"][library_id]["inventory_sha256"]
+                        or Path(audit["prepared_root"]) != Path(plan["resource_root"]) / "Kontakt" / destination):
+                    raise ValueError("Kontakt prepared library identity/paths differ from its fixed inventory")
                 source_root = Path(audit["prepared_root"])
                 verify_installed_library(SimpleNamespace(instrument_library=Path(plan["resource_root"])), audit["installed_library"])
                 records = []
@@ -203,6 +261,8 @@ def execute(plan_path):
                 validate_coverage(records, load(conversion_queue), work)
                 for item in work["items"]:
                     if item["status"] == "passed":
+                        resume_evidence(item, lib_run)
+                        reverify_conversion(next(row for row in load(conversion_queue)["items"] if row["id"] == item["id"]), lib_run)
                         verify_receipt(load(item["candidate"]), load(item["receipt"]), Path(item["evidence_root"]),
                                        verifier(), validator, resource_root=Path(plan["resource_root"]))
                         continue
@@ -227,16 +287,19 @@ def execute(plan_path):
                             conversion = next(row for row in load(conversion_queue)["items"] if row["id"] == item["id"])
                         if conversion["status"] != "converted_pending_validation":
                             raise ValueError("Source conversion failed: " + json.dumps(conversion.get("attempts", [])[-1:], ensure_ascii=False))
-                        result = conversion["attempts"][-1]
+                        result = reverify_conversion(conversion, lib_run)
                         multi = lib_run / result["output"]["path"]
                         capture_root = item_root / "c"
                         source_state = capture_source(NativeHost(host_path, capture_root / "calls"),
                                                       plugin_spec(Path(runtime["plugin_path"]), item["id"]), capture_root,
                                                       startup=lambda: startup(multi), expected_identity=result["observed_identity"])
-                        bank = Path(plan["resource_root"]) / audit["bank_root"]
+                        from music_learning.instrument_intake_publication import _resolve_under_bank
+
+                        bank = _resolve_under_bank(Path(plan["resource_root"]), "Kontakt", regular_file=False)
                         entrypoint = "Presets/" + item["id"] + ".vstpreset"
                         preset = bank / entrypoint
                         preset.parent.mkdir(exist_ok=True)
+                        _resolve_under_bank(bank, "Presets", regular_file=False)
                         payload = preset_bytes(source_state)
                         if preset.exists():
                             if preset.read_bytes() != payload:
@@ -290,7 +353,23 @@ def execute(plan_path):
                         continue
                     queue_path = lib_run / "publication.json"
                     catalog_path = Path(plan["resource_root"]) / "catalog.json"
-                    create_queue("kf22-" + library_id, library_id, LIBRARIES[library_id], catalog_path,
+                    saved_plan = lib_run / "publication-plan.json"
+                    if saved_plan.exists():
+                        from music_learning.instrument_intake_publication import json_fingerprint
+
+                        previous = load(saved_plan)
+                        if previous.get("plan_sha256") != json_fingerprint({k: v for k, v in previous.items() if k != "plan_sha256"}):
+                            raise ValueError("Saved publication plan changed")
+                        actual = {row["id"]: row for row in load(catalog_path)["presets"]}
+                        present = [row for row in previous["additions"] if row["id"] in actual]
+                        if present:
+                            if len(present) != len(previous["additions"]) or any(actual[row["id"]] != row for row in present):
+                                raise ValueError("Published Kontakt entries were partially replaced or changed")
+                            state["libraries"][library_id]["published"] = len(present)
+                            save(status="publishing", recovered_publication=library_id)
+                            continue
+                    if not queue_path.exists():
+                        create_queue("kf22-" + library_id, library_id, LIBRARIES[library_id], catalog_path,
                                  [load(row["candidate"]) for row in passed], queue_path,
                                  resource_root=Path(plan["resource_root"]))
                     for row in passed:
@@ -327,4 +406,6 @@ def execute(plan_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
-    sys.exit(execute(parser.parse_args().plan))
+    parser.add_argument("--plan-sha256", required=True)
+    args = parser.parse_args()
+    sys.exit(execute(args.plan, args.plan_sha256))

@@ -71,21 +71,24 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
     protected = json.loads((ROOT / "data/maintenance/instrument-intake/20261022-resume/before.json").read_bytes())["pins"]
     app = json.loads((ROOT / "runtime/app.local.json").read_bytes())
     plan = dict(schema_version=1, repo_root=str(ROOT), run_root=str(run), code_root=str(code),
-                pins_path=str(pins_path), probe=str(probe), empty_multi=str(frozen_empty),
+                pins_path=str(pins_path), pins_sha256=sha(pins_path), probe=str(probe), empty_multi=str(frozen_empty),
                 resource_root=r"H:\music\Sound Library", runtime_result=str(prep / "runtime-result.json"),
                 protected_files=list(protected),
                 libraries={key: dict(result=str(prep / (key + "-result.json")), expected_source_paths=[
                     path for path in json.loads((inventory / (key + ".json")).read_bytes())["presets"]
-                    if Path(path).suffix.casefold() in {".nki", ".nkm"}]) for key in ("css", "css-solo", "kontakt-factory")},
+                    if Path(path).suffix.casefold() in {".nki", ".nkm"}], inventory_sha256=sha(inventory / (key + ".json")))
+                    for key in ("css", "css-solo", "kontakt-factory")},
                 publish=publish, preview_handoff=preview_handoff, max_seconds=24 * 3600,
                 service_url=f"http://{app['host']}:{app['port']}",
                 service_token_file=str(Path(app["data_root"]) / "session-token.local"))
     atomic_write_json(run / "plan.json", plan)
+    plan_sha256 = sha(run / "plan.json")
     result = dict(status="prepared", run_root=str(run), expected_sources=992, plan=str(run / "plan.json"),
-                  publish=publish, preview_handoff=preview_handoff)
+                  publish=publish, preview_handoff=preview_handoff, plan_sha256=plan_sha256)
     if start:
         import psutil
-        command = [sys.executable, str(code / "scripts/instruments/run_kontakt_full_intake.py"), "--plan", str(run / "plan.json")]
+        command = [sys.executable, str(code / "scripts/instruments/run_kontakt_full_intake.py"), "--plan", str(run / "plan.json"),
+                   "--plan-sha256", plan_sha256]
         with (run / "stdout.log").open("wb") as out, (run / "stderr.log").open("wb") as err:
             process = subprocess.Popen(command, cwd=ROOT, stdout=out, stderr=err,
                                        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS)

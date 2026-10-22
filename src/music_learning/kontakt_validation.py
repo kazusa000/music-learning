@@ -6,6 +6,7 @@ Neither a successful Lua save nor audible default startup admits an instrument.
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +27,10 @@ WRAPPER_SHA256 = "75cdaa3b4d187e0e2f21b9057ebd5759400a27988df11301d703922018babe
 IDENTIFIER = "VST3-Kontakt 8-9f68cff3-f852a294"
 CLASS_ID = "5653544E694B386B6F6E74616B742038"
 VERSION = "8.10.1"
+# Observed in every pinned 8.10.1 empty/single/multi native control. This
+# includes native and MIDI-mapped parameters, not just the first 2,049 slots.
+PARAMETER_COUNT = 4145
+PARAMETER_IDS_SHA256 = "3408749d7ab9b092d7f46dde2b4af54419ace274593bf99d72f7aedbf136413a"
 LIBRARIES = {"kontakt-factory": "Kontakt Factory Library 2", "css": "Cinematic Studio Strings",
              "css-solo": "Cinematic Studio Solo Strings"}
 
@@ -40,12 +45,21 @@ def plugin_spec(plugin_path: Path, preset_id: str) -> dict:
 
 
 def _exact_identity(plugin, expected):
+    _full_parameters(plugin)
     actual = verifier().verify(dict(expected_identity=expected), plugin)
     if actual != expected:
         raise ValueError("Kontakt native instrument identity differs from the official source getters")
     if (plugin.get("identifier") != IDENTIFIER or plugin.get("binary_sha256") != WRAPPER_SHA256
             or plugin.get("vst3_class_id") != CLASS_ID or plugin.get("version") != VERSION):
         raise ValueError("Kontakt source loaded a different native class/version")
+
+
+def _full_parameters(plugin):
+    parameters = _param_map(plugin)
+    ids_sha = hashlib.sha256(json.dumps(sorted(parameters), separators=(",", ":")).encode()).hexdigest()
+    if len(parameters) != PARAMETER_COUNT or ids_sha != PARAMETER_IDS_SHA256:
+        raise ValueError("Kontakt source requires the complete pinned 4145-parameter ID set")
+    return parameters
 
 
 def capture_source(host, spec, output: Path, *, startup, expected_identity, timeout_seconds=180):
@@ -130,8 +144,6 @@ def validate_captured(host, candidate, source_state, output: Path, *, empty_star
     settings = SimpleNamespace(instrument_library=Path(resource_root))
     verify_installed_library(settings, candidate["installed_library"])
     actual_preset = Path(resource_root) / candidate["bank_root"] / candidate["entrypoint"]
-    import hashlib
-
     serialized_sha = hashlib.sha256(preset_bytes(source_state)).hexdigest()
     if (serialized_sha != candidate["resources"][candidate["entrypoint"]]["sha256"]
             or sha256_file(actual_preset) != serialized_sha):
