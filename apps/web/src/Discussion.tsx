@@ -2,7 +2,7 @@ import {usePreferences} from './Preferences';
 import {Icon} from './Icon';
 import {PanelResize,usePanelSize} from './PanelResize';
 import {useCallback,useEffect,useRef,useState} from 'react';
-import type {Citation,Conversation,DialogueTurn,Job,Revision,Track} from '../../../packages/contracts/types';
+import type {Citation,DialogueTurn,Job,Revision,Track} from '../../../packages/contracts/types';
 import {call} from './api';
 import {MusicMarkdown} from './MusicMarkdown';
 import {trackName} from './dawEditing';
@@ -24,7 +24,7 @@ const mergeTurns=(current:DialogueTurn[],items:DialogueTurn[])=>items.map(item=>
   const previous=current.find(t=>t.id===item.id);return previous&&previous.updated_at>item.updated_at?previous:item;
 });
 
-export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCompare,instrumentDraft,onConsumeDraft,expanded=false,onToggleExpand,workspace='arrangement',referenceTrackId=null}:{revision:Revision;headId:string;start:number;end:number;trackId:string|null;onLocate:(citation:Citation)=>void;jobs:Job[];onCompare:(id:string)=>void;instrumentDraft?:InstrumentDraft|null;onConsumeDraft?:()=>void;expanded?:boolean;onToggleExpand?:()=>void;workspace?:'original'|'arrangement';referenceTrackId?:string|null}){
+export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCompare,instrumentDraft,onConsumeDraft,expanded=false,onToggleExpand,workspace='arrangement',referenceTrackId=null,onNoteSaved}:{onNoteSaved?:()=>void;revision:Revision;headId:string;start:number;end:number;trackId:string|null;onLocate:(citation:Citation)=>void;jobs:Job[];onCompare:(id:string)=>void;instrumentDraft?:InstrumentDraft|null;onConsumeDraft?:()=>void;expanded?:boolean;onToggleExpand?:()=>void;workspace?:'original'|'arrangement';referenceTrackId?:string|null}){
   const {prefs,update:updatePreferences}=usePreferences();
   type ChatSession={id:string;title:string;created_at:number};
   const sessionKey='discussion.session.'+revision.project_id;
@@ -35,7 +35,7 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
   const filteredTurns=(items:DialogueTurn[],id:string|null)=>items.filter(t=>(t.session_id??null)===id);
   useEffect(()=>{let live=true;void call<ChatSession[]>('dialogue.sessions.list',{project_id:revision.project_id,limit:1000}).then(items=>{if(live)setSessions(items);}).catch(()=>{});return()=>{live=false;};},[revision.project_id,sessionId]);
   function chooseSession(id:string|null){sessionRef.current=id;setSessionId(id);setTurns([]);setText('');setScope('whole');setDraftBinding(null);try{if(id)localStorage.setItem(sessionKey,id);else localStorage.removeItem(sessionKey);}catch{/* view preference */}}
-  async function newSession(){setError('');try{const created=await call<ChatSession>('dialogue.sessions.create',{project_id:revision.project_id,title:'会话 '+(sessions.length+1)},headId,true);setSessions(current=>[created,...current]);chooseSession(created.id);setShowNotes(false);}catch(e){setError((e as Error).message);}}
+  async function newSession(){setError('');try{const created=await call<ChatSession>('dialogue.sessions.create',{project_id:revision.project_id,title:'会话 '+(sessions.length+1)},headId,true);setSessions(current=>[created,...current]);chooseSession(created.id);}catch(e){setError((e as Error).message);}}
   async function loadModels(force=false){if(modelsBusy)return;const requestedLogin=login;setModelsBusy(true);try{const result=await call<{models:Array<{id:string;name:string;is_default:boolean}>}>('dialogue.models',{login_mode:login,refresh:force});if(loginRef.current===requestedLogin)setModels(result.models);}catch(e){setError((e as Error).message);}finally{setModelsBusy(false);}}
   const [inputSize,setInputSize]=usePanelSize('discussion.input-height',84,64,320);
   const root=useRef<HTMLDivElement>(null),menu=useRef<HTMLDetailsElement>(null),settings=useRef<HTMLDetailsElement>(null);
@@ -46,32 +46,31 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
     if(event instanceof KeyboardEvent&&event.key!=='Escape')return;
     for(const node of [menu.current,settings.current])if(node&&(event instanceof KeyboardEvent||!node.contains(event.target as Node)))node.open=false;
   };document.addEventListener('pointerdown',close);document.addEventListener('keydown',close);return()=>{document.removeEventListener('pointerdown',close);document.removeEventListener('keydown',close);};},[]);
-  const [turns,setTurns]=useState<DialogueTurn[]>([]),[notes,setNotes]=useState<Conversation[]>([]);
+  const [turns,setTurns]=useState<DialogueTurn[]>([]);
   const [text,setText]=useState(''),[login,setLogin]=useState<string>(prefs.login_mode),[scope,setScope]=useState('whole');
   useEffect(()=>{setModel(prefs.default_model??'');setLogin(prefs.login_mode);},[prefs.default_model,prefs.login_mode]);
   const loginRef=useRef(login);loginRef.current=login;
-  const [error,setError]=useState(''),[busy,setBusy]=useState(false),[showNotes,setShowNotes]=useState(false);
+  const [error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [draftBinding,setDraftBinding]=useState<InstrumentDraft|null>(null);
   useEffect(()=>{if(!instrumentDraft)return;setText(instrumentDraft.text);setScope('whole');setDraftBinding(instrumentDraft);onConsumeDraft?.();},[instrumentDraft,onConsumeDraft]);
   const history=useRef<HTMLDivElement>(null),follow=useRef(true);
   const last=turns.at(-1);
-  useEffect(()=>{follow.current=true;},[last?.id,showNotes]);
-  useEffect(()=>{if(follow.current&&history.current)history.current.scrollTop=history.current.scrollHeight;},[last?.id,last?.text,last?.status,showNotes,notes.length]);
+  useEffect(()=>{follow.current=true;},[last?.id]);
+  useEffect(()=>{if(follow.current&&history.current)history.current.scrollTop=history.current.scrollHeight;},[last?.id,last?.text,last?.status]);
   const rate=revision.snapshot.sample_rate??44100,duration=revision.snapshot.duration_samples??0;
   const selectedTrack=workspace==='original'?revision.snapshot.source_reference?.tracks.find(t=>t.id===referenceTrackId):revision.snapshot.tracks?.find(t=>t.id===trackId);
   const scopeName=selectedTrack?trackName(selectedTrack):workspace==='original'?'原曲':'整首音乐';
   const a=scope==='whole'?0:Math.round(start*rate),b=scope==='whole'?duration:Math.round(end*rate);
   const refresh=useCallback(async()=>{
-    const [items,messages]=await Promise.all([call<DialogueTurn[]>('dialogue.list',{project_id:revision.project_id,session_id:sessionId,limit:1000}),
-      call<Conversation[]>('conversations.list',{project_id:revision.project_id,limit:1000})]);
-    if(sessionRef.current!==sessionId)return;setTurns(current=>mergeTurns(current,filteredTurns(items,sessionId)));setNotes(messages.filter(m=>m.role==='note'));
+    const items=await call<DialogueTurn[]>('dialogue.list',{project_id:revision.project_id,session_id:sessionId,limit:1000});
+    if(sessionRef.current!==sessionId)return;setTurns(current=>mergeTurns(current,filteredTurns(items,sessionId)));
   },[revision.project_id,sessionId]);
   useEffect(()=>{let live=true;const update=async()=>{
-    const [items,messages]=await Promise.all([call<DialogueTurn[]>('dialogue.list',{project_id:revision.project_id,session_id:sessionId,limit:1000}),call<Conversation[]>('conversations.list',{project_id:revision.project_id,limit:1000})]);
-    if(live){if(sessionRef.current!==sessionId)return;setTurns(current=>mergeTurns(current,filteredTurns(items,sessionId)));setNotes(messages.filter(m=>m.role==='note'));}
+    const items=await call<DialogueTurn[]>('dialogue.list',{project_id:revision.project_id,session_id:sessionId,limit:1000});
+    if(live){if(sessionRef.current!==sessionId)return;setTurns(current=>mergeTurns(current,filteredTurns(items,sessionId)));}
   };void update().catch(e=>{if(live)setError(e.message);});
     let pending:ReturnType<typeof setTimeout>|undefined;
-    const unsubscribe=subscribeDomain(event=>{if(event.type==='connection.ready'||event.project_id===revision.project_id&&(event.type.startsWith('dialogue.')||event.type==='note.saved')){
+    const unsubscribe=subscribeDomain(event=>{if(event.type==='connection.ready'||event.project_id===revision.project_id&&(event.type.startsWith('dialogue.')||event.type.startsWith('note.'))){
       clearTimeout(pending);pending=setTimeout(()=>void update().catch(()=>{}),80);
     }});
     const timer=setInterval(()=>void update().catch(()=>{}),15000);
@@ -101,7 +100,7 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
     await call('notes.save',{project_id:revision.project_id,revision_id:arrangement?.revision_id??turn?.revision_id??revision.id,content:turn?.text??text,
       start_sample:turn?.context.start_sample??a,end_sample:turn?.context.end_sample??b,
       track_id:turn?.context.track_id??(scope==='whole'?null:trackId),source_turn_id:turn?.id??null,state:'draft'},headId,true);
-    if(!turn)setText('');await refresh();setShowNotes(true);
+    if(!turn)setText('');await refresh();onNoteSaved?.();
   }catch(e){setError((e as Error).message);}}
   async function exportVersion(turn:DialogueTurn,format:'midi'|'wav'){
     const receipt=turn.context.arrangement as {revision_id:string;render_job_id:string}|undefined;
@@ -124,13 +123,12 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
       <button className="new-discussion" aria-label="＋ 新会话" title="新会话" onClick={()=>void newSession()}><Icon name="plus"/></button>
       {onToggleExpand&&<button className="expand-discussion" aria-label={expanded?'还原讨论':'放大讨论'} aria-pressed={expanded} title={expanded?'还原讨论':'放大讨论'} onClick={onToggleExpand}><Icon name={expanded?'collapse':'expand'}/></button>}
       <details className="discussion-menu discussion-popover" ref={menu}><summary aria-label="对话菜单" title="会话菜单"><Icon name="more"/></summary><div className="discussion-menu-content">
-        <div className="discussion-toggle"><button aria-pressed={!showNotes} onClick={()=>{setShowNotes(false);if(menu.current)menu.current.open=false;}}>讨论 {turns.length}</button><button aria-pressed={showNotes} onClick={()=>{setShowNotes(true);if(menu.current)menu.current.open=false;}}>笔记 {notes.length}</button></div>
+
         <button aria-label="刷新可用模型" disabled={modelsBusy} onClick={()=>void loadModels(true)}>刷新模型列表</button>
         <button disabled={!text.trim()||busy} onClick={()=>{void save();if(menu.current)menu.current.open=false;}}>把输入存为笔记</button>
       </div></details>
     </div>
-    <div className="discussion-history" ref={history} onScroll={e=>{const n=e.currentTarget;follow.current=n.scrollHeight-n.scrollTop-n.clientHeight<65;}} aria-live="polite">{showNotes?<>{!notes.length&&<p className="discussion-empty">还没有笔记。从回复下方保存，或在菜单中保存当前输入。</p>}{notes.map(note=><article className="discussion-note" key={note.id}><small>{note.context?.origin==='user'?'我的笔记':'AI 笔记'}</small><MusicMarkdown text={note.content}/></article>)}</>:<>
-      {!turns.length&&<div className="discussion-empty"><strong>从这首歌开始</strong><p>选中一段音乐，或直接聊整曲。</p><div className="question-suggestions"><button onClick={()=>{setScope('whole');setText('请先查询整曲摘要，从和声、配器与节奏三个角度提出值得深入研究的问题，并给出工程引用。');}}>分析整曲结构</button><button onClick={()=>{setScope('selection');setText('请查询当前区间的和弦与声部，解释和声走向及各乐器的作用，并引用具体位置。');}}>聊选中片段</button><button onClick={()=>{setText('请保持旋律，试一个新的配器方案，应用到工程并实时试听。');}}>试一个改编</button></div></div>}
+    <div className="discussion-history" ref={history} onScroll={e=>{const n=e.currentTarget;follow.current=n.scrollHeight-n.scrollTop-n.clientHeight<65;}} aria-live="polite">      {!turns.length&&<div className="discussion-empty"><strong>{revision.snapshot.source_asset_id?'一起研究这首歌':'从一个想法开始'}</strong><p>{revision.snapshot.source_asset_id?'讨论、改编，或者让 AI 帮你整理笔记。':'告诉 AI 曲风、情绪或一段和弦，直接开始创作。'}</p><div className="question-suggestions"><button onClick={()=>{setScope('whole');setText(revision.snapshot.source_asset_id?'看看工程，从和声、配器与节奏聊聊这首歌。':'根据当前速度和拍号，帮我写一段有旋律与伴奏的开头，选择合适的现有音色并应用到工程。');}}>{revision.snapshot.source_asset_id?'聊聊这首歌':'一起写个开头'}</button><button onClick={()=>{setScope('selection');setText('请查询当前区间的和弦与声部，解释和声走向及各乐器的作用，并引用具体位置。');}}>聊选中片段</button><button onClick={()=>{setText('请保持旋律，试一个新的配器方案，应用到工程并实时试听。');}}>试一个改编</button></div></div>}
       {turns.map(turn=><article key={turn.id} className="discussion-turn" data-turn={turn.id} data-status={turn.status}>
         <div className="question-bubble">{String(turn.payload.text)}</div><div className="turn-meta"><i className={active(turn)?'pulsing':''}/><strong>{String((turn.context.provider as {model?:string}|undefined)?.model??turn.payload.model??'Codex')}</strong><span>{turn.error?.code==='invalid_citation'?'回复已保留':turnStatus(turn,jobs)}</span></div>
         <small className="turn-range">{time(Number(turn.context.start_sample)/Number(turn.context.sample_rate))}–{time(Number(turn.context.end_sample)/Number(turn.context.sample_rate))} · {turnTrackName(turn)}</small>
@@ -143,7 +141,7 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
           return <div className="arrangement-receipt" data-arrangement-revision={receipt.revision_id}><small>已更新工程</small><strong>{!receipt.render_job_id?'● 修改已保存':render?.status==='succeeded'?'● 已有导出音频':render?.status==='failed'?'× 导出失败':'◌ 正在导出'}</strong><p>{Object.entries(receipt.diff).filter(([key])=>key!=='settings').filter(([,v])=>(v.added?.length??0)+(v.removed?.length??0)+(v.changed?.length??0)>0).map(([key,v])=>`${key} +${v.added?.length??0} −${v.removed?.length??0} Δ${v.changed?.length??0}`).join(' · ')}</p>
             {render?.error&&<p className="discussion-error">{String(render.error.message??'音频导出失败。')}</p>}<div><button onClick={()=>onCompare(receipt.before_revision)}>对比修改</button><button onClick={()=>void exportVersion(turn,'midi')}>导出 MIDI</button></div>
             {exports.slice(-4).map(job=><p key={job.id}>{String(job.payload.format).toUpperCase()} · {statusText[job.status]} {job.status==='succeeded'&&typeof job.result?.asset_id==='string'&&<a href={'/v1/assets/'+job.result.asset_id} download>下载 ↗</a>}{job.error&&<span className="discussion-error"> {String(job.error.code)}</span>}</p>)}</div>;})()}
-      </article>)}</>}
+      </article>)}
     </div>
     <PanelResize label="调整输入框高度" axis="y" value={inputHeight} min={64} max={maxInput} onChange={setInputSize} reset={84} reverse/>
     <div className="discussion-compose">

@@ -20,6 +20,7 @@ const paths = {
   mixer: <><path d="M5 3v18m7-18v18m7-18v18M2 8h6m1 8h6m1-10h6"/></>,
   chat: <path d="M20 15a3 3 0 0 1-3 3H9l-5 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3Z"/>,
   history: <><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6m3-3v5l3 2"/></>,
+  edit: <><path d="m15 4 5 5-11 11H4v-5ZM13 6l5 5"/></>,
   analysis: <><path d="M4 19V9m8 10V4m8 15v-7"/></>,
   timeline: <><rect x="3" y="4" width="12" height="5" rx="1"/><rect x="8" y="15" width="13" height="5" rx="1"/><path d="M3 12h18"/></>,
 };

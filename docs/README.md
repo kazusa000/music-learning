@@ -4,6 +4,7 @@
 
 ## 当前设计与开发入口
 
+- [从零编曲与工程笔记](architecture/composition-workspace.md)：主页双入口、统一AI、共享笔记、轨道对齐／纵向缩放／拖动。
 - [本地DAW架构决策](architecture/native-daw.md)：设备时钟、原生插件、控制协议与工程权威。
 - [N0–N7开发顺序和验收](plans/native-daw-migration.md)：从设备发声到默认切换。
 - [N4产品接线验收](benchmarks/native-engine-n4.md)：本地播放、AI/SDK共用、原生试听与4K流程。

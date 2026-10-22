@@ -12,6 +12,7 @@ import {publishDomain} from './events';
 import {AudioPreview} from './AudioPreview';
 import type {PreviewControl} from './AudioPreview';
 import {Icon} from './Icon';
+import {NewCompositionDialog} from './NewCompositionDialog';
 import {ImportProgress} from './ImportProgress';
 import {DeleteProjectDialog} from './DeleteProjectDialog';
 import {WindowControls,dragWindow} from './WindowChrome';
@@ -43,6 +44,8 @@ function App() {
   const [error, setError] = useState('');
   const [refreshError,setRefreshError]=useState('');
   const [busy, setBusy] = useState(false);
+  const [creating,setCreating]=useState(false),[newComposition,setNewComposition]=useState(false);
+  const [libraryKind,setLibraryKind]=useState('all');
   const [vocalMode,setVocalMode]=useState('auto');
   const [uploadProgress,setUploadProgress]=useState<number|null>(null);
   const [connected, setConnected] = useState(false);
@@ -158,6 +161,17 @@ function App() {
     } catch (e) {setError((e as Error).message);} finally {setBusy(false);setUploadProgress(null);}
   }
 
+  async function createComposition(args:{title:string;tempo:number;bars:number;beats_per_bar:number}){
+    setCreating(true);setError('');
+    try{
+      const created=await call<Project>('projects.create',{...args,kind:'composition'},undefined,true);
+      const head=await call<Revision>('revisions.get',{project_id:created.id,revision_id:created.current_revision});
+      selectProject(created.id);setProjects(items=>[...items,created]);setRevision(head);
+      detailCache.current={id:head.id,revision:head,publication:null};setNewComposition(false);
+      setWorkspace(true);history.replaceState(null,'','/?project='+created.id+'&view=workbench');
+    }catch(e){setError((e as Error).message);}finally{setCreating(false);}
+  }
+
   async function cancel(job: Job) {
     if (!project) return;
     try {await call('jobs.cancel', {job_id: job.id}, project.current_revision, true); await refresh();}
@@ -201,23 +215,27 @@ function App() {
       <span>{d.status==='failed'?`「${d.title}」删除未完成：${d.error}`:`正在彻底删除「${d.title}」${d.status==='waiting'?' · 正在停止处理任务':' · 清理工程文件'}`}</span>
       {d.status==='failed'&&<button disabled={deleteSubmitting} onClick={()=>void deleteProject({id:d.project_id,current_revision:d.revision_id})}>重试删除</button>}
     </div>)}
+    {newComposition&&<NewCompositionDialog busy={creating} onCancel={()=>setNewComposition(false)} onCreate={createComposition}/>}
     {deleteTarget&&<DeleteProjectDialog title={deleteTarget.display_title??deleteTarget.title} busy={deleteSubmitting} onCancel={()=>setDeleteTarget(null)} onConfirm={()=>void deleteProject(deleteTarget)}/>}
-    {settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh} onReimport={async()=>{const sha=revision.snapshot.source_asset_id;if(!sha)throw new Error('此工程没有原曲');const response=await fetch('/v1/assets/'+sha);if(!response.ok)throw new Error('原曲读取失败');const blob=await response.blob();setWorkspace(false);history.replaceState(null,'','/');await importFile(new File([blob],(project.display_title??project.title)+' · 新编排.audio',{type:blob.type}));}}
+    {settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} composition={project.kind==='composition'} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh} onReimport={async()=>{const sha=revision.snapshot.source_asset_id;if(!sha)throw new Error('此工程没有原曲');const response=await fetch('/v1/assets/'+sha);if(!response.ok)throw new Error('原曲读取失败');const blob=await response.blob();setWorkspace(false);history.replaceState(null,'','/');await importFile(new File([blob],(project.display_title??project.title)+' · 新编排.audio',{type:blob.type}));}}
       onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
-      <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? `上传音频 ${uploadProgress??100}%` : '选择音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
+      <button className="new-composition-button" disabled={busy} onClick={()=>setNewComposition(true)}><Icon name="plus" size={18}/><span><strong>新建编曲</strong><small>从零创作</small></span></button>
+      <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? `上传音频 ${uploadProgress??100}%` : '导入音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
           disabled={busy} onChange={e => {const file = e.target.files?.[0]; if (file) void importFile(file); e.target.value = '';}}/></label>
       <label className="import-vocal-mode">导入类型<select aria-label="导入人声类型" disabled={busy} value={vocalMode} onChange={e=>setVocalMode(e.target.value)}><option value="auto">自动判断</option><option value="vocal">有人声</option><option value="instrumental">纯音乐 · 跳过分离</option></select></label>
-      <div className="list-title">歌曲 <span>{projects.length}</span></div><label className="archive-toggle"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/>显示归档工程</label>
-      <nav aria-label="工程列表">{projects.map(p => <div className="project-row" key={p.id}><button className="project-open" aria-pressed={selected === p.id} disabled={deletions.some(d=>d.project_id===p.id&&d.status!=='completed')} onClick={() => {
+      <div className="list-title">我的工程 <span>{projects.length}</span></div><div className="library-kind" aria-label="工程类型">{[['all','全部'],['composition','创作'],['research','扒带']].map(([id,label])=><button key={id} aria-pressed={libraryKind===id} onClick={()=>setLibraryKind(id)}>{label}</button>)}</div><label className="archive-toggle"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/>显示归档工程</label>
+      <nav aria-label="工程列表">{projects.filter(p=>libraryKind==='all'||p.kind===libraryKind).map(p => <div className="project-row" key={p.id}><button className="project-open" aria-pressed={selected === p.id} disabled={deletions.some(d=>d.project_id===p.id&&d.status!=='completed')} onClick={() => {
         selectProject(p.id);
-      }}><span className="project-miniature" aria-hidden="true"><Icon name="music" size={18}/></span><span className="project-list-copy"><strong>{p.display_title??p.title}</strong><span>{p.archived?'已归档 · ':''}{projectStatuses[p.status]}</span></span></button><button className="project-delete" aria-label={'删除工程 '+(p.display_title??p.title)} title="彻底删除工程" disabled={busy||deleteSubmitting||deletions.some(d=>d.project_id===p.id&&d.status!=='completed')} onClick={()=>setDeleteTarget(p)}><Icon name="trash" size={15}/></button></div>)}</nav>
-      {!projects.length && <p className="muted empty-list">还没有工程。选一首完整音乐，保存在本机。</p>}
+      }}><span className="project-miniature" aria-hidden="true"><Icon name="music" size={18}/></span><span className="project-list-copy"><strong>{p.display_title??p.title}</strong><span>{p.archived?'已归档 · ':''}{p.kind==='composition'?'原创编曲':projectStatuses[p.status]}</span></span></button><button className="project-delete" aria-label={'删除工程 '+(p.display_title??p.title)} title="彻底删除工程" disabled={busy||deleteSubmitting||deletions.some(d=>d.project_id===p.id&&d.status!=='completed')} onClick={()=>setDeleteTarget(p)}><Icon name="trash" size={15}/></button></div>)}</nav>
+      {!projects.length && <p className="muted empty-list">还没有工程。新建编曲，或导入音乐开始。</p>}
     </aside><PanelResize label="调整歌曲列表宽度" value={libraryWidth} min={180} max={500} onChange={setLibraryWidth} reset={260}/><section className="detail" aria-label="工程详情">
-      {!project ? <div className="welcome"><h2>选择歌曲</h2><p>导入音频，或打开左侧已有歌曲。</p></div> : <>
-        <div className="project-heading"><div className="project-identity"><div className="project-art" aria-hidden="true"><Icon name="wave" size={29}/></div><div><p>音乐工程</p><h2>{project.display_title??project.title}</h2></div></div>
-          <div className="library-actions"><span className="badge">{projectStatuses[project.status]}</span><button onClick={()=>void organize()}>{project.archived?'恢复到歌曲列表':'归档工程'}</button><button className="project-delete-label" disabled={busy||deleteSubmitting||deletions.some(d=>d.project_id===project.id&&d.status!=='completed')} onClick={()=>setDeleteTarget(project)}><Icon name="trash" size={13}/>删除工程</button></div></div>
+      <div className="library-start"><div className="library-start-heading"><h2>工作室</h2><span>写下想法，做成音乐。</span></div><div className="creation-cards"><button className="creation-card" disabled={busy} onClick={()=>setNewComposition(true)}><span className="creation-symbol"><Icon name="piano" size={22}/></span><span><strong>从零编曲</strong><small>音符、音色、混音，与 AI 一起创作</small></span><Icon name="plus" size={17}/></button><label className={'creation-card import-card '+(busy?'disabled':'')}><span className="creation-symbol"><Icon name="wave" size={22}/></span><span><strong>导入音乐</strong><small>分离、转录，进入原曲与重建工作区</small></span><Icon name="upload" size={17}/><input aria-label="导入音乐开始扒带" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a" disabled={busy} onChange={e=>{const f=e.target.files?.[0];if(f)void importFile(f);e.target.value='';}}/></label></div></div>
+      {!project ? <div className="welcome"><h3>最近的工程会显示在这里</h3><p>选择一种方式开始，工程自动保存在本机。</p></div> : <>
+        <div className="project-heading"><div className="project-identity"><div className="project-art" aria-hidden="true"><Icon name="wave" size={29}/></div><div><p>{project.kind==='composition'?'原创编曲':'音乐研究'}</p><h2>{project.display_title??project.title}</h2></div></div>
+          <div className="library-actions"><span className="badge">{project.kind==='composition'?'创作工程':projectStatuses[project.status]}</span><button onClick={()=>void organize()}>{project.archived?'恢复到歌曲列表':'归档工程'}</button><button className="project-delete-label" disabled={busy||deleteSubmitting||deletions.some(d=>d.project_id===project.id&&d.status!=='completed')} onClick={()=>setDeleteTarget(project)}><Icon name="trash" size={13}/>删除工程</button></div></div>
         <div className="facts"><div><span>保存版本</span><b>{versionCount}</b></div>
-          <div><span>原曲长度</span><b>{revision?.snapshot.duration_samples ? (revision.snapshot.duration_samples / (revision.snapshot.sample_rate ?? 44100)).toFixed(1) + ' 秒' : '—'}</b></div></div>
+          <div><span>工程长度</span><b>{revision?.snapshot.duration_samples ? (revision.snapshot.duration_samples / (revision.snapshot.sample_rate ?? 44100)).toFixed(1) + ' 秒' : '—'}</b></div></div>
+        {project.kind==='composition'&&revision&&<section className="composition-summary"><div><strong>{(revision.snapshot.tracks??[]).length} 条音轨</strong><span>{(revision.snapshot.notes??[]).length.toLocaleString()} 个音符 · {revision.snapshot.timing_map?.meters[0]?.numerator??4}/4</span></div><button className="primary-button" onClick={()=>{homeAudio.current?.pause();setWorkspace(true);history.replaceState(null,'','/?project='+project.id+'&view=workbench');}}>打开编曲<Icon name="timeline" size={15}/></button></section>}
         {revision?.snapshot.source_asset_id && <section className="original"><h3>原曲试听</h3>
           <AudioPreview key={'source-'+revision.project_id} label="原曲试听" projectId={revision.project_id} revisionId={revision.id} view="original" duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial={!playbackReady} onSelect={a=>{homeAudio.current=a;}}/>
           {playbackReady&&<><h3>重建试听</h3><AudioPreview key={'mix-'+revision.project_id} label="重建试听" projectId={revision.project_id} revisionId={revision.id} view="arrangement" duration={(revision.snapshot.duration_samples??0)/(revision.snapshot.sample_rate??44100)} initial onSelect={a=>{homeAudio.current=a;}}/></>}

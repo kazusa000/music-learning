@@ -136,4 +136,7 @@
 .daw-mixer { flex: 1; min-height: 0; }
 .daw-piano-grid g[data-erasing=true],.daw-playlist-row g[data-erasing=true] { opacity: .18; }
 .daw-piano-grid,.daw-playlist-scroll { -webkit-user-drag: none; }
+.lane-height-control{display:flex;flex:none;align-items:center;gap:5px;color:#8e8378;font-size:9px;padding:0 6px}.lane-height-control input{width:48px;height:18px}.daw-view-tabs{height:34px;min-height:34px;max-height:34px}.daw-playlist-ruler{height:28px;min-height:28px;max-height:28px}
+.has-external-tracks .daw-lane-label,.has-external-tracks .daw-playlist-ruler>span,.has-external-tracks .daw-empty-lane-label{display:none}.has-external-tracks .daw-playlist-fill>svg{left:0}
+.daw-playlist-fill{background:repeating-linear-gradient(to bottom,transparent 0 calc(var(--lane-height,128px) - 1px),#ffffff06 calc(var(--lane-height,128px) - 1px) var(--lane-height,128px)),#161618}.daw-empty-lane-label{background:#1d1d1f}.daw-playlist-row .daw-lane-label{cursor:grab}
 @media(max-width:1200px) { .daw-view-tabs > button { font-size: 9px; padding-inline: 4px; } .daw-edit-tools > select { display: none; } .daw-note-tools small { display: none; } }

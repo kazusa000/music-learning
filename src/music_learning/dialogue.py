@@ -278,7 +278,7 @@ def submit(service, db, args, request, *, retry_of=None):
                 "Fork the selected historical revision before arranging it",
                 409,
             )
-        if not scope.track_ids:
+        if not scope.track_ids and not automatic:
             raise DomainError("edit_tracks_required", "Select explicit tracks to authorize edits", 422)
     context = {
         "workspace": args.workspace,
@@ -344,6 +344,10 @@ def submit(service, db, args, request, *, retry_of=None):
 
 
 def dispatch(service, db, op, args, request):
+    if op.startswith("notes."):
+        from .notebook import dispatch as notebook_dispatch
+
+        return notebook_dispatch(service, db, op, args, request)
     if op in ("dialogue.sessions.create", "dialogue.sessions.list"):
         from .schema_v7 import sessions
 
@@ -381,50 +385,6 @@ def dispatch(service, db, op, args, request):
                 args,
             )
         ]
-    if op == "notes.save":
-        revision = service._revision(db, args)
-        a, b = bounds(revision["snapshot"], args.start_sample, args.end_sample, args.track_id)
-        if args.source_turn_id:
-            source = row(db, turns, "id", args.source_turn_id)
-            from .schema_v5 import arrangements
-
-            receipt = db.execute(
-                select(arrangements.c.payload).where(arrangements.c.turn_id == source["id"])
-            ).scalar()
-            valid_revisions = {source["revision_id"], (receipt or {}).get("revision_id")}
-            if (
-                source["project_id"] != args.project_id
-                or revision["id"] not in valid_revisions
-                or source["status"] != "succeeded"
-            ):
-                raise DomainError(
-                    "note_source_mismatch", "Note source must be a completed turn in the same revision", 422
-                )
-        note = dict(
-            id=c.new_id(),
-            project_id=args.project_id,
-            revision_id=revision["id"],
-            role="note",
-            content=args.content,
-            context={
-                "start_sample": a,
-                "end_sample": b,
-                "track_id": args.track_id,
-                "source_turn_id": args.source_turn_id,
-                "state": args.state,
-                "origin": "interpretation" if args.source_turn_id else "user",
-            },
-            created_at=time.time(),
-        )
-        db.execute(insert(t.conversations).values(**note))
-        emit(
-            db,
-            "note.saved",
-            project_id=args.project_id,
-            revision_id=revision["id"],
-            payload={"note_id": note["id"]},
-        )
-        return note
     turn = row(db, turns, "id", args.turn_id)
     if turn["project_id"] != args.project_id:
         raise DomainError("turn_mismatch", "Turn belongs to another project", 422)

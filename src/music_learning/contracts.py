@@ -535,6 +535,9 @@ class Page(Model):
 class CreateProject(Model):
     title: str = Field(min_length=1, max_length=256)
     kind: Literal["research", "composition"] = "research"
+    tempo: float = Field(default=120, ge=20, le=300)
+    bars: int = Field(default=32, ge=1, le=2048)
+    beats_per_bar: int = Field(default=4, ge=1, le=16)
 
 
 class ProjectRef(Model):
@@ -1173,12 +1176,31 @@ class ProductionQuery(RevisionRef, Page):
 
 
 class SaveNote(RevisionRef):
+    note_id: Id | None = None
     content: str = Field(min_length=1, max_length=12000)
     start_sample: Sample = 0
     end_sample: Sample | None = None
     track_id: Id | None = None
     source_turn_id: Id | None = None
     state: Literal["draft", "accepted", "disputed"] = "draft"
+
+
+class NoteRef(ProjectRef):
+    note_id: Id
+
+
+class AgentNote(DialogueRef):
+    action: Literal["save", "delete"] = "save"
+    note_id: Id | None = None
+    content: str | None = Field(default=None, min_length=1, max_length=12000)
+
+    @model_validator(mode="after")
+    def required_fields(self):
+        if self.action == "save" and not self.content:
+            raise ValueError("Saving a note requires content")
+        if self.action == "delete" and not self.note_id:
+            raise ValueError("Deleting a note requires note_id")
+        return self
 
 
 class Citation(Model):
@@ -1333,6 +1355,9 @@ OPERATIONS = {
     "dialogue.cancel": (DialogueRef, True),
     "dialogue.retry": (DialogueRef, True),
     "notes.save": (SaveNote, True),
+    "notes.list": (ProjectPage, False),
+    "notes.delete": (NoteRef, True),
+    "notes.agent": (AgentNote, True),
     "arrangements.apply": (AgentEdit, True),
     "arrangements.get": (DialogueRef, False),
     "production.query": (ProductionQuery, False),
@@ -1437,6 +1462,9 @@ RESULT_TYPES = {
     "dialogue.cancel": DialogueTurn,
     "dialogue.retry": DialogueTurn,
     "notes.save": Conversation,
+    "notes.list": list[Conversation],
+    "notes.delete": dict,
+    "notes.agent": dict,
     "arrangements.apply": dict,
     "arrangements.get": dict,
     "production.query": dict,

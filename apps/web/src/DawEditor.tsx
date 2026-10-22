@@ -1,5 +1,5 @@
 import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import type {PointerEvent as ReactPointerEvent,KeyboardEvent,ReactNode} from 'react';
+import type {PointerEvent as ReactPointerEvent,KeyboardEvent,ReactNode,CSSProperties} from 'react';
 import type {Clip,NoteEvent,Revision,Track} from '../../../packages/contracts/types';
 import type {EditOperation} from './dawEditing';
 import {PanelResize,usePanelSize} from './PanelResize';
@@ -11,6 +11,7 @@ import {audibility} from './liveMix';
 import {arrangeClipEdits,beatSample,gridLines,orderedTracks,putNote,removeTrack,sampleBeat,snapSample,trackName,userNote,uuid} from './dawEditing';
 import {ContextMenu} from './ContextMenu';
 import type {MenuItem} from './ContextMenu';
+import {TRACK_DRAG_TYPE,reorderTracks} from './trackLayout';
 import {crossesRect} from './dawMouse';
 
 export type EditRequest={operations:EditOperation[];trackIds:string[];structural?:boolean;description:string};
@@ -18,7 +19,8 @@ type Gesture={kind:'move'|'resize'|'draw'|'box'|'velocity';revision:string;x:num
 const label=(pitch:number)=>['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'][pitch%12]+(Math.floor(pitch/12)-1);
 const left=48,top=26;
 
-export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUndo,onRedo,canUndo,canRedo,start,end,position,selectionStart,selectionEnd,onSeek,overview,pianoRequest=0,onViewport,liveMix,onMixChange,mixSaving=false,livePeaks={},mixingOnly=false,trackRequest}:{
+export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUndo,onRedo,canUndo,canRedo,start,end,position,selectionStart,selectionEnd,onSeek,overview,pianoRequest=0,onViewport,liveMix,onMixChange,mixSaving=false,livePeaks={},mixingOnly=false,trackRequest,laneHeight=128,onLaneHeight,onViewChange,onReorder,externalTracks=false}:{
+  laneHeight?:number;onLaneHeight?:(height:number,anchor?:number)=>void;onViewChange?:(view:string)=>void;onReorder?:(from:string,to:string,after?:boolean)=>Promise<void>;externalTracks?:boolean;
   trackRequest?:{sequence:number;action:string;trackId?:string};
   mixingOnly?:boolean;livePeaks?:Record<string,number>;liveMix?:Record<string,MixValues>;onMixChange?:(id:string,patch:MixValues)=>void;mixSaving?:boolean;
   revision:Revision;selected:string;onSelect:(id:string)=>void;editable:boolean;busy:boolean;
@@ -32,6 +34,8 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
   const [velocityHeight,setVelocityHeight]=usePanelSize('piano.velocity-height',126,60,400);
   const [pitchScroll,setPitchScroll]=useState(0),[pianoViewportHeight,setPianoViewportHeight]=useState(386);
   const [view,setView]=useState('playlist'),[tool,setTool]=useState('pencil'),[division,setDivision]=useState(.25);
+  useEffect(()=>{onViewChange?.(view);},[view,onViewChange]);
+  const laneHeightRef=useRef(laneHeight),laneHeightAction=useRef(onLaneHeight);laneHeightRef.current=laneHeight;laneHeightAction.current=onLaneHeight;
   useEffect(()=>{if(pianoRequest&&!mixingOnly)setView('piano');},[pianoRequest]);
   useEffect(()=>{setView(mixingOnly?'mixer':'playlist');},[mixingOnly]);
   const [noteIds,setNoteIds]=useState<string[]>([]),[gesture,setGesture]=useState<Gesture|null>(null);
@@ -46,7 +50,8 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
   const [fields,setFields]=useState({pitch:60,start:0,end:1,velocity:80});
   const [clipId,setClipId]=useState<string|null>(null),[clipPreview,setClipPreview]=useState<Clip|null>(null);
   const clipDrag=useRef<{clip:Clip;x:number;resize:boolean;revision:string;preview:Clip}|null>(null),dragTrack=useRef<string|null>(null);
-  const span=Math.max(1,end-start),gridLeft=view==='playlist'?0:left,laneWidth=Math.max(240,width-(view==='playlist'?126:0)),pixels=laneWidth-gridLeft-10;
+  const labelWidth=externalTracks?0:126;
+  const span=Math.max(1,end-start),gridLeft=view==='playlist'?0:left,laneWidth=Math.max(240,width-(view==='playlist'?labelWidth:0)),pixels=laneWidth-gridLeft-10;
   const x=(sample:number)=>gridLeft+(sample-start)/span*pixels;
   const sample=(pixel:number)=>Math.round(start+(pixel-gridLeft)/pixels*span);
   const y=(pitch:number)=>top+(127-pitch)*row;
@@ -78,6 +83,7 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
       if((event.target as HTMLElement).closest('input,select,textarea'))return;
       const bounds=node.getBoundingClientRect(),anchor=Math.max(0,Math.min(1,(event.clientX-bounds.left-left)/(bounds.width-left-10)));
       if(event.altKey&&(event.target as HTMLElement).closest('.daw-piano-area')){event.preventDefault();pitchAction.current(rowValue.current*Math.exp(-Math.max(-150,Math.min(150,event.deltaY))*.006),event.clientY);}
+      else if(event.altKey&&(event.target as HTMLElement).closest('.daw-playlist-scroll')){event.preventDefault();const scroll=playlistScroll.current;laneHeightAction.current?.(laneHeightRef.current*Math.exp(-Math.max(-150,Math.min(150,event.deltaY))*.006),Math.max(0,event.clientY-(scroll?.getBoundingClientRect().top??0)-28));}
       else if(event.ctrlKey||event.metaKey){event.preventDefault();wheelAction.current(Math.exp(-Math.max(-150,Math.min(150,event.deltaY))*.008),anchor);}
       else if(event.shiftKey||Math.abs(event.deltaX)>Math.abs(event.deltaY)){event.preventDefault();wheelAction.current(1,anchor,(event.shiftKey?event.deltaY:event.deltaX)/Math.max(540,bounds.width));}
     };
@@ -265,11 +271,11 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
   function mixChange(id:string,patch:MixValues){if(onMixChange){onMixChange(id,patch);return;}setMix(current=>({...current,[id]:{...current[id],...patch}}));}
   const previews=new Map((gesture?.preview??[]).map(n=>[n.id,n]));
   const displayNotes=visibleNotes.map(n=>previews.get(n.id)??n).concat(gesture?.kind==='draw'?(gesture.preview.length?gesture.preview:gesture.notes):[]);
-  return <div className="daw-editor" ref={frame} tabIndex={0} onMouseDownCapture={e=>{if(e.button===1)e.preventDefault();if((e.buttons&6)===6){e.preventDefault();e.stopPropagation();cancelGesture();toolsMenu(e.clientX,e.clientY);}}} onLostPointerCapture={()=>{if(pointerMode.current)cancelGesture();}} onKeyDown={keyboard} onContextMenu={e=>{if(!(e.target as Element).closest('input,textarea,[contenteditable=true]'))e.preventDefault();}} onAuxClick={e=>{if(e.button===1)e.preventDefault();}} onPointerDownCapture={pointerDown} onPointerMoveCapture={pointerMove} onPointerUpCapture={e=>pointerEnd(e)} onPointerCancelCapture={e=>pointerEnd(e,true)} data-editor-revision={revision.id} aria-label="制作编辑器">
+  return <div className={'daw-editor '+(externalTracks?'has-external-tracks':'')} ref={frame} tabIndex={0} onMouseDownCapture={e=>{if(e.button===1)e.preventDefault();if((e.buttons&6)===6){e.preventDefault();e.stopPropagation();cancelGesture();toolsMenu(e.clientX,e.clientY);}}} onLostPointerCapture={()=>{if(pointerMode.current)cancelGesture();}} onKeyDown={keyboard} onContextMenu={e=>{if(!(e.target as Element).closest('input,textarea,[contenteditable=true]'))e.preventDefault();}} onAuxClick={e=>{if(e.button===1)e.preventDefault();}} onPointerDownCapture={pointerDown} onPointerMoveCapture={pointerMove} onPointerUpCapture={e=>pointerEnd(e)} onPointerCancelCapture={e=>pointerEnd(e,true)} data-editor-revision={revision.id} aria-label="制作编辑器">
     <div className="daw-view-tabs">{(mixingOnly?[['mixer','混音台']]:[['playlist','编排'],['piano','钢琴卷帘'],['overview','总览']]).map(([id,name])=><button key={id} aria-pressed={view===id} onClick={()=>{if(id==='piano'&&!track){const first=tracks.find(t=>t.kind==='instrument'&&t.role!=='drums'&&t.instrument_candidates?.includes('GM:0'))??tracks.find(t=>t.kind==='instrument'&&t.role!=='drums')??tracks.find(t=>t.kind==='instrument');if(first)onSelect(first.id);}setView(id);}}><Icon name={id==='playlist'?'timeline':id==='piano'?'piano':id==='mixer'?'mixer':'wave'}/>{name}</button>)}<span className="daw-edit-state">{!busy&&(editable?'可编辑':'历史版本 · 只读')}</span><div className="daw-edit-tools" hidden={mixingOnly}><select aria-label="编辑声部" value={selected} onChange={e=>onSelect(e.target.value)}><option value="all">选择声部</option>{tracks.map(t=><option key={t.id} value={t.id}>{trackName(t)}</option>)}</select>
       <label>吸附<select aria-label="网格吸附" value={division} onChange={e=>setDivision(+e.target.value)}><option value={0}>关闭</option>{s.timing_map?<><option value={1}>1/4 音符</option><option value={.5}>1/8 音符</option><option value={.25}>1/16 音符</option><option value={.125}>1/32 音符</option></>:<><option value={.25}>0.25 秒</option><option value={.1}>0.1 秒</option><option value={.01}>0.01 秒</option></>}</select></label>
       <button disabled={!editable||busy||!canUndo} onClick={()=>void onUndo().catch(e=>setError(e.message))}>撤销</button><button disabled={!editable||busy||!canRedo} onClick={()=>void onRedo().catch(e=>setError(e.message))}>重做</button>
-    </div><button className="editor-menu-button" aria-label="编辑工具菜单" onClick={e=>{const r=e.currentTarget.getBoundingClientRect();toolsMenu(r.left,r.bottom);}}>⋯</button></div>
+    </div>{view==='playlist'&&<label className="lane-height-control" title="Alt＋滚轮：纵向缩放"><span>轨高</span><input aria-label="编排轨道高度" type="range" min={108} max={240} step={4} value={laneHeight} onChange={e=>onLaneHeight?.(+e.target.value)}/></label>}<button className="editor-menu-button" aria-label="编辑工具菜单" onClick={e=>{const r=e.currentTarget.getBoundingClientRect();toolsMenu(r.left,r.bottom);}}>⋯</button></div>
     {error&&<p className="daw-editor-error" role="alert">{error}<button aria-label="关闭编辑提示" onClick={()=>setError('')}>×</button></p>}
     <div className="daw-view-content" data-view={view}>
     {view==='piano'&&<><div className="daw-note-tools">{[['select','选择 / 拖动'],['pencil','画笔'],['erase','橡皮']].map(([id,name])=><button key={id} aria-pressed={tool===id} onClick={()=>setTool(id)}>{name}</button>)}<button disabled={!noteEditing||!selectedNotes.length} onClick={()=>void submit(selectedNotes.map(n=>({op:'delete',collection:'notes',id:n.id})),'删除所选音符')}>删除音符</button><label>音高缩放 <button aria-label="缩小音高" onClick={()=>pitchZoom(row/1.2)}>−</button><input aria-label="音高缩放" type="range" min={8} max={40} step={1} value={row} onChange={e=>pitchZoom(+e.target.value)}/><button aria-label="放大音高" onClick={()=>pitchZoom(row*1.2)}>+</button></label><button onClick={fitPitch}>适配音域</button><small>{noteIds.length} 个已选 · Shift 多选 / 框选</small></div>
@@ -288,9 +294,9 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
     {view==='playlist'&&<>
       <div className="daw-playlist-scroll" ref={playlistScroll}><div className="daw-playlist-ruler"><span><button aria-label="新增乐器轨道" title="新增乐器轨道" disabled={!editable||busy} onClick={()=>void addTrack()}>＋</button>{s.timing_map?'小节':'时间 / 秒'}</span><svg width={laneWidth} height={24} onPointerDown={e=>{if(e.button===0)onSeek(Math.max(0,Math.min(duration,sample(e.clientX-e.currentTarget.getBoundingClientRect().left))));}}>{displayLines.map(l=><g key={l.sample}><line x1={x(l.sample)} x2={x(l.sample)} y1={l.major?3:16} y2={24} stroke="#5e656f"/>{labelSamples.has(l.sample)&&<text x={x(l.sample)+4} y={13} fill="#a1a7af" fontSize={10}>{l.label}</text>}</g>)}</svg></div>
         {tracks.map((t,i)=>{const {clips,count,notesPath}=playlistRows.get(t.id)!;
-          return <div className={'daw-playlist-row '+(selected===t.id?'is-selected':'')} key={t.id} data-track-id={t.id} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(dragTrack.current&&editable&&!busy)void reorder(dragTrack.current,t.id);dragTrack.current=null;}}>
-            <button className="daw-lane-label" aria-label={'编辑轨道 '+trackName(t)} onClick={()=>onSelect(t.id)} onDoubleClick={()=>{onSelect(t.id);setView('piano');}} draggable={editable&&!busy} onDragStart={()=>{dragTrack.current=t.id;}} onDragEnd={()=>{dragTrack.current=null;}}><i style={{background:palette[i%palette.length]}}/><strong>{trackName(t)}</strong><small>{t.kind==='audio'?'AUDIO':t.kind==='bus'?'BUS':'MIDI'} · {audibility(tracks,mix,t.id).muted?'MUTE':audibility(tracks,mix,t.id).solo?'SOLO':(s.notes??[]).filter(n=>n.track_id===t.id).length+' notes'}</small></button>
-            <svg width={laneWidth} height={66} viewBox={`0 0 ${laneWidth} 66`} onPointerMove={clipMove} onPointerUp={clipFinish} onPointerCancel={cancelGesture} onDoubleClick={()=>{onSelect(t.id);setView('piano');}}>
+          return <div className={'daw-playlist-row '+(selected===t.id?'is-selected':'')} key={t.id} data-track-id={t.id} style={{height:laneHeight}} onDragOver={e=>{if(editable&&!busy&&e.dataTransfer.types.includes(TRACK_DRAG_TYPE)){e.preventDefault();e.dataTransfer.dropEffect='move';}}} onDrop={e=>{e.preventDefault();const from=e.dataTransfer.getData(TRACK_DRAG_TYPE)||dragTrack.current;if(from&&editable&&!busy){const after=e.clientY>e.currentTarget.getBoundingClientRect().top+laneHeight/2;if(onReorder)void onReorder(from,t.id,after);else void submit([{op:'track_order',track_ids:reorderTracks(tracks.map(t=>t.id),from,t.id,after)}],'拖动调整轨道顺序',true,tracks.map(t=>t.id));}dragTrack.current=null;}}>
+            <button className="daw-lane-label" aria-label={'编辑轨道 '+trackName(t)} onClick={()=>onSelect(t.id)} onDoubleClick={()=>{onSelect(t.id);setView('piano');}} draggable={editable&&!busy} onDragStart={e=>{dragTrack.current=t.id;e.dataTransfer.setData(TRACK_DRAG_TYPE,t.id);e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{dragTrack.current=null;}}><i style={{background:palette[i%palette.length]}}/><strong>{trackName(t)}</strong><small>{t.kind==='audio'?'AUDIO':t.kind==='bus'?'BUS':'MIDI'} · {audibility(tracks,mix,t.id).muted?'MUTE':audibility(tracks,mix,t.id).solo?'SOLO':(s.notes??[]).filter(n=>n.track_id===t.id).length+' notes'}</small></button>
+            <svg width={laneWidth} height={laneHeight-1} preserveAspectRatio="none" viewBox={`0 0 ${laneWidth} 66`} onPointerMove={clipMove} onPointerUp={clipFinish} onPointerCancel={cancelGesture} onDoubleClick={()=>{onSelect(t.id);setView('piano');}}>
               {displayLines.map(l=><line key={l.sample} x1={x(l.sample)} x2={x(l.sample)} y1={0} y2={66} stroke={l.major?canvasTheme.majorGrid:canvasTheme.grid}/>)}
               {count>0&&<g aria-label="未编组 MIDI 摘要" data-preview-note-count={count}><rect x={gridLeft} y={7} width={pixels} height={52} rx={4} fill={palette[i%palette.length]} fillOpacity={.15}/><rect x={gridLeft} y={7} width={pixels} height={2} rx={1} fill={palette[i%palette.length]} fillOpacity={.75}/><text x={gridLeft+7} y={20} fill={palette[i%palette.length]} fontSize={9}>MIDI · {count} 个可见音符 · 未编组</text><path d={notesPath} fill={palette[i%palette.length]} fillOpacity={.85}/></g>}
               {clips.map(c=>{const p=clipPreview?.id===c.id?clipPreview:c;return <g key={c.id} data-clip-id={c.id} data-erasing={erasing.includes(c.id)} onPointerDown={e=>clipBegin(e as unknown as ReactPointerEvent<SVGSVGElement>,c)}><rect x={x(p.start_sample)} y={6} width={Math.max(5,p.duration_samples/span*pixels)} height={54} rx={4} fill={palette[i%palette.length]} fillOpacity={.83} stroke={clipId===c.id?canvasTheme.selected:palette[i%palette.length]}/>{c.asset_id&&s.source_reference&&(()=>{const original=s.source_reference!.clips.find(v=>v.asset_id===c.asset_id),wave=original?s.source_reference!.waveforms?.[original.track_id]:null;return wave?<AudioClipWave waveform={wave} clip={p} start={start} end={end} width={pixels} color="#fff0df"/>:null;})()}<text x={x(p.start_sample)+6} y={22} fill="#e9eaec" fontSize={10}>{c.asset_id?'AUDIO':'MIDI'} · {(p.duration_samples/rate).toFixed(2)}s{c.loop?' ↻':''}</text><rect data-action="resize" x={x(p.start_sample+p.duration_samples)-7} y={6} width={8} height={54} fill="transparent" className="note-resize"/></g>;})}
@@ -298,7 +304,7 @@ export function DawEditor({revision,selected,onSelect,editable,busy,onEdit,onUnd
             </svg>
           </div>;})}
         {pendingTrack&&!tracks.some(t=>t.id===pendingTrack.id)&&<div className="daw-playlist-row daw-pending-track" data-pending-track={pendingTrack.id} aria-label="新增乐器轨道" aria-busy="true"><div className="daw-lane-label"><i style={{background:palette[tracks.length%palette.length]}}/><strong>{pendingTrack.name}</strong><small>MIDI · 0 notes</small></div><div className="daw-pending-lane"/></div>}
-        <div className="daw-playlist-fill" aria-hidden="true"><div className="daw-empty-lane-label"/><svg width={laneWidth} height="100%" viewBox={`0 0 ${laneWidth} 1`} preserveAspectRatio="none">
+        <div className="daw-playlist-fill" style={{'--lane-height':laneHeight+'px'} as CSSProperties} aria-hidden="true"><div className="daw-empty-lane-label"/><svg width={laneWidth} height="100%" viewBox={`0 0 ${laneWidth} 1`} preserveAspectRatio="none">
           {displayLines.map(l=><line key={l.sample} x1={x(l.sample)} x2={x(l.sample)} y1={0} y2={1} stroke={l.major?canvasTheme.majorGrid:canvasTheme.grid}/>)}
           <line x1={x(position)} x2={x(position)} y1={0} y2={1} stroke={canvasTheme.playhead}/>
         </svg></div>

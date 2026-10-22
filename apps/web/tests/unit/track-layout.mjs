@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import ts from 'typescript';
+const source=await readFile(new URL('../../src/trackLayout.ts',import.meta.url),'utf8');
+const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText;
+const {trackHeight,reorderTracks,zoomTrackScroll}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const ids=['a','b','c','d'];
+assert.deepEqual(reorderTracks(ids,'a','c',true),['b','c','a','d']);
+assert.deepEqual(reorderTracks(ids,'d','b'),['a','d','b','c']);
+assert.deepEqual(reorderTracks(ids,'unknown','b'),ids);
+assert.deepEqual(reorderTracks(ids,'a','a'),ids);
+assert.deepEqual(ids,['a','b','c','d']);
+assert.equal(trackHeight(40),108);assert.equal(trackHeight(300),240);
+assert.equal(zoomTrackScroll(192,64,128,192),320);
+assert.equal((192+64)/128,(320+64)/192,'Pointer stays over the same fractional track');
+console.log('Track reorder and anchored vertical zoom passed');

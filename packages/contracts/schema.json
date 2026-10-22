@@ -103,6 +103,63 @@
       "title": "AgentEdit",
       "type": "object"
     },
+    "AgentNote": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "turn_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Turn Id",
+          "type": "string"
+        },
+        "action": {
+          "default": "save",
+          "enum": [
+            "save",
+            "delete"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "note_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note Id"
+        },
+        "content": {
+          "anyOf": [
+            {
+              "maxLength": 12000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content"
+        }
+      },
+      "required": [
+        "project_id",
+        "turn_id"
+      ],
+      "title": "AgentNote",
+      "type": "object"
+    },
     "AnalysisRecord": {
       "additionalProperties": false,
       "properties": {
@@ -1171,6 +1228,27 @@
           ],
           "title": "Kind",
           "type": "string"
+        },
+        "tempo": {
+          "default": 120,
+          "maximum": 300,
+          "minimum": 20,
+          "title": "Tempo",
+          "type": "number"
+        },
+        "bars": {
+          "default": 32,
+          "maximum": 2048,
+          "minimum": 1,
+          "title": "Bars",
+          "type": "integer"
+        },
+        "beats_per_bar": {
+          "default": 4,
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Beats Per Bar",
+          "type": "integer"
         }
       },
       "required": [
@@ -3513,6 +3591,27 @@
       "title": "NoteEvent",
       "type": "object"
     },
+    "NoteRef": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "note_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Note Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "note_id"
+      ],
+      "title": "NoteRef",
+      "type": "object"
+    },
     "OrganizeProject": {
       "additionalProperties": false,
       "properties": {
@@ -5222,6 +5321,19 @@
           ],
           "default": null,
           "title": "Revision Id"
+        },
+        "note_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note Id"
         },
         "content": {
           "maxLength": 12000,
@@ -9062,6 +9174,32 @@
           "created_at"
         ],
         "title": "Conversation",
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "notes.list": {
+      "arguments": "ProjectPage",
+      "result": {
+        "items": {
+          "$ref": "#/$defs/Conversation"
+        },
+        "type": "array"
+      },
+      "mutates": false
+    },
+    "notes.delete": {
+      "arguments": "NoteRef",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "notes.agent": {
+      "arguments": "AgentNote",
+      "result": {
+        "additionalProperties": true,
         "type": "object"
       },
       "mutates": true

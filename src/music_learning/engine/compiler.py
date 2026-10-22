@@ -104,7 +104,11 @@ def compile_files(service, args):
                     clips=[dict(path=str(path), asset_id=stem["asset_id"], start_sample=0,
                                 source_offset_samples=0, duration_samples=frames, gain=1)]))
         if not tracks:
-            raise ValueError("工程没有可播放的音频轨")
+            # Empty compositions have a valid clock/grid before the first note.
+            # Do not start a plugin merely to run a silent transport.
+            if snapshot.get("source_asset_id") or not duration:
+                raise ValueError("工程没有可播放的音频轨")
+            tracks = [dict(id="empty-timeline", gain_db=0, pan=0, clips=[])]
         manifest = dict(schema_version=1, project_id=revision["project_id"], revision_id=revision["id"],
             view=args.view, sample_rate=rate, duration_samples=duration, tail_samples=tail, tracks=tracks,
             session_directory=str(directory))

@@ -120,6 +120,12 @@ class Service:
                 TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
                 return {"schema_version": 1, "request_id": request.request_id, "ok": True, "result": result}
             hash_arguments = args.model_dump(mode="json")
+            if isinstance(args, c.CreateProject):
+                for key, default in (("tempo", 120), ("bars", 32), ("beats_per_bar", 4)):
+                    if hash_arguments[key] == default:
+                        hash_arguments.pop(key)
+            if isinstance(args, c.SaveNote) and args.note_id is None:
+                hash_arguments.pop("note_id", None)
             if request.operation == "audition.set" and args.engine_ack is None:
                 hash_arguments.pop("engine_ack",None)
             plugin_entities = list(hash_arguments.get("snapshot", {}).get("plugins", []))
@@ -439,7 +445,7 @@ class Service:
             from .arranging import dispatch
 
             return dispatch(self, db, op, args, request)
-        if op.startswith("dialogue.") or op in ("music.query", "notes.save"):
+        if op.startswith("dialogue.") or op.startswith("notes.") or op == "music.query":
             from .dialogue import dispatch
 
             return dispatch(self, db, op, args, request)
@@ -587,12 +593,25 @@ class Service:
                 id=pid,
                 title=args.title,
                 kind=args.kind,
-                status="empty",
+                status="ready" if args.kind == "composition" else "empty",
                 current_revision=initial,
                 created_at=time.time(),
             )
             db.execute(insert(t.projects).values(**project))
-            rev = self.commit(db, pid, None, c.Snapshot(), "user", "Create project", request.request_id)
+            snapshot = c.Snapshot()
+            if args.kind == "composition":
+                beats = args.bars * args.beats_per_bar
+                duration = round(snapshot.sample_rate * beats * 60 / args.tempo)
+                provenance = c.Provenance(origin="user", source_id="composition:" + pid)
+                track = c.Track(id=c.new_id(), name="乐器 1", kind="instrument", provenance=provenance)
+                snapshot = c.Snapshot(
+                    duration_samples=duration, tracks=[track], track_order=[track.id],
+                    timing_map=c.TimingMap(id=c.new_id(), sample_rate=snapshot.sample_rate,
+                        anchors=[c.TimingAnchor(sample=0, beat=c.Beat(n=0)),
+                                 c.TimingAnchor(sample=duration, beat=c.Beat(n=beats))],
+                        meters=[c.Meter(beat=c.Beat(n=0), bar=1, numerator=args.beats_per_bar, denominator=4)],
+                        provenance=provenance))
+            rev = self.commit(db, pid, None, snapshot, "user", "Create project", request.request_id)
             project["current_revision"] = rev["id"]
             return project
         if op == "projects.get":

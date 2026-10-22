@@ -18,7 +18,7 @@ from .service import DomainError, Service, canonical, emit, row
 COMMON_INSTRUCTIONS = """You are the music assistant inside Music Learning DAW. Answer naturally in Chinese; use Markdown when useful. Only use the supplied music/production tools, never shell, files, network, apps, MCP or subagents. Read actual project data for musical facts and the installed catalog for sound recommendations; no raw audio is supplied, so do not say you heard it. GM labels are transcription labels, not loadable preset choices. Discover instrument category IDs and list that category; an empty keyword search alone does not mean no preset exists. Use real IDs returned by tools.
 The selected_track and start/end range are discussion focus, not a restriction on what the user may ask. Prefer the track/time named in the user's request; resolve it against actual project tracks. production_query(track_id=null) lists all tracks when the request concerns another track. Ask only if the actual target is ambiguous, not for editing permission. Never send the user to permission checkboxes or mode switches. Do not reuse a past excerpt as an editing requirement. Preserve unrelated music and source recordings.
 The context workspace and selected_reference_track identify what the user is viewing. In original workspace, an unqualified musical question refers to the original recording; in arrangement workspace it refers to the current MIDI. These are focus, not editing permissions. When changing accompaniment from original workspace, inspect view="arrangement" and edit its real tracks; preserve original reference annotations unless explicitly correcting that reference. Original recording annotations and vocal melody live in source_reference. music_query(view="original") reads original chords/key/sections/melody; view="arrangement" reads the current MIDI and tracks, including changes made in this turn. When comparing original harmony with an arrangement, read both views for the same sample interval; derive current harmony from actual MIDI, never reuse the original labels as if they were updated. The reference melody is silent and has no instrument; the vocal audio is separate. Do not add a synth to that reference track. Original annotations are musical context, not restrictions or required boilerplate.
-Position links are optional: when useful use only exact music://citation/ID values returned by this turn. A plain answer, production query, or clarification does not require a citation. Do not repeat candidate/unreviewed boilerplate or old permission disclaimers. Keep replies focused."""
+Position links are optional: when useful use only exact music://citation/ID values returned by this turn. A plain answer, production query, or clarification does not require a citation. Do not repeat candidate/unreviewed boilerplate or old permission disclaimers. Keep replies focused. The notebook is shared with the user. Use notes_read to read it and notes_write to create, update or delete notes when requested; report a note saved only after a successful tool result. Notes are separate from music edits. In a composition project without original audio, create music from the empty grid; do not ask for an original recording."""
 INSTRUCTIONS = (
     COMMON_INSTRUCTIONS
     + " This request is explicitly read-only or is viewing history. You may inspect music and production data; do not claim an edit was applied."
@@ -223,6 +223,16 @@ class DialogueWorker:
             }
             editable = bool(turn["context"].get("edit_scope") or turn["payload"].get("edit_scope"))
             tools = [tool]
+            for name, model_type, description in (
+                ("notes_read", c.ProjectPage, "Read this project notebook. Use returned note IDs when updating or deleting notes."),
+                ("notes_write", c.AgentNote, "Save or update a Markdown note (action=save, content, optional note_id), or delete an existing note (action=delete, note_id). Does not change music."),
+            ):
+                note_schema = model_type.model_json_schema()
+                for key in ("project_id", "turn_id"):
+                    note_schema["properties"].pop(key, None)
+                    if key in note_schema.get("required", []):
+                        note_schema["required"].remove(key)
+                tools.append(dict(type="function", name=name, description=description, inputSchema=note_schema))
             for name, schema_model, remove, description in (
                 (
                     "preset_capture",
@@ -304,13 +314,15 @@ class DialogueWorker:
                     }
                 else:
                     actual.update(
-                        {"turn_id": turn["id"]} if name == "music_edit" else {"revision_id": target}
+                        {"turn_id": turn["id"]} if name in ("music_edit", "notes_write") else {} if name == "notes_read" else {"revision_id": target}
                     )
                 operation = {
                     "music_query": "music.query",
                     "production_query": "production.query",
                     "music_edit": "arrangements.apply",
                     "preset_capture": "jobs.submit",
+                    "notes_read": "notes.list",
+                    "notes_write": "notes.agent",
                 }[name]
                 try:
                     envelope = {"operation": operation, "arguments": actual}
@@ -318,6 +330,8 @@ class DialogueWorker:
                         envelope.update(
                             expected_revision=target, idempotency_key="agent-edit:" + turn["id"] + ':' + target
                         )
+                    elif name == "notes_write":
+                        envelope.update(expected_revision=target, idempotency_key="note:" + turn["id"] + ":" + c.new_id())
                     elif name == "preset_capture":
                         envelope.update(
                             expected_revision=target,
@@ -358,6 +372,8 @@ class DialogueWorker:
                     success = True
                     if name == "music_edit":
                         turn["context"]["arrangement"] = value
+                    if isinstance(value, list):
+                        value = {"notes": value}
                     known = {x["id"] for x in turn["citations"]}
                     turn["citations"].extend(x for x in value.get("citations", []) if x["id"] not in known)
                 except DomainError as err:
