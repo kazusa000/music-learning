@@ -111,3 +111,17 @@ NI容器外壳可解析并不证明项目态与NKM文件语义兼容；实际程
 通过只读RTTI和小段反汇编，定位实际`IK::Products::MB2::AudioProcessor`主vtable为`0x180e18868`，`setStateInformation`槽位`+0x110`为`0x180935c00`；不是此前的构造器`0x180920110`。恢复入口解析树后经`0x180961420`按schema逐属性合并，属性转换回调在写入`0x1809626f0`之前运行。下一次定向探针应记录BassModel完整转换前后及写入顺序，同时修正自有单步处理；不再依赖通用前128条采样。静态定位证据在`km22/modo-static/vtable.json`。
 
 本阶段只读复核`km22/protection-after-controls.json`：正式九表/head、14项固定文件摘要与恢复前一致，catalog仍1252项且SHA未变。没有正式工程/服务/渲染/音乐模型写入，没有NAS访问；源包、固定Pianoteq验证和历史拒绝路径保持不动。并发N7长测在运行时不额外冷开采样器，只按当前进程和报告实际状态安排控制窗口，不按历史locator推断空闲。
+
+### 精确状态控制（2026-10-22 晚间，仍未入库）
+
+MODO的定向转换控制02/03均退出0：`BassModel`原厂显示名`'70s J-Bass`转换为`Y70sJBass`，schema验证前后保持目标，实际写入参数也保持目标。控制04进一步在真实JUCE SharedObject写入前后读取同一属性：`Y60sPBass`确实变为`Y70sJBass`，恢复回调入口仍为目标；但紧随其后的型号命令和最终getState又读回默认。证据位于`20261021-all/modo/callback-trace/converter-trace/run/`。不能再把问题描述为转换器没有生成正确型号。
+
+最初的队列清理追踪虽正常退出，但前64条容量在恢复回调之前已经耗尽，因此不能证明回调中没有队列任务或没有覆盖。下一版按回调线程、精确返回地址和栈窗口过滤，无关getter不占用容量；溢出视为证据失败，不靠增大前N条掩盖问题。探针自身早期访问越界、单步处理错误的原报告均保留，不计作插件缺陷。
+
+独立`km22/modo-lifecycle-a/`把插件prepare后先处理128块，再通过标准VST3入口重新应用相同原厂状态，随后实际播放5秒合成短句。执行退出0、约7.42秒、约137.9MB逻辑Job I/O，自有进程退出，插件/源预设SHA不变；prepare、重新应用以及实际音频后的状态仍为`'60s P-Bass`。RMS约`8.41e-6`、峰值`5.09e-5`，没有据此判定音色通过。简单预热或开始process再重应用并未解决型号恢复。
+
+Kontakt旧通用程序列表控制实际上来自空机架，不能外推所有已装载状态。新增`km22/grand-units-a/`从独立空机架恢复真实Grand Piano状态后，读取全部16个IUnitInfo单元及2048个程序名：仍全部为MIDI通道/程序编号，没有真实乐器名。约7.22秒、28.7MB逻辑I/O、退出0，私有default恢复且自有树退出。此结果才覆盖已加载Grand Piano的公开单元名称路径。
+
+另一次`km22/context-state/control-a/`用标准IStreamAttributes对照普通IBStream，Kontakt两次getState均返回0/78042字节，但属性接口查询次数为0，未读取StateType=Default。该SDK实验在已记录terminate后以`0xC000000D`退出，故只作为“本次未读取属性”的诊断观察，不计生命周期通过。没有把不同状态字节或上下文标记当作NKM兼容/身份成功。
+
+官方Lua的空机架只读introspection已实际正常完成，约3.80秒、190.1MB逻辑Job I/O、rack_count=0、自有树退出；没有加载NKI/NKM或处理音频。四个getter均为带两个upvalue的C函数，userdata类型明确指向`ni::kontakt::lua::api::bindInstrument(..., BEngine&)`及`bindFileInfo`的Sol lambda绑定。首次观察时进程已自然退出，没有取得模块映射，因此函数tostring给出的堆地址尚不能当作代码地址。下一步只在自有实例读少量closure/userdata与模块映射，定位真实只读getter；该步骤仍不等于VST3身份检查已接通。证据为`20261022-resume/kontakt/lua-introspection-20261022/run-20261022-01/`。
