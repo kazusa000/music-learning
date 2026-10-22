@@ -21,7 +21,7 @@ def _write_queue(run_dir: Path, instrument: str, states: list[str], run_status: 
     parent_queue_sha256 = None
     if queue_path.is_file():
         parent_queue_sha256 = json.loads(queue_path.read_text(encoding="utf-8")).get("parent_queue_sha256")
-    items = [{"instrument": instrument, "id": f"{instrument}-{index:03}", "status": state}
+    items = [{"instrument": instrument, "id": f"{instrument}-{index:03}", "status": state, "attempts": []}
              for index, state in enumerate(states)]
     queue = {
         "schema_version": 1, "requested": len(items), "counts": {instrument: len(items)}, "items": items,
@@ -170,6 +170,165 @@ def test_resume_accepts_only_the_launched_child_process_tree():
         {"pid": 503, "parent_pid": 900},
     ]
     assert chain._descendant_pids(processes, 500) == {500, 501, 502}
+
+
+def _blocked_child_for_staging(plan, tmp_path):
+    child = plan["children"][0]
+    command = " ".join(chain._child_command(plan, child))
+    queue_path = Path(child["run_dir"]) / "queue.json"
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    for item in queue["items"]:
+        item["library"] = str(tmp_path / "staging" / "AGM")
+        item["sample_group"] = "AGMSt"
+    queue["items"][-1].update(status="blocked_missing_sample_group", sample_group="AGMPk")
+    queue["package_inventory"] = str(tmp_path / "inventory.json")
+    queue["package_inventory_sha256"] = "a" * 64
+    queue_path.write_text(json.dumps(queue), encoding="utf-8")
+    (Path(child["run_dir"]) / "status.json").write_text(json.dumps({
+        "status": "waiting_for_resources", "requested": child["requested"], "finished_at": None,
+    }), encoding="utf-8")
+    state = {
+        "schema_version": 1,
+        "chain_id": plan["chain_id"],
+        "status": "blocked",
+        "reason": "child_exited_before_terminal_queue",
+        "next_child": 0,
+        "children": [],
+        "active_child": {
+            "instrument": child["instrument"],
+            "run_dir": child["run_dir"],
+            "pid": 501,
+            "parent_pid": 500,
+            "created": "2026-10-22T20:00:00",
+            "command_line": command,
+        },
+    }
+    return state, queue
+
+
+def test_resource_block_recovery_preserves_checkpoint_and_resumes_same_queue(tmp_path):
+    plan = _plan(tmp_path)
+    state, _queue = _blocked_child_for_staging(plan, tmp_path)
+    checkpoint = tmp_path / "chain-state.json"
+    checkpoint.write_text(json.dumps(state), encoding="utf-8")
+    validated = []
+
+    def validate_staging(child, queue):
+        validated.append((child["instrument"], len(queue["items"])))
+        return {"instrument": child["instrument"], "stage": "validated"}
+
+    recovered = chain._recover_child_staging(
+        plan, state, checkpoint, read_process=lambda _pid: None,
+        list_run_processes=lambda _runs: [], validate_staging=validate_staging,
+    )
+
+    assert recovered["status"] == "lp_terminal_verified"
+    assert recovered["next_child"] == 0 and recovered["active_child"] is None
+    assert recovered["resource_recovery"]["queue_identity_sha256"] == plan["children"][0]["identity_sha256"]
+    assert recovered["recovery_history"][0]["previous_blocked_checkpoint"] == state
+    assert validated == [("AGM", 33)]
+    assert json.loads((Path(plan["children"][0]["run_dir"]) / "queue.json").read_text())["items"][0][
+        "status"
+    ] == "pending_staging"
+
+
+def test_resource_block_recovery_refuses_live_process_and_attempted_queue(tmp_path):
+    plan = _plan(tmp_path)
+    state, _queue = _blocked_child_for_staging(plan, tmp_path)
+    with pytest.raises(chain.ChainError, match="still present or has been reused"):
+        chain._recover_child_staging(
+            plan, state, tmp_path / "chain-state.json",
+            read_process=lambda pid: {"pid": pid} if pid == 501 else None,
+            list_run_processes=lambda _runs: [],
+            validate_staging=lambda *_args: {"instrument": "AGM"},
+        )
+
+    queue_path = Path(plan["children"][0]["run_dir"]) / "queue.json"
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    queue["items"][0]["attempts"] = [{"attempt": 1}]
+    queue_path.write_text(json.dumps(queue), encoding="utf-8")
+    with pytest.raises(chain.ChainError, match="attempted or progressed"):
+        chain._recover_child_staging(
+            plan, state, tmp_path / "chain-state.json",
+            read_process=lambda _pid: None, list_run_processes=lambda _runs: [],
+            validate_staging=lambda *_args: {"instrument": "AGM"},
+        )
+
+
+def test_staged_resource_audit_requires_source_hardlinks_and_exact_small_indexes(tmp_path, monkeypatch):
+    intake = tmp_path / "data/maintenance/instrument-intake"
+    package_root = tmp_path / "package-root"
+    source = package_root / "AGM_Library"
+    stage_root = package_root / "Sound Library/.staging"
+    stage = stage_root / "factory-run/AGM"
+    intake.mkdir(parents=True)
+    source.mkdir(parents=True)
+    stage.mkdir(parents=True)
+    sample_content = b"not-read-by-audit"
+    (source / "AGMSt-1.ascf").write_bytes(sample_content)
+    index_content = b"small-dbconfig-index"
+    (source / "AGMSt_DBConfig.cf").write_bytes(index_content)
+    (stage / "AGMSt-1.ascf").hardlink_to(source / "AGMSt-1.ascf")
+    (stage / "AGMSt_DBConfig.cf").write_bytes(index_content)
+
+    import hashlib
+
+    sample_sha = hashlib.sha256(sample_content).hexdigest()
+    index_sha = hashlib.sha256(index_content).hexdigest()
+    manifest = {
+        "libraries": {
+            "AGM": {
+                "path": str(source),
+                "ascf_count": 1,
+                "ascf_total_bytes": len(sample_content),
+                "ascf": [{"name": "AGMSt-1.ascf", "bytes": len(sample_content), "sha256": sample_sha}],
+                "dbconfigs": [{"name": "AGMSt_DBConfig.cf", "bytes": len(index_content), "sha256": index_sha}],
+            },
+        },
+    }
+    package_path = intake / "inventory.json"
+    package_raw = json.dumps(manifest).encode()
+    package_path.write_bytes(package_raw)
+    package_sha = hashlib.sha256(package_raw).hexdigest()
+    (stage / "preparation.json").write_text(json.dumps({
+        "status": "prepared",
+        "instrument": "AGM",
+        "source": str(source),
+        "destination": str(stage),
+        "audio_verified": False,
+        "hardlinks": [{"name": "AGMSt-1.ascf", "bytes": len(sample_content)}],
+        "indexes": [{
+            "source": "AGMSt_DBConfig.cf", "name": "AGMSt_DBConfig.cf",
+            "bytes": len(index_content), "sha256": index_sha,
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setattr(chain, "ROOT", tmp_path.resolve())
+    monkeypatch.setattr(chain, "INTAKE_ROOT", intake.resolve())
+    child = {"instrument": "AGM", "run_dir": str(tmp_path / "fixed-run")}
+    queue = {
+        "package_inventory": str(package_path),
+        "package_inventory_sha256": package_sha,
+        "items": [
+            {"status": "pending_staging", "library": str(stage), "sample_group": "AGMSt"},
+            {"status": "blocked_missing_sample_group", "sample_group": "AGMPk"},
+        ],
+    }
+    audit = chain._validate_staged_sample_resources(
+        child, queue, package_root=package_root,
+        staging_root=stage_root, budget=lambda _drive: {"allowed": True},
+        inspect_samples=lambda _path, _instrument: {"families": {"AGMSt": {}}},
+    )
+    assert audit["sample_count"] == 1
+    assert audit["families"] == ["AGMSt"]
+
+    (stage / "AGMSt-1.ascf").unlink()
+    (stage / "AGMSt-1.ascf").write_bytes(sample_content)
+    with pytest.raises(chain.ChainError, match="exact read-only source hardlink"):
+        chain._validate_staged_sample_resources(
+            child, queue, package_root=package_root, staging_root=stage_root,
+            budget=lambda _drive: {"allowed": True},
+            inspect_samples=lambda _path, _instrument: {"families": {"AGMSt": {}}},
+        )
 
 
 def test_validate_plan_accepts_active_child_and_completed_prior_run_on_resume(tmp_path, monkeypatch):

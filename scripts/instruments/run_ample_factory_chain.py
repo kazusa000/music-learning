@@ -10,17 +10,22 @@ import argparse
 from contextlib import contextmanager
 from datetime import datetime
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import time
+from types import ModuleType
 
 
 ROOT = Path(__file__).resolve().parents[2]
 INTAKE_ROOT = ROOT / "data/maintenance/instrument-intake"
+AMPLE_PACKAGE_ROOT = Path(r"H:\music\tmp")
+AMPLE_STAGING_ROOT = Path(r"H:\music\Sound Library\.staging")
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 TERMINAL_ITEM_STATES = {"passed", "failed", "inconclusive", "blocked_missing_sample_group"}
@@ -299,6 +304,188 @@ def queue_is_terminal(run_dir: Path, instrument: str, requested: int) -> tuple[b
     return complete, {**derived, "finished_at": status.get("finished_at")}
 
 
+def _pinned_module(run_dir: Path, module_name: str):
+    """Load a support module from this fixed run's pin, not the mutable checkout."""
+    source_root = Path(run_dir) / "pinned/src/music_learning"
+    source = source_root / (module_name.replace(".", "/") + ".py")
+    if not source.is_file():
+        raise ChainError(f"Pinned Ample support module is missing: {source.name}")
+    package_name = "_ample_pin_" + hashlib.sha256(str(Path(run_dir).resolve()).encode()).hexdigest()[:16]
+    package = sys.modules.get(package_name)
+    if package is None:
+        package = ModuleType(package_name)
+        package.__path__ = [str(source_root)]
+        sys.modules[package_name] = package
+    qualified = package_name + "." + module_name
+    spec = importlib.util.spec_from_file_location(qualified, source)
+    if spec is None or spec.loader is None:
+        raise ChainError(f"Cannot load pinned Ample support module: {module_name}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[qualified] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(qualified, None)
+        raise
+    return module
+
+
+def _is_reparse(path: Path) -> bool:
+    info = Path(path).lstat()
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & 1024)
+
+
+def _assert_no_reparse_chain(path: Path, stop: Path) -> None:
+    path, stop = Path(path), Path(stop)
+    try:
+        relative = Path(os.path.abspath(path)).relative_to(Path(os.path.abspath(stop)))
+    except ValueError as exc:
+        raise ChainError("Path escaped its approved root") from exc
+    current = Path(os.path.abspath(stop))
+    if not current.exists() or _is_reparse(current):
+        raise ChainError("Approved Ample storage root is missing or is a reparse point")
+    for component in relative.parts:
+        current = current / component
+        if not current.exists() or _is_reparse(current):
+            raise ChainError("Ample staged resource path contains a missing or reparse component")
+
+
+def _validate_staged_sample_resources(child: dict, queue: dict, *,
+                                      inspect_samples=None, budget=None,
+                                      package_root: Path | None = None,
+                                      staging_root: Path | None = None) -> dict:
+    """Prove the old resource wait is cleared without reading ASCF payloads.
+
+    Large sample files must remain hard links to the read-only package. Only
+    the pinned Ample index inspector reads the three small DBConfig indexes.
+    """
+    instrument = child["instrument"]
+    package_root = Path(package_root) if package_root is not None else AMPLE_PACKAGE_ROOT
+    staging_root = Path(staging_root) if staging_root is not None else AMPLE_STAGING_ROOT
+    package_path = queue.get("package_inventory")
+    package_sha = queue.get("package_inventory_sha256")
+    if (not isinstance(package_path, str) or not isinstance(package_sha, str)
+            or len(package_sha) != 64):
+        raise ChainError("Fixed child queue has no pinned package inventory")
+    package_path = _under_intake(Path(package_path), "Ample package inventory")
+    package_raw = package_path.read_bytes()
+    if hashlib.sha256(package_raw).hexdigest() != package_sha:
+        raise ChainError("Ample package inventory changed since the fixed child queue was prepared")
+    try:
+        package = json.loads(package_raw)
+        library_info = package["libraries"][instrument]
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ChainError("Ample package inventory has no matching library record") from exc
+
+    sample_items = [item for item in queue.get("items", [])
+                    if item.get("status") == "pending_staging"]
+    if not sample_items:
+        raise ChainError("No pending Ample item identifies the resource staging path")
+    library_names = {item.get("library") for item in sample_items}
+    if len(library_names) != 1 or not all(isinstance(path, str) for path in library_names):
+        raise ChainError("Fixed Ample queue has inconsistent sample staging paths")
+    stage = Path(next(iter(library_names)))
+    approved_root = Path(staging_root)
+    try:
+        stage_abs = Path(os.path.abspath(stage))
+        root_abs = Path(os.path.abspath(approved_root))
+        relative = stage_abs.relative_to(root_abs)
+    except ValueError as exc:
+        raise ChainError("Ample staged resources are outside the authorized Sound Library staging tree") from exc
+    if not relative.parts:
+        raise ChainError("Ample staging path cannot be the staging root")
+
+    source = Path(library_info.get("path", ""))
+    if not source.is_absolute():
+        raise ChainError("Read-only Ample package source is missing")
+    if library_info.get("ascf_count") != len(library_info.get("ascf", [])):
+        raise ChainError("Pinned Ample package sample inventory count is inconsistent")
+    if sum(record.get("bytes", -1) for record in library_info["ascf"]) != library_info.get("ascf_total_bytes"):
+        raise ChainError("Pinned Ample package sample inventory byte total is inconsistent")
+
+    if budget is None:
+        module = _pinned_module(Path(child["run_dir"]), "instrument_probe_budget")
+        budget = module.loading_budget
+    budget_result = budget("H:")
+    if not isinstance(budget_result, dict) or budget_result.get("allowed") is not True:
+        raise ChainError("H: storage budget did not grant a safe Ample staging verification window: "
+                         + json.dumps(budget_result, ensure_ascii=False, sort_keys=True))
+
+    _assert_no_reparse_chain(source, Path(package_root))
+    if not source.is_dir():
+        raise ChainError("Read-only Ample package source is missing")
+    _assert_no_reparse_chain(stage, approved_root)
+    if not stage.is_dir() or _is_reparse(stage):
+        raise ChainError("Ample staging directory is missing or is a reparse point")
+    journal_path = stage / "preparation.json"
+    if _is_reparse(journal_path) or not journal_path.is_file():
+        raise ChainError("Ample staging preparation receipt is missing or unsafe")
+    try:
+        journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ChainError("Ample staging preparation receipt cannot be read") from exc
+    if (journal.get("status") != "prepared" or journal.get("instrument") != instrument
+            or Path(journal.get("source", "")).resolve() != source.resolve()
+            or Path(journal.get("destination", "")).resolve() != stage.resolve()
+            or journal.get("audio_verified") is not False):
+        raise ChainError("Ample staging receipt does not identify this exact prepared library")
+
+    expected_samples = {record["name"]: record["bytes"] for record in library_info["ascf"]}
+    if len(expected_samples) != len(library_info["ascf"]):
+        raise ChainError("Pinned Ample sample inventory has duplicate filenames")
+    recorded_links = {record.get("name"): record.get("bytes") for record in journal.get("hardlinks", [])}
+    if recorded_links != expected_samples:
+        raise ChainError("Ample staging hardlink receipt differs from the pinned package inventory")
+    expected_indexes = {record["name"]: record for record in library_info.get("dbconfigs", [])}
+    expected_names = set(expected_samples) | set(expected_indexes) | {"preparation.json"}
+    if {entry.name for entry in stage.iterdir()} != expected_names:
+        raise ChainError("Ample staging contains missing or unrecorded files")
+    for name, size in expected_samples.items():
+        source_file, staged_file = source / name, stage / name
+        if (_is_reparse(source_file) or _is_reparse(staged_file)
+                or not source_file.is_file() or not staged_file.is_file()
+                or source_file.stat().st_size != size or staged_file.stat().st_size != size
+                or not staged_file.samefile(source_file)):
+            raise ChainError(f"Ample staged sample is not the exact read-only source hardlink: {name}")
+
+    recorded_indexes = journal.get("indexes", [])
+    if len(recorded_indexes) != len(expected_indexes):
+        raise ChainError("Ample staging receipt does not contain every DBConfig index")
+    for record in recorded_indexes:
+        name = record.get("name")
+        expected = expected_indexes.get(name)
+        staged_index = stage / str(name)
+        source_name = record.get("source")
+        source_index = source / str(source_name)
+        if (expected is None or record.get("bytes") != expected.get("bytes")
+                or record.get("sha256") != expected.get("sha256")
+                or source_name not in {name, name + ".txt"}
+                or _is_reparse(source_index) or _is_reparse(staged_index)
+                or not source_index.is_file() or not staged_index.is_file()
+                or source_index.stat().st_size != expected["bytes"]
+                or staged_index.stat().st_size != expected["bytes"]):
+            raise ChainError("Ample staged DBConfig index metadata differs from the package inventory")
+        if hashlib.sha256(source_index.read_bytes()).hexdigest() != expected["sha256"]:
+            raise ChainError("Read-only Ample source DBConfig index differs from its pinned digest")
+        if hashlib.sha256(staged_index.read_bytes()).hexdigest() != expected["sha256"]:
+            raise ChainError("Ample staged DBConfig index differs from its pinned digest")
+
+    if inspect_samples is None:
+        inspector = _pinned_module(Path(child["run_dir"]), "ample_library").inspect_sample_directory
+    else:
+        inspector = inspect_samples
+    try:
+        inspected = inspector(stage, instrument)
+    except (OSError, ValueError) as exc:
+        raise ChainError(f"Pinned Ample sample/index validation failed: {exc}") from exc
+    families = inspected.get("families", {})
+    pending_groups = {item.get("sample_group") for item in sample_items}
+    if not pending_groups <= set(families):
+        raise ChainError("Prepared Ample library does not contain every pending item's exact sample group")
+    return {"instrument": instrument, "stage": str(stage), "sample_count": len(expected_samples),
+            "families": sorted(families), "budget": budget_result, "package_inventory_sha256": package_sha}
+
+
 def verify_pin(run_dir: Path) -> dict:
     pinned = run_dir / "pinned"
     pin = load_json(pinned / "pin.json")
@@ -367,8 +554,28 @@ def validate_plan(plan: dict) -> dict:
                 or queue.get("parent_queue_sha256") != source_sha256):
             raise ChainError(f"{child['instrument']} fixed identity set is not the source-queue subset")
         complete, _ = queue_is_terminal(run_dir, child["instrument"], child["requested"])
+        resource_recovery = saved_state.get("resource_recovery", {}) if saved_state else {}
+        allow_resource_recovery = bool(
+            saved_state and saved_state.get("next_child") == index
+            and (
+                (saved_state.get("status") == "blocked"
+                 and saved_state.get("reason") == "child_exited_before_terminal_queue"
+                 and active_child is not None
+                 and active_child.get("instrument") == child["instrument"]
+                 and Path(active_child.get("run_dir", "")).resolve() == run_dir.resolve())
+                or
+                (saved_state.get("status") == "lp_terminal_verified"
+                 and isinstance(resource_recovery, dict)
+                 and resource_recovery.get("instrument") == child["instrument"]
+                 and Path(resource_recovery.get("run_dir", "")).resolve() == run_dir.resolve()
+                 and resource_recovery.get("queue_identity_sha256") == child.get("identity_sha256")
+                 and isinstance(resource_recovery.get("validation"), dict)
+                 and resource_recovery["validation"].get("instrument") == child["instrument"])
+            )
+        )
         validate_child_position(index, child["instrument"], next_child, active_child,
-                                status.get("status"), queue_summary["counts"], complete)
+                                status.get("status"), queue_summary["counts"], complete,
+                                allow_resource_recovery=allow_resource_recovery)
         verify_pin(run_dir)
         resolved_children.append({**child, "run_dir": str(run_dir)})
     python = _under_root(Path(plan.get("python", "")), "Python runtime")
@@ -383,7 +590,8 @@ def validate_plan(plan: dict) -> dict:
 
 
 def validate_child_position(index: int, instrument: str, next_child: int, active_child: dict | None,
-                            run_status: str, counts: dict, complete: bool) -> None:
+                            run_status: str, counts: dict, complete: bool, *,
+                            allow_resource_recovery: bool = False) -> None:
     """Allow only checkpoint-consistent prepared, active, or completed queues."""
     if index < next_child:
         if not complete:
@@ -397,6 +605,9 @@ def validate_child_position(index: int, instrument: str, next_child: int, active
     if active_child is not None:
         if active_child.get("instrument") != instrument:
             raise ChainError("Checkpoint active-child identity differs from the next queue")
+        return
+    if (allow_resource_recovery and run_status == "waiting_for_resources"
+            and all(state in {"pending_staging", "blocked_missing_sample_group"} for state in counts)):
         return
     if (run_status != "prepared" or any(
             state not in {"pending_staging", "blocked_missing_sample_group"} for state in counts)):
@@ -493,9 +704,83 @@ def _recover_lp_handoff(plan: dict, state: dict, checkpoint: Path, *, read_proce
                         recovered_at=datetime.now().astimezone().isoformat(timespec="seconds"))
 
 
+def _recover_child_staging(plan: dict, state: dict, checkpoint: Path, *, read_process,
+                           list_run_processes, validate_staging) -> dict:
+    """Resume one unattempted child only after its staged resource cause is cleared."""
+    if state.get("reason") != "child_exited_before_terminal_queue":
+        raise ChainError("Only an exited child blocked before its terminal queue can use staging recovery")
+    index = state.get("next_child")
+    if type(index) is not int or not 0 <= index < len(plan["children"]) or state.get("children"):
+        raise ChainError("Blocked child checkpoint has progressed beyond its original queue boundary")
+    child = plan["children"][index]
+    previous = state.get("active_child")
+    if (not isinstance(previous, dict) or previous.get("instrument") != child["instrument"]
+            or Path(previous.get("run_dir", "")).resolve() != Path(child["run_dir"]).resolve()
+            or type(previous.get("pid")) is not int or type(previous.get("parent_pid")) is not int
+            or not previous.get("created") or not previous.get("command_line")):
+        raise ChainError("Blocked child process identity does not match the fixed next run")
+    expected_command = _normalize_command(" ".join(_child_command(plan, child)))
+    if _normalize_command(previous["command_line"]) != expected_command:
+        raise ChainError("Blocked child command differs from the fixed queue command")
+
+    for pid in {previous["pid"], previous["parent_pid"]}:
+        info = read_process(pid)
+        if info is not None:
+            raise ChainError(f"Previous child process PID {pid} is still present or has been reused")
+
+    all_runs = [Path(plan["lp_gate"]["run_dir"]),
+                *(Path(entry["run_dir"]) for entry in plan["children"])]
+    active = list_run_processes(all_runs)
+    if active:
+        raise ChainError("An Ample validation process tree is still active during staging recovery")
+
+    lp_complete, lp_result = queue_is_terminal(
+        Path(plan["lp_gate"]["run_dir"]), plan["lp_gate"]["instrument"], plan["lp_gate"]["requested"]
+    )
+    if not lp_complete or (Path(plan["lp_gate"]["run_dir"]) / "pause.request.json").exists():
+        raise ChainError("Original LP queue is not terminal or still has a pause request")
+
+    queue, status, summary = _read_queue(Path(child["run_dir"]), child["instrument"], child["requested"])
+    _validate_planned_identity(child, queue, child["instrument"], child["requested"])
+    if status.get("status") != "waiting_for_resources" or status.get("finished_at") is not None:
+        raise ChainError("Child queue no longer has the original unattempted resource-wait state")
+    if (not summary["counts"]
+            or any(item.get("status") not in {"pending_staging", "blocked_missing_sample_group"}
+                   or item.get("attempts") != []
+                   or item.get("active_attempt") is not None
+                   or item.get("result") is not None
+                   for item in queue["items"])):
+        raise ChainError("Child queue contains attempted or progressed items; preserve it for diagnosis")
+    missing = [item for item in queue["items"] if item.get("status") == "blocked_missing_sample_group"]
+    if any(item.get("sample_group") == "AGMPk" for item in missing):
+        if child["instrument"] != "AGM":
+            raise ChainError("AGMPk missing-sample hold appeared outside the AGM queue")
+    elif child["instrument"] == "AGM":
+        raise ChainError("Original AGM missing-sample hold changed; do not alter its fixed queue")
+
+    validation = validate_staging(child, queue)
+    if not isinstance(validation, dict) or validation.get("instrument") != child["instrument"]:
+        raise ChainError("Ample staging validator did not return a matching verification receipt")
+    history = list(state.get("recovery_history", []))
+    history.append({"event": "resume_child_after_staging", "recorded_at": datetime.now().astimezone().isoformat(
+        timespec="seconds"), "previous_blocked_checkpoint": dict(state)})
+    recovered = {"schema_version": state["schema_version"], "chain_id": state["chain_id"],
+                 "created_at": state.get("created_at"), "recovery_history": history,
+                 "next_child": index, "children": [], "active_child": None,
+                 "status": "lp_terminal_verified",
+                 "lp_result": lp_result,
+                 "resource_recovery": {"instrument": child["instrument"], "run_dir": child["run_dir"],
+                                       "queue_identity_sha256": child["identity_sha256"],
+                                       "validation": validation}}
+    return _state_write(checkpoint, recovered, "lp_terminal_verified",
+                        recovered_at=datetime.now().astimezone().isoformat(timespec="seconds"))
+
+
 def supervise(plan: dict, checkpoint: Path, *, read_process=process_info,
               launch=subprocess.Popen, sleep=time.sleep, list_run_processes=_run_processes,
-              poll_seconds: float = 15, resume_lp_handoff: bool = False) -> dict:
+              poll_seconds: float = 15, resume_lp_handoff: bool = False,
+              resume_child_after_staging: bool = False,
+              validate_staging=_validate_staged_sample_resources) -> dict:
     checkpoint = Path(checkpoint)
     state = load_json(checkpoint) if checkpoint.exists() else {
         "schema_version": 1, "chain_id": plan["chain_id"], "status": "waiting_for_lp",
@@ -507,6 +792,10 @@ def supervise(plan: dict, checkpoint: Path, *, read_process=process_info,
     if state.get("status") == "blocked" and resume_lp_handoff:
         state = _recover_lp_handoff(plan, state, checkpoint, read_process=read_process,
                                     list_run_processes=list_run_processes)
+    if state.get("status") == "blocked" and resume_child_after_staging:
+        state = _recover_child_staging(plan, state, checkpoint, read_process=read_process,
+                                       list_run_processes=list_run_processes,
+                                       validate_staging=validate_staging)
     if state.get("status") in {"completed", "blocked"}:
         if state["status"] == "completed":
             return state
@@ -643,6 +932,8 @@ def main() -> int:
     parser.add_argument("--poll-seconds", type=float, default=15)
     parser.add_argument("--resume-lp-handoff", action="store_true",
                         help="resume only a blocked checkpoint caused by the expected cooperative LP handoff")
+    parser.add_argument("--resume-child-after-staging", action="store_true",
+                        help="resume only an unattempted child blocked while its sample staging was absent")
     args = parser.parse_args()
     if args.poll_seconds < 1 or args.poll_seconds > 60:
         parser.error("poll interval must be between 1 and 60 seconds")
@@ -657,7 +948,8 @@ def main() -> int:
     lock_path = checkpoint.with_name("chain.lock")
     with chain_lock(lock_path):
         result = supervise(plan, checkpoint, poll_seconds=args.poll_seconds,
-                           resume_lp_handoff=args.resume_lp_handoff)
+                           resume_lp_handoff=args.resume_lp_handoff,
+                           resume_child_after_staging=args.resume_child_after_staging)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("status") == "completed" else 2
 

@@ -38,6 +38,21 @@ failed or inconclusive preset remains in its original run report; the AGM
 absent. The AGM result does not prevent the serial AGSC run once the AGM queue
 is fully terminal.
 
+If a child supervisor exits with child_exited_before_terminal_queue while
+its queue is still waiting_for_resources, recovery is limited to an
+unattempted queue whose items are still pending staging or explicitly blocked
+for the missing AGMPk group. The recovery command checks both recorded child
+PIDs, confirms there is no active Ample process tree, rechecks the completed LP
+gate, and preserves the full blocked checkpoint in recovery_history. It
+then verifies the package-inventory SHA, the H: staging receipt, every ASCF
+file's identity as a hard link to the read-only source, the small DBConfig
+index hashes and structure, and each pending factory item's exact sample
+group. ASCF payloads are not read or copied by this recovery audit. Only after
+all checks pass does the same pinned child queue resume; its normal idle gate
+still controls every actual validation item. Any attempted item, queue change,
+live/reused PID, missing index, non-hardlinked sample, or failed storage
+budget keeps the chain blocked for diagnosis.
+
 Start with the existing local locator after reviewing its plan:
 
 ```powershell
@@ -49,3 +64,21 @@ to AGSC, narrowly recovering the expected cooperative LP handoff, rejecting
 changed IDs or process identities, and cross-process lock rejection. Real
 queue counts remain derived from each `queue.json` item list, not copied from a
 potentially stale status summary.
+
+The existing chain also has a narrow resource-wait resume command:
+
+    data/envs/app/Scripts/python.exe scripts/instruments/run_ample_factory_chain.py --plan runtime/ample-factory-chain.local.json --resume-child-after-staging
+
+Validation additionally covers resource-wait recovery without attempts,
+staging inventory/index/hardlink integrity, and preservation of the original
+blocked evidence. Factory performance profiles are pinned to each
+factory-state SHA and remain part of catalog candidates and audition identity.
+riff_toggle profiles carry their source Riffer trigger, tempo, meter and
+bounded preview phrase; midi_context profiles carry captured instrument
+channel/key/velocity ranges and explicit MIDI controllers. The shared preview
+adapter dispatches by profile kind and forwards notes, controllers and
+transport metadata to the native audition request. The instrument-model
+aggregate is unchanged; normal catalog entries and production.query context
+retain the profile for instrument-specific AI use. Unsupported or mismatched
+profile kinds fail closed instead of falling back to ordinary piano-roll
+notes.
