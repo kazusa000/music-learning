@@ -10,7 +10,6 @@ from contextlib import contextmanager
 import hashlib
 import json
 import math
-import os
 from pathlib import Path
 import shutil
 import struct
@@ -20,12 +19,15 @@ import xml.etree.ElementTree as ET
 from native_host import NativeHost, NativeHostError
 
 PINNED_ROOT = Path(__file__).resolve().parents[1]
-ROOT = Path(os.environ.get("MUSIC_LEARNING_REPO_ROOT", PINNED_ROOT)).resolve()
 sys.path.insert(0, str(PINNED_ROOT / "src"))
+from music_learning.ample_paths import workspace_root  # noqa: E402
 from music_learning.ample_library import inspect_sample_directory  # noqa: E402
 from music_learning.ample_presets import prepare, verify_state  # noqa: E402
 from music_learning.instrument_probe_budget import loading_budget, timeout_outcome  # noqa: E402
+from music_learning.instrument_performance_profiles import validate as validate_performance_profile  # noqa: E402
 from music_learning.vst3_state import LIMIT  # noqa: E402
+
+ROOT = workspace_root(__file__)
 
 
 def output_root(path):
@@ -366,6 +368,14 @@ def main():
                         result["factory_preset"] = expected["name"]
                         scope = "factory variant first/reopen audio, sample database and parameter readback; not library admission"
                     event_profile = item.get("event_profile")
+                    if event_profile is not None:
+                        if not isinstance(event_profile, dict) or event_profile.get("kind") != "riff_toggle":
+                            raise ValueError("Ample probes require a validated Riffer event profile")
+                        factory_sha256 = item.get("factory_sha256")
+                        if not isinstance(factory_sha256, str):
+                            raise ValueError("A Riffer event profile requires the exact factory-state SHA-256")
+                        event_profile = validate_performance_profile(
+                            event_profile, expected_source_sha256=factory_sha256)
                     captured, metrics = ample_native_probe(host, spec, directory,
                                                            validate_state=validator,
                                                            event_profile=event_profile,

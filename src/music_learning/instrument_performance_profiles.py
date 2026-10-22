@@ -30,6 +30,7 @@ _RIFF_FIELDS = {
     "stop_velocity",
 }
 MAX_PREVIEW_SECONDS = 30.0
+_AMPLE_RIFFER_TYPES = frozenset({"Riff", "ARP", "Fill", "Strum"})
 
 
 def validate(profile: Mapping, *, expected_source_sha256: str | None = None) -> dict:
@@ -56,7 +57,8 @@ def _validate_riff(profile: Mapping, *, expected_source_sha256: str | None = Non
         raise ValueError("Unsupported or incomplete instrument performance profile")
     if type(profile.get("schema_version")) is not int or profile["schema_version"] != 1:
         raise ValueError("Unsupported instrument performance profile version")
-    if profile.get("kind") != "riff_toggle" or profile.get("riff_type") != "Riff":
+    if (profile.get("kind") != "riff_toggle"
+            or profile.get("riff_type") not in _AMPLE_RIFFER_TYPES):
         raise ValueError("Unsupported instrument performance profile kind")
     source_sha = profile.get("factory_riff_sha256")
     if not isinstance(source_sha, str) or not _SHA256.fullmatch(source_sha):
@@ -100,7 +102,7 @@ def _validate_riff(profile: Mapping, *, expected_source_sha256: str | None = Non
         "kind": "riff_toggle",
         "factory_riff_sha256": source_sha,
         "riff_name": name,
-        "riff_type": "Riff",
+        "riff_type": profile["riff_type"],
         "tempo_bpm": tempo,
         "numerator": profile["numerator"],
         "denominator": denominator,
@@ -151,7 +153,7 @@ def trigger_phrase(profile: Mapping, *, sample_rate: int = 44100,
         dict(sample=duration - 1, duration_samples=1, note=profile["trigger_note"],
              velocity=profile["stop_velocity"], channel=1),
     ]
-    riff = profile.get("riff_name") or "factory Riff"
+    riff = profile.get("riff_name") or f"factory {profile['riff_type']}"
     description = (
         f"Ample Riffer：{riff} · {profile['tempo_bpm']:g} BPM · "
         f"{profile['numerator']}/{profile['denominator']} · {preview_bars} 小节"

@@ -107,3 +107,7 @@ aggregate is unchanged; normal catalog entries and production.query context
 retain the profile for instrument-specific AI use. Unsupported or mismatched
 profile kinds fail closed instead of falling back to ordinary piano-roll
 notes.
+
+See [Ample failure attribution and retry planning](ample-failure-retry-planning.md)
+for the observed shared failure classes and the terminal-gated retry manifest.
+The planner does not mutate this chain's queues or pins.

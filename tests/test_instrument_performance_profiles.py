@@ -72,6 +72,23 @@ def test_trigger_phrase_uses_exact_source_trigger_transport_and_meter(riff_profi
     assert phrase["preview_bars"] == 4
 
 
+@pytest.mark.parametrize("riff_type", ["Riff", "ARP", "Fill", "Strum"])
+def test_ample_riffer_profile_preserves_factory_subtype(riff_profile, riff_type):
+    riff_profile["riff_type"] = riff_type
+    riff_profile["riff_name"] = None
+    normalized = validate(riff_profile, expected_source_sha256="a" * 64)
+    phrase = trigger_phrase(normalized)
+    assert normalized["riff_type"] == riff_type
+    assert phrase["profile_sha256"] == profile_fingerprint(normalized)
+    assert riff_type in phrase["phrase"]
+
+
+def test_unknown_ample_riffer_subtype_fails_closed(riff_profile):
+    riff_profile["riff_type"] = "Solo"
+    with pytest.raises(ValueError, match="Unsupported instrument performance profile kind"):
+        validate(riff_profile)
+
+
 def test_slow_long_riff_preview_uses_complete_bars_with_bounded_duration(riff_profile):
     riff_profile.update(tempo_bpm=30, numerator=4, denominator=4, bars=16)
     phrase = trigger_phrase(riff_profile, sample_rate=44100, max_seconds=12)

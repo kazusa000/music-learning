@@ -21,11 +21,13 @@ import sys
 import time
 
 PINNED_ROOT = Path(__file__).resolve().parents[1]
-ROOT = Path(os.environ.get("MUSIC_LEARNING_REPO_ROOT", PINNED_ROOT)).resolve()
 sys.path.insert(0, str(PINNED_ROOT / "src"))
+from music_learning.ample_paths import workspace_root  # noqa: E402
 from music_learning.ample_presets import database, parameters, parse_xml  # noqa: E402
 from music_learning.ample_library import inspect_sample_directory  # noqa: E402
 from music_learning.instrument_probe_budget import loading_budget  # noqa: E402
+
+ROOT = workspace_root(__file__)
 
 RUN_DEFAULT = ROOT / "data/maintenance/instrument-intake/20261021-all/ample"
 FACTORY_ROOT = Path(r"C:\Users\wjj\Documents\Ample Sound")
@@ -48,6 +50,8 @@ PIN_FILES = (
     "src/music_learning/ample_library.py",
     "src/music_learning/instrument_probe_budget.py",
     "src/music_learning/vst3_state.py",
+    "src/music_learning/ample_paths.py",
+    "src/music_learning/instrument_performance_profiles.py",
     "scripts/prepare_ample_sc_followup.py",
 )
 
