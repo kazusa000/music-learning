@@ -2,7 +2,7 @@
 
 本机 AI 音乐 DAW：导入音乐，查看原曲与重建工程，与 AI 讨论和修改编曲，保存版本并导出。AI 与界面共用 API/SDK/CLI；支持 Windows x64 VST3，不需要 MIDI 键盘。
 
-**本地 C++ 引擎已通过N1–N6独立验收，包含文件播放、隔离VST3、完整路由/侧链/PDC、后台音色替换及共用导出；N7最终整曲/回环与默认部署进行中。目前正式已部署版本仍使用 WebAudio。**
+**本地 C++ 引擎已完成N1–N7并切为默认：本地文件播放、隔离实时VST3、完整路由/侧链/PDC、后台音色替换及共用导出。两首整曲和30分钟循环均通过，工程播放由原生设备引擎供声，界面不再下载解码整曲。**
 
 - [本地 DAW 架构](docs/architecture/native-daw.md)
 - [开发顺序与验收指标](docs/plans/native-daw-migration.md)
@@ -11,7 +11,7 @@
 
 ## 启动
 
-双击 `start.cmd` 打开本机桌面窗口；`status.cmd` 查看状态，`stop.cmd` 停止。已有部署仍可使用，本轮规划没有重启服务或切换音频引擎。
+双击 `start.cmd` 打开本机桌面窗口；`status.cmd` 查看状态，`stop.cmd` 停止。音频异常时运行 `repair-audio.cmd`，保留位置和监听状态、恢复后暂停。当前本机端口为18765，由启动器自动读取。
 
 正式数据在 `data/app-data/`，本机配置在 `runtime/app.local.json`。模型、环境、运行产物留在本项目 E 盘目录；用户音源库保持 `H:\music\Sound Library`。开发前先读 [AGENTS.md](AGENTS.md)，保护现有工程、固定验证任务和音源资源。
 
@@ -24,7 +24,7 @@
 - **音色：** 按乐器→型号→变体选择，中文／原名并列，产品库名保留；可试听后应用。
 - **工程：** 不可变内部修订、手动版本、独立混音、显式导出和永久删除（不创建备份）。
 
-当前详细行为与实测范围见[双编排](docs/50-original-and-reconstruction.md)、[永久删除](docs/49-permanent-project-deletion.md)和[原生图验收](docs/benchmarks/native-engine-n6.md)。候选支持设备级播放和实时完整路由；旧浏览器播放缓存修复保留为历史记录，最终默认切换仍须完成N7。
+当前详细行为与实测范围见[双编排](docs/50-original-and-reconstruction.md)、[永久删除](docs/49-permanent-project-deletion.md)和[最终验收核对](docs/benchmarks/native-engine-completion.md)。H盘大型音源冷装载仍受磁盘速度影响；已装载图会复用，界面交互不等待整曲解码。当前设备音量/静音/独奏P95约55–57ms，尚未达到首次50ms目标，原始数据保留。
 
 ## 开发入口
 

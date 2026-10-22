@@ -2,6 +2,20 @@
 
 ## 2026-10-22 恢复执行
 
+### 已默认部署与最终收尾
+
+N1–N7已完成并默认发布。描述`runtime/engine-release.desktop-final.local.json`已激活为`runtime/application-release.local.json`：源码d4852c6、原生f0563ad2、前端658f639e、桌面aa81f952。`start.cmd`经固定源码启动服务，实际解释器的cwd/PYTHONPATH均为发布源；默认SDK/CLI及正式主页只读检查成功，240DPI/DPR2.5。当前端口18765；发布先持统一锁写同描述barrier，再原子更新项目端口、由apply完成指针，未改Windows设置或数据库版本。
+
+`endurance-v8/report.json`最终succeeded：参考305秒（306秒观测）、当前395.64秒加尾音（398.64秒）、1800秒循环，三段源时钟误差均0，回环gap/断续/时间戳/逆序/非有限、设备欠载/xrun及全部六插件missed均0。20次原生回调观测P9515.86ms，不冒充端点首声；端点延迟沿用`latency-packaged`完整20次数据。H本次冷装载28.52秒，三次暖切回65–67ms，六个worker PID保持到完整曲及循环结束。所有独立验收进程已退出，旧v1–v7失败及locator原报告保留，不继续开批。
+
+完整后端510通过/1权限跳过，实际桌面包四组、4K UI八组、真实AI、设备恢复均已归档。初始50ms监听响应目标仍有约5–7ms差距，failed原报告保留；不声称全库音色人耳质量或物理设备拔插已验。
+
+默认启动观察首轮误将venv launcher的Temp cwd当真实解释器、又把原日文字形綾硬编码到显示名绫，分别在实际子解释器/PYTHONPATH核对与稳定DOM控件核对中修正观察，未改产品。原始观察保留；`default-startup/report.json`成功。该轮foreground标志false如实保留，不称该轮前台未变化；非激活桌面四组的证据独立来自`desktop-package`。
+
+**正式数据边界：**v8前后九表/head和14pin相同；默认启动读回仍为原head和两项原任务。随后API于本次收尾期间记录旧工程删除、重新导入（失败）、再删除，最后正式列表0。`default-final-protection.json`及v2的formal_equal=false、pins_equal=true全部保留，`default-final-state-assessment.json`保存事件和边界；本任务没有调用这些音乐写操作，也未恢复被删除工程。后续重新导入的失败未纳入本轮引擎验收，任务已被删除，没有重跑模型来替换结果。
+
+**临时夹具收尾：**仅本次27个精确pytest根，31041文件/26878目录已删，33份小诊断保留；9个reparse及36个父目录跳过，0失败，不改属性/不跟随链接。精确记录`cleanup-resumed-final.json`。E空闲在窗口内净增2.144GiB，期间另有上述API删除，因此不能全部归因于本任务夹具。原报告/发布包/旧N2/历史拒绝路径不动；本任务H库只读、NAS无访问，Pianoteq固定实现14pin相同，其他工作保留。
+
 ### d485固定包与当前唯一v8
 
 `runtime/engine-release.desktop-final.local.json`固定d4852c6源码、f056生产bundle、658f639e前端和已测桌面五文件。`full-desktop-final`完整后端510通过/1权限跳过/0失败（230.20秒）；`desktop-package`实际不可变目录EXE四组通过，240DPI/DPR2.5/foreground保持。`device-recovery-packaged.json`再次真实设备恢复通过，范围仍为模拟stop回调和真实不存在设备拒绝，不声称物理拔插。

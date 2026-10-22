@@ -14,7 +14,7 @@
 
 ## 发布顺序
 
-在项目根目录 PowerShell 执行。下面以当前候选描述为例；它仍在长测、尚未激活，必须等完整验收通过后才执行激活。后续发布使用对应验收记录里的描述路径。
+在项目根目录PowerShell执行。以下描述已在2026-10-22通过v8两首整曲及1800秒循环并激活，正式指针固定源码d4852c6、f056原生bundle及aa81f952桌面包。后续新版本仍必须先完整验收，再使用对应描述发布。
 
 ```powershell
 & data/envs/app/Scripts/python.exe scripts/deploy_app_release.py runtime/engine-release.desktop-final.local.json
@@ -24,6 +24,8 @@
 ```
 
 第一条只检查源码、前端、原生文件与数据位置。激活要求本应用所有者进程已退出、端口空闲，并持有统一启动锁；不会终止占用同一端口的未知程序。成功后仍用原有 `start.cmd`，启动器先验证发布清单，再进入固定源码。
+
+本次首次激活将本项目端口从8765改为18765，因为Windows保留范围包含旧端口。持同一启动锁、先写同描述的publication barrier、原子更新配置，再由`--apply`完成发布并移除barrier，记录在`n7/port-transition.json`。未改系统端口保留、驱动或防火墙；日常启动及默认SDK/CLI自动跟随项目配置。
 
 若发布途中中断，`application-release.pending.local.json` 会阻止普通启动。重新执行**同一份**已验证描述的 `--apply` 完成发布；不要手动删除中断标记或绕过选择器启动开发源码。
 

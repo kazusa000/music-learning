@@ -1,12 +1,12 @@
 # 本地 DAW 架构决策
 
-状态：2026-10-21，N1–N6已经独立验收，N7最终验收与默认部署进行中；正式产品尚未切换。开发顺序见[迁移计划](../plans/native-daw-migration.md)，路径与整理规则见[仓库目录约定](../development/repository-layout.md)。本文覆盖早期架构文档中“浏览器负责工程音频播放”的设计；保留现有工程、版本、素材、AI 与模型能力。
+状态：2026-10-22，N1–N7已经验收并默认部署，固定源码d4852c6、原生bundle f0563ad2；两首整曲及30分钟循环通过。开发顺序见[迁移计划](../plans/native-daw-migration.md)，当前证据与性能差距见[最终核对](../benchmarks/native-engine-completion.md)，路径见[仓库目录约定](../development/repository-layout.md)。本文覆盖早期架构文档中“浏览器负责工程音频播放”的设计；保留现有工程、版本、素材、AI 与模型能力。
 
 ## 当前问题及范围
 
-当前桌面窗口是 WinForms/WebView2（`native/desktop/Main.cs`），工程控制由 Python Service/API/SDK/CLI 共用。离线制作是 `native/audio-host`，常驻音轨是 `native/live-track`；后者接受 JSON `chunk` 请求，经 Python 返回 PCM，再由 `apps/web/src/transport.ts` 混音并输出。已渲染声部则由浏览器完整读取和 decodeAudioData。已有原生插件处理能力，但尚没有直接连接声卡、掌握整个工程播放的本地引擎。
+改造前桌面窗口是 WinForms/WebView2（`native/desktop/Main.cs`），工程控制由 Python Service/API/SDK/CLI 共用。离线制作是 `native/audio-host`，常驻音轨是 `native/live-track`；后者接受 JSON `chunk` 请求，经 Python 返回 PCM，再由浏览器混音并输出。已渲染声部由浏览器完整读取和decodeAudioData。这个历史路径现已由原生设备引擎替换，旧固定制作宿主仍为既有离线任务保留。
 
-因此目前有两个问题：整曲多轨解码造成较长冷启动和高内存；实时 MIDI 也依赖 Python/HTTP/浏览器供声及前端时钟。只换素材目录或请求大小不能消除这两个边界。
+本轮解决的两个问题是整曲多轨解码造成较长冷启动和高内存，以及实时MIDI依赖Python/HTTP/浏览器供声及前端时钟。只换素材目录或请求大小不能消除这两个边界。
 
 本次决定新增本地音频引擎，负责设备、播放时钟、音频读取、MIDI 调度、插件、混音和输出。前端继续负责视觉与交互，Python 继续负责持久工程、业务规则、模型任务和 AI。AI 无需操作 GUI，也不引入 MIDI 键盘需求。用户原曲三轨／纯音乐单轨、重建真实人声＋伴奏 MIDI、SheetSage 原曲参考及当前 MIDI 对照均保留。
 

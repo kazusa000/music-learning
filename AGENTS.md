@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新N7已部署收尾（2026-10-22）：N1–N7完成，默认指针runtime/application-release.local.json为d4852c6源码/f056原生/658f639e前端/aa81f952桌面五文件，18765端口，start.cmd与默认SDK/CLI已实启。endurance-v8终态succeeded，305s参考/398.64s当前含尾/1800s循环三段clock/gap/断续/时间戳/欠载/xrun/六插件missed全0，PID复用且全部测试进程退出；旧locator仅历史，不重开测试。510完整后端过/1权限跳过，实际包4K四组及真AI通过；端点音量/静音/独奏P9555–57ms仍未达初始50ms，不改写为达标；H冷开28.52s、暖切回65–67ms。默认主页/SDK/CLI启动已只读通过，未写音乐。长测前后九表/head14pin相同；部署后API记录旧工程删除→新导入失败→再删除，最终正式0工程，default-final-protection-v2九表不等/14pin相同，独立assessment保存事件，不恢复旧基线。清理仅本次27个精确pytest根：31041文件/26878目录，9reparse及36父目录跳过、33小诊断保留、0失败；E窗口净增2.144GiB含同期API删除，不能全归因夹具。原失败/原报告/固定发布/N2/历史拒绝路径保留；H本任务只读、NAS无访问、固定验证及他人instrument_taxonomy/obj等不动。详见docs/benchmarks/native-engine-completion.md和native-engine-n7.md。
+
 最新N7固定v8（2026-10-22）：目标active/正式未部署。d4852c6/f056完整后端510过/1权限跳过/0败230.20s；immutable desktop五文件实际4K四组过（240DPI/DPR2.5/foreground保持），设备恢复再过。端点20次P95冷开60.25/播放58.04/定位59.59/音量57.41/静音55.72/独奏55.39ms，后三项仍未达初始50ms，原失败保留不放宽。当前唯一endurance-v8于20:38:56 UTC开始，wrapper19320/Python43616，已实查reference305-full；固定d4852c6源码/f056，locator runtime/engine-acceptance-job.local.json。启动H三次busy0/1/1%、queue0，音源只装一次保留PID；两整曲+1800s未终态不称通过，运行固定文件/报告不改、不开二批。正式前九表14pin一致；H/NAS/他人工作/固定验证/历史拒绝边界同前。
 
 最新N7真实AI与桌面固定（2026-10-22）：目标active/正式未部署，暂无长测。57dc8bd固定源码/f056的ai-process真实gpt-6.1-sol通过：唯一音符93→105，applied=desired新修订，进程流1760→3520Hz，旧频3.53e-7/新频0.001682，原阈值不变，0render；只改音高、其他音乐字段逐项相同，捕获QPC/断续0。新增桌面五文件不可变发布与启动校验，避免发布后使用旧mutable bin；11发布回归过，实际包桌面及最终固定套件/长测待做。H仅串行按需读，不叠加扫库；正式九表/14pin/NAS/固定验证/他人工作/历史拒绝路径不动。

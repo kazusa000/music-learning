@@ -1,6 +1,6 @@
 # 本地 DAW 重构开发顺序
 
-2026-10-21。状态：**N0–N6已完成阶段验收；N7进行中。** 用户授权的N1–N7目标保持active，新引擎尚未切正式默认。阶段证据见[N1](../benchmarks/native-engine-n1.md)、[N2](../benchmarks/native-engine-n2.md)、[N3](../benchmarks/native-engine-n3.md)、[N4](../benchmarks/native-engine-n4.md)、[N5](../benchmarks/native-engine-n5.md)、[N6](../benchmarks/native-engine-n6.md)。旧 P0–P6 是历史产品阶段，本轮使用 N 编号避免混淆。
+2026-10-22。状态：**N0–N7已完成阶段验收并切为正式默认。** 最终固定源码d4852c6、原生f0563ad2，510完整回归通过/1权限跳过，两首整曲和1800秒循环通过。原始50ms监听响应目标仍有约5–7ms差距，详见[最终核对](../benchmarks/native-engine-completion.md)。阶段证据见[N1](../benchmarks/native-engine-n1.md)、[N2](../benchmarks/native-engine-n2.md)、[N3](../benchmarks/native-engine-n3.md)、[N4](../benchmarks/native-engine-n4.md)、[N5](../benchmarks/native-engine-n5.md)、[N6](../benchmarks/native-engine-n6.md)、[N7](../benchmarks/native-engine-n7.md)。旧P0–P6是历史产品阶段，本轮使用N编号避免混淆。
 
 设计见[本地 DAW 架构](../architecture/native-daw.md)，文件路径见[仓库约定](../development/repository-layout.md)。保留原曲／重建、模型导入、AI 操作和所有已有工程。
 
