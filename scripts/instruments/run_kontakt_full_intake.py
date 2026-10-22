@@ -57,9 +57,9 @@ def validate_coverage(expected_records, conversion, work):
 
 def reverify_conversion(item, batch_root):
     """Rebuild conversion from original Lua receipt and owned-process evidence."""
-    from music_learning.kontakt_import import _resolve_under, verify_conversion
+    from music_learning.kontakt_import import _resolve_root, _resolve_under, verify_conversion
 
-    root = Path(batch_root).resolve(strict=True)
+    root = _resolve_root(Path(batch_root))
     receipt = _resolve_under(root, item["receipt"]["path"], must_exist=True)
     outputs = list(root.glob("rr/*/i/" + item["id"][-12:] + "/a*/execution.json"))
     if len(outputs) != 1:
@@ -74,9 +74,9 @@ def reverify_conversion(item, batch_root):
 
 
 def resume_evidence(item, library_run):
-    from music_learning.kontakt_import import _resolve_under
+    from music_learning.kontakt_import import _resolve_root, _resolve_under
 
-    root = Path(library_run).resolve(strict=True)
+    root = _resolve_root(Path(library_run))
     prefix = "i/" + item["id"][-12:]
     expected = dict(candidate=prefix + "/candidate.json", receipt=prefix + "/a/receipt.json", evidence_root=prefix + "/a")
     for key, relative in expected.items():
@@ -129,6 +129,7 @@ def execute(plan_path, expected_plan_sha256):
     )
     from music_learning.instrument_probe_budget import loading_budget
     from music_learning.kontakt_import import atomic_write_json, build_batch, source_record, write_batch
+    from music_learning.kontakt_import import _resolve_root
     from music_learning.kontakt_runner import _queue_lock, run_batch
     from music_learning.kontakt_default_multi import scoped_default_multi
     from music_learning.kontakt_catalog_metadata import kontakt_preset_metadata
@@ -223,6 +224,7 @@ def execute(plan_path, expected_plan_sha256):
                 audit = wait_result(plan["libraries"][library_id]["result"])
                 lib_run = run / library_id
                 lib_run.mkdir(exist_ok=True)
+                _resolve_root(lib_run)
                 destination = "Libraries/" + LIBRARIES[library_id]
                 if (audit.get("library_id") != library_id or audit.get("bank_root") != "Kontakt"
                         or audit.get("installed_library", {}).get("bank_root") != "Kontakt"
