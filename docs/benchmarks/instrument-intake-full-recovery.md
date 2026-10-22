@@ -145,3 +145,5 @@ Kontakt旧通用程序列表控制实际上来自空机架，不能外推所有�
 用户明确表示已付费激活，因此不能从这个单型号集合反推其账户或授权状态。只读核对VST3、moduleinfo和standalone均2.0.4；四个资源注册路径存在并指向同一H包目录，尚无简单版本错配/资源路径缺失证据。继续比较standalone与VST3实际初始化后的型号集合，检查合法安装/宿主差异；不修改授权检查、不强行插入型号、不修改插件二进制或把未发声项入库。独立standalone的布局与VST3不同，使用唯一代码特征匹配，不能套同RVA。该对照准备和失败均保留在`20261021-all/modo/standalone-compare/`，实际运行需等N7通道空闲。
 
 代码收口时`km22/protection-before-deferred-controls.json`只读复核正式九表/head和E侧12项保护SHA，均与恢复前一致。另2项H固定文件及catalog最后完整核对仍是`protection-after-native-introspection.json`；本次因v8活动没有额外重读H，不能把旧核对时间写成新的14项全验。实际后续控制结束后再作完整前后检查。
+
+2026-10-22 23:03 +02:00已启动一个隐藏、一次性的串行诊断监督，实际Python PID50844/创建时间`1792702992.3662205`，launcher39600；新locator为`runtime/kontakt-modo-followup.local.json`，实际状态在`km22/deferred-controls-a/followup-progress.json`。启动核对为`waiting_native`，N7 v8的engine27260及六worker仍活动，尚未运行新Kontakt/MODO控制。监督固定27个E侧输入/实现/EXE，最长等候2小时：通道与H空闲后先完整保护基线，再空机架、单长名、双乐器三项Kontakt控制，随后一次MODO standalone观察，最后正式九表/14pin/catalog前后核对。真实失败保留且不自动循环重试，终态只是`diagnostics_finished_pending_review`，不代表音源已全部修好、全库已验证或入库。未创建新的定时自动化；Ample原队列保持安全暂停。
