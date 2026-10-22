@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新N7真实AI与桌面固定（2026-10-22）：目标active/正式未部署，暂无长测。57dc8bd固定源码/f056的ai-process真实gpt-6.1-sol通过：唯一音符93→105，applied=desired新修订，进程流1760→3520Hz，旧频3.53e-7/新频0.001682，原阈值不变，0render；只改音高、其他音乐字段逐项相同，捕获QPC/断续0。新增桌面五文件不可变发布与启动校验，避免发布后使用旧mutable bin；11发布回归过，实际包桌面及最终固定套件/长测待做。H仅串行按需读，不叠加扫库；正式九表/14pin/NAS/固定验证/他人工作/历史拒绝路径不动。
+
 最新N7隔离回环（2026-10-22）：目标active/正式未部署，无长测。ai-reuse-v2真实Codex已改105/applied及倍频出现，但旧频残留超阈值，原失败保留，事前弱背景载波不能解30秒后混音；AI改为标准1760/3520Hz并仅抓自有engine进程树。新增独立ml_process_loopback诊断（build_engine --process-capture，不入生产4文件）按Windows官方接口，不改音量/其他应用；源码/EXE SHA固定、核对自有PID/EXE、0.2–5秒有界、拒覆盖。process-isolation-v2真实双进程4组过，目标9973幅0.001776/旁路7919仅2.53e-7，暂停目标RMS精确0而端点仍有旁路。虚拟流devicePosition0如实留raw，只用包QPC检查，不冒充端点时钟；原端点meter未改。PCM16量化噪声旧失败保留，float32保持静音阈值，包/时间戳/非有限全0。f056生产四SHA不变，待新固定源码AI/长测；H/正式/14pin/NAS/固定验证/其他工作/拒绝路径不动。
 
 最新N7 c13f固定套件（2026-10-22）：c13f96a/f056完整后端505过/1权限跳过/0败（197.61秒），4K UI8组过/Browser音频PCM旧planJS0。metadata-v1为7轨6685音符396秒E内MLFixture/空库，20全新renderer+HTTP缓存，轨道可见P95456.93ms/选择生效549.41ms，native ready另计1815.63ms；不冒充重型音源冷装载。真实桌面第一轮探针抓原曲旧ID再查重建solo报undefined，原报告保留，改等待当前arrangement且从DOM取轨道ID、过渡字段等待，不改产品。AI固定源码探针入口可--probe ai，代码/导入/native继续校验。正式预览队列只读1250 ready/2旧failed/0queued，保留不重置。当前无长测运行，v7已失败/14pin正式一致；待QA新固定描述、桌面/HTTP/真AI/新长测后才部署。H/NAS/其他工作/历史拒绝边界同前。

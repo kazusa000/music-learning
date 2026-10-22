@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 from music_learning.engine.bundle import pin  # noqa: E402
 from music_learning.settings import Settings  # noqa: E402
 from manage_app import owned, start_lock  # noqa: E402
-from release_runtime import digest, verify_source  # noqa: E402
+from release_runtime import digest, verify_desktop, verify_source  # noqa: E402
 
 
 def publish(path, value):
@@ -30,6 +30,7 @@ def main():
     path.relative_to(ROOT / 'runtime')
     record = json.loads(path.read_bytes())
     source = verify_source(ROOT, record)
+    verify_desktop(ROOT, record)
     settings = Settings.load()
     if Path(record['repository']).resolve() != ROOT or Path(record['data_root']).resolve() != settings.data_root:
         raise ValueError('Release repository/data root differs from the running installation')

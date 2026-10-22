@@ -3,6 +3,37 @@ import hashlib
 import json
 from pathlib import Path
 
+DESKTOP_NAMES = frozenset(('MusicLearning.exe', 'MusicLearning.exe.config',
+    'Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll', 'WebView2Loader.dll'))
+
+
+def verify_desktop(repository, value):
+    if 'desktop_root' not in value and 'desktop_files' not in value:
+        return None
+    repository = Path(repository).resolve()
+    root = Path(value.get('desktop_root', '')).resolve()
+    if root.parent != (repository / 'runtime/desktop-releases').resolve():
+        raise ValueError('Desktop release escaped this repository')
+    if set(value.get('desktop_files', {})) != DESKTOP_NAMES:
+        raise ValueError('Desktop release file set is incomplete')
+    for name, expected in value['desktop_files'].items():
+        path = (root / name).resolve()
+        path.relative_to(root)
+        if not path.is_file() or digest(path) != expected:
+            raise ValueError('Desktop release changed: ' + name)
+    return root
+
+
+def desktop_executable(repository):
+    repository = Path(repository).resolve()
+    source_root(repository)
+    descriptor = repository / 'runtime/application-release.local.json'
+    if descriptor.exists():
+        root = verify_desktop(repository, json.loads(descriptor.read_bytes()))
+        if root is not None:
+            return root / 'MusicLearning.exe'
+    return repository / 'runtime/desktop/bin/MusicLearning.exe'
+
 
 def digest(path):
     with path.open('rb') as stream:
@@ -39,6 +70,7 @@ def source_root(repository):
         return repository
     value = json.loads(descriptor.read_bytes())
     root = verify_source(repository, value)
+    verify_desktop(repository, value)
     if 'web_root' in value or 'native_audio_bundle' in value:
         settings = json.loads((repository / 'runtime/app.local.json').read_bytes())
         for field in ('web_root', 'native_audio_bundle'):

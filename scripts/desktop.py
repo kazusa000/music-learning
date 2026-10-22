@@ -8,6 +8,7 @@ import psutil
 from music_learning.processes import OwnedProcess
 from music_learning.session import session_token
 from music_learning.settings import ROOT, Settings
+from release_runtime import desktop_executable
 
 
 def focus(process):
@@ -49,7 +50,7 @@ def main():
     if previous := existing(settings):
         focus(previous)
         return
-    executable = ROOT / "runtime/desktop/bin/MusicLearning.exe"
+    executable = desktop_executable(ROOT)
     if not executable.is_file():
         raise SystemExit("Run scripts/build_desktop.py to build the native WebView2 shell; --browser is available for debugging")
     profile = settings.path("desktop-webview2-profile")

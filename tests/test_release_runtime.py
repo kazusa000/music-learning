@@ -67,3 +67,44 @@ def test_release_settings_cannot_mix_another_web_or_engine_version(tmp_path):
     (tmp_path / 'runtime/app.local.json').write_text(json.dumps(dict(web_root=str(tmp_path / 'old-web'), native_audio_bundle=value['native_audio_bundle'])))
     with pytest.raises(ValueError, match='settings differ'):
         release_runtime.source_root(tmp_path)
+
+
+def desktop_release(tmp_path):
+    _, descriptor = release(tmp_path)
+    root = tmp_path / 'runtime/desktop-releases/fixed'
+    root.mkdir(parents=True)
+    for name in release_runtime.DESKTOP_NAMES:
+        (root / name).write_bytes(name.encode())
+    value = json.loads(descriptor.read_text())
+    value.update(desktop_root=str(root), desktop_files={
+        name: release_runtime.digest(root / name) for name in release_runtime.DESKTOP_NAMES})
+    descriptor.write_text(json.dumps(value))
+    return root, descriptor
+
+
+def test_desktop_launcher_selects_published_files_instead_of_mutable_build(tmp_path):
+    root, _ = desktop_release(tmp_path)
+    assert release_runtime.desktop_executable(tmp_path) == root / 'MusicLearning.exe'
+    (root / 'WebView2Loader.dll').write_bytes(b'tampered')
+    with pytest.raises(ValueError, match='Desktop release changed'):
+        release_runtime.desktop_executable(tmp_path)
+
+
+@pytest.mark.parametrize('problem', ['missing', 'partial', 'outside'])
+def test_desktop_publication_rejects_missing_or_external_resources(tmp_path, problem):
+    root, descriptor = desktop_release(tmp_path)
+    value = json.loads(descriptor.read_text())
+    if problem == 'missing':
+        (root / 'MusicLearning.exe.config').unlink()
+    elif problem == 'partial':
+        value['desktop_files'].pop('MusicLearning.exe.config')
+    else:
+        value['desktop_root'] = str(tmp_path)
+    descriptor.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match='Desktop release'):
+        release_runtime.desktop_executable(tmp_path)
+
+
+def test_legacy_release_keeps_development_desktop_path(tmp_path):
+    release(tmp_path)
+    assert release_runtime.desktop_executable(tmp_path) == tmp_path / 'runtime/desktop/bin/MusicLearning.exe'

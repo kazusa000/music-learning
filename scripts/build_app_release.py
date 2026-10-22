@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 from music_learning.engine.bundle import pin  # noqa: E402
 from music_learning.settings import Settings  # noqa: E402
-from release_runtime import digest  # noqa: E402
+from release_runtime import DESKTOP_NAMES, digest, verify_desktop  # noqa: E402
 
 
 def publish(path, value):
@@ -28,6 +28,7 @@ def main():
     parser.add_argument('--commit', required=True)
     parser.add_argument('--web', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--desktop', type=Path)
     args = parser.parse_args()
     output = args.output.resolve()
     output.relative_to(ROOT / 'runtime')
@@ -80,6 +81,22 @@ def main():
         source_manifest_sha256=digest(release / 'release-source.json'), commit=commit,
         web_root=str(web_release), web_files=web_files, native_audio_bundle=str(bundle), native_files=manifest['files'],
         data_root=str(settings.data_root), repository=str(ROOT))
+    if args.desktop:
+        desktop = args.desktop.resolve()
+        desktop.relative_to(ROOT)
+        desktop_files = {name: digest(desktop / name) for name in sorted(DESKTOP_NAMES)}
+        desktop_key = hashlib.sha256(json.dumps(desktop_files, sort_keys=True).encode()).hexdigest()
+        desktop_release = ROOT / 'runtime/desktop-releases' / desktop_key
+        desktop_release.mkdir(parents=True, exist_ok=True)
+        for name, sha in desktop_files.items():
+            target = desktop_release / name
+            if not target.exists():
+                with target.open('xb') as stream, (desktop / name).open('rb') as source:
+                    shutil.copyfileobj(source, stream)
+            if digest(target) != sha:
+                raise ValueError('Published desktop file differs from this build')
+        descriptor.update(desktop_root=str(desktop_release), desktop_files=desktop_files)
+        verify_desktop(ROOT, descriptor)
     publish(output, descriptor)
     # Verify staged sources without replacing the active runtime pointer.
     if any(digest(release / name) != sha for name, sha in files.items()):
