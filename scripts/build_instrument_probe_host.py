@@ -20,11 +20,16 @@ def main():
     parser.add_argument("--settle-ms", type=int, default=0)
     parser.add_argument("--settle-phase", choices=("before-prepare", "after-prepare"),
                         default="after-prepare")
+    parser.add_argument("--reapply-preset-after-prepare", action="store_true",
+                        help="Diagnostic-only Ample state lifecycle comparison")
+    parser.add_argument("--reapply-wait-ms", type=int, default=25)
     args = parser.parse_args()
     if not 0 <= args.warmup_blocks <= 256:
         raise ValueError("Diagnostic warmup must be between zero and 256 blocks")
     if not 0 <= args.settle_ms <= 30000:
         raise ValueError("Diagnostic settling must be between zero and 30000 ms")
+    if not 0 <= args.reapply_wait_ms <= 1000:
+        raise ValueError("State reapply wait must be between zero and 1000 ms")
     output = output_root(args.output)
     output.mkdir(parents=True)
     env = build_environment()
@@ -43,6 +48,45 @@ def main():
             text = text.replace(needle,
                 f"    MessageManager::getInstance()->runDispatchLoopUntil({args.settle_ms});\n" + needle)
         if name == "Render.cpp":
+            if args.reapply_preset_after_prepare:
+                needles = {
+                    "reports": "    Array<var> trackReports;",
+                    "load": "            auto plugin = load(spec, rate, blockSize);",
+                    "prepare": "            plugin->setRateAndBufferSizeDetails(rate, blockSize);\n            plugin->prepareToPlay(rate, blockSize);",
+                    "snapshot": "            auto snapshot = pluginSnapshot(*plugin);",
+                    "result": '                   {"tracks", trackReports}, {"snapshot", project}});',
+                }
+                for label, needle in needles.items():
+                    if text.count(needle) != 1:
+                        raise ValueError(f"Ample state diagnostic patch marker is ambiguous: {label}")
+                text = text.replace(needles["reports"], needles["reports"] + "\n    Array<var> amplePhaseDiagnostics;")
+                text = text.replace(needles["load"], needles["load"] + "\n            var ampleStateAfterLoad;")
+                text = text.replace(needles["prepare"],
+                    "            plugin->setRateAndBufferSizeDetails(rate, blockSize);\n"
+                    "            if (" + ("true" if args.reapply_preset_after_prepare else "false") + ")\n"
+                    "                ampleStateAfterLoad = pluginSnapshot(*plugin);\n"
+                    "            plugin->prepareToPlay(rate, blockSize);")
+                reapply = (
+                    "            if (true)\n"
+                    "            {\n"
+                    "                auto* client = plugin->getVST3Client();\n"
+                    "                const auto presetPath = text(spec, \"preset_path\");\n"
+                    "                require(client != nullptr && presetPath.isNotEmpty(), \"Ample phase diagnostic requires a VST3 preset path\");\n"
+                    "                auto afterPrepare = snapshot;\n"
+                    f"                MessageManager::getInstance()->runDispatchLoopUntil({args.reapply_wait_ms});\n"
+                    "                MemoryBlock presetData;\n"
+                    "                require(File(presetPath).loadFileAsData(presetData) && client->setPreset(presetData), \"Cannot reapply original Ample VST3 preset\");\n"
+                    f"                MessageManager::getInstance()->runDispatchLoopUntil({args.reapply_wait_ms});\n"
+                    "                auto afterReapply = pluginSnapshot(*plugin);\n"
+                    "                amplePhaseDiagnostics.add(object({{\"track_id\", trackId}, {\"plugin_id\", id},\n"
+                    "                    {\"after_load_before_prepare\", ampleStateAfterLoad},\n"
+                    "                    {\"after_prepare_before_process\", afterPrepare},\n"
+                    "                    {\"after_reapply_before_process\", afterReapply}}));\n"
+                    "                snapshot = afterReapply;\n"
+                    "            }\n")
+                text = text.replace(needles["snapshot"], needles["snapshot"] + "\n" + reapply)
+                text = text.replace(needles["result"], '                   {"tracks", trackReports}, {"snapshot", project},\n'
+                                    '                   {"ample_phase_diagnostics", amplePhaseDiagnostics}});')
             needle = "            auto snapshot = pluginSnapshot(*plugin);"
             if text.count(needle) != 1:
                 raise ValueError("Diagnostic patch no longer matches the source")
@@ -75,6 +119,8 @@ def main():
         warmup_silent_blocks=args.warmup_blocks,
         settle_ms=args.settle_ms,
         settle_phase=args.settle_phase,
+        reapply_preset_after_prepare=args.reapply_preset_after_prepare,
+        reapply_wait_ms=args.reapply_wait_ms,
         purpose="independent diagnostic host; not product deployment"))
     print("Built independent instrument probe host")
 
