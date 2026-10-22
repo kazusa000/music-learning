@@ -55,3 +55,11 @@ Ample完整批次与失败共同原因、MODO型号字段被加载器读回默�
 ## 用户要求暂停
 
 用户因Token额度不足明确要求暂停。已停止所有音源入库/验证/逆向工作，不自动恢复。LP队列在Em9(Strum)后安全暂停：10通过、3失败、22待测、0运行，状态`paused_at_boundary`；队列与`pause.request.json`保留在`ample/lp-factory-fix-20261022-a/`。MODO/Kontakt自有探针均已退出，Kontakt全量批次尚未启动。未完成的NI状态身份解析器及其他未提交代码保留原位，不用于发布。恢复入口和实际状态持久保存在忽略的`runtime/instrument-intake-pause.local.json`；只有用户明确要求恢复才清除暂停请求并续原队列，不另开重测批次。
+
+## 2026-10-22 用户明确恢复
+
+本次恢复前重新核对正式九表/head、14项保护SHA及1252项目录，均与暂停前一致，独立基线保存于`data/maintenance/instrument-intake/20261022-resume/before.json`。原LP队列经现有恢复入口继续剩余条目，固定8文件与宿主指纹不变、没有第二个批次。发现`status.json`派生计数与队列不一致，当前以单次读取`queue.json`的35个唯一ID为统计权威；保留原始错误计数，固定验证器运行中不改，结束后修共享恢复统计规则。
+
+新增`instrument_resource_manifest.audit_resources`供各来源共用：显式文件清单逐文件读取完整SHA，按源大小/mtime、实际文件身份及审计代码/计划指纹记录独立E盘checkpoint；仅已完整读取且未改变的项可在恢复时复用。磁盘忙在文件边界推迟，失败不创建installed manifest；全部完成后复查所有成员，再原子发布内容寻址manifest，不写目录或工程。7项真实文件回归/Ruff通过，涵盖跨读取块完整SHA、恢复不重读、源变更拒绝、失败时无半份manifest。尚未启动H大容器审计，避免与LP样本加载竞争。
+
+Kontakt库准备入口为`scripts/instruments/prepare_kontakt_batch.py`，限定H指定目的地及E维护目录，生成真实源SHA绑定的v3队列；只是资源准备/转换入口，不把它称作全量发声通过。后续仍须解析状态身份、首次/重开音频及型号/变体/双语/试听发布。
