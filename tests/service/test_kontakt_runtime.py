@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import stat
 import xml.etree.ElementTree as ET
 
 import pytest
 
+from music_learning import kontakt_runtime
 from music_learning.kontakt_registration import parse_nicnt
 from music_learning.kontakt_runtime import configure_private_profile, prepare_runtime
 
@@ -120,6 +122,45 @@ def test_runtime_storage_pressure_defers_without_poisoning_checkpoint(tmp_path):
                               budget_check_interval=1)
     assert resumed["status"] == "prepared"
     assert len(resumed["completed"]) == len(resumed["plan"]["files"])
+
+
+def test_readonly_runtime_source_copy_cleans_temp_and_preserves_metadata(tmp_path, monkeypatch):
+    source = _source(tmp_path)
+    source_file = _write(source / "Kontakt 8" / "Documentation" / "KONTAKT_Manual RU.pdf",
+                         b"read-only vendor manual")
+    os.chmod(source_file, stat.S_IREAD)
+    root = tmp_path / "Sound Library"
+    root.mkdir()
+    destination = root / "Kontakt" / "Runtime"
+    checkpoint = tmp_path / "maint" / "runtime.json"
+    temporary_paths = []
+    original_mkstemp = kontakt_runtime.tempfile.mkstemp
+
+    def capture_mkstemp(*args, **kwargs):
+        descriptor, name = original_mkstemp(*args, **kwargs)
+        temporary_paths.append(Path(name))
+        return descriptor, name
+
+    monkeypatch.setattr(kontakt_runtime.tempfile, "mkstemp", capture_mkstemp)
+    try:
+        report = prepare_runtime(source, destination, allowed_library_root=root,
+                                 checkpoint_path=checkpoint)
+        target = destination / "Kontakt 8" / "Documentation" / "KONTAKT_Manual RU.pdf"
+        assert report["status"] == "prepared", report["failures"]
+        assert target.read_bytes() == source_file.read_bytes()
+        assert target.stat().st_file_attributes & kontakt_runtime.REPARSE_POINT == 0
+        assert target.stat().st_mode & stat.S_IWRITE == 0
+        assert not list(target.parent.glob("kr-copy-*.tmp"))
+    finally:
+        # Keep Windows pytest fixture cleanup reliable even when exercising the
+        # pre-fix failure, which leaves a read-only temp hardlink behind.
+        for path in [source_file, destination / "Kontakt 8/Documentation/KONTAKT_Manual RU.pdf",
+                     *temporary_paths]:
+            try:
+                if path.exists():
+                    os.chmod(path, path.stat().st_mode | stat.S_IWRITE)
+            except FileNotFoundError:
+                pass
 
 
 def test_runtime_rejects_source_reparse_points(tmp_path):

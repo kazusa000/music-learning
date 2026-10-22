@@ -243,11 +243,20 @@ def _atomic_copy(source: Path, target: Path, expected: list[int]) -> str:
             os.fsync(outgoing.fileno())
             if _signature(os.fstat(incoming.fileno())) != expected:
                 raise ValueError("Kontakt runtime source changed during copy: " + str(source))
-        shutil.copystat(source, temporary)
         try:
             os.link(temporary, target)
         except FileExistsError:
             raise ValueError("Kontakt runtime destination appeared concurrently: " + str(target)) from None
+        # Remove the writable temporary hardlink before applying source
+        # metadata.  On Windows, copystat can mark a vendor file read-only;
+        # applying that attribute to the shared inode first would also make
+        # temporary.unlink() fail with ERROR_ACCESS_DENIED.
+        temporary.unlink()
+        if _signature(source.stat()) != expected:
+            raise ValueError("Kontakt runtime source changed before metadata copy: " + str(source))
+        shutil.copystat(source, target)
+        if _signature(source.stat()) != expected:
+            raise ValueError("Kontakt runtime source changed during metadata copy: " + str(source))
         return digest.hexdigest()
     finally:
         temporary.unlink(missing_ok=True)
