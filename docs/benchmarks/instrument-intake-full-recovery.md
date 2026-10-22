@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 自主修复与续跑入口
+
+用户要求发现问题直接处理，不逐次请求批准或只汇报阻塞；仅全部收尾或确需用户材料时反馈。当前 Kontakt 准备入口 `runtime/kontakt-preparation-job.local.json` 已切到 `readonly-copy-fix-01`，完整验证入口 `runtime/kontakt-full-job.local.json` 已切到独立固定 `kf22/full-c`，实际 PID 分别 26132、276（均须按命令和 creation_time 重新核实，不能把旧 PID 当运行证据）。Ample 仍由 `runtime/ample-factory-chain.local.json` 继续原队列，跨来源并行，H 繁忙时保持有界等待。
+
+旧 `path-fix-01` 在 Runtime 文件 3686/8481 后遇到只读说明书的临时文件清理错误，旧 `full-b` 随之正常阻断，均已退出且全部原报告保留。共享修复 `169aa3d` 在复制元数据前先完成自有临时名解除，保留最终文件的只读属性、内容 SHA、来源签名和禁止覆盖检查；E 内先复现 WinError 5，修后相关 25 项通过、1 项权限跳过，Ruff/编译通过。新 attempt 在同一目标逐项检查已有文件并继续，未删除、改属性或移动旧 H 临时残留；该残留仅在新 attempt 的 `unmanifested-residue.json` 记录，不进入执行/安装清单。
+
+`full-b` 的保护原比较为正式表不等、14 固定文件相同，不能写成全相同。同时间正式 API 确有 job/revision 事件；独立分析保存在 `kf22/reports/full-b-protection-assessment.json`，原比较保留，不恢复旧正式基线。新批仍不调用工程写入 API。
+
+后续唤醒先核验这三个入口的真实进程和队列：运行正常就保持，不重开第二批、不改活动快照；异常停止则归因、修共享规则、增加原因回归，使用独立 attempt 继续未完成项。Ample 原始全部队列终态后才建立失败项独立重试，保留原通过和原失败。Kontakt 的 992 款验证固定输入、来源身份、完整状态、两次空机架恢复及实际发声；当前 `publish=false`，验证结束后重新核对发布计划，验证新分类/状态可由产品 API 和实际应用消费，再 additions-only 发布和预热，不把准备、排队或控制样本称为入库。发布/服务切换遵守正式工程和活动任务保护，不用正式工程测试。
+
+MODO 仍按用户指示暂缓。NAS、tmp 原素材、旧固定验证器、旧报告和历史拒绝清理路径保持；音源资源仅在 H 指定 Sound Library。新单元测试按 AGENTS 的清理入口与目录规范执行，整个历史 instrument-intake 证据不清理。收尾更新文档并仅提交本任务文件；不混入并发维护任务。
+
 ## 2026-10-23 完整服务回归
 
 当前源码完整 service 回归为 559 通过、2 跳过，耗时 202.69 秒。日志与 JUnit 保存在 data/maintenance/instrument-intake/kf22/reports/service-final.{log,xml}（仅维护目录）。子进程继承实际源码 PYTHONPATH；前轮并发编辑期间的旧失败记录保留，不覆盖为成功。此结果覆盖服务和共享规则，不等于 Kontakt/Ample 全量实际发声或目录发布完成。资源准备源码已独立提交 1c18844，原始准备失败与修正 attempt 均保留。
