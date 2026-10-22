@@ -2,7 +2,7 @@
 
 The chain waits for the already-running LP supervisor to end, verifies its
 queue, then runs only the pre-pinned AGM and AGSC queues. It never prepares a
-queue, edits a pin, writes the product catalog, or retries a failed preset.
+queue, edits a pin, writes the product catalog, or retries a terminal preset.
 """
 from __future__ import annotations
 
@@ -30,6 +30,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 TERMINAL_ITEM_STATES = {"passed", "failed", "inconclusive", "blocked_missing_sample_group"}
 TERMINAL_RUN_STATES = {"completed", "selection_completed"}
+RESUMABLE_ITEM_STATES = TERMINAL_ITEM_STATES | {"deferred", "pending_staging"}
+MAX_CHAIN_IO_WAIT_SECONDS = 24 * 60 * 60
 
 
 class ChainError(RuntimeError):
@@ -571,6 +573,19 @@ def validate_plan(plan: dict) -> dict:
                  and resource_recovery.get("queue_identity_sha256") == child.get("identity_sha256")
                  and isinstance(resource_recovery.get("validation"), dict)
                  and resource_recovery["validation"].get("instrument") == child["instrument"])
+                or
+                (saved_state.get("status") == "blocked"
+                 and saved_state.get("reason") == "child_exited_before_terminal_queue"
+                 and active_child is not None
+                 and active_child.get("instrument") == child["instrument"]
+                 and Path(active_child.get("run_dir", "")).resolve() == run_dir.resolve())
+                or
+                (saved_state.get("status") == "waiting_for_child_idle"
+                 and active_child is None
+                 and isinstance(saved_state.get("io_resume"), dict)
+                 and saved_state["io_resume"].get("instrument") == child["instrument"]
+                 and Path(saved_state["io_resume"].get("run_dir", "")).resolve() == run_dir.resolve()
+                 and saved_state["io_resume"].get("queue_identity_sha256") == child.get("identity_sha256"))
             )
         )
         validate_child_position(index, child["instrument"], next_child, active_child,
@@ -609,6 +624,11 @@ def validate_child_position(index: int, instrument: str, next_child: int, active
     if (allow_resource_recovery and run_status == "waiting_for_resources"
             and all(state in {"pending_staging", "blocked_missing_sample_group"} for state in counts)):
         return
+    if (allow_resource_recovery and run_status in {
+            "partial", "paused_io", "waiting_for_resources", "waiting_for_idle"}
+            and counts and set(counts) <= RESUMABLE_ITEM_STATES
+            and any(state in counts for state in {"deferred", "pending_staging"})):
+        return
     if (run_status != "prepared" or any(
             state not in {"pending_staging", "blocked_missing_sample_group"} for state in counts)):
         raise ChainError(f"{instrument} fixed queue is not in its original prepared state")
@@ -623,7 +643,7 @@ def _identity_matches(info: dict, *, pid: int, parent_pid: int | None,
             and expected in command)
 
 
-def _child_command(plan: dict, child: dict) -> list[str]:
+def _child_command(plan: dict, child: dict, *, wait_for_idle: bool = False) -> list[str]:
     run_dir = Path(child["run_dir"])
     pinned = run_dir / "pinned"
     command = [plan["python"], str(pinned / "scripts/run_ample_factory_validation.py"), "run",
@@ -631,9 +651,106 @@ def _child_command(plan: dict, child: dict) -> list[str]:
                "--native-host", str(pinned / "instrument_probe_host.exe"),
                "--scan-timeout", str(plan.get("scan_timeout", 300)),
                "--operation-timeout", str(plan.get("operation_timeout", 300)),
-               "--instrument", child["instrument"], "--wait-for-idle",
-               "--idle-poll-seconds", str(plan.get("idle_poll_seconds", 15))]
+               "--instrument", child["instrument"]]
+    if wait_for_idle:
+        command.extend(("--wait-for-idle", "--idle-poll-seconds",
+                        str(plan.get("idle_poll_seconds", 15))))
     return command
+
+
+def _child_command_matches(plan: dict, child: dict, recorded: str) -> bool:
+    """Accept the current chain command and the prior pinned idle-gate command."""
+    normalized = _normalize_command(recorded)
+    return any(normalized == _normalize_command(" ".join(_child_command(plan, child,
+                                                                          wait_for_idle=wait)))
+               for wait in (False, True))
+
+
+def _terminal_item_guard(queue: dict) -> dict[str, str]:
+    """Fingerprint already-terminal item results so a resumed child cannot retry them."""
+    guard = {}
+    for item in queue.get("items", []):
+        if item.get("status") not in TERMINAL_ITEM_STATES:
+            continue
+        snapshot = {key: item.get(key) for key in ("id", "instrument", "status", "attempts", "result")}
+        raw = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                         allow_nan=False).encode("utf-8")
+        guard[item["id"]] = hashlib.sha256(raw).hexdigest()
+    return guard
+
+
+def _terminal_guard_preserved(guard: dict, queue: dict) -> bool:
+    current = _terminal_item_guard(queue)
+    return all(current.get(item_id) == digest for item_id, digest in guard.items())
+
+
+def _io_resumable_queue(run_status: str, summary: dict, requested: int) -> bool:
+    counts = summary.get("counts", {})
+    total = sum(counts.values())
+    return (run_status in {"partial", "paused_io", "waiting_for_resources", "waiting_for_idle"}
+            and total == requested
+            and bool(counts)
+            and set(counts) <= RESUMABLE_ITEM_STATES
+            and any(state in counts for state in {"deferred", "pending_staging"}))
+
+
+def _parse_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone().replace(tzinfo=datetime.now().astimezone().tzinfo)
+    return parsed
+
+
+def _io_wait_used(state: dict, now: datetime) -> float:
+    used = max(0.0, float(state.get("io_idle_wait_seconds", 0.0)))
+    started = state.get("io_idle_wait_started_at")
+    if started:
+        used += max(0.0, (now - _parse_datetime(started)).total_seconds())
+    return used
+
+
+def _wait_for_child_idle(plan: dict, child: dict, state: dict, checkpoint: Path, *,
+                         sleep, poll_seconds: float, loading_budget=None,
+                         max_wait_seconds: float = MAX_CHAIN_IO_WAIT_SECONDS) -> dict:
+    """Wait on the same H: budget as the pinned validator, with a persisted 24h cap."""
+    if loading_budget is None:
+        module = _pinned_module(Path(child["run_dir"]), "instrument_probe_budget")
+        loading_budget = module.loading_budget
+    while True:
+        now = datetime.now().astimezone()
+        try:
+            budget = loading_budget("H:")
+        except Exception as exc:
+            return _state_write(checkpoint, state, "blocked", reason="storage_budget_unknown",
+                                instrument=child["instrument"], error=str(exc))
+        if not isinstance(budget, dict) or type(budget.get("allowed")) is not bool:
+            return _state_write(checkpoint, state, "blocked", reason="storage_budget_unknown",
+                                instrument=child["instrument"], budget=budget)
+        used = _io_wait_used(state, now)
+        if budget["allowed"]:
+            state["io_idle_wait_seconds"] = used
+            state.pop("io_idle_wait_started_at", None)
+            state.pop("io_idle_wait_last_budget", None)
+            state.pop("reason", None)
+            state.pop("queue", None)
+            return _state_write(checkpoint, state, "lp_terminal_verified",
+                                io_idle_granted_at=now.isoformat(timespec="seconds"),
+                                io_idle_last_budget=budget)
+        remaining = max_wait_seconds - used
+        if remaining <= 0:
+            return _state_write(checkpoint, state, "blocked", reason="io_idle_wait_limit_reached",
+                                instrument=child["instrument"], io_idle_wait_seconds=used,
+                                io_idle_last_budget=budget)
+        if not state.get("io_idle_wait_started_at"):
+            state["io_idle_wait_started_at"] = now.isoformat(timespec="seconds")
+        state["io_idle_wait_seconds"] = max(0.0, used - (now - _parse_datetime(
+            state["io_idle_wait_started_at"])).total_seconds())
+        state["io_idle_wait_last_budget"] = budget
+        state = _state_write(checkpoint, state, "waiting_for_child_idle",
+                             instrument=child["instrument"], run_dir=child["run_dir"],
+                             queue=queue_is_terminal(Path(child["run_dir"]), child["instrument"],
+                                                     child["requested"])[1])
+        sleep(max(1.0, min(float(poll_seconds), remaining)))
 
 
 def _state_write(path: Path, state: dict, status: str, **updates) -> dict:
@@ -719,8 +836,7 @@ def _recover_child_staging(plan: dict, state: dict, checkpoint: Path, *, read_pr
             or type(previous.get("pid")) is not int or type(previous.get("parent_pid")) is not int
             or not previous.get("created") or not previous.get("command_line")):
         raise ChainError("Blocked child process identity does not match the fixed next run")
-    expected_command = _normalize_command(" ".join(_child_command(plan, child)))
-    if _normalize_command(previous["command_line"]) != expected_command:
+    if not _child_command_matches(plan, child, previous["command_line"]):
         raise ChainError("Blocked child command differs from the fixed queue command")
 
     for pid in {previous["pid"], previous["parent_pid"]}:
@@ -776,10 +892,93 @@ def _recover_child_staging(plan: dict, state: dict, checkpoint: Path, *, read_pr
                         recovered_at=datetime.now().astimezone().isoformat(timespec="seconds"))
 
 
+def _recover_child_io(plan: dict, state: dict, checkpoint: Path, *, read_process,
+                      list_run_processes) -> dict:
+    """Resume only deferred/pending work in the same immutable child queue."""
+    if (state.get("status") != "blocked"
+            or state.get("reason") != "child_exited_before_terminal_queue"):
+        raise ChainError("Only a child blocked after exiting before queue completion can use IO recovery")
+    index = state.get("next_child")
+    if (type(index) is not int or not 0 <= index < len(plan["children"])
+            or len(state.get("children", [])) != index):
+        raise ChainError("Blocked child checkpoint does not point to the next fixed queue")
+    for prior_index, receipt in enumerate(state.get("children", [])):
+        prior = plan["children"][prior_index]
+        if (receipt.get("instrument") != prior["instrument"]
+                or Path(receipt.get("run_dir", "")).resolve() != Path(prior["run_dir"]).resolve()):
+            raise ChainError("Completed child receipt order differs from the fixed chain plan")
+        complete, _ = queue_is_terminal(Path(prior["run_dir"]), prior["instrument"], prior["requested"])
+        if not complete:
+            raise ChainError("A prior child queue is no longer terminal")
+
+    child = plan["children"][index]
+    previous = state.get("active_child")
+    if (not isinstance(previous, dict) or previous.get("instrument") != child["instrument"]
+            or Path(previous.get("run_dir", "")).resolve() != Path(child["run_dir"]).resolve()
+            or type(previous.get("pid")) is not int or type(previous.get("parent_pid")) is not int
+            or not previous.get("created") or not previous.get("command_line")):
+        raise ChainError("Blocked child process identity does not match the fixed next run")
+    if not _child_command_matches(plan, child, previous["command_line"]):
+        raise ChainError("Blocked child command differs from the fixed queue command")
+    for pid in {previous["pid"], previous["parent_pid"]}:
+        info = read_process(pid)
+        if info is not None:
+            raise ChainError(f"Previous child process PID {pid} is still present or has been reused")
+
+    all_runs = [Path(plan["lp_gate"]["run_dir"]),
+                *(Path(entry["run_dir"]) for entry in plan["children"])]
+    active = list_run_processes(all_runs)
+    if active:
+        raise ChainError("An Ample validation process tree is still active during IO recovery")
+
+    lp = plan["lp_gate"]
+    lp_complete, lp_result = queue_is_terminal(Path(lp["run_dir"]), lp["instrument"], lp["requested"])
+    if not lp_complete or (Path(lp["run_dir"]) / "pause.request.json").exists():
+        raise ChainError("Original LP queue is not terminal or still has a pause request")
+
+    queue, status, summary = _read_queue(Path(child["run_dir"]), child["instrument"], child["requested"])
+    _validate_planned_identity(child, queue, child["instrument"], child["requested"])
+    if status.get("finished_at") is not None or not _io_resumable_queue(
+            status.get("status"), summary, child["requested"]):
+        raise ChainError("Child queue is not an unfinished deferred/pending queue; preserve it for diagnosis")
+    if any(not isinstance(item.get("attempts"), list) for item in queue["items"]):
+        raise ChainError("Child queue has malformed attempt history")
+    if any(item.get("active_attempt") is not None for item in queue["items"]):
+        raise ChainError("Child queue still records an active item attempt")
+    missing = [item for item in queue["items"] if item.get("status") == "blocked_missing_sample_group"]
+    if child["instrument"] == "AGM":
+        if len(missing) != 1 or missing[0].get("sample_group") != "AGMPk":
+            raise ChainError("Original AGM missing-sample hold changed; do not alter its fixed queue")
+    elif any(item.get("sample_group") == "AGMPk" for item in missing):
+        raise ChainError("AGMPk missing-sample hold appeared outside the AGM queue")
+
+    queue_path = Path(child["run_dir"]) / "queue.json"
+    queue_digest = hashlib.sha256(queue_path.read_bytes()).hexdigest()
+    history = list(state.get("recovery_history", []))
+    history.append({"event": "resume_child_after_io", "recorded_at": datetime.now().astimezone().isoformat(
+        timespec="seconds"), "queue_sha256_before_resume": queue_digest,
+        "queue_counts_before_resume": summary["counts"],
+        "previous_blocked_checkpoint": dict(state)})
+    recovered = {"schema_version": state["schema_version"], "chain_id": state["chain_id"],
+                 "created_at": state.get("created_at"), "recovery_history": history,
+                 "next_child": index, "children": list(state.get("children", [])), "active_child": None,
+                 "status": "waiting_for_child_idle", "lp_result": lp_result,
+                 "io_idle_wait_seconds": max(0.0, float(state.get("io_idle_wait_seconds", 0.0))),
+                 "io_resume": {"instrument": child["instrument"], "run_dir": str(child["run_dir"]),
+                               "queue_identity_sha256": child["identity_sha256"],
+                               "queue_sha256_before_resume": queue_digest,
+                               "queue_counts_before_resume": summary["counts"],
+                               "terminal_guard": _terminal_item_guard(queue)}}
+    return _state_write(checkpoint, recovered, "waiting_for_child_idle",
+                        recovered_at=datetime.now().astimezone().isoformat(timespec="seconds"))
+
+
 def supervise(plan: dict, checkpoint: Path, *, read_process=process_info,
               launch=subprocess.Popen, sleep=time.sleep, list_run_processes=_run_processes,
               poll_seconds: float = 15, resume_lp_handoff: bool = False,
               resume_child_after_staging: bool = False,
+              resume_child_after_io: bool = False, loading_budget=None,
+              max_io_wait_seconds: float = MAX_CHAIN_IO_WAIT_SECONDS,
               validate_staging=_validate_staged_sample_resources) -> dict:
     checkpoint = Path(checkpoint)
     state = load_json(checkpoint) if checkpoint.exists() else {
@@ -796,6 +995,9 @@ def supervise(plan: dict, checkpoint: Path, *, read_process=process_info,
         state = _recover_child_staging(plan, state, checkpoint, read_process=read_process,
                                        list_run_processes=list_run_processes,
                                        validate_staging=validate_staging)
+    if state.get("status") == "blocked" and resume_child_after_io:
+        state = _recover_child_io(plan, state, checkpoint, read_process=read_process,
+                                  list_run_processes=list_run_processes)
     if state.get("status") in {"completed", "blocked"}:
         if state["status"] == "completed":
             return state
@@ -831,7 +1033,8 @@ def supervise(plan: dict, checkpoint: Path, *, read_process=process_info,
                              heartbeat_at=datetime.now().astimezone().isoformat(timespec="seconds"))
         sleep(poll_seconds)
 
-    while state.get("status") in {"lp_terminal_verified", "launch_intent", "running_child"}:
+    while state.get("status") in {"lp_terminal_verified", "waiting_for_child_idle",
+                                   "launch_intent", "running_child"}:
         index = int(state.get("next_child", 0))
         if index >= len(plan["children"]):
             return _state_write(checkpoint, state, "completed", finished_at=datetime.now().astimezone().isoformat(
@@ -845,17 +1048,24 @@ def supervise(plan: dict, checkpoint: Path, *, read_process=process_info,
             if complete:
                 return _state_write(checkpoint, state, "blocked", reason="child_queue_terminal_without_chain_receipt",
                                     instrument=child["instrument"], queue=summary)
-            if state.get("status") != "lp_terminal_verified":
+            if state.get("status") not in {"lp_terminal_verified", "waiting_for_child_idle"}:
                 return _state_write(checkpoint, state, "blocked", reason="unexpected_child_checkpoint_state")
+            state = _wait_for_child_idle(plan, child, state, checkpoint, sleep=sleep,
+                                         poll_seconds=poll_seconds, loading_budget=loading_budget,
+                                         max_wait_seconds=max_io_wait_seconds)
+            if state.get("status") == "blocked":
+                return state
             active_processes = list_run_processes([Path(lp["run_dir"]), *(Path(entry["run_dir"])
                                                                             for entry in plan["children"])])
             if active_processes:
                 return _state_write(checkpoint, state, "blocked", reason="other_run_process_active",
                                     active_processes=active_processes)
+            queue, _, _ = _read_queue(run_dir, child["instrument"], child["requested"])
             state = _state_write(checkpoint, state, "launch_intent", next_child=index,
                                  active_child={"instrument": child["instrument"], "run_dir": str(run_dir),
                                                "launch_intent_at": datetime.now().astimezone().isoformat(
-                                                   timespec="seconds")})
+                                                   timespec="seconds"),
+                                               "terminal_guard": _terminal_item_guard(queue)})
             if state.get("status") == "launch_intent":
                 command = _child_command(plan, child)
                 log_root = Path(plan["evidence_dir"])
@@ -899,8 +1109,34 @@ def supervise(plan: dict, checkpoint: Path, *, read_process=process_info,
         while True:
             info = read_process(child_state["pid"])
             if info is None:
+                active_processes = list_run_processes([Path(lp["run_dir"]), *(Path(entry["run_dir"])
+                                                                                for entry in plan["children"])])
+                if active_processes:
+                    return _state_write(checkpoint, state, "blocked", reason="child_tree_remains_after_supervisor_exit",
+                                        instrument=child["instrument"], active_processes=active_processes)
+                queue, run_status, summary = _read_queue(run_dir, child["instrument"], child["requested"])
+                if not _terminal_guard_preserved(child_state.get("terminal_guard", {}), queue):
+                    return _state_write(checkpoint, state, "blocked", reason="terminal_item_changed_during_resume",
+                                        instrument=child["instrument"], queue=summary)
                 complete, summary = queue_is_terminal(run_dir, child["instrument"], child["requested"])
                 if not complete:
+                    if (run_dir / "pause.request.json").exists():
+                        return _state_write(checkpoint, state, "blocked", reason="child_pause_request_pending",
+                                            instrument=child["instrument"], queue=summary)
+                    if _io_resumable_queue(run_status.get("status"), summary, child["requested"]):
+                        state["active_child"] = None
+                        state["io_resume"] = {
+                            "instrument": child["instrument"], "run_dir": str(run_dir),
+                            "queue_identity_sha256": child["identity_sha256"],
+                            "queue_counts_before_resume": summary["counts"],
+                            "terminal_guard": child_state.get("terminal_guard", {}),
+                            "previous_child_pid": child_state["pid"],
+                            "previous_child_created": child_state.get("created"),
+                        }
+                        state = _state_write(checkpoint, state, "waiting_for_child_idle",
+                                             reason="deferred_or_pending_items",
+                                             instrument=child["instrument"], queue=summary)
+                        break
                     return _state_write(checkpoint, state, "blocked", reason="child_exited_before_terminal_queue",
                                         instrument=child["instrument"], queue=summary)
                 state.setdefault("children", []).append({"instrument": child["instrument"],
@@ -934,6 +1170,8 @@ def main() -> int:
                         help="resume only a blocked checkpoint caused by the expected cooperative LP handoff")
     parser.add_argument("--resume-child-after-staging", action="store_true",
                         help="resume only an unattempted child blocked while its sample staging was absent")
+    parser.add_argument("--resume-child-after-io", action="store_true",
+                        help="resume only deferred/pending items from the same child queue after process and identity checks")
     args = parser.parse_args()
     if args.poll_seconds < 1 or args.poll_seconds > 60:
         parser.error("poll interval must be between 1 and 60 seconds")
@@ -949,7 +1187,8 @@ def main() -> int:
     with chain_lock(lock_path):
         result = supervise(plan, checkpoint, poll_seconds=args.poll_seconds,
                            resume_lp_handoff=args.resume_lp_handoff,
-                           resume_child_after_staging=args.resume_child_after_staging)
+                           resume_child_after_staging=args.resume_child_after_staging,
+                           resume_child_after_io=args.resume_child_after_io)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("status") == "completed" else 2
 

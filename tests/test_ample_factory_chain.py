@@ -1,5 +1,6 @@
 import importlib.util
 import json
+from datetime import datetime
 from pathlib import Path
 import subprocess
 import sys
@@ -130,7 +131,8 @@ def test_m_failures_are_preserved_and_sc_still_runs_serially(tmp_path):
             active_children[instrument] = False
 
     result = chain.supervise(plan, tmp_path / "checkpoint.json", read_process=read_process,
-                             launch=launch, sleep=sleep, list_run_processes=lambda _runs: [], poll_seconds=1)
+                             launch=launch, sleep=sleep, list_run_processes=lambda _runs: [], poll_seconds=1,
+                             loading_budget=lambda _drive: {"allowed": True})
 
     assert result["status"] == "completed"
     assert launched_instruments == ["AGM", "AGSC"]
@@ -253,6 +255,183 @@ def test_resource_block_recovery_refuses_live_process_and_attempted_queue(tmp_pa
             read_process=lambda _pid: None, list_run_processes=lambda _runs: [],
             validate_staging=lambda *_args: {"instrument": "AGM"},
         )
+
+
+def _blocked_child_for_io(plan, tmp_path):
+    child = plan["children"][0]
+    run_dir = Path(child["run_dir"])
+    queue_path = run_dir / "queue.json"
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    queue["items"][0].update(status="failed", attempts=[{"number": 1, "result": {"status": "failed"}}],
+                             result={"status": "failed", "error": "silent"})
+    queue["items"][1].update(status="deferred", attempts=[{"number": 1, "probe": {"status": "deferred"}}],
+                             result={"status": "deferred", "reason": "io_pressure"})
+    queue["items"][-1].update(status="blocked_missing_sample_group", sample_group="AGMPk")
+    queue_path.write_text(json.dumps(queue), encoding="utf-8")
+    (run_dir / "status.json").write_text(json.dumps({
+        "status": "partial", "requested": child["requested"], "finished_at": None,
+    }), encoding="utf-8")
+    state = {
+        "schema_version": 1, "chain_id": plan["chain_id"], "status": "blocked",
+        "reason": "child_exited_before_terminal_queue", "next_child": 0, "children": [],
+        "active_child": {
+            "instrument": child["instrument"], "run_dir": child["run_dir"], "pid": 501,
+            "parent_pid": 500, "created": "2026-10-22T20:00:00",
+            "command_line": " ".join(chain._child_command(plan, child, wait_for_idle=True)),
+        },
+    }
+    return state, queue_path
+
+
+def test_io_recovery_preserves_terminal_failures_and_original_queue_bytes(tmp_path):
+    plan = _plan(tmp_path)
+    state, queue_path = _blocked_child_for_io(plan, tmp_path)
+    before = queue_path.read_bytes()
+    checkpoint = tmp_path / "chain-state.json"
+
+    recovered = chain._recover_child_io(
+        plan, state, checkpoint, read_process=lambda _pid: None,
+        list_run_processes=lambda _runs: [],
+    )
+
+    assert recovered["status"] == "waiting_for_child_idle"
+    assert recovered["next_child"] == 0 and recovered["active_child"] is None
+    assert recovered["recovery_history"][0]["previous_blocked_checkpoint"] == state
+    assert recovered["io_resume"]["queue_counts_before_resume"] == {
+        "blocked_missing_sample_group": 1, "deferred": 1, "failed": 1, "pending_staging": 30,
+    }
+    assert queue_path.read_bytes() == before
+    assert recovered["io_resume"]["terminal_guard"]
+
+
+def test_io_recovery_refuses_live_tree_or_running_item(tmp_path):
+    plan = _plan(tmp_path)
+    state, queue_path = _blocked_child_for_io(plan, tmp_path)
+    with pytest.raises(chain.ChainError, match="still present or has been reused"):
+        chain._recover_child_io(plan, state, tmp_path / "chain-state.json",
+                                read_process=lambda pid: {"pid": pid} if pid == 501 else None,
+                                list_run_processes=lambda _runs: [])
+
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    queue["items"][2]["status"] = "running"
+    queue_path.write_text(json.dumps(queue), encoding="utf-8")
+    with pytest.raises(chain.ChainError, match="unfinished deferred/pending queue"):
+        chain._recover_child_io(plan, state, tmp_path / "chain-state.json",
+                                read_process=lambda _pid: None,
+                                list_run_processes=lambda _runs: [])
+
+
+def test_io_wait_is_persisted_bounded_and_uses_existing_budget(tmp_path):
+    plan = _plan(tmp_path)
+    child = plan["children"][0]
+    checkpoint = tmp_path / "chain-state.json"
+    state = {"schema_version": 1, "chain_id": plan["chain_id"], "status": "waiting_for_child_idle",
+             "next_child": 0, "children": [], "active_child": None}
+    budgets = iter([{"allowed": False, "reason": "io_pressure"}, {"allowed": True}])
+    snapshots = []
+
+    def sleep(_seconds):
+        snapshots.append(json.loads(checkpoint.read_text(encoding="utf-8")))
+
+    recovered = chain._wait_for_child_idle(
+        plan, child, state, checkpoint, sleep=sleep, poll_seconds=1,
+        loading_budget=lambda _drive: next(budgets), max_wait_seconds=10,
+    )
+
+    assert len(snapshots) == 1
+    assert snapshots[0]["status"] == "waiting_for_child_idle"
+    assert snapshots[0]["io_idle_wait_started_at"]
+    assert recovered["status"] == "lp_terminal_verified"
+    assert recovered["io_idle_wait_seconds"] >= 0
+    assert "io_idle_wait_started_at" not in recovered
+
+
+def test_io_wait_limit_blocks_without_launching_more_work(tmp_path):
+    plan = _plan(tmp_path)
+    child = plan["children"][0]
+    checkpoint = tmp_path / "chain-state.json"
+    state = {"schema_version": 1, "chain_id": plan["chain_id"], "status": "waiting_for_child_idle",
+             "next_child": 0, "children": [], "active_child": None,
+             "io_idle_wait_seconds": 10,
+             "io_idle_wait_started_at": datetime.now().astimezone().isoformat(timespec="seconds")}
+    result = chain._wait_for_child_idle(
+        plan, child, state, checkpoint, sleep=lambda _seconds: None, poll_seconds=1,
+        loading_budget=lambda _drive: {"allowed": False, "reason": "io_pressure"},
+        max_wait_seconds=0,
+    )
+    assert result["status"] == "blocked"
+    assert result["reason"] == "io_idle_wait_limit_reached"
+
+
+def test_chain_retries_only_deferred_and_pending_after_io_wait(tmp_path):
+    plan = _plan(tmp_path)
+    lp = plan["lp_gate"]
+    lp_alive = True
+    active_children = {}
+    launches = []
+    commands = {}
+
+    def read_process(pid):
+        nonlocal lp_alive
+        if pid == lp["pid"]:
+            if not lp_alive:
+                return None
+            return {"pid": lp["pid"], "parent_pid": lp["parent_pid"],
+                    "created": lp["creation_time"], "command_line": lp["command_contains"]}
+        if active_children.get(pid):
+            return {"pid": pid, "parent_pid": 900, "created": "2026-10-22T20:00:00",
+                    "command_line": commands[pid]}
+        return None
+
+    def launch(command, **_kwargs):
+        instrument = command[command.index("--instrument") + 1]
+        run_dir = Path(command[command.index("--run-dir") + 1])
+        launches.append(instrument)
+        pid = 500 + len(launches)
+        commands[pid] = " ".join(command)
+        active_children[pid] = True
+        if instrument == "AGM" and len([name for name in launches if name == "AGM"]) == 1:
+            queue_path = run_dir / "queue.json"
+            queue = json.loads(queue_path.read_text(encoding="utf-8"))
+            queue["items"][0].update(status="failed", attempts=[{"number": 1}], result={"status": "failed"})
+            queue["items"][1].update(status="deferred", attempts=[{"number": 1}], result={"status": "deferred"})
+            queue["items"][-1].update(status="blocked_missing_sample_group", sample_group="AGMPk")
+            queue_path.write_text(json.dumps(queue), encoding="utf-8")
+            (run_dir / "status.json").write_text(json.dumps({"status": "partial", "finished_at": None}),
+                                                  encoding="utf-8")
+        elif instrument == "AGM":
+            queue_path = run_dir / "queue.json"
+            queue = json.loads(queue_path.read_text(encoding="utf-8"))
+            for item in queue["items"]:
+                if item["status"] in {"deferred", "pending_staging"}:
+                    item["status"] = "passed"
+                    item.setdefault("attempts", []).append({"number": len(item["attempts"]) + 1})
+                    item["result"] = {"status": "passed"}
+            queue_path.write_text(json.dumps(queue), encoding="utf-8")
+            (run_dir / "status.json").write_text(json.dumps({"status": "selection_completed",
+                                                              "finished_at": "now"}), encoding="utf-8")
+        else:
+            _write_queue(run_dir, instrument, ["passed"] * 45, "selection_completed")
+        return SimpleNamespace(pid=pid)
+
+    budgets = iter([{"allowed": True}, {"allowed": False}, {"allowed": True}, {"allowed": True}])
+
+    def sleep(_seconds):
+        nonlocal lp_alive
+        lp_alive = False
+        for pid in active_children:
+            active_children[pid] = False
+
+    result = chain.supervise(
+        plan, tmp_path / "checkpoint.json", read_process=read_process, launch=launch,
+        sleep=sleep, list_run_processes=lambda _runs: [], poll_seconds=1,
+        loading_budget=lambda _drive: next(budgets),
+    )
+
+    assert result["status"] == "completed"
+    assert launches == ["AGM", "AGM", "AGSC"]
+    assert result["children"][0]["queue"]["counts"]["failed"] == 1
+    assert result["children"][0]["queue"]["counts"]["passed"] == 31
 
 
 def test_staged_resource_audit_requires_source_hardlinks_and_exact_small_indexes(tmp_path, monkeypatch):
@@ -401,6 +580,16 @@ def test_validate_plan_accepts_active_child_and_completed_prior_run_on_resume(tm
     state_path.write_text(json.dumps({"schema_version": 1, "chain_id": "recovery-test", "status": "running_child",
                                       "next_child": 0, "active_child": {"instrument": "AGM", "pid": 501}}),
                           encoding="utf-8")
+    assert chain.validate_plan(plan)["children"][0]["instrument"] == "AGM"
+
+    _write_queue(m, "AGM", ["failed", "deferred"] + ["pending_staging"] * 30
+                 + ["blocked_missing_sample_group"], "partial")
+    state_path.write_text(json.dumps({
+        "schema_version": 1, "chain_id": "recovery-test", "status": "waiting_for_child_idle",
+        "next_child": 0, "active_child": None, "children": [],
+        "io_resume": {"instrument": "AGM", "run_dir": str(m),
+                      "queue_identity_sha256": plan["children"][0]["identity_sha256"]},
+    }), encoding="utf-8")
     assert chain.validate_plan(plan)["children"][0]["instrument"] == "AGM"
 
     _write_queue(m, "AGM", ["passed"] * 30 + ["failed", "inconclusive", "blocked_missing_sample_group"],
