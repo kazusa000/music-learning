@@ -59,7 +59,7 @@ def prepare(plugin, factory_xml):
         component = (component[:20] + struct.pack(">I", len(component) - 24)
                      + component[24:172] + struct.pack(">I", len(component) - 176) + component[176:])
     expected = dict(name=factory.get("Name"), parameters=parameters(factory),
-                    database=database(factory))
+                    database=database(factory), root_tag=factory.tag)
     return vst3_preset(plugin["vst3_class_id"], component), expected
 
 
@@ -80,6 +80,26 @@ def database(xml):
     return nodes[0].get("Value") if nodes else None
 
 
+def identity(xml):
+    """Return stable identity from Ample's captured native state XML.
+
+    ``Lib`` is a factory-editor hint that the plug-in omits when it serializes
+    native state, so it is intentionally excluded from the identity contract.
+    The exact sample DB and complete parameter map carry the loaded variant.
+    """
+    return {
+        "root_tag": xml.tag,
+        "name": xml.get("Name"),
+        "database": database(xml),
+    }
+
+
+def native_identity(plugin):
+    """Parse identity from the plug-in's native state bytes, never a receipt label."""
+    _, _, _, xml = component_xml(plugin)
+    return identity(xml)
+
+
 def same_value(left, right):
     try:
         a, b = float(left), float(right)
@@ -90,6 +110,8 @@ def same_value(left, right):
 
 def verify_state(plugin, expected):
     _, _, _, xml = component_xml(plugin)
+    if "root_tag" in expected and xml.tag != expected["root_tag"]:
+        raise ValueError("Ample factory state root identity changed")
     if xml.get("Name") != expected["name"]:
         raise ValueError("Ample did not retain the requested preset name")
     if database(xml) != expected["database"]:

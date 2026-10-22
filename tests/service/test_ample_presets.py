@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from music_learning.ample_presets import component_xml, prepare, verify_state
+from music_learning.ample_presets import component_xml, native_identity, prepare, verify_state
 from music_learning.vst3_state import ALPHABET
 
 
@@ -47,6 +47,9 @@ def test_factory_state_keeps_private_trailer_and_repairs_envelope_lengths(legacy
     assert component.endswith(trailer)
     restored = plugin(component, legacy)
     verify_state(restored, name)
+    assert native_identity(restored) == {
+        "root_tag": root, "name": "Factory A", "database": None
+    }
     assert component_xml(restored)[3][0].get("Value") == "0.3"
     with pytest.raises(ValueError, match="preset name"):
         verify_state(restored, dict(name, name="Factory B"))
@@ -57,6 +60,29 @@ def test_factory_state_keeps_private_trailer_and_repairs_envelope_lengths(legacy
     with pytest.raises(ValueError, match="sample database"):
         verify_state(restored, dict(name, database="Other Samples"))
     assert component_xml(baseline)[3].get("Name") == "Default"
+
+
+def test_native_serialization_may_drop_factory_lib_metadata():
+    factory = (b'<AEG_STATE Name="Autumn Leaves(Blues)" Lib="Middle+Bridge">'
+               b'<DBName Value="AGSCMB"/><Parameter Name="Volume" Value="0.8"/>'
+               b'</AEG_STATE>')
+    baseline_xml = b'<AEG_STATE Name="Default"/>'
+    baseline = plugin(b"VC2!" + struct.pack("<I", len(baseline_xml)) + baseline_xml)
+    # The editor-facing factory XML identifies the requested sample family in Lib.
+    # The plug-in's native serialization omits that hint but retains its actual
+    # loaded state: preset name, DBName, and the complete parameter map.
+    _, expected = prepare(baseline, factory)
+    native_xml = (b'<AEG_STATE Name="Autumn Leaves(Blues)">'
+                  b'<DBName Value="AGSCMB"/><Parameter Name="Volume" Value="0.8"/>'
+                  b'</AEG_STATE>')
+    serialized = plugin(b"VC2!" + struct.pack("<I", len(native_xml)) + native_xml)
+
+    verify_state(serialized, expected)
+    assert native_identity(serialized) == {
+        "root_tag": "AEG_STATE",
+        "name": "Autumn Leaves(Blues)",
+        "database": "AGSCMB",
+    }
 
 
 def test_factory_rejects_wrong_identity_entities_and_truncated_envelopes():
