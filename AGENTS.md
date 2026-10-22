@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新N7加载收口（2026-10-22）：reopen-final-v7三轮七轨冷开/播放/关闭通过，bundle ce4876de9e3aade76f43be1c6431208228d8c1e1249ff468df8f4e3a5ed0b806，冷开17.157/15.437/15.172秒，六worker每轮全退出码0，欠载/xrun/迟到0。关闭为全图同一3秒绝对窗口（替换750ms），实际1.968/.782/1.047秒；双节点正常释放与双节点卡5秒均4秒内退出，2专项及53相关过。worker完整SHA加64KiB缓冲（原JUCE64字节读）、参数一次ID索引，26回归过；不改旧宿主/库/插件或身份检查。栈抓取会扰动性能，reopen-stack-v4的Errno22是探针close后复用旧pipe已修，不称产品故障；v6第三轮仍失败保留。当前没有长测运行，v5失败locator仅历史；目标active/正式未部署，须新完整快照+完整长测才切默认。其他工作文件/H/NAS/固定验证/旧拒绝边界同前。
+
 最新N7加载排查（2026-10-22）：active/正式未部署；endurance-v5终态失败，两首整曲均clock/gap/late/underrun0，但重载Pianoteq超时，30分钟未开始，不按旧locator称运行。后续Keyscape也复现加载超时，非已确认单插件缺陷。新worker正常退出750ms后兜底强杀，加载阶段/CPU/I/O诊断、已验描述缓存避免重复类扫描但保留DLL/实际类版本/完整状态身份，旧无描述仍扫描。仅有实际进展的加载可超过45秒，45秒后空闲>5秒拒绝、绝对120秒；DSP期限/2块256MiB及发声入库检查不改。59相关回归过，真实重载仍未验收。当前独立reopen-stack-v4抓自有worker栈未终态（导出符号名不能当私有语义），v1–v5及排查原失败保留；不重开长测、不部署。其他Ample/构建probe脚本/obj等不暂存清理，H/NAS/固定验证/旧拒绝边界同前。
 
 最新N7恢复（2026-10-22）：用户明确恢复暂停目标，active。先读docs/benchmarks/native-engine-n7.md顶部恢复段。cec23c4固定源码含a257a5b期限修复，完整451过/1符号链接权限跳过/0败；本次唯一长测endurance-v5，定位runtime/engine-acceptance-job.local.json，固定bundle6381ced35b93da581e1a587d297997bbadf6195dced40cad5e0c51c88b69cec6。两首整曲+1800秒循环未终态不能称通过，不改固定运行文件、不开第二批。新候选runtime/engine-release.resume-20261022.local.json仅暂存，正式未部署；v1–v4原失败保留。恢复前九表/head14pin一致。其他工作已提交Kontakt保留、未提交Ample/obj等不暂存或清理，H/NAS/固定验证/历史拒绝边界不变。

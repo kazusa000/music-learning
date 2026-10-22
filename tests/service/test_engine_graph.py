@@ -118,7 +118,12 @@ def test_worker_uses_actual_device_queue_deadline_without_premature_silence(serv
 def test_routed_worker_releases_normally_with_bounded_hung_destructor_fallback(service, project, tmp_path, monkeypatch, hang):
     import psutil
 
-    dynamic_short_project(service, project, tmp_path)
+    revision = dynamic_short_project(service, project, tmp_path)
+    snapshot = copy.deepcopy(revision['snapshot'])
+    previous = snapshot['plugins'][1]
+    snapshot['plugins'][1] = dict(snapshot['plugins'][0], id=previous['id'], track_id=previous['track_id'])
+    invoke(service, 'revisions.commit', dict(project_id=project['id'], snapshot=snapshot,
+        author='test', description='Two independent destructor deadlines'), revision['id'])
     marker = tmp_path / 'normal-release.txt'
     monkeypatch.setenv('ML_DYNAMIC_RELEASE_MARKER', str(marker))
     if hang:
@@ -133,6 +138,8 @@ def test_routed_worker_releases_normally_with_bounded_hung_destructor_fallback(s
         assert time.monotonic() - began < 4
         assert not any(psutil.pid_exists(pid) for pid in pids)
         assert marker.exists() is not hang
+        if not hang:
+            assert marker.read_text().splitlines() == ['released', 'released']
     finally:
         invoke(service, 'engine.close')
 

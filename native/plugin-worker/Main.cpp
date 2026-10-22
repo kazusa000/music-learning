@@ -4,7 +4,9 @@
 // or replacing any running verification or legacy executable.
 #define main ml_offline_main
 #define VST3PluginFormatHeadless ml::WorkerVST3Format
+#define FileInputStream ml::WorkerFileInputStream
 #include "../audio-host/Main.cpp"
+#undef FileInputStream
 #undef VST3PluginFormatHeadless
 #undef main
 #include "../audio-host/Render.cpp"

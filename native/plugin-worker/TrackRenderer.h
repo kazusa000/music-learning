@@ -141,11 +141,17 @@ public:
             if(diagnostics)diagnostics->loadStage.store(2);
             if(loading)loading(2);
             std::map<String,float> values;
-            for(auto* value:plugin->getParameters())values[parameterId(value)]=value->getValue();
+            std::map<String,AudioProcessorParameter*> targets;
+            for(auto* value:plugin->getParameters()){
+                const auto id=parameterId(value);values[id]=value->getValue();
+                require(targets.emplace(id,value).second,"Duplicate worker parameter ID");
+            }
             baseline.push_back(std::move(values));
             if(auto* overrides=field(spec,"parameters").getDynamicObject())for(const auto& value:overrides->getProperties())
             {
-                auto* target=parameter(*plugin,value.name.toString());const auto wanted=(float)value.value;
+                const auto found=targets.find(value.name.toString());
+                require(found!=targets.end(),"Unknown parameter ID: "+value.name.toString());
+                auto* target=found->second;const auto wanted=(float)value.value;
                 if(std::abs(target->getValue()-wanted)>1e-6f)target->setValueNotifyingHost(wanted);
             }
             require(plugin->getTotalNumInputChannels()<=(graphMode?4:2),"Worker sidechain needs graph support");

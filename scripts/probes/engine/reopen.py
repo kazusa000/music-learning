@@ -8,6 +8,8 @@ from pathlib import Path
 import sys
 import time
 import subprocess
+import ctypes
+from ctypes import wintypes
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'src'))
@@ -47,8 +49,8 @@ def main():
     broker.executable = bundle / 'ml_engine.exe'
     report = dict(status='running', bundle=str(bundle), cycles=[])
     try:
-        broker.command('configure', dict(sample_rate=48000, buffer_frames=512))
         for cycle in range(3):
+            broker.command('configure', dict(sample_rate=48000, buffer_frames=512))
             start = time.monotonic()
             captured = False
             state = broker.command('open', dict(manifest=manifest, position_sample=0, playing=False))
@@ -80,9 +82,31 @@ def main():
             assert played['underruns'] == 0 and played['xruns'] == 0, played
             assert all(value['missed_blocks'] == 0 for value in played['plugins'].values()), played
             before_close = time.monotonic()
-            broker.command('close')
+            windows = ctypes.WinDLL('kernel32', use_last_error=True)
+            windows.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            windows.OpenProcess.restype = wintypes.HANDLE
+            windows.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+            windows.CloseHandle.argtypes = [wintypes.HANDLE]
+            workers = {key: windows.OpenProcess(0x100000 | 0x1000, False, value['pid'])
+                for key, value in played['plugins'].items()}
+            exits = {}
+            try:
+                assert all(workers.values()), 'Cannot retain owned worker exit evidence'
+                broker.close()
+                for key, handle in workers.items():
+                    code = wintypes.DWORD()
+                    if not windows.GetExitCodeProcess(handle, ctypes.byref(code)):
+                        raise ctypes.WinError(ctypes.get_last_error())
+                    assert code.value != 259, 'Owned worker survived close'
+                    exits[key] = code.value
+            finally:
+                for handle in workers.values():
+                    if handle:
+                        windows.CloseHandle(handle)
             report['cycles'].append(dict(cycle=cycle, ready_ms=opened_ms,
-                close_ms=(time.monotonic() - before_close) * 1000, final=played))
+                close_ms=(time.monotonic() - before_close) * 1000, final=played,
+                worker_exit_codes=exits))
+            (directory / 'progress.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
         report['status'] = 'succeeded'
     except BaseException as error:
         report.update(status='failed', error=str(error))

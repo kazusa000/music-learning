@@ -15,6 +15,7 @@ class NodeSource final {
     bool pending=false, failed=false;
     double requestedAt=0, configuredAt=0;
     double inspectedAt=0;
+    double closeDeadline=0;
     LoadBudget loadBudget;
     uint64_t maximumRenderMicros=0,maximumRoundTripMicros=0;
     juce::String failure;
@@ -83,13 +84,17 @@ public:
         requestClose();
         // Control/background teardown only: let the plugin release resources
         // and shared state normally before using the bounded crash fallback.
-        if(process.value&&WaitForSingleObject(process.value,750)!=WAIT_OBJECT_0){
+        const auto remaining=(DWORD)juce::jmax(0.0,closeDeadline-juce::Time::getMillisecondCounterHiRes());
+        if(process.value&&WaitForSingleObject(process.value,remaining)!=WAIT_OBJECT_0){
             if(job.value)TerminateJobObject(job.value,1);
             WaitForSingleObject(process.value,2000);
         }
         if(shared)UnmapViewOfFile(shared);
     }
     void requestClose(){
+        // The graph requests every close first, so all nodes share a wall-time
+        // teardown window rather than accumulating one timeout per plugin.
+        if(closeDeadline==0)closeDeadline=juce::Time::getMillisecondCounterHiRes()+3000;
         if(shared)shared->quit.store(1,std::memory_order_release);
         if(requestEvent.value)SetEvent(requestEvent.value);
     }

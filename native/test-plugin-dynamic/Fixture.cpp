@@ -21,7 +21,7 @@ public:
     DynamicFixture(){if(std::getenv("ML_DYNAMIC_LOAD_DELAY"))std::this_thread::sleep_for(std::chrono::milliseconds(200));}
     ~DynamicFixture()override{
         if(const auto* marker=std::getenv("ML_DYNAMIC_RELEASE_MARKER")){
-            if(std::getenv("ML_DYNAMIC_RELEASE_HANG"))std::this_thread::sleep_for(std::chrono::seconds(2));
+            if(std::getenv("ML_DYNAMIC_RELEASE_HANG"))std::this_thread::sleep_for(std::chrono::seconds(5));
             juce::File(juce::String::fromUTF8(marker)).appendText("released\n");
         }
     }
