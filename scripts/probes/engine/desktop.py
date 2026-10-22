@@ -24,8 +24,8 @@ def main():
     directory = args.directory.resolve()
     directory.relative_to(ROOT / 'data/maintenance/native-engine')
     config = directory / 'app.local.json'
-    values = json.loads(config.read_text())
-    fixture = json.loads((directory / 'fixture.json').read_text())
+    values = json.loads(config.read_text(encoding='utf-8'))
+    fixture = json.loads((directory / 'fixture.json').read_text(encoding='utf-8'))
     assert Path(values['data_root']).is_relative_to(directory)
     source = source_for(ROOT, args.release, values, 'apps/web/tests/e2e/native-window.js')
     env = dict(os.environ, PYTHONPATH=str(source / 'src'), MUSIC_APP_CONFIG=str(config))

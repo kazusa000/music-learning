@@ -23,7 +23,7 @@ def main():
     directory=args.directory.resolve()
     directory.relative_to(ROOT/'data/maintenance/native-engine')
     config=directory/'app.local.json'
-    values=json.loads(config.read_text())
+    values=json.loads(config.read_text(encoding='utf-8'))
     if not Path(values['data_root']).is_relative_to(directory):
         raise ValueError('Independent database required')
     source=source_for(ROOT,args.release,values,'apps/web/tests/e2e/engine-workspace.mjs')

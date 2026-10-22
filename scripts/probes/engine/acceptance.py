@@ -108,6 +108,89 @@ def main():
                 for key in state['monitor']}, expected_generation=state['generation']))
             return state, (time.perf_counter() - start) * 1000
 
+        def play_phase(name, source, looping):
+            nonlocal meter
+            state, ready_ms = opened(source)
+            seconds = args.long_seconds if looping else (source['duration_samples'] + source.get('tail_samples', 0)) / source['sample_rate'] + 1
+            metrics = directory / (name + '-loopback.jsonl')
+            meter = OwnedProcess([str(bundle / 'ml_engine_loopback.exe'), '--meter', str(metrics), str(seconds + .5)],
+                cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            assert meter.process.stdout.readline().strip() == b'READY'
+            state = broker.command('transport', dict(position_sample=0, playing=True, loop=looping,
+                loop_start_sample=0, loop_end_sample=source['duration_samples'], expected_generation=state['generation']))
+            started = time.monotonic()
+            observations = []
+            previous_frames = 0
+            last_action = -1
+            while time.monotonic() - started < seconds:
+                time.sleep(min(1, max(.001, seconds - (time.monotonic() - started))))
+                elapsed = time.monotonic() - started
+                state = broker.status()
+                assert state['status'] == 'ready' and state.get('applied_revision') == source['revision_id'], state
+                assert not state.get('file_error') and state['underruns'] == 0 and state['xruns'] == 0, state
+                assert state.get('cache_bytes', 0) <= 256 * 1024**2, state
+                assert all(p.get('missed_blocks', 0) == 0 and not p.get('error') for p in state.get('plugins', {}).values()), state
+                at_end = state['render_position_sample'] >= source['duration_samples'] + source.get('tail_samples', 0)
+                assert state['playing'] or (not looping and at_end), state
+                if looping or not at_end:
+                    assert state['consumed_device_frames'] > previous_frames, state
+                previous_frames = state['consumed_device_frames']
+                # Monitor transitions exercise controls without resetting the playback clock or counters.
+                action = int(elapsed / 17)
+                if action != last_action:
+                    first = source['tracks'][0]['id']
+                    mode = action % 4
+                    broker.command('monitor', dict(tracks={first: dict(gain_db=-84 if mode == 1 else -90,
+                        mute=mode == 2, solo=mode == 3)}, expected_generation=state['generation']))
+                    last_action = action
+                observations.append(dict(elapsed=elapsed, position_sample=state['position_sample'],
+                    consumed_device_frames=state.get('consumed_device_frames'), peak=state['peak']))
+                report['active'] = dict(phase=name, elapsed=elapsed, target_seconds=seconds, state=state)
+                save(directory / 'progress.json', report)
+            if not looping:
+                assert not state['playing'] and state['position_sample'] == source['duration_samples'] and at_end, state
+            else:
+                broker.command('transport', dict(playing=False, expected_generation=state['generation']))
+                state = broker.status()
+            # Capture a stable pair after stop; querying two independent
+            # atomics during a callback can straddle adjacent blocks.
+            raw = state['consumed_device_frames'] * source['sample_rate']
+            device_rate = round(state['sample_rate'])
+            expected = ((raw % (source['duration_samples'] * device_rate)) // device_rate if looping
+                else min(source['duration_samples'], raw // device_rate))
+            clock_error = abs(state['position_sample'] - expected)
+            assert clock_error <= 1, (state, expected)
+            meter.process.wait(timeout=5)
+            stderr = meter.process.stderr.read().decode('utf-8', 'replace')
+            assert meter.process.returncode == 0, stderr
+            meter.close()
+            meter = None
+            windows = [json.loads(line) for line in metrics.read_text().splitlines()]
+            final = windows[-1]
+            assert windows[0]['pro_audio_thread_registration'], windows[0]
+            assert final['kind'] == 'final' and final['frames'] > 0, final
+            assert all(final[k] == 0 for k in ('gap_frames', 'out_of_order_packets', 'invalid_samples', 'discontinuities', 'timestamp_errors')), final
+            assert any(item['peak'] > 0 for item in observations), 'No native source output observed'
+            report['phases'].append(dict(name=name, seconds=seconds, native_ready_ms=ready_ms,
+                final=state, loopback=final, source_clock_error_samples=clock_error, observations=observations))
+            save(directory / 'progress.json', report)
+
+        if args.long_seconds:
+            flac = ROOT / 'data/references/nas-Mu000001-v1/source.flac'
+            with flac.open('rb') as stream:
+                header = stream.read(42)
+            assert header[:4] == b'fLaC'
+            packed = int.from_bytes(header[18:26], 'big')
+            rate, frames = packed >> 44, packed & ((1 << 36) - 1)
+            reference = assets / 'reference305.flac'
+            os.link(flac, reference)
+            audio = dict(schema_version=1, project_id='n7-reference305', revision_id='n7-reference305',
+                view='original', sample_rate=rate, duration_samples=frames, tail_samples=0,
+                tracks=[dict(id='reference305', gain_db=-90, clips=[dict(path=str(reference),
+                    start_sample=0, source_offset_samples=0, duration_samples=frames, gain=1)])])
+            report['reference_sha256'] = hashlib.file_digest(flac.open('rb'), 'sha256').hexdigest()
+            play_phase('reference305-full', audio, False)
+
         state, report['native_ready_ms'] = opened(manifest)
         times = []
         for n in range(20):
@@ -139,85 +222,11 @@ def main():
         report['warm_view_switches'] = switches
         save(directory / 'progress.json', report)
         if args.long_seconds:
-            flac = ROOT / 'data/references/nas-Mu000001-v1/source.flac'
-            with flac.open('rb') as stream:
-                header = stream.read(42)
-            assert header[:4] == b'fLaC'
-            packed = int.from_bytes(header[18:26], 'big')
-            rate, frames = packed >> 44, packed & ((1 << 36) - 1)
-            reference = assets / 'reference305.flac'
-            os.link(flac, reference)
-            audio = dict(schema_version=1, project_id='n7-reference305', revision_id='n7-reference305',
-                view='original', sample_rate=rate, duration_samples=frames, tail_samples=0,
-                tracks=[dict(id='reference305', gain_db=-90, clips=[dict(path=str(reference),
-                    start_sample=0, source_offset_samples=0, duration_samples=frames, gain=1)])])
-            report['reference_sha256'] = hashlib.file_digest(flac.open('rb'), 'sha256').hexdigest()
-            for name, source, looping in [('current-full', manifest, False), ('reference305-full', audio, False),
-                                          ('current-loop', manifest, True)]:
-                state, ready_ms = opened(source)
-                seconds = args.long_seconds if looping else (source['duration_samples'] + source.get('tail_samples', 0)) / source['sample_rate'] + 1
-                metrics = directory / (name + '-loopback.jsonl')
-                meter = OwnedProcess([str(bundle / 'ml_engine_loopback.exe'), '--meter', str(metrics), str(seconds + .5)],
-                    cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                assert meter.process.stdout.readline().strip() == b'READY'
-                state = broker.command('transport', dict(position_sample=0, playing=True, loop=looping,
-                    loop_start_sample=0, loop_end_sample=source['duration_samples'], expected_generation=state['generation']))
-                started = time.monotonic()
-                observations = []
-                previous_frames = 0
-                last_action = -1
-                while time.monotonic() - started < seconds:
-                    time.sleep(min(1, max(.001, seconds - (time.monotonic() - started))))
-                    elapsed = time.monotonic() - started
-                    state = broker.status()
-                    assert state['status'] == 'ready' and state.get('applied_revision') == source['revision_id'], state
-                    assert not state.get('file_error') and state['underruns'] == 0 and state['xruns'] == 0, state
-                    assert state.get('cache_bytes', 0) <= 256 * 1024**2, state
-                    assert all(p.get('missed_blocks', 0) == 0 and not p.get('error') for p in state.get('plugins', {}).values()), state
-                    at_end = state['render_position_sample'] >= source['duration_samples'] + source.get('tail_samples', 0)
-                    assert state['playing'] or (not looping and at_end), state
-                    if looping or not at_end:
-                        assert state['consumed_device_frames'] > previous_frames, state
-                    previous_frames = state['consumed_device_frames']
-                    # Monitor transitions exercise controls without resetting the playback clock or counters.
-                    action = int(elapsed / 17)
-                    if action != last_action:
-                        first = source['tracks'][0]['id']
-                        mode = action % 4
-                        broker.command('monitor', dict(tracks={first: dict(gain_db=-84 if mode == 1 else -90,
-                            mute=mode == 2, solo=mode == 3)}, expected_generation=state['generation']))
-                        last_action = action
-                    observations.append(dict(elapsed=elapsed, position_sample=state['position_sample'],
-                        consumed_device_frames=state.get('consumed_device_frames'), peak=state['peak']))
-                    report['active'] = dict(phase=name, elapsed=elapsed, target_seconds=seconds, state=state)
-                    save(directory / 'progress.json', report)
-                if not looping:
-                    assert not state['playing'] and state['position_sample'] == source['duration_samples'] and at_end, state
-                else:
-                    broker.command('transport', dict(playing=False, expected_generation=state['generation']))
-                    state = broker.status()
-                # Capture a stable pair after stop; querying two independent
-                # atomics during a callback can straddle adjacent blocks.
-                raw = state['consumed_device_frames'] * source['sample_rate']
-                device_rate = round(state['sample_rate'])
-                expected = ((raw % (source['duration_samples'] * device_rate)) // device_rate if looping
-                    else min(source['duration_samples'], raw // device_rate))
-                clock_error = abs(state['position_sample'] - expected)
-                assert clock_error <= 1, (state, expected)
-                meter.process.wait(timeout=5)
-                stderr = meter.process.stderr.read().decode('utf-8', 'replace')
-                assert meter.process.returncode == 0, stderr
-                meter.close()
-                meter = None
-                windows = [json.loads(line) for line in metrics.read_text().splitlines()]
-                final = windows[-1]
-                assert windows[0]['pro_audio_thread_registration'], windows[0]
-                assert final['kind'] == 'final' and final['frames'] > 0, final
-                assert all(final[k] == 0 for k in ('gap_frames', 'out_of_order_packets', 'invalid_samples', 'discontinuities', 'timestamp_errors')), final
-                assert any(item['peak'] > 0 for item in observations), 'No native source output observed'
-                report['phases'].append(dict(name=name, seconds=seconds, native_ready_ms=ready_ms,
-                    final=state, loopback=final, source_clock_error_samples=clock_error, observations=observations))
-                save(directory / 'progress.json', report)
+            # Keep the heavy bank workers for both arrangement phases. The
+            # independent file reference runs before the one sampler cold open.
+            for name, looping in [('current-full', False), ('current-loop', True)]:
+                play_phase(name, manifest, looping)
+                assert {key: value['pid'] for key, value in broker.status().get('plugins', {}).items()} == pids
         assert hashlib.sha256(Path(__file__).read_bytes()).hexdigest() == report['script_sha256'], 'Acceptance source changed during run'
         report['status'] = 'succeeded'
     except BaseException as error:

@@ -52,7 +52,7 @@ def main():
             client = Client(base, token_file=token)
 
             def cli(operation, arguments=None):
-                command = [sys.executable, '-m', 'music_learning.cli', '--url', base,
+                command = [sys.executable, '-m', 'music_learning.cli',
                     '--token-file', str(token), 'call', operation, '--args', '-']
                 result = subprocess.run(command, input=json.dumps(arguments or {}).encode(), capture_output=True,
                     cwd=source, env=env, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -62,6 +62,17 @@ def main():
                 return value['result']
 
             old = client.call('revisions.get', dict(project_id=fixture['project']['id']))
+            prior_config = os.environ.get('MUSIC_APP_CONFIG')
+            os.environ['MUSIC_APP_CONFIG'] = str(path)
+            try:
+                with Client(token_file=token) as configured:
+                    assert configured.call('projects.list') == client.call('projects.list')
+            finally:
+                if prior_config is None:
+                    os.environ.pop('MUSIC_APP_CONFIG', None)
+                else:
+                    os.environ['MUSIC_APP_CONFIG'] = prior_config
+            report['checks'].append('Default SDK and CLI follow the configured available endpoint')
             opened = cli('engine.open', dict(project_id=fixture['project']['id'], position_sample=44100 * 2))
             deadline = time.monotonic() + 20
             state = opened
