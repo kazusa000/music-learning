@@ -138,6 +138,15 @@ def test_every_factory_queue_name_has_a_reviewed_chinese_variant_label():
     assert not missing
 
 
+@pytest.mark.parametrize("field", ["event_profile", "performance_profile"])
+def test_diagnostic_trigger_is_not_dropped_into_an_ordinary_midi_catalog(field):
+    with pytest.raises(ValueError, match="catalog/preview integration"):
+        candidate_for_factory(
+            {"instrument": "AGLP", field: {"kind": "riff_toggle", "trigger_note": 94}}, {},
+            bank_root="unused", entrypoint="unused", resources={}, installed_library={},
+            source_manifest_sha256="d" * 64)
+
+
 def test_receipt_bridge_references_each_phase_without_trusting_queue_status(tmp_path):
     product = PRODUCTS["AGSC"]
     factory = (b'<AEG_STATE Name="Autumn Leaves(Blues)"><DBName Value="AGSCNk"/>'

@@ -214,6 +214,11 @@ def candidate_for_factory(item: Mapping, first_plugin: Mapping, *, bank_root: st
     including Ample's internal parameters that VST3 does not expose through its
     standard host parameter list. The latter list is also pinned separately.
     """
+    if item.get("event_profile") is not None or item.get("performance_profile") is not None:
+        # The current public preview/AI catalog has ordinary MIDI playback
+        # semantics. A special trigger passing a diagnostic must not silently
+        # lose that trigger when selected or previewed in the product.
+        raise ValueError("Performance-profile catalog/preview integration is pending; retain diagnostic evidence")
     code = item.get("instrument")
     product = PRODUCTS.get(code)
     if product is None:

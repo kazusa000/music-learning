@@ -85,3 +85,5 @@ Kontakt库准备入口为`scripts/instruments/prepare_kontakt_batch.py`，限定
 chain以PID、创建时间、命令行、队列真实终态和固定pin核对交接，持有跨进程锁；CIM超时不当作进程退出，人工暂停/异常中断会阻塞链而非另开批次。7项实际进程/队列夹具回归与Ruff通过。各批沿用H盘空闲预算和原始报告，不自动重试失败项，不写正式catalog/工程。Kontakt与MODO后续真实控制等串行链结束或明确的独占窗口，当前控制准备不等于已执行。
 
 本轮代码收口再次只读核对正式九表/head、14项保护文件和1252项catalog，均与恢复前一致；证据为`20261022-resume/formal-after-code.json`及`pins-after-code.json`。本轮还没有新增入库条目。源码规则、探针和串行器已按主题提交；并发本地引擎与AD2 obj/pdb不混入。
+
+Riffer诊断还暴露了共享产品链缺口：验证用特殊触发事件时，当前普通目录/试听短句/AI查询不会自动携带这些事件。Ample发布适配器因此拒绝将带`event_profile`或`performance_profile`的诊断项丢弃演奏信息后当作普通MIDI音色发布；原始验证仍可继续。后续需把经实际证明的演奏profile统一贯穿候选指纹、目录、试听与AI查询，并核对Riff内容本身的状态恢复，才发布该类预设；单次触发发声不能替代这条产品链。
