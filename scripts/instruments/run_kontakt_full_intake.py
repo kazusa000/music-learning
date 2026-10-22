@@ -29,6 +29,32 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+SUCCESS_STATUSES = {"validation_finished_pending_publication", "published_pending_preview_handoff",
+                    "published_and_previews_dispatched"}
+
+
+def validate_coverage(expected_records, conversion, work):
+    """Never let resume flags omit/add/retarget a prepared source."""
+    from music_learning.kontakt_import import preset_id_for_source, _validate_batch
+
+    _validate_batch(conversion)
+    library_id = conversion["library_id"]
+    expected = {preset_id_for_source(library_id, row["path"]):
+                {key: row[key] for key in ("path", "format", "bytes", "sha256")} for row in expected_records}
+    if len(expected) != len(expected_records):
+        raise ValueError("Prepared source coverage contains duplicate IDs")
+    for queue, statuses in ((conversion, {"pending", "running", "failed", "converted_pending_validation"}),
+                            (work, {"pending", "running", "failed", "passed"})):
+        rows = queue.get("items")
+        if (queue.get("library_id") != library_id or not isinstance(rows, list)
+                or len(rows) != len(expected) or {row.get("id") for row in rows} != set(expected)):
+            raise ValueError("Kontakt resume queue does not exactly cover the prepared sources")
+        for row in rows:
+            if row.get("source") != expected[row["id"]] or row.get("status") not in statuses:
+                raise ValueError("Kontakt resume queue source identity or status differs")
+    return len(expected)
+
+
 def formal_snapshot(repo):
     tables = load(repo / "data/maintenance/native-engine/n1/before.json")["formal"]
     result = {}
@@ -55,7 +81,7 @@ def execute(plan_path):
     from native_host import NativeHost
     from music_learning.instrument_intake_publication import (
         ValidatorPin, create_queue, record_receipt, build_publication_plan,
-        publish_catalog_atomic,
+        publish_catalog_atomic, verify_receipt,
     )
     from music_learning.instrument_probe_budget import loading_budget
     from music_learning.kontakt_import import atomic_write_json, build_batch, source_record, write_batch
@@ -148,10 +174,20 @@ def execute(plan_path):
                 lib_run.mkdir(exist_ok=True)
                 source_root = Path(audit["prepared_root"])
                 verify_installed_library(SimpleNamespace(instrument_library=Path(plan["resource_root"])), audit["installed_library"])
+                records = []
+                for row in audit["prepared_files"]:
+                    if Path(row["path"]).suffix.casefold() not in {".nki", ".nkm"}:
+                        continue
+                    relative = Path(row["path"]).relative_to(audit["library_destination"])
+                    record = source_record(source_root / relative, source_root)
+                    if record["sha256"] != row["sha256"] or record["bytes"] != row["bytes"]:
+                        raise ValueError("Prepared source differs from its fresh resource audit")
+                    records.append(record)
+                if ({row["path"] for row in records} != set(plan["libraries"][library_id]["expected_source_paths"])
+                        or len(records) != len(plan["libraries"][library_id]["expected_source_paths"])):
+                    raise ValueError("Prepared Kontakt library omits/adds sources from the full inventory")
                 conversion_queue = lib_run / "conversion.json"
                 if not conversion_queue.exists():
-                    records = [source_record(source_root / Path(row["path"]).relative_to(audit["library_destination"]), source_root)
-                               for row in audit["prepared_files"] if Path(row["path"]).suffix.casefold() in {".nki", ".nkm"}]
                     batch = build_batch("kf22-" + library_id, library_id, records,
                                         inventory_manifest_sha256=audit["source_manifest_sha256"], capture_playback_context=True)
                     write_batch(conversion_queue, batch)
@@ -164,8 +200,13 @@ def execute(plan_path):
                     work = dict(schema_version=1, library_id=library_id, items=[
                         dict(id=item["id"], source=item["source"], status="pending") for item in load(conversion_queue)["items"]])
                     atomic_write_json(work_path, work)
+                validate_coverage(records, load(conversion_queue), work)
                 for item in work["items"]:
-                    if item["status"] in {"passed", "failed"}:
+                    if item["status"] == "passed":
+                        verify_receipt(load(item["candidate"]), load(item["receipt"]), Path(item["evidence_root"]),
+                                       verifier(), validator, resource_root=Path(plan["resource_root"]))
+                        continue
+                    if item["status"] == "failed":
                         continue
                     if time.monotonic() >= deadline:
                         raise TimeoutError("Kontakt full job reached its bounded duration")
@@ -280,7 +321,7 @@ def execute(plan_path):
         atomic_write_json(run / ("protection-after-" + str(os.getpid()) + ".json"), after)
         save(formal_unchanged=bool(before and before["formal"] == after["formal"]),
              pins_unchanged=bool(before and before["pins"] == after["pins"]), elapsed_seconds=time.monotonic() - started)
-    return 0 if state["status"] in {"validation_finished_pending_publication", "published_and_previews_dispatched"} else 1
+    return 0 if state["status"] in SUCCESS_STATUSES else 1
 
 
 if __name__ == "__main__":

@@ -51,6 +51,7 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
     code = run / "code"
     sources = sorted((ROOT / "src/music_learning").rglob("*.py"))
     sources += [ROOT / "scripts/native_host.py", ROOT / "scripts/instruments/run_kontakt_full_intake.py", assignment]
+    sources += [inventory / (key + ".json") for key in ("kontakt-factory", "css", "css-solo")]
     pins = {}
     for source in sources:
         target = code / source.relative_to(ROOT)
@@ -73,7 +74,9 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
                 pins_path=str(pins_path), probe=str(probe), empty_multi=str(frozen_empty),
                 resource_root=r"H:\music\Sound Library", runtime_result=str(prep / "runtime-result.json"),
                 protected_files=list(protected),
-                libraries={key: dict(result=str(prep / (key + "-result.json"))) for key in ("css", "css-solo", "kontakt-factory")},
+                libraries={key: dict(result=str(prep / (key + "-result.json")), expected_source_paths=[
+                    path for path in json.loads((inventory / (key + ".json")).read_bytes())["presets"]
+                    if Path(path).suffix.casefold() in {".nki", ".nkm"}]) for key in ("css", "css-solo", "kontakt-factory")},
                 publish=publish, preview_handoff=preview_handoff, max_seconds=24 * 3600,
                 service_url=f"http://{app['host']}:{app['port']}",
                 service_token_file=str(Path(app["data_root"]) / "session-token.local"))
