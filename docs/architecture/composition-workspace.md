@@ -41,3 +41,5 @@
 新测试经`run-tests.ps1`自动删除本次临时工程、录音和浏览器数据，仅在`runtime/test-reports`保留小报告与4K截图。未调用正式工程、音乐模型、正式渲染；未访问H音源库和NAS，未修改正在运行的音源验证及固定原生bundle。
 
 本次44项后端短回归通过；界面最终报告为`runtime/test-reports/studio-ui-1792713364555467100/report.json`，最终清理入口结果为`20261022-235602-035e0c9c.{xml,json}`。TypeScript、契约漂移检查、Ruff、轨道布局单元和NativeTransport单元通过。原曲切回重建时残留左栏滚动偏移的原失败已保留并修复；最初测试的音频元数据／Playwright方法名及编辑尚未稳定便拖动的失败记录也保留，不覆盖为成功。没有重跑整曲／30分钟或全库验证。
+
+正式发布为`bc53939dfce499f0382eb1ec79ad8996cdca1769`，描述`runtime/application-release.composition-20261023.local.json`已激活；默认启动器已实际重启并打开桌面，原生f056和桌面aa81五文件包保持不变。正式SDK只读确认健康、工程列表和四项笔记操作。`runtime/maintenance/composition-20261023/{before-release,after-release,intake-after-release}.json`记录正式九表/head、12项E固定文件及四native前后相同；未读取H两项固定文件。Kontakt准备／全量监督身份保持；Ample监督身份保持，原子验证进程随后自然结束，队列仍有未完成项并按磁盘预算等待，不代表整批结束。未创建或调整任何定时任务。
