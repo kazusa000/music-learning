@@ -8,14 +8,14 @@
  try{
   if(!window.mlDesktop)throw Error('Native desktop bridge missing');
   await until(()=>document.querySelector('.studio'),'Workspace did not load');
-  const state=await until(async()=>{const s=await call('engine.status');return s.status==='ready'&&s.project_id===project?s:null;},'Native engine not ready');
+  await until(async()=>{const s=await call('engine.status'),ids=[...document.querySelectorAll('.track-card[data-track]')].map(el=>el.dataset.track);return s.status==='ready'&&s.project_id===project&&s.view==='arrangement'&&ids.length&&ids.every(id=>s.monitor?.[id]);},'Current workspace graph not ready');
   report.checks.push('Real WebView2 and native engine ready');
   const button=label=>[...document.querySelectorAll('button')].find(el=>el.getAttribute('aria-label')===label||el.title===label||el.textContent.trim()===label);
   const play=await until(()=>{const el=button('播放');return el&&!el.disabled?el:null;},'Play button unavailable');play.click();
   await until(async()=>{const s=await call('engine.status');return s.playing&&s.peak>0;},'Native window did not start actual device output');
-  const id=Object.keys(state.monitor)[0];
+  const id=document.querySelector('.track-card[data-track]')?.dataset.track;if(!id)throw Error('Current track identity missing');
   const solo=document.querySelector('[aria-label="独奏 1"]');if(!solo)throw Error('Track solo missing');solo.click();
-  await until(async()=>{const s=await call('engine.status');return s.monitor[id].solo&&Object.entries(s.meters).every(([key,value])=>key===id||value===0);},'Solo did not silence other device tracks');
+  await until(async()=>{const s=await call('engine.status');report.lastState=s;return s.view==='arrangement'&&s.monitor?.[id]?.solo&&Object.entries(s.meters??{}).every(([key,value])=>key===id||value===0);},'Solo did not silence other device tracks');
   solo.click();
   report.checks.push('Play and live solo from native window controls');
   const original=[...document.querySelectorAll('.mode-switch button')].find(el=>el.textContent.includes('原曲'));original.click();

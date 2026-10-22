@@ -2,6 +2,16 @@
 
 ## 2026-10-22 恢复执行
 
+### c13f固定回归与工作台计时
+
+c13f96a固定源码配套f056原生bundle，`full-reuse` **505通过、1权限跳过、0失败**，197.61秒。`ui-reuse`4K八组再次通过，Browser音频/PCM/旧plan/JS0。正式未部署，当前没有长测运行。
+
+`metadata-v1/metadata-report.json`为7轨、6685音符、396秒E内MLFixture工程；音源目录明确指向独立E空库，不加载H采样器。20次全新renderer context/空HTTP缓存（服务和OS缓存暖）：轨道可见P95 **456.93ms**，点击最后轨并确认选中P95 **549.41ms**；最大交互644.85ms。native ready单列P951815.63ms，不把它算入/冒充元数据可交互，更不代表重型插件装载。实际API和原生设备，没有mock；0音乐修订、0render、Browser音频/PCM/JS0。
+
+实际桌面`desktop-reuse`第一轮停在探针错误：过早保存原曲monitor的ID，后续重建独奏查询不存在ID导致TypeError，产品页面error数组为空。新探针等待arrangement且DOM所有轨道在当前monitor中，从目标DOM读取稳定ID，并在过渡状态继续有界等待；不按某个乐器名或索引假定后端字典顺序。原失败保留，须新候选配套重跑实际桌面。
+
+固定源码探针入口新增可选`--probe ai`，默认acceptance兼容，实际导入Service包、源码清单、脚本SHA和native身份照常验证，仅资源ROOT指向原库；用于最终真实Codex复核。正式试听队列只读为1250 ready/2既有failed/0queued，key中的固定离线宿主和policy未因本次engine控制改变；后续部署不重置现有缓存或失败项。
+
 ### 同一完整执行清单的重开修复
 
 控制线程现在只在完整JSON执行清单逐内容相同、图没有错误且无failed节点时复用同一GraphSession，既支持已就绪，也支持初始装载中的重复请求。重新打开仍应用请求的位置/循环、推进generation和转移owner，保留监听值及错误计数；不重建已验证插件、不重读采样库。完整清单含工程/修订/时钟/程序/资源/路由等，不能仅凭一个相同graph_hash复用。内容改变、失败图和不同工程仍按原路径准备；旧窗口close不能关闭新owner的图，非法位置也不改变现有播放状态。
