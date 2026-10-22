@@ -2,7 +2,15 @@
 
 ## 2026-10-22 恢复执行
 
-### 当前唯一长测v7
+### v7结果与同图重开
+
+v7现已终态失败，所有自有进程退出；旧locator仅指向原报告。参考305秒与当前398.64秒（含尾音）完整通过，源时钟误差0、回环gap/discontinuity/错误0、所有六插件missed0、设备underrun/xrun0。失败不是这两段音频丢块：A/B后六个PID16012/47080/41952/50112/26132/41260，在`play_phase`再次open同一manifest时换成49900/5480/40424/16536/25576/36148。整曲结束后严格PID断言触发，因此30分钟没有开始。
+
+这暴露了完整路由图对同一编排open仍整图重建的通用规则缺口，会额外重读H采样库。后续修复必须在完整清单一致、图健康时复用现有节点，同时保留定位/循环/监听和owner/generation隔离；不能删PID断言、仅换参考PID或跳过同图重开来把失败写成通过。v7固定文件与14pin不改，前后正式九表/head14pin一致。
+
+另补齐计划中轻量工作台交互的20次P95实测入口：`prepare_ui --track-count 7 --notes-per-track 955 --duration-seconds 396`，`metadata.py`配套实际Edge测试。每次全新renderer/HTTP缓存，等7轨可见且点击最后一轨已生效，插件ready单列；真实API和新引擎，不mock。E内独立MLFixture工程和空音源目录，避免加载H目录；不播放/编辑正式音乐。当前只有Python/Ruff/JS静态检查，实际测试待串行运行，不能先称P95合格。
+
+### 当前唯一长测v7（启动时记录，现已结束）
 
 2bc6e4a固定源码按完整后端范围（service+engine+release）重跑，`full-io-v2` **501通过、1权限跳过、0失败**，224.44秒；前面的环境收集失败及旧测试失败原日志保留，不覆盖。候选`runtime/engine-release.io-aware-v2.local.json`仍未激活，原生保持ce4876，产品源码/web/native与03f325d相同，仅QA/文档与退出断言更新。
 

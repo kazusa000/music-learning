@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 
-def source_for(root: Path, release: Path | None, config: dict, harness: str) -> Path:
+def source_for(root: Path, release: Path | None, config: dict, harness: str | None) -> Path:
     if release is None:
         return root
     path = release.resolve()
@@ -18,6 +18,8 @@ def source_for(root: Path, release: Path | None, config: dict, harness: str) -> 
     for field in ('web_root', 'native_audio_bundle'):
         if Path(config[field]).resolve() != Path(record[field]).resolve():
             raise ValueError('UI fixture does not use the staged release: ' + field)
-    if hashlib.sha256((root / harness).read_bytes()).digest() != hashlib.sha256((source / harness).read_bytes()).digest():
+    # An external benchmark records its own witness hashes separately. Product
+    # source/config validation remains mandatory even without a bundled harness.
+    if harness is not None and hashlib.sha256((root / harness).read_bytes()).digest() != hashlib.sha256((source / harness).read_bytes()).digest():
         raise ValueError('UI harness differs from the staged Git snapshot')
     return source
