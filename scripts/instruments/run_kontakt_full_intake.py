@@ -178,7 +178,12 @@ def execute(plan_path, expected_plan_sha256):
                 raise TimeoutError("Prepared resource result did not arrive within this job budget")
             failure = path.with_name(path.stem.replace("-result", "-fail") + ".json")
             if failure.exists():
-                raise ValueError("Resource preparation failed: " + str(failure))
+                historical = plan.get("historical_preparation_failures", {})
+                if historical.get(str(failure)) != digest(failure):
+                    raise ValueError("Resource preparation failed: " + str(failure))
+            progress = plan.get("preparation_progress")
+            if progress and Path(progress).exists() and load(progress).get("status") == "failed":
+                raise ValueError("Current preparation attempt failed: " + str(progress))
             save(status="waiting_prepared_resources", waiting_for=str(path))
             time.sleep(10)
         value = load(path)

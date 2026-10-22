@@ -23,7 +23,7 @@ def sha(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handoff=False):
+def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handoff=False, preparation_progress=None):
     run = run.resolve()
     allowed = ROOT / "data/maintenance/instrument-intake"
     if run == allowed or not run.is_relative_to(allowed) or run.exists():
@@ -33,6 +33,10 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
         raise ValueError("Resource preparation reports must stay under instrument-intake maintenance")
     if preview_handoff and not publish:
         raise ValueError("Previews can only be handed off after explicit publication")
+    if preparation_progress is not None:
+        preparation_progress = Path(preparation_progress).resolve(strict=True)
+        if not preparation_progress.is_relative_to(prep):
+            raise ValueError("Preparation progress must stay within the selected evidence directory")
     probe = ROOT / "runtime/build/instrument-probe/kontakt-reader-b/ml_kontakt_probe.exe"
     build = json.loads((probe.parent / "build.json").read_bytes())
     if build.get("status") != "built" or sha(probe) != build.get("executable_sha256"):
@@ -80,7 +84,9 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
                     for key in ("css", "css-solo", "kontakt-factory")},
                 publish=publish, preview_handoff=preview_handoff, max_seconds=24 * 3600,
                 service_url=f"http://{app['host']}:{app['port']}",
-                service_token_file=str(Path(app["data_root"]) / "session-token.local"))
+                service_token_file=str(Path(app["data_root"]) / "session-token.local"),
+                preparation_progress=str(preparation_progress) if preparation_progress is not None else None,
+                historical_preparation_failures={str(path): sha(path) for path in prep.glob("*-fail.json")})
     atomic_write_json(run / "plan.json", plan)
     plan_sha256 = sha(run / "plan.json")
     result = dict(status="prepared", run_root=str(run), expected_sources=992, plan=str(run / "plan.json"),
@@ -106,6 +112,8 @@ if __name__ == "__main__":
     parser.add_argument("--start", action="store_true")
     parser.add_argument("--publish", action="store_true")
     parser.add_argument("--preview-handoff", action="store_true")
+    parser.add_argument("--preparation-progress", type=Path)
     args = parser.parse_args()
     print(json.dumps(prepare(args.run, args.prep, start=args.start, publish=args.publish,
-                             preview_handoff=args.preview_handoff), ensure_ascii=False))
+                             preview_handoff=args.preview_handoff,
+                             preparation_progress=args.preparation_progress), ensure_ascii=False))
