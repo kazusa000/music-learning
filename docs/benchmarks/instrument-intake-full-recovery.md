@@ -71,3 +71,9 @@ Kontakt库准备入口为`scripts/instruments/prepare_kontakt_batch.py`，限定
 新 `kontakt_audio_probe.py` 强制分离首次/重开两个startup context：首个context退出后，第二次由调用方安装独立验证的0乐器Multi，再加载第一次真实捕获状态。先验证状态字节/SHA和参数完整性，再比较两次完整参数、模块身份、实际解码音频和原生读数。多声道短句保持单音最少约333ms，超过6个音符的机架须拆分通道探针，不把大量音符压成几毫秒。7项生命周期/证据回归通过，包含首次退出早于空机架进入、坏状态/无声重开/参数恢复失败均不产生通过索引；这些夹具不是实际Kontakt验收。
 
 实际新控制保存了0乐器 `empty.nkm` 与Lua回执，但新的首开请求在60秒超时，尚未进入重开。自有进程均退出，私有default SHA恢复一致；栈位于插件初始化/默认Multi读取，此请求没有`state_base64`，不能把它归因于恢复状态失败。原始证据在 `data/maintenance/instrument-intake/20261022-resume/kontakt-clean-rack/`。下一步对照旧最小请求和新增模块绑定字段，并以官方Lua读回原始/派生Multi身份；NI容器结构等形和字节保留暂不等于语义可加载。
+
+### 发布后试听与外部素材边界
+
+`instrument_intake_previews.enqueue_published_previews`复用既有SDK `prepare_instrument_preview`：只在计划完整且新增条目已逐字匹配实际catalog后派发，先各型号代表再其余变体。E维护checkpoint保存固定幂等键，进程在API返回前中断可用同键续接；API错误只在显式重试时再派发，不自动重跑失败音频。返回的submitted仅表示交给既有试听队列，另列queued/loading/ready/failed/cancelled，不能把预热排队说成音频已就绪。4项回归通过，覆盖发布前拒绝、中断同键恢复、错误不循环和型号顺序；尚无本轮新目录实际发布，所以未对正式服务派发试听。
+
+用户明确没有额外AGMPk采样。Ample M的Planet Caravan保留`blocked_missing_sample_group`，不把其他采样冒充AGMPk，不无限重试；其余项目继续。H繁忙时不加载新样本，当前LP队列由单次`queue.json`统计为35项：15通过、9失败、1延后、10待测。LP的新2项HM2参数错读推翻了此前“仅SC重置、LP全部保留”的概括，后续须比较实际状态块及处理前后变化，不能仅按产品版本归因。所有失败原报告保留。
