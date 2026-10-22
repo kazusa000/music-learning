@@ -1,5 +1,13 @@
 # N7：默认发布前验收
 
+## 2026-10-22 恢复执行
+
+用户撤销暂停后恢复原目标。固定源码 `cec23c4`（包含 `a257a5b` 消费期限修复）的完整回归为 **451通过、1跳过、0失败**，193.22秒，证据 `n7/full-resume.log/xml`。跳过为Kontakt目录符号链接测试缺少创建权限，未放宽产品路径检查。该快照含另一项工作已经提交的Kontakt代码，未收入其未提交Ample文件或构建产物。
+
+新的唯一长测为 `n7/endurance-v5`，固定原生bundle `6381ced35b93da581e1a587d297997bbadf6195dced40cad5e0c51c88b69cec6`；`runtime/engine-acceptance-job.local.json`保存本次进程及目录。依次执行两首整曲及1800秒循环，结果未终态前不得宣称通过。v1–v4失败证据保持原样；正式服务和发布指针仍未变更。
+
+恢复前正式九表/head和14个固定文件SHA均与N1保护基线相同，见 `n7/resume-20261022-before.json`。本次候选描述为 `runtime/engine-release.resume-20261022.local.json`，只是暂存，尚未激活。
+
 2026-10-21。**进行中，尚未部署正式默认；整体目标保持 active。** N0–N6阶段已完成，见[计划](../plans/native-daw-migration.md)。此文随最终实测补齐，不将构建或短测当作整曲验收。
 
 ## 当前实现与修复

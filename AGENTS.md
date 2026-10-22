@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新N7恢复（2026-10-22）：用户明确恢复暂停目标，active。先读docs/benchmarks/native-engine-n7.md顶部恢复段。cec23c4固定源码含a257a5b期限修复，完整451过/1符号链接权限跳过/0败；本次唯一长测endurance-v5，定位runtime/engine-acceptance-job.local.json，固定bundle6381ced35b93da581e1a587d297997bbadf6195dced40cad5e0c51c88b69cec6。两首整曲+1800秒循环未终态不能称通过，不改固定运行文件、不开第二批。新候选runtime/engine-release.resume-20261022.local.json仅暂存，正式未部署；v1–v4原失败保留。恢复前九表/head14pin一致。其他工作已提交Kontakt保留、未提交Ample/obj等不暂存或清理，H/NAS/固定验证/历史拒绝边界不变。
+
 最新N7实际消费期限（2026-10-21）：目标active/正式仍未部署。endurance-v4已失败终止：两首整曲各通过（clock0/gap0），30分钟段543秒一个声部3迟到、设备欠载/xrun0；不能按旧locator声称运行或通过。节点期限现由实际消费QPC+输出序列算整块绝对deadline，覆盖全部层/重采样，保留1ms余量；仍2块/256MiB，不放宽迟到/欠载检查。初始/暂停替换预备2块才ready。动态夹具第20块实际12ms、最大DSP≥12000us、设备和声部丢块0，另装载中A/B取消恢复，deadline-metrics50项过；最新完整快照和长测待跑。新增最大DSP/往返诊断。主页去旧playback.get依赖，8组UI音频/PCM/旧plan/JS0。7eb053a旧候选已实际源服务HTTP SDK CLI4组过，但其原生bundle742667早于新deadline，禁止拿它做最终部署，须新提交/候选。App发布选择器/部署脚本有源码/web/native校验、停止+同一启动锁+中断标记，不碰DB。仅本目标早期pytest夹具20745文件/18227目录清理，空闲实增2.370GiB，9联接及36父目录跳过，前后九表/head14pin一致，N2固定run和旧拒绝目录不动。H/NAS/固定Pianoteq/其他工作文件边界不变。
 
 最新N7最终候选（2026-10-21）：整体目标active，正式未切默认。eba903a固定快照完整377后端通过、4K UI8组/实际桌面4组/真Codex再次通过（0render）。当前唯一长测endurance-v4，locator runtime/engine-acceptance-job.local.json，固定bundle742667abc6d0207538662c390084dfd8c62cef151d6b82a90e90f6a8918cbf4c；前三轮已终止且失败保留，不开第二批或改运行文件。v4完整三段/30分钟未结束，不能提前目标完成。N7已结束夹具7718文件/5792目录清理，空闲实增约0.913GiB；两个reparse与8父目录跳过，未改属性/未跟随。前后九表/head+14pin一致。新增发布选择器/构建器，准备Git源码副本+web内容SHA+固定bundle，正式指针尚未激活；默认入口将绕过工作树中他人未提交代码，不reset/stash/暂存其他工作。详见docs/benchmarks/native-engine-n7.md最新候选。
