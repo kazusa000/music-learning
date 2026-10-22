@@ -17,7 +17,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Music Learning API client; JSON output, no independent state"
     )
-    parser.add_argument("--url", default="http://127.0.0.1:8765")
+    parser.add_argument("--url", help="Override the endpoint in the local application configuration")
     parser.add_argument("--token-file", type=Path)
     sub = parser.add_subparsers(dest="command", required=True)
     call = sub.add_parser("call")

@@ -19,8 +19,13 @@ class APIError(Exception):
 
 class Client:
     def __init__(
-        self, url="http://127.0.0.1:8765", token=None, *, token_file: Path | None = None, transport=None
+        self, url=None, token=None, *, token_file: Path | None = None, transport=None
     ):
+        if url is None:
+            from .settings import Settings
+
+            configured = Settings.load()
+            url = f"http://{configured.host}:{configured.port}"
         if token is None:
             if token_file is None:
                 from .settings import Settings

@@ -19,6 +19,7 @@ def main():
     parser.add_argument('--release', type=Path, required=True)
     parser.add_argument('--fixture', type=Path, required=True)
     parser.add_argument('--directory', type=Path, required=True)
+    parser.add_argument('--port', type=int, default=8797)
     args = parser.parse_args()
     directory = args.directory.resolve()
     directory.relative_to(ROOT / 'data/maintenance/native-engine/n7')
@@ -28,17 +29,17 @@ def main():
     source.relative_to(ROOT / 'runtime/releases')
     fixture = json.loads((args.fixture / 'fixture.json').read_bytes())
     config = json.loads((args.fixture / 'app.local.json').read_bytes())
-    config.update(port=8797, web_root=release['web_root'], native_audio_bundle=release['native_audio_bundle'])
+    config.update(port=args.port, web_root=release['web_root'], native_audio_bundle=release['native_audio_bundle'])
     path = directory / 'app.local.json'
     path.write_text(json.dumps(config), encoding='utf-8')
     env = dict(os.environ, MUSIC_APP_CONFIG=str(path), PYTHONPATH=str(source / 'src'))
-    base = 'http://127.0.0.1:8797'
+    base = f'http://127.0.0.1:{args.port}'
     token = Path(config['data_root']) / 'session-token.local'
     report = dict(status='running', source_root=str(source), commit=release['commit'], checks=[])
     client = None
     try:
         with (directory / 'api.log').open('ab') as log, OwnedProcess([sys.executable, '-m', 'uvicorn',
-            'services.api.main:app', '--host', '127.0.0.1', '--port', '8797'], cwd=source, env=env,
+            'services.api.main:app', '--host', '127.0.0.1', '--port', str(args.port)], cwd=source, env=env,
             stdout=log, stderr=log):
             began = time.monotonic()
             while time.monotonic() - began < 20:
