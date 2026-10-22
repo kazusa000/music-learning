@@ -8,7 +8,7 @@ vendor metadata and only rewrite installation paths in the private profile.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 import hashlib
 import json
 import os
@@ -296,13 +296,20 @@ def _copy_one(source_root: Path, destination_root: Path, row: Mapping[str, Any])
 
 
 def prepare_runtime(source_root: Path, destination: Path, *, allowed_library_root: Path,
-                    checkpoint_path: Path, profile_relative: str = "UserData") -> dict[str, Any]:
+                    checkpoint_path: Path, profile_relative: str = "UserData",
+                    budget_probe: Callable[[], Mapping[str, Any]] | None = None,
+                    budget_check_interval: int = 64) -> dict[str, Any]:
     """Safely clone a staged portable runtime into a new library-owned path.
 
     ``checkpoint_path`` must be on a maintenance drive, outside the source and
     destination. Existing files are accepted only when they are provably the
     planned hardlink or byte-identical independent copy; nothing is replaced.
+    When supplied, ``budget_probe`` is checked at bounded file-operation
+    intervals. A denied window returns ``deferred_io`` with the completed
+    per-file checkpoint intact; it never marks that transient condition failed.
     """
+    if not 1 <= budget_check_interval <= 1024:
+        raise ValueError("Kontakt runtime budget check interval is outside its bound")
     source = _ordinary_directory(Path(source_root))
     allowed = _ordinary_directory(Path(allowed_library_root))
     destination_raw = _absolute(Path(destination))
@@ -357,9 +364,25 @@ def prepare_runtime(source_root: Path, destination: Path, *, allowed_library_roo
         dest = _ordinary_directory(dest)
     static_files, profile_files = [], []
     rows_by_path = {row["path"]: row for row in rows}
+    file_operations = 0
     for relative in sorted(rows_by_path, key=str.casefold):
         planned = rows_by_path[relative]
         recorded = completed.get(relative)
+        if budget_probe is not None and file_operations % budget_check_interval == 0:
+            try:
+                budget = budget_probe()
+            except Exception as error:
+                budget = {"allowed": False, "reason": "budget_probe_error", "error": str(error)}
+            if not isinstance(budget, Mapping) or type(budget.get("allowed")) is not bool:
+                budget = {"allowed": False, "reason": "invalid_budget_probe_result"}
+            if not budget["allowed"]:
+                state.update({
+                    "status": "deferred_io",
+                    "deferred_at_path": relative,
+                    "storage_budget": dict(budget),
+                })
+                _atomic_checkpoint(checkpoint, state)
+                return state
         if recorded is None:
             try:
                 recorded = _copy_one(source, dest, planned)
@@ -371,6 +394,7 @@ def prepare_runtime(source_root: Path, destination: Path, *, allowed_library_roo
                 state["failures"].append({"path": relative, "reason": str(error)})
                 _atomic_checkpoint(checkpoint, state)
                 return state
+            file_operations += 1
         else:
             if (not isinstance(recorded, dict) or recorded.get("path") != relative
                     or recorded.get("bytes") != planned["bytes"]
@@ -384,6 +408,7 @@ def prepare_runtime(source_root: Path, destination: Path, *, allowed_library_roo
                 raise ValueError("Kontakt runtime destination changed since its checkpoint: " + relative)
             recorded = current
             completed[relative] = current
+            file_operations += 1
         if planned["profile"]:
             profile_files.append(recorded)
         else:

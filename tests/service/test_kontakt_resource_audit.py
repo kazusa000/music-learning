@@ -105,6 +105,34 @@ def test_checkpoint_resumes_after_io_deferral_and_keeps_first_hash_evidence(tmp_
     assert len(state_after["completed"]) == 2
 
 
+def test_large_file_hash_defers_at_chunk_boundary_without_recording_partial_sha(tmp_path):
+    _, allowed, bank, destination, preparation = _prepared(
+        tmp_path, {"Instruments/Large.nki": b"x" * (2 * 1024 * 1024)}
+    )
+    checkpoint = tmp_path / "maintenance" / "chunk-resume.json"
+    calls = 0
+
+    def allow_file_then_defer_chunk():
+        nonlocal calls
+        calls += 1
+        return {"allowed": calls == 1, "reason": "fixture_chunk_pressure"}
+
+    deferred = audit_prepared_library(
+        destination, preparation, checkpoint, library_id="kontakt_factory_test",
+        source_manifest_sha256="d" * 64, allowed_library_root=allowed, bank_root=bank,
+        budget_probe=allow_file_then_defer_chunk, budget_chunk_bytes=1024,
+    )
+    state = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert deferred["status"] == "deferred_io"
+    assert state["completed"] == {}
+    assert state["events"][-1]["reason"] == "fixture_chunk_pressure"
+    assert state["events"][-1]["path"].endswith("Instruments/Large.nki")
+
+    resumed = _audit(destination, preparation, checkpoint, allowed, bank, source_sha="d" * 64)
+    assert resumed["status"] == "audited"
+    assert resumed["prepared_files_audited"] == 1
+
+
 def test_changed_prepared_file_fails_and_preserves_original_hash_record(tmp_path):
     _, allowed, bank, destination, preparation = _prepared(
         tmp_path, {"A.nicnt": b"first", "B.nki": b"second"}

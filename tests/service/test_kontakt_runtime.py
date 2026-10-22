@@ -93,6 +93,35 @@ def test_runtime_checkpoint_resumes_only_matching_files_and_rejects_conflict(tmp
     assert "Existing Kontakt runtime copy differs" in conflict["failures"][0]["reason"]
 
 
+def test_runtime_storage_pressure_defers_without_poisoning_checkpoint(tmp_path):
+    source = _source(tmp_path)
+    root = tmp_path / "Sound Library"
+    root.mkdir()
+    destination = root / "Kontakt" / "Runtime"
+    checkpoint = tmp_path / "maint" / "runtime.json"
+    calls = 0
+
+    def first_file_only():
+        nonlocal calls
+        calls += 1
+        return {"allowed": calls == 1, "reason": "fixture_pressure"}
+
+    deferred = prepare_runtime(source, destination, allowed_library_root=root,
+                               checkpoint_path=checkpoint, budget_probe=first_file_only,
+                               budget_check_interval=1)
+    assert deferred["status"] == "deferred_io"
+    assert deferred["deferred_at_path"]
+    assert deferred["completed"]
+    assert deferred["failures"] == []
+
+    resumed = prepare_runtime(source, destination, allowed_library_root=root,
+                              checkpoint_path=checkpoint,
+                              budget_probe=lambda: {"allowed": True, "reason": "fixture_idle"},
+                              budget_check_interval=1)
+    assert resumed["status"] == "prepared"
+    assert len(resumed["completed"]) == len(resumed["plan"]["files"])
+
+
 def test_runtime_rejects_source_reparse_points(tmp_path):
     source = tmp_path / "staging"
     source.mkdir()

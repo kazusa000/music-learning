@@ -566,7 +566,8 @@ def audit_prepared_library(destination: Path, preparation: Mapping[str, Any], ch
                            allowed_library_root: Path = DEFAULT_LIBRARY_ROOT,
                            bank_root: Path | None = None,
                            extra_resources: Mapping[str, Mapping[str, Any]] | None = None,
-                           budget_probe: Callable[[], Mapping[str, Any]] | None = None) -> dict[str, Any]:
+                           budget_probe: Callable[[], Mapping[str, Any]] | None = None,
+                           budget_chunk_bytes: int | None = None) -> dict[str, Any]:
     """Freshly hash prepared files and publish their immutable resource manifest.
 
     ``source_manifest_sha256`` identifies the source inventory only; the audit
@@ -574,7 +575,13 @@ def audit_prepared_library(destination: Path, preparation: Mapping[str, Any], ch
     reference resources previously fully audited under ``bank_root``. They are
     accepted only when their immutable audit manifest and file identity still
     match, avoiding a repeated full read of shared runtime binaries per library.
+    For large files, ``budget_chunk_bytes`` can request another storage sample
+    after each bounded amount of data. A denied sample discards the partial
+    digest and defers that file; only a completed full SHA is checkpointed.
     """
+    if budget_chunk_bytes is not None and (type(budget_chunk_bytes) is not int
+                                           or not 1024 <= budget_chunk_bytes <= 1024**3):
+        raise ValueError("Kontakt audit budget chunk size is outside its bound")
     allowed, source_root, bank, dest, identity = _build_plan(
         Path(destination), preparation, library_id=library_id,
         source_manifest_sha256=source_manifest_sha256,
@@ -736,12 +743,35 @@ def audit_prepared_library(destination: Path, preparation: Mapping[str, Any], ch
                         or transfer == "independent_copy" and same_file_now):
                     raise ValueError("Prepared Kontakt source relationship changed before hashing")
                 digest = hashlib.sha256()
+                bytes_since_budget_check = 0
                 with target.open("rb") as stream:
                     opened = os.fstat(stream.fileno())
                     if _signature(opened) != signature:
                         raise ValueError("Prepared Kontakt resource changed while opening")
                     for chunk in iter(lambda: stream.read(CHUNK_BYTES), b""):
                         digest.update(chunk)
+                        if budget_chunk_bytes is not None:
+                            bytes_since_budget_check += len(chunk)
+                            if bytes_since_budget_check >= budget_chunk_bytes:
+                                bytes_since_budget_check = 0
+                                try:
+                                    chunk_budget = budget_fn()
+                                    if (not isinstance(chunk_budget, Mapping)
+                                            or type(chunk_budget.get("allowed")) is not bool):
+                                        chunk_budget = {"allowed": False,
+                                                        "reason": "invalid_budget_probe_result"}
+                                except Exception as error:
+                                    chunk_budget = {"allowed": False,
+                                                    "reason": "budget_probe_error",
+                                                    "error": str(error)}
+                                if not chunk_budget["allowed"]:
+                                    _append_event(
+                                        state, status="deferred_io",
+                                        reason=str(chunk_budget.get("reason", "storage_budget")),
+                                        path=relative, budget=chunk_budget,
+                                    )
+                                    _atomic_json(checkpoint, state)
+                                    return _result(state, identity, checkpoint)
                     after = os.fstat(stream.fileno())
                 _, path_after = _plain_path(target, directory=False)
                 if _signature(after) != signature or _signature(path_after) != signature:
