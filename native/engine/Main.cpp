@@ -248,6 +248,24 @@ public:
                 const auto begin = (double)get(request,"loop_start_sample",graph ? graph->loopStart : 0.0);
                 const auto end = (double)get(request,"loop_end_sample",graph ? graph->loopEnd : (double)value["duration_samples"]);
                 const bool loop = (bool)get(request,"loop",graph ? graph->looping : false);
+                if(action=="open"&&graph&&graph->routed&&!graph->routed->isFailed()
+                   &&graph->routed->failure().isEmpty()
+                   &&JSON::toString(value,true)==JSON::toString(graph->manifest,true)){
+                    bool healthy=true,ready=false;
+                    const auto states=graph->routed->pluginValues(ready);
+                    if(auto* plugins=states.getDynamicObject())for(const auto& entry:plugins->getProperties())
+                        if(entry.value["status"].toString()=="failed")healthy=false;
+                    if(healthy){
+                        // Reopening the exact same execution manifest changes
+                        // transport/ownership, not the already verified banks.
+                        // Compare full contents, never just a claimed hash.
+                        graph->routed->seek(start,loop,begin,end);
+                        graph->origin=start;graph->playedSample.store(start);graph->read.store(0);
+                        graph->looping=loop;graph->loopStart=begin;graph->loopEnd=end;
+                        ++generation;toneCommand.store(-1);controlOwner=get(request,"owner_id").toString();
+                        graph->routed->setPlaying(play);filePlaying.store(play);committed=true;return status();
+                    }
+                }
                 if(action=="open"&&warmArrangement){
                     const bool matching=value["project_id"]==warmArrangement->manifest["project_id"]
                         &&value["view"].toString()=="arrangement";

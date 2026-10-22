@@ -18,11 +18,23 @@ class DynamicFixture final:public Fixture {
         if(next!=latency){latency=next;cursor=0;for(auto& channel:extra)channel.fill(0);setLatencySamples(128+latency);}
     }
 public:
-    DynamicFixture(){if(std::getenv("ML_DYNAMIC_LOAD_DELAY"))std::this_thread::sleep_for(std::chrono::milliseconds(200));}
+    DynamicFixture(){
+        if(const auto* path=std::getenv("ML_DYNAMIC_LOAD_GATE")){
+            const juce::File gate(juce::String::fromUTF8(path));
+            gate.getSiblingFile(gate.getFileName()+".entered").appendText("loading\n");
+            const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+            while(gate.existsAsFile()&&std::chrono::steady_clock::now()<deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if(gate.existsAsFile())throw std::runtime_error("Dynamic fixture loading gate timed out");
+        }
+        if(std::getenv("ML_DYNAMIC_LOAD_DELAY"))std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
     ~DynamicFixture()override{
         if(const auto* marker=std::getenv("ML_DYNAMIC_RELEASE_MARKER")){
             if(std::getenv("ML_DYNAMIC_RELEASE_HANG"))std::this_thread::sleep_for(std::chrono::seconds(5));
-            juce::File(juce::String::fromUTF8(marker)).appendText("released\n");
+            // Each destructor owns its evidence file. Concurrent processes
+            // must not race through seek-to-end on one appendText stream.
+            juce::File(juce::String::fromUTF8(marker)+".released-"+juce::Uuid().toString()).replaceWithText("released\n");
         }
     }
     void prepareToPlay(double rate,int frames)override{Fixture::prepareToPlay(rate,frames);select();firstProcess=true;processed=0;}

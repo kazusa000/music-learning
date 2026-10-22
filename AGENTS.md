@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新N7同图重开修复（2026-10-22）：active/正式未部署，无长测运行。新bundle f0563ad22e55a09049379daea6b6a61e74a8d54c22e4fea56d68e92166fbad6d仅engine控制变更，worker/runner/loopback与ce4876同SHA；健康完整manifest逐内容相同的open复用加载中/已加载图，仍定位、增generation/换owner、保持监听/错误计数，未信任单独graph_hash。原版真实两项PID重建失败保留；修后6专项（播放/结束重开、非法定位回滚、旧owner关闭隔离、实际构造器门控中的重开、伪造相同hash、双节点正常/卡死关闭）通过，59相关已过、旧1项generation夹具比较已修。退出标记改每实例独立文件避免共享append竞态，并核对正常[0,0]/卡死[1,1]原句柄退出码。仅新DynamicFixture变化，旧Fixture/宿主/固定库不动。完整新快照/界面20计时/最终长测待做；九表/head14pin一致。v7及历史报告不改，H/NAS/其他工作/旧拒绝边界同前。
+
 最新N7 v7终态（2026-10-22）：目标active/正式未部署，当前无长测运行。endurance-v7两首完整曲均clock/gap/underrun/xrun/插件missed0，但current-full开始的open重建了同一编排的全部worker：A/B后PID16012等变49900等，新增严格PID复用断言在完整曲结束触发，30分钟未开始；原报告/源码/bundle保留，前后九表14pin一致，旧locator不是运行证据。须修通用同一完整manifest重开复用，不放宽音频或PID检查，再新快照长测。已准备7轨/≥6684音符/396秒界面20次交互计时探针与E内独立空音源目录，静态检查过，实际未运行，不与长测并发。其他任务/H/NAS/固定验证/历史拒绝边界同前。
 
 最新N7慢盘候选（2026-10-22）：目标active/正式未部署。2bc6e4a固定完整后端(service+engine+release)501过/1权限跳过/0败，224.44秒；一次app环境误收模型测试缺mido/torch，及一次Windows子进程已退出但测试只接收NoSuchProcess失败，原记录保留，修的是测试退出语义，不改runner。当前唯一长测endurance-v7，runtime/engine-acceptance-job.local.json，源码2bc6e4a/bundle ce4876固定；已实查reference305-full运行、actual Python47212（wrapper7556），不能把未完成的三段称通过。启动前复用loading_budget对H三次busy0/1/1%、queue0，全空闲，原记录endurance-v7-storage.json；新顺序只载音源一次并核对PID复用。九表/head14pin前审计一致。不得修改v7固定脚本/bundle/报告或开第二批；H库不搬盘、不写，NAS/固定验证/其他任务/历史拒绝边界同前。

@@ -63,6 +63,62 @@ def test_routed_original_switch_retains_loaded_workers_and_applies_edits(service
         invoke(service, 'engine.close')
 
 
+@pytest.mark.parametrize('at_end', [False, True])
+def test_identical_routed_reopen_keeps_workers_monitor_and_owner_fence(service, project, tmp_path, at_end):
+    revision = graph_project(service, project, tmp_path)
+    a, b = revision['snapshot']['track_order'][:2]
+    first_owner, next_owner = c.new_id(), c.new_id()
+    try:
+        invoke(service, 'engine.open', dict(project_id=project['id'], owner_id=first_owner))
+        initial = ready(service)
+        pids = {key: value['pid'] for key, value in initial['plugins'].items()}
+        invoke(service, 'engine.monitor', dict(engine_session=initial['engine_session'], generation=initial['generation'],
+            tracks={a: dict(gain_db=-21), b: dict(mute=True)}))
+        if at_end:
+            from music_learning.engine.compiler import compile_files
+            manifest = compile_files(service, c.EngineOpen(project_id=project['id']))
+            # Seek to the real source/tail end, then observe the natural stop.
+            service.engine_broker.command('transport', dict(position_sample=manifest['duration_samples'] + manifest.get('tail_samples', 0) - 441,
+                playing=True, expected_generation=initial['generation']))
+            until = time.monotonic()+3
+            while time.monotonic()<until and invoke(service, 'engine.status')['playing']:
+                time.sleep(.01)
+            assert not invoke(service, 'engine.status')['playing']
+        else:
+            invoke(service, 'engine.transport', dict(engine_session=initial['engine_session'], generation=initial['generation'], playing=True))
+            time.sleep(.05)
+        from music_learning.engine.compiler import compile_files
+        manifest = compile_files(service, c.EngineOpen(project_id=project['id']))
+        before_rejected = invoke(service, 'engine.status')
+        with pytest.raises(ValueError, match='transport range'):
+            service.engine_broker.command('open', dict(manifest=manifest,
+                position_sample=manifest['duration_samples']+manifest.get('tail_samples',0)+1, playing=False))
+        unchanged = invoke(service, 'engine.status')
+        assert unchanged['generation']==before_rejected['generation'] and unchanged['owner_id']==first_owner
+        assert unchanged['playing'] is (not at_end)
+        opened = invoke(service, 'engine.open', dict(project_id=project['id'], position_sample=22050,
+            playing=False, owner_id=next_owner))
+        restored = ready(service)
+        assert {key: value['pid'] for key, value in restored['plugins'].items()} == pids
+        assert restored['position_sample'] == 22050 and not restored['playing']
+        assert restored['generation'] > initial['generation'] and restored['owner_id'] == next_owner
+        assert restored['monitor'][a]['gain_db'] == -21 and restored['monitor'][b]['mute']
+        # An old window cannot close the retained graph after ownership moves.
+        stale = invoke(service, 'engine.close', dict(owner_id=first_owner))
+        assert stale['owner_id'] == next_owner and stale['project_id'] == project['id']
+        invoke(service, 'engine.transport', dict(engine_session=opened['engine_session'], generation=opened['generation'],
+            playing=True, loop=True, loop_start_sample=0, loop_end_sample=44100))
+        time.sleep(.08)
+        played = invoke(service, 'engine.status')
+        assert played['playing'] and played['consumed_device_frames'] > 0 and played['meters'][a] > 0
+        assert played['meters'][b] == 0 and played['underruns'] == played['xruns'] == 0
+        assert all(p['missed_blocks'] == 0 for p in played['plugins'].values())
+        assert invoke(service, 'revisions.get', dict(project_id=project['id'])) == revision
+        assert invoke(service, 'jobs.list', dict(project_id=project['id'])) == []
+    finally:
+        invoke(service, 'engine.close')
+
+
 def dynamic_short_project(service, project, tmp_path, wav=None):
     import base64
     import json
@@ -96,6 +152,56 @@ def dynamic_short_project(service, project, tmp_path, wav=None):
         author='test', description='Independent bounded delay graph'), revision['id'])
 
 
+def test_identical_routed_open_during_loading_retains_inflight_workers(service, project, tmp_path, monkeypatch):
+    import psutil
+
+    revision = dynamic_short_project(service, project, tmp_path)
+    gate = tmp_path/'plugin-load-gate'
+    gate.write_text('hold', encoding='ascii')
+    entered = gate.with_name(gate.name+'.entered')
+    monkeypatch.setenv('ML_DYNAMIC_LOAD_GATE', str(gate))
+    try:
+        invoke(service, 'engine.open', dict(project_id=project['id']))
+        until = time.monotonic()+3
+        while not entered.exists() and time.monotonic()<until:
+            time.sleep(.005)
+        assert entered.exists(), 'The real plugin constructor did not enter the loading gate'
+        parent = psutil.Process(service.engine_broker.owner.process.pid)
+        def workers():
+            return {p.pid for p in parent.children() if p.name()=='ml_plugin_worker.exe'}
+        first = workers()
+        assert len(first)==2 and invoke(service, 'engine.status')['status']=='loading'
+        reopened = invoke(service, 'engine.open', dict(project_id=project['id'], position_sample=22050))
+        assert reopened['status']=='loading' and workers()==first
+        gate.unlink()
+        restored = ready(service)
+        assert restored['applied_revision']==revision['id'] and restored['position_sample']==22050
+        assert {value['pid'] for value in restored['plugins'].values()}==first
+        assert restored['underruns']==restored['xruns']==0
+    finally:
+        gate.unlink(missing_ok=True)
+        invoke(service, 'engine.close')
+
+
+def test_routed_open_does_not_trust_an_identical_claimed_graph_hash(service, project, tmp_path):
+    from music_learning.engine.compiler import compile_files
+
+    graph_project(service, project, tmp_path)
+    try:
+        invoke(service, 'engine.open', dict(project_id=project['id']))
+        initial = ready(service)
+        pids = {key: value['pid'] for key, value in initial['plugins'].items()}
+        manifest = compile_files(service, c.EngineOpen(project_id=project['id']))
+        # The claimed hash stays identical; actual execution metadata changes.
+        manifest['project_id'] = c.new_id()
+        service.engine_broker.command('open', dict(manifest=manifest, position_sample=0, playing=False))
+        changed = ready(service)
+        assert changed['project_id']==manifest['project_id']
+        assert {key: value['pid'] for key, value in changed['plugins'].items()}!=pids
+    finally:
+        invoke(service, 'engine.close')
+
+
 def test_worker_uses_actual_device_queue_deadline_without_premature_silence(service, project, tmp_path, monkeypatch):
     revision = dynamic_short_project(service, project, tmp_path)
     monkeypatch.setenv('ML_DYNAMIC_STEADY_DELAY', '1')
@@ -116,7 +222,9 @@ def test_worker_uses_actual_device_queue_deadline_without_premature_silence(serv
 
 @pytest.mark.parametrize('hang', [False, True])
 def test_routed_worker_releases_normally_with_bounded_hung_destructor_fallback(service, project, tmp_path, monkeypatch, hang):
-    import psutil
+    import ctypes
+    import json
+    from ctypes import wintypes
 
     revision = dynamic_short_project(service, project, tmp_path)
     snapshot = copy.deepcopy(revision['snapshot'])
@@ -132,14 +240,32 @@ def test_routed_worker_releases_normally_with_bounded_hung_destructor_fallback(s
         invoke(service, 'engine.open', dict(project_id=project['id']))
         state = ready(service)
         pids = [value['pid'] for value in state['plugins'].values()]
-        marker.unlink(missing_ok=True)
-        began = time.monotonic()
-        invoke(service, 'engine.close')
-        assert time.monotonic() - began < 4
-        assert not any(psutil.pid_exists(pid) for pid in pids)
-        assert marker.exists() is not hang
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]
+        kernel.OpenProcess.restype=wintypes.HANDLE
+        kernel.GetExitCodeProcess.argtypes=[wintypes.HANDLE,ctypes.POINTER(wintypes.DWORD)]
+        kernel.CloseHandle.argtypes=[wintypes.HANDLE]
+        handles = [kernel.OpenProcess(0x100000|0x1000,False,pid) for pid in pids]
+        codes=[]
+        try:
+            assert all(handles)
+            began = time.monotonic()
+            invoke(service, 'engine.close')
+            assert time.monotonic() - began < 4
+            for handle in handles:
+                code=wintypes.DWORD()
+                assert kernel.GetExitCodeProcess(handle,ctypes.byref(code))
+                codes.append(code.value)
+        finally:
+            for handle in handles:
+                if handle:
+                    kernel.CloseHandle(handle)
+        (tmp_path/'worker-exit-codes.json').write_text(json.dumps(codes),encoding='utf-8')
+        assert codes==([1,1] if hang else [0,0])
+        markers=list(tmp_path.glob(marker.name+'.released-*'))
+        assert bool(markers) is not hang
         if not hang:
-            assert marker.read_text().splitlines() == ['released', 'released']
+            assert len(markers)==2 and all(path.read_text()=='released\n' for path in markers)
     finally:
         invoke(service, 'engine.close')
 
