@@ -77,3 +77,11 @@ Kontakt库准备入口为`scripts/instruments/prepare_kontakt_batch.py`，限定
 `instrument_intake_previews.enqueue_published_previews`复用既有SDK `prepare_instrument_preview`：只在计划完整且新增条目已逐字匹配实际catalog后派发，先各型号代表再其余变体。E维护checkpoint保存固定幂等键，进程在API返回前中断可用同键续接；API错误只在显式重试时再派发，不自动重跑失败音频。返回的submitted仅表示交给既有试听队列，另列queued/loading/ready/failed/cancelled，不能把预热排队说成音频已就绪。4项回归通过，覆盖发布前拒绝、中断同键恢复、错误不循环和型号顺序；尚无本轮新目录实际发布，所以未对正式服务派发试听。
 
 用户明确没有额外AGMPk采样。Ample M的Planet Caravan保留`blocked_missing_sample_group`，不把其他采样冒充AGMPk，不无限重试；其余项目继续。H繁忙时不加载新样本，当前LP队列由单次`queue.json`统计为35项：15通过、9失败、1延后、10待测。LP的新2项HM2参数错读推翻了此前“仅SC重置、LP全部保留”的概括，后续须比较实际状态块及处理前后变化，不能仅按产品版本归因。所有失败原报告保留。
+
+### 已恢复后台串行批次
+
+新串行入口 `scripts/instruments/run_ample_factory_chain.py` 已隐藏启动，locator为忽略的 `runtime/ample-factory-chain.local.json`。2026-10-22 19:58:56 +02:00实际chain PID33888、包装PID38992；它在等待原LP supervisor PID42772（父14904、19:49:18创建），没有重复开启LP。独立核对checkpoint为`waiting_for_lp`，尚未启动子批次。LP仍35唯一项：15通过/9失败/1延后/10待测；之后使用已有固定M33（32待测+1缺采样）和SC45（45待测）队列，按顺序自动运行。
+
+chain以PID、创建时间、命令行、队列真实终态和固定pin核对交接，持有跨进程锁；CIM超时不当作进程退出，人工暂停/异常中断会阻塞链而非另开批次。7项实际进程/队列夹具回归与Ruff通过。各批沿用H盘空闲预算和原始报告，不自动重试失败项，不写正式catalog/工程。Kontakt与MODO后续真实控制等串行链结束或明确的独占窗口，当前控制准备不等于已执行。
+
+本轮代码收口再次只读核对正式九表/head、14项保护文件和1252项catalog，均与恢复前一致；证据为`20261022-resume/formal-after-code.json`及`pins-after-code.json`。本轮还没有新增入库条目。源码规则、探针和串行器已按主题提交；并发本地引擎与AD2 obj/pdb不混入。
