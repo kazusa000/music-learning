@@ -2,6 +2,18 @@
 
 ## 2026-10-22 恢复执行
 
+### 按进程隔离声学核对
+
+`ai-reuse-v2`的真实Codex事务、音符105和新applied_revision已通过，并检测到倍频14700Hz；但7350Hz残留高于原阈值，整项仍为失败。仅事前选择背景弱载波不能解释30秒后的残留，原报告/WAV保留；未提高音量/放宽阈值，不能断言残留来自工程或其他应用。
+
+新增仅诊断的`ml_process_loopback`，按[微软进程回环接口](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ne-audioclientactivationparams-audioclient_activation_type)过滤目标engine进程树；激活/生命周期参考[官方示例](https://github.com/microsoft/Windows-classic-samples/tree/main/Samples/ApplicationLoopback)，实现独立、有界（0.2–5秒）、只允许ml_engine目标并由Python再次核对当前自有PID/实际EXE身份。构建显式`build_engine.py --process-capture`，默认目标不含它；不重写生产四文件bundle。诊断源码/构建器SHA及EXE发布到独立不可变目录，调用前复核，拒绝覆盖证据。没有新建产品操作、改设备/系统音量或控制其他应用。
+
+初次真实虚拟流的device position每包返回0，不能当硬件帧位置使用；原始零值/逆序观察保留，进程诊断只按包QPC连续性和系统标志检查。端点长测/延迟仍使用原`ml_engine_loopback`及其device-position严格检查，未替换或放宽。初版PCM16转换在暂停时有约1.04e−5 RMS量化噪声，改float32保持原1e−6静音阈值；原记录保留。
+
+`process-isolation-v2`四组真实双WASAPI进程通过：目标9973Hz幅度0.00177634，兄弟进程7919Hz仅2.53e−7；暂停目标后RMS/两频幅度均精确0，独立端点正对照仍检测到兄弟进程；现有证据不可覆盖。进程捕获discontinuity/时间戳错误/包QPC丢帧逆序/非有限样本全0。没有读取H库或正式工程；所有自有engine/worker退出。生产bundle仍为f056，四文件SHA不变。
+
+AI探针回到标准A6/A7（1760/3520Hz），采集当前私有engine进程树；原3倍背景、最小幅度和旧频消失检查保留，新增float/QPC完整性检查。这个诊断证明Windows应用渲染流，不冒充最终端点/声学延迟；后者仍由独立端点长测和20次延迟记录承担。须用新固定源码真实跑完AI，再进行新长测和部署。
+
 ### 最终控制复核与声学探针背景
 
 05c80df候选的应用源码/后端测试范围与c13f逐项相同，只有桌面QA、固定探针入口及文档变化；native/web身份相同，`reuse-final-code-equivalence.json`保存完整差异。`desktop-reuse-v2`实际透明WebView2四组通过，240DPI/DPR2.5/Zoom1/foreground保持。`release-sdk-cli-reuse`真实HTTP/默认SDK/CLI五组通过，0render，未改正式工程。

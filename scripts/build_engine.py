@@ -1,5 +1,6 @@
 """Build an additive device engine; never rebuild or overwrite pinned hosts."""
 import hashlib
+import argparse
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--process-capture', action='store_true', help='Build only the separate process-loopback diagnostic')
+    args=parser.parse_args()
+    diagnostic_sources=['native/engine/ProcessLoopback.cpp','native/engine/AudioScheduling.h',
+                        'native/engine/CMakeLists.txt','scripts/build_engine.py']
+    def source_hashes():
+        return {name:hashlib.sha256((ROOT/name).read_bytes().replace(b'\r\n',b'\n')).hexdigest()
+                for name in diagnostic_sources}
+    diagnostic_before=source_hashes() if args.process_capture else None
     runtime = ROOT / "runtime"
     pin = json.loads((runtime / "live-host-build.local.json").read_bytes())
     library = Path(pin["runtime_library"])
@@ -29,7 +39,20 @@ def main():
         "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_CXX_COMPILER=cl", "-DCMAKE_C_COMPILER=cl",
         "-DCMAKE_MAKE_PROGRAM=" + str(runtime / "tooling/Scripts/ninja.exe"),
         "-DML_RUNTIME_LIBRARY=" + str(library)], env=env, check=True, cwd=ROOT)
-    subprocess.run([str(cmake), "--build", str(output), "--parallel", "2"], env=env, check=True)
+    command=[str(cmake), "--build", str(output), "--parallel", "2"]
+    if args.process_capture:
+        command += ['--target','ml_process_loopback']
+    subprocess.run(command, env=env, check=True)
+    if args.process_capture:
+        if source_hashes()!=diagnostic_before:
+            raise RuntimeError('Diagnostic sources changed during build')
+        executable=output/'bin/ml_process_loopback.exe'
+        metadata=dict(schema_version=1,executable_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
+            source_hash_policy='normalized LF text',source_files=diagnostic_before)
+        pending=output/'bin/process-loopback.build.partial.json'
+        pending.write_text(json.dumps(metadata,sort_keys=True),encoding='utf-8')
+        os.replace(pending,output/'bin/process-loopback.build.json')
+        return  # Never republish or modify the four production bundle members.
     binaries = output / "bin"
     files = {name: hashlib.sha256((binaries / name).read_bytes()).hexdigest() for name in
         ("ml_engine.exe", "ml_plugin_worker.exe", "ml_graph_runner.exe", "ml_engine_loopback.exe")}

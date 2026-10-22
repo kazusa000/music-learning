@@ -33,6 +33,10 @@ add_executable(ml_engine_loopback Loopback.cpp)
 target_compile_options(ml_engine_loopback PRIVATE /utf-8 /EHsc /W4)
 target_link_libraries(ml_engine_loopback PRIVATE ole32 uuid avrt)
 set_target_properties(ml_engine_loopback PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+add_executable(ml_process_loopback EXCLUDE_FROM_ALL ProcessLoopback.cpp)
+target_compile_options(ml_process_loopback PRIVATE /utf-8 /EHsc /W4)
+target_link_libraries(ml_process_loopback PRIVATE mmdevapi ole32 uuid avrt)
+set_target_properties(ml_process_loopback PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 add_executable(ml_plugin_worker "${CMAKE_CURRENT_SOURCE_DIR}/../plugin-worker/Main.cpp"
     "${JUCE_ROOT}/modules/juce_audio_formats/juce_audio_formats.cpp"
     "${JUCE_ROOT}/modules/juce_audio_formats/juce_audio_formats_flac_1.c"
