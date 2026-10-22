@@ -225,7 +225,7 @@ def execute(plan_path, expected_plan_sha256):
                 lib_run = run / library_id
                 lib_run.mkdir(exist_ok=True)
                 _resolve_root(lib_run)
-                destination = "Libraries/" + LIBRARIES[library_id]
+                destination = "Libraries/" + library_id
                 if (audit.get("library_id") != library_id or audit.get("bank_root") != "Kontakt"
                         or audit.get("installed_library", {}).get("bank_root") != "Kontakt"
                         or audit.get("library_destination") != destination
