@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 from datetime import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -222,6 +223,74 @@ def _read_queue(run_dir: Path, instrument: str, requested: int) -> tuple[dict, d
     return queue, status, derived
 
 
+def identity_set_sha256(instrument: str, requested: int, item_ids: list[str]) -> str:
+    """Fingerprint a sorted, fixed product/ID set, never mutable queue statuses."""
+    if (not isinstance(instrument, str) or not instrument or not isinstance(requested, int)
+            or requested < 1 or not isinstance(item_ids, list) or len(item_ids) != requested
+            or any(not isinstance(item_id, str) or not item_id for item_id in item_ids)
+            or item_ids != sorted(set(item_ids))):
+        raise ChainError("Malformed fixed queue identity set")
+    canonical = json.dumps({"schema_version": 1, "instrument": instrument,
+                            "requested": requested, "item_ids": item_ids},
+                           sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def queue_identity_sha256(queue: dict, instrument: str, requested: int) -> str:
+    """Fingerprint only the fixed product/ID set, never mutable queue statuses."""
+    items = queue.get("items")
+    if not isinstance(items, list):
+        raise ChainError("Queue has no fixed identity list")
+    if any(not isinstance(item, dict) for item in items):
+        raise ChainError("Queue identity list contains a malformed item")
+    item_ids = sorted(item.get("id") for item in items)
+    if (len(items) != requested or any(item.get("instrument") != instrument for item in items)
+            or len(set(item_ids)) != requested
+            or any(not isinstance(item_id, str) or not item_id for item_id in item_ids)):
+        raise ChainError(f"{instrument} queue does not match its fixed identity set")
+    return identity_set_sha256(instrument, requested, item_ids)
+
+
+def _validate_planned_identity(run: dict, queue: dict, instrument: str, requested: int) -> None:
+    expected_ids = run.get("item_ids")
+    expected_fingerprint = run.get("identity_sha256")
+    if (identity_set_sha256(instrument, requested, expected_ids) != expected_fingerprint
+            or queue_identity_sha256(queue, instrument, requested) != expected_fingerprint):
+        raise ChainError(f"{instrument} queue differs from the plan's fixed ID set/fingerprint")
+
+
+def _validate_source_queue(plan: dict) -> tuple[str, dict[str, list[str]]]:
+    source = plan.get("source_queue")
+    if (not isinstance(source, dict) or not isinstance(source.get("path"), str)
+            or not isinstance(source.get("sha256"), str)
+            or len(source["sha256"]) != 64
+            or any(char not in "0123456789abcdef" for char in source["sha256"])
+            or not isinstance(source.get("requested"), int) or source["requested"] < 1):
+        raise ChainError("The original source queue path, count, and SHA-256 must be pinned in the chain plan")
+    path = _under_intake(Path(source["path"]), "original source queue")
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != source["sha256"]:
+        raise ChainError("Original source queue changed since the chain plan was fixed")
+    queue = json.loads(raw)
+    items = queue.get("items") if isinstance(queue, dict) else None
+    if (not isinstance(items, list) or len(items) != source["requested"]
+            or queue.get("requested") != source["requested"]):
+        raise ChainError("Original source queue does not match its pinned item count")
+    by_instrument: dict[str, list[str]] = {}
+    all_ids = []
+    for item in items:
+        if (not isinstance(item, dict) or not isinstance(item.get("instrument"), str)
+                or not isinstance(item.get("id"), str) or not item["id"]):
+            raise ChainError("Original source queue contains a malformed identity")
+        by_instrument.setdefault(item["instrument"], []).append(item["id"])
+        all_ids.append(item["id"])
+    if len(set(all_ids)) != len(all_ids):
+        raise ChainError("Original source queue contains duplicate IDs")
+    for ids in by_instrument.values():
+        ids.sort()
+    return source["sha256"], by_instrument
+
+
 def queue_is_terminal(run_dir: Path, instrument: str, requested: int) -> tuple[bool, dict]:
     _, status, derived = _read_queue(run_dir, instrument, requested)
     complete = (derived["status"] in TERMINAL_RUN_STATES
@@ -257,13 +326,20 @@ def verify_pin(run_dir: Path) -> dict:
 def validate_plan(plan: dict) -> dict:
     if plan.get("schema_version") != 1 or plan.get("repository") != str(ROOT):
         raise ChainError("Chain plan must target this checkout and schema version 1")
+    source_sha256, source_ids = _validate_source_queue(plan)
     lp = plan.get("lp_gate", {})
     lp_run = _under_intake(Path(lp.get("run_dir", "")), "LP run directory")
-    if not isinstance(lp.get("pid"), int) or not lp.get("creation_time"):
+    if (not isinstance(lp.get("pid"), int) or not lp.get("creation_time")
+            or not isinstance(lp.get("requested"), int) or lp["requested"] < 1
+            or not isinstance(lp.get("identity_sha256"), str)):
         raise ChainError("LP gate requires the recorded PID and creation time")
-    queue, _, _ = _read_queue(lp_run, "AGLP", 35)
-    del queue
-    if (lp.get("instrument") != "AGLP" or lp.get("parent_pid") is None
+    queue, _, _ = _read_queue(lp_run, lp.get("instrument", ""), lp["requested"])
+    _validate_planned_identity(lp, queue, lp["instrument"], lp["requested"])
+    if (lp.get("item_ids") != source_ids.get(lp["instrument"])
+            or queue.get("parent_queue_sha256") != source_sha256):
+        raise ChainError("LP fixed identity set is not the source-queue subset for this run")
+    if (not isinstance(lp.get("instrument"), str) or not lp.get("instrument")
+            or lp.get("parent_pid") is None
             or not lp.get("parent_creation_time")):
         raise ChainError("LP gate must identify the existing AGLP supervisor process")
     if not lp.get("command_contains"):
@@ -272,8 +348,10 @@ def validate_plan(plan: dict) -> dict:
         raise ChainError("LP gate must pin the original supervisor wrapper command line")
     verify_pin(lp_run)
     children = plan.get("children", [])
-    if [(c.get("instrument"), c.get("requested")) for c in children] != [("AGM", 33), ("AGSC", 45)]:
-        raise ChainError("Only the prepared AGM33 then AGSC45 queues may follow the LP run")
+    child_instruments = [child.get("instrument") for child in children if isinstance(child, dict)]
+    if (not isinstance(children, list) or not children or len(child_instruments) != len(children)
+            or len(set(child_instruments)) != len(child_instruments)):
+        raise ChainError("The chain needs an explicit, unique prepared child sequence")
     checkpoint = _planned_file(Path(plan.get("checkpoint", "")), "chain checkpoint")
     saved_state = load_json(checkpoint) if checkpoint.exists() else None
     if saved_state and saved_state.get("chain_id") != plan.get("chain_id"):
@@ -283,7 +361,11 @@ def validate_plan(plan: dict) -> dict:
     resolved_children = []
     for index, child in enumerate(children):
         run_dir = _under_intake(Path(child.get("run_dir", "")), f"{child['instrument']} run directory")
-        _, status, queue_summary = _read_queue(run_dir, child["instrument"], child["requested"])
+        queue, status, queue_summary = _read_queue(run_dir, child["instrument"], child["requested"])
+        _validate_planned_identity(child, queue, child["instrument"], child["requested"])
+        if (child.get("item_ids") != source_ids.get(child["instrument"])
+                or queue.get("parent_queue_sha256") != source_sha256):
+            raise ChainError(f"{child['instrument']} fixed identity set is not the source-queue subset")
         complete, _ = queue_is_terminal(run_dir, child["instrument"], child["requested"])
         validate_child_position(index, child["instrument"], next_child, active_child,
                                 status.get("status"), queue_summary["counts"], complete)
@@ -294,6 +376,8 @@ def validate_plan(plan: dict) -> dict:
         raise ChainError("The configured Python runtime is missing")
     evidence_dir = _under_intake(Path(plan.get("evidence_dir", "")), "chain evidence directory")
     return {**plan, "lp_gate": {**lp, "run_dir": str(lp_run)},
+            "source_queue": {**plan["source_queue"], "path": str(_under_intake(
+                Path(plan["source_queue"]["path"]), "original source queue"))},
             "children": resolved_children, "python": str(python),
             "evidence_dir": str(evidence_dir), "checkpoint": str(checkpoint)}
 
@@ -347,9 +431,71 @@ def _state_write(path: Path, state: dict, status: str, **updates) -> dict:
     return state
 
 
+def _recover_lp_handoff(plan: dict, state: dict, checkpoint: Path, *, read_process,
+                        list_run_processes) -> dict:
+    """Resume only the expected safe LP handoff, retaining the prior blocked record."""
+    if state.get("reason") != "lp_exited_before_terminal_queue":
+        raise ChainError("Only the expected LP boundary-handoff block can be resumed")
+    prior_result = state.get("lp_result", {})
+    if (prior_result.get("status") != "paused_at_boundary"
+            or state.get("next_child") != 0 or state.get("active_child") is not None
+            or state.get("children")):
+        raise ChainError("LP handoff checkpoint has progressed beyond its resumable boundary")
+
+    lp = plan["lp_gate"]
+    run_dir = Path(lp["run_dir"])
+    pause_path = run_dir / "pause.request.json"
+    if pause_path.exists():
+        raise ChainError("LP still has a cooperative pause request; resume it through its fixed runner first")
+    queue, status, _ = _read_queue(run_dir, lp["instrument"], lp["requested"])
+    _validate_planned_identity(lp, queue, lp["instrument"], lp["requested"])
+    if status.get("status") == "paused_at_boundary":
+        raise ChainError("LP remains paused; do not rewrite its checkpoint to restart the chain")
+
+    live = []
+    for pid, parent_pid, created, command in (
+            (lp["pid"], lp["parent_pid"], lp["creation_time"], lp["command_contains"]),
+            (lp["parent_pid"], None, lp["parent_creation_time"], lp["parent_command_contains"])):
+        info = read_process(pid)
+        if info is not None and not _identity_matches(info, pid=pid, parent_pid=parent_pid,
+                                                       created=created, command_contains=command):
+            raise ChainError("Resumed LP PID/creation/command identity does not match the chain plan")
+        live.append(info)
+
+    run_dirs = [run_dir, *(Path(child["run_dir"]) for child in plan["children"])]
+    active = list_run_processes(run_dirs)
+    gate_is_live = all(info is not None for info in live)
+    if any(info is None for info in live) and any(info is not None for info in live):
+        raise ChainError("LP supervisor and wrapper are only partially observable")
+    if gate_is_live:
+        allowed = _descendant_pids(active, lp["parent_pid"])
+        unexpected = [process for process in active if process["pid"] not in allowed]
+        if unexpected or lp["pid"] not in allowed or lp["parent_pid"] not in allowed:
+            raise ChainError("Unexpected Ample run process exists during LP chain recovery")
+        next_status = "waiting_for_lp"
+    else:
+        complete, summary = queue_is_terminal(run_dir, lp["instrument"], lp["requested"])
+        if not complete or active:
+            raise ChainError("Resumed LP is neither active under the new gate nor fully terminal")
+        next_status = "lp_terminal_verified"
+
+    history = list(state.get("recovery_history", []))
+    history.append({"event": "resume_lp_handoff", "recorded_at": datetime.now().astimezone().isoformat(
+        timespec="seconds"), "previous_blocked_checkpoint": dict(state)})
+    recovered = {"schema_version": state["schema_version"], "chain_id": state["chain_id"],
+                 "created_at": state.get("created_at"), "recovery_history": history,
+                 "next_child": 0, "children": [], "status": next_status,
+                 "resumed_lp_gate": {"pid": lp["pid"], "parent_pid": lp["parent_pid"],
+                                     "creation_time": lp["creation_time"]}}
+    if next_status == "lp_terminal_verified":
+        recovered["lp_result"] = summary
+    return _state_write(checkpoint, recovered, next_status,
+                        recovered_at=datetime.now().astimezone().isoformat(timespec="seconds"))
+
+
 def supervise(plan: dict, checkpoint: Path, *, read_process=process_info,
               launch=subprocess.Popen, sleep=time.sleep, list_run_processes=_run_processes,
-              poll_seconds: float = 15) -> dict:
+              poll_seconds: float = 15, resume_lp_handoff: bool = False) -> dict:
     checkpoint = Path(checkpoint)
     state = load_json(checkpoint) if checkpoint.exists() else {
         "schema_version": 1, "chain_id": plan["chain_id"], "status": "waiting_for_lp",
@@ -358,6 +504,9 @@ def supervise(plan: dict, checkpoint: Path, *, read_process=process_info,
     }
     if state.get("chain_id") != plan["chain_id"] or state.get("schema_version") != 1:
         raise ChainError("Checkpoint does not belong to this chain plan")
+    if state.get("status") == "blocked" and resume_lp_handoff:
+        state = _recover_lp_handoff(plan, state, checkpoint, read_process=read_process,
+                                    list_run_processes=list_run_processes)
     if state.get("status") in {"completed", "blocked"}:
         if state["status"] == "completed":
             return state
@@ -383,7 +532,7 @@ def supervise(plan: dict, checkpoint: Path, *, read_process=process_info,
             if other_processes:
                 return _state_write(checkpoint, state, "blocked", reason="orphaned_or_other_run_process_active",
                                     active_processes=other_processes)
-            complete, result = queue_is_terminal(Path(lp["run_dir"]), "AGLP", 35)
+            complete, result = queue_is_terminal(Path(lp["run_dir"]), lp["instrument"], lp["requested"])
             if not complete:
                 return _state_write(checkpoint, state, "blocked", reason="lp_exited_before_terminal_queue",
                                     lp_result=result)
@@ -492,6 +641,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--poll-seconds", type=float, default=15)
+    parser.add_argument("--resume-lp-handoff", action="store_true",
+                        help="resume only a blocked checkpoint caused by the expected cooperative LP handoff")
     args = parser.parse_args()
     if args.poll_seconds < 1 or args.poll_seconds > 60:
         parser.error("poll interval must be between 1 and 60 seconds")
@@ -505,7 +656,8 @@ def main() -> int:
         raise ChainError("Checkpoint must remain inside the checkout")
     lock_path = checkpoint.with_name("chain.lock")
     with chain_lock(lock_path):
-        result = supervise(plan, checkpoint, poll_seconds=args.poll_seconds)
+        result = supervise(plan, checkpoint, poll_seconds=args.poll_seconds,
+                           resume_lp_handoff=args.resume_lp_handoff)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("status") == "completed" else 2
 

@@ -17,14 +17,31 @@ spec.loader.exec_module(chain)
 
 def _write_queue(run_dir: Path, instrument: str, states: list[str], run_status: str) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
+    queue_path = run_dir / "queue.json"
+    parent_queue_sha256 = None
+    if queue_path.is_file():
+        parent_queue_sha256 = json.loads(queue_path.read_text(encoding="utf-8")).get("parent_queue_sha256")
     items = [{"instrument": instrument, "id": f"{instrument}-{index:03}", "status": state}
              for index, state in enumerate(states)]
-    (run_dir / "queue.json").write_text(json.dumps({
+    queue = {
         "schema_version": 1, "requested": len(items), "counts": {instrument: len(items)}, "items": items,
-    }), encoding="utf-8")
+    }
+    if parent_queue_sha256:
+        queue["parent_queue_sha256"] = parent_queue_sha256
+    queue_path.write_text(json.dumps(queue), encoding="utf-8")
     (run_dir / "status.json").write_text(json.dumps({
         "status": run_status, "requested": len(items), "counts": {},
     }), encoding="utf-8")
+
+
+def _identity_sha(run_dir: Path, instrument: str, requested: int) -> str:
+    ids = _identity_ids(run_dir)
+    return chain.identity_set_sha256(instrument, requested, ids)
+
+
+def _identity_ids(run_dir: Path) -> list[str]:
+    queue = json.loads((run_dir / "queue.json").read_text(encoding="utf-8"))
+    return sorted(item["id"] for item in queue["items"])
 
 
 def _plan(tmp_path: Path) -> dict:
@@ -38,11 +55,18 @@ def _plan(tmp_path: Path) -> dict:
         "schema_version": 1,
         "chain_id": "ample-chain-test",
         "lp_gate": {"run_dir": str(lp), "pid": 401, "parent_pid": 40,
-                    "creation_time": "2026-10-22T19:49:18", "instrument": "AGLP",
-                    "command_contains": "E:\\lp\\pinned\\scripts\\run_ample_factory_validation.py run --run-dir E:\\lp"},
+                    "creation_time": "2026-10-22T19:49:18", "parent_creation_time": "2026-10-22T19:49:18",
+                    "instrument": "AGLP", "requested": 35, "item_ids": _identity_ids(lp),
+                    "identity_sha256": _identity_sha(lp, "AGLP", 35),
+                    "command_contains": "E:\\lp\\pinned\\scripts\\run_ample_factory_validation.py run --run-dir E:\\lp",
+                    "parent_command_contains": "E:\\lp\\pinned\\scripts\\run_ample_factory_validation.py"},
         "children": [
-            {"instrument": "AGM", "run_dir": str(m), "requested": 33},
-            {"instrument": "AGSC", "run_dir": str(sc), "requested": 45},
+            {"instrument": "AGM", "run_dir": str(m), "requested": 33,
+             "item_ids": _identity_ids(m),
+             "identity_sha256": _identity_sha(m, "AGM", 33)},
+            {"instrument": "AGSC", "run_dir": str(sc), "requested": 45,
+             "item_ids": _identity_ids(sc),
+             "identity_sha256": _identity_sha(sc, "AGSC", 45)},
         ],
         "python": sys.executable,
         "evidence_dir": str(tmp_path),
@@ -174,22 +198,43 @@ def test_validate_plan_accepts_active_child_and_completed_prior_run_on_resume(tm
     m = prepared_run("agm", "AGM", 33, ["passed"] * 10 + ["running"] + ["pending_staging"] * 22,
                      "running")
     sc = prepared_run("agsc", "AGSC", 45, ["pending_staging"] * 45, "prepared")
+    import hashlib
+    source_items = []
+    for run_dir in (lp, m, sc):
+        source_items.extend(json.loads((run_dir / "queue.json").read_text(encoding="utf-8"))["items"])
+    source_queue = intake / "source-queue.json"
+    source_raw = json.dumps({"requested": len(source_items), "items": source_items}).encode()
+    source_queue.write_bytes(source_raw)
+    source_sha256 = hashlib.sha256(source_raw).hexdigest()
+    for run_dir in (lp, m, sc):
+        queue_path = run_dir / "queue.json"
+        queue = json.loads(queue_path.read_text(encoding="utf-8"))
+        queue["parent_queue_sha256"] = source_sha256
+        queue_path.write_text(json.dumps(queue), encoding="utf-8")
     python = root / "data/envs/app/Scripts/python.exe"
     python.parent.mkdir(parents=True)
     python.write_bytes(b"python fixture")
     plan = {
         "schema_version": 1, "chain_id": "recovery-test", "repository": str(root),
         "checkpoint": str(evidence / "chain-state.json"), "evidence_dir": str(evidence),
+        "source_queue": {"path": str(source_queue), "sha256": source_sha256,
+                         "requested": len(source_items)},
         "python": str(python),
         "lp_gate": {
             "run_dir": str(lp), "pid": 401, "parent_pid": 40,
             "creation_time": "2026-10-22T19:49:18", "parent_creation_time": "2026-10-22T19:49:18",
-            "instrument": "AGLP", "command_contains": "lp validation command",
+            "instrument": "AGLP", "requested": 35,
+            "item_ids": _identity_ids(lp),
+            "identity_sha256": _identity_sha(lp, "AGLP", 35), "command_contains": "lp validation command",
             "parent_command_contains": "lp wrapper command",
         },
         "children": [
-            {"instrument": "AGM", "run_dir": str(m), "requested": 33},
-            {"instrument": "AGSC", "run_dir": str(sc), "requested": 45},
+            {"instrument": "AGM", "run_dir": str(m), "requested": 33,
+             "item_ids": _identity_ids(m),
+             "identity_sha256": _identity_sha(m, "AGM", 33)},
+            {"instrument": "AGSC", "run_dir": str(sc), "requested": 45,
+             "item_ids": _identity_ids(sc),
+             "identity_sha256": _identity_sha(sc, "AGSC", 45)},
         ],
     }
     state_path = Path(plan["checkpoint"])
@@ -205,6 +250,13 @@ def test_validate_plan_accepts_active_child_and_completed_prior_run_on_resume(tm
                                       "status": "lp_terminal_verified", "next_child": 1,
                                       "active_child": None}), encoding="utf-8")
     assert chain.validate_plan(plan)["children"][1]["instrument"] == "AGSC"
+
+    source_path = Path(plan["source_queue"]["path"])
+    source = json.loads(source_path.read_text(encoding="utf-8"))
+    source["items"][0]["name"] = "changed source metadata"
+    source_path.write_text(json.dumps(source), encoding="utf-8")
+    with pytest.raises(chain.ChainError, match="Original source queue changed"):
+        chain.validate_plan(plan)
 
 
 def test_chain_lock_rejects_a_second_process(tmp_path):
@@ -236,3 +288,124 @@ def test_chain_lock_rejects_a_second_process(tmp_path):
     finally:
         release.write_text("release", encoding="utf-8")
         process.wait(timeout=10)
+
+
+def test_queue_identity_fingerprint_ignores_mutable_status_but_pins_ids(tmp_path):
+    run_dir = tmp_path / "run"
+    _write_queue(run_dir, "AGLP", ["pending_staging"] * 2, "prepared")
+    queue_path = run_dir / "queue.json"
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    fingerprint = chain.queue_identity_sha256(queue, "AGLP", 2)
+    queue["items"][0]["status"] = "passed"
+    assert chain.queue_identity_sha256(queue, "AGLP", 2) == fingerprint
+    queue["items"][1]["id"] = "changed"
+    assert chain.queue_identity_sha256(queue, "AGLP", 2) != fingerprint
+
+
+def test_expected_lp_handoff_recovery_requires_resumed_identity_and_preserves_history(tmp_path):
+    plan = _plan(tmp_path)
+    lp = plan["lp_gate"]
+    lp_dir = Path(lp["run_dir"])
+    _write_queue(lp_dir, "AGLP", ["passed"] * 17 + ["failed"] * 10 + ["pending_staging"] * 8,
+                 "running")
+    checkpoint = tmp_path / "chain-state.json"
+    previous = {"schema_version": 1, "chain_id": plan["chain_id"], "status": "blocked",
+                "reason": "lp_exited_before_terminal_queue", "next_child": 0,
+                "active_child": None, "children": [],
+                "lp_result": {"status": "paused_at_boundary", "counts": {"passed": 17,
+                              "failed": 11, "pending_staging": 7}}}
+    checkpoint.write_text(json.dumps(previous), encoding="utf-8")
+    active = [
+        {"pid": lp["pid"], "parent_pid": lp["parent_pid"], "created": lp["creation_time"],
+         "command_line": lp["command_contains"]},
+        {"pid": lp["parent_pid"], "parent_pid": 900, "created": lp["parent_creation_time"],
+         "command_line": lp["parent_command_contains"]},
+    ]
+    by_pid = {entry["pid"]: entry for entry in active}
+    processes = [{"pid": lp["pid"], "parent_pid": lp["parent_pid"]},
+                 {"pid": lp["parent_pid"], "parent_pid": 900}]
+
+    recovered = chain._recover_lp_handoff(
+        plan, previous, checkpoint, read_process=lambda pid: by_pid.get(pid),
+        list_run_processes=lambda _dirs: processes,
+    )
+
+    assert recovered["status"] == "waiting_for_lp"
+    assert recovered["recovery_history"][0]["previous_blocked_checkpoint"]["reason"] == \
+        "lp_exited_before_terminal_queue"
+    assert recovered["recovery_history"][0]["previous_blocked_checkpoint"]["lp_result"]["counts"]["failed"] == 11
+    assert json.loads(checkpoint.read_text(encoding="utf-8"))["status"] == "waiting_for_lp"
+
+
+def test_expected_lp_handoff_recovery_refuses_changed_ids_or_live_pause_request(tmp_path):
+    plan = _plan(tmp_path)
+    lp = plan["lp_gate"]
+    lp_dir = Path(lp["run_dir"])
+    _write_queue(lp_dir, "AGLP", ["passed"] * 17 + ["failed"] * 10 + ["pending_staging"] * 8,
+                 "running")
+    checkpoint = tmp_path / "chain-state.json"
+    previous = {"schema_version": 1, "chain_id": plan["chain_id"], "status": "blocked",
+                "reason": "lp_exited_before_terminal_queue", "next_child": 0,
+                "active_child": None, "children": [],
+                "lp_result": {"status": "paused_at_boundary"}}
+    live = {
+        lp["pid"]: {"pid": lp["pid"], "parent_pid": lp["parent_pid"],
+                    "created": lp["creation_time"], "command_line": lp["command_contains"]},
+        lp["parent_pid"]: {"pid": lp["parent_pid"], "parent_pid": 900,
+                           "created": lp["parent_creation_time"],
+                           "command_line": lp["parent_command_contains"]},
+    }
+    processes = [{"pid": lp["pid"], "parent_pid": lp["parent_pid"]}]
+    (lp_dir / "pause.request.json").write_text(json.dumps({"action": "pause"}), encoding="utf-8")
+    with pytest.raises(chain.ChainError, match="pause request"):
+        chain._recover_lp_handoff(plan, previous, checkpoint, read_process=live.get,
+                                  list_run_processes=lambda _dirs: processes)
+    (lp_dir / "pause.request.json").unlink()
+    queue = json.loads((lp_dir / "queue.json").read_text(encoding="utf-8"))
+    queue["items"][0]["id"] = "tampered"
+    (lp_dir / "queue.json").write_text(json.dumps(queue), encoding="utf-8")
+    with pytest.raises(chain.ChainError, match="fixed ID set/fingerprint"):
+        chain._recover_lp_handoff(plan, previous, checkpoint, read_process=live.get,
+                                  list_run_processes=lambda _dirs: processes)
+
+
+def test_expected_lp_handoff_recovery_refuses_other_block_reasons(tmp_path):
+    plan = _plan(tmp_path)
+    checkpoint = tmp_path / "chain-state.json"
+    state = {"schema_version": 1, "chain_id": plan["chain_id"], "status": "blocked",
+             "reason": "other_run_process_active", "next_child": 0,
+             "active_child": None, "children": [],
+             "lp_result": {"status": "paused_at_boundary"}}
+    with pytest.raises(chain.ChainError, match="Only the expected LP boundary-handoff"):
+        chain._recover_lp_handoff(plan, state, checkpoint, read_process=lambda _pid: None,
+                                  list_run_processes=lambda _dirs: [])
+
+
+@pytest.mark.parametrize("progress", [
+    {"next_child": 1, "active_child": None, "children": []},
+    {"next_child": 0, "active_child": {"instrument": "AGM", "pid": 501}, "children": []},
+    {"next_child": 0, "active_child": None, "children": [{"instrument": "AGM"}]},
+])
+def test_expected_lp_handoff_recovery_refuses_progressed_chain_state(tmp_path, progress):
+    plan = _plan(tmp_path)
+    checkpoint = tmp_path / "chain-state.json"
+    state = {"schema_version": 1, "chain_id": plan["chain_id"], "status": "blocked",
+             "reason": "lp_exited_before_terminal_queue", "lp_result": {"status": "paused_at_boundary"},
+             **progress}
+    with pytest.raises(chain.ChainError, match="progressed beyond its resumable boundary"):
+        chain._recover_lp_handoff(plan, state, checkpoint, read_process=lambda _pid: None,
+                                  list_run_processes=lambda _dirs: [])
+
+
+def test_blocked_chain_does_not_recover_without_explicit_handoff_flag(tmp_path):
+    plan = _plan(tmp_path)
+    checkpoint = tmp_path / "chain-state.json"
+    checkpoint.write_text(json.dumps({
+        "schema_version": 1, "chain_id": plan["chain_id"], "status": "blocked",
+        "reason": "lp_exited_before_terminal_queue", "next_child": 0,
+        "active_child": None, "children": [],
+        "lp_result": {"status": "paused_at_boundary"},
+    }), encoding="utf-8")
+    with pytest.raises(chain.ChainError, match="checkpoint is blocked"):
+        chain.supervise(plan, checkpoint, read_process=lambda _pid: None,
+                        list_run_processes=lambda _dirs: [])

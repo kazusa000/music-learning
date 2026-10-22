@@ -16,6 +16,20 @@ with unfinished queue items, or a launch is ambiguous after interruption, the
 chain records `blocked` and waits for diagnosis; it does not restart, resume,
 or retry a run automatically.
 
+The one planned resource handoff is an LP cooperative pause. After its current
+item finishes, the fixed runner records `paused_at_boundary`; the chain records
+`blocked` with `lp_exited_before_terminal_queue` and does not launch AGM/AGSC.
+To resume that same chain, first remove the pause only through the fixed LP
+runner's `resume` action, then update the local plan's LP PID, wrapper PID,
+creation times, and exact command fragments to the newly started supervisor.
+The plan pins the original 113-item source-queue SHA plus each product's sorted
+ID set, count, and identity fingerprint. Run the chain with
+`--resume-lp-handoff`; recovery is accepted only for that exact blocked reason,
+with no progressed child, no remaining pause request, matching source/run
+fingerprints, matching live process identities, and no other Ample run tree.
+The complete prior blocked checkpoint is appended to `recovery_history` before
+the chain returns to `waiting_for_lp`. Any mismatch remains blocked for review.
+
 The chain verifies each prepared run's queue identity set and pinned source
 and host hashes before use. It does not edit a fixed queue or its pin, modify
 source libraries, touch formal projects/catalog data, or publish presets. A
@@ -31,6 +45,7 @@ data/envs/app/Scripts/python.exe scripts/instruments/run_ample_factory_chain.py 
 ```
 
 Validation covers the nonterminal-LP stop, continuing from a failed AGM queue
-to AGSC, and cross-process lock rejection. Real queue counts remain derived
-from each `queue.json` item list, not copied from a potentially stale status
-summary.
+to AGSC, narrowly recovering the expected cooperative LP handoff, rejecting
+changed IDs or process identities, and cross-process lock rejection. Real
+queue counts remain derived from each `queue.json` item list, not copied from a
+potentially stale status summary.
