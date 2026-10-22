@@ -1,5 +1,9 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 完整服务回归
+
+当前源码完整 service 回归为 559 通过、2 跳过，耗时 202.69 秒。日志与 JUnit 保存在 data/maintenance/instrument-intake/kf22/reports/service-final.{log,xml}（仅维护目录）。子进程继承实际源码 PYTHONPATH；前轮并发编辑期间的旧失败记录保留，不覆盖为成功。此结果覆盖服务和共享规则，不等于 Kontakt/Ample 全量实际发声或目录发布完成。资源准备源码已独立提交 1c18844，原始准备失败与修正 attempt 均保留。
+
 ## 2026-10-23 并行后台已启动
 
 最新授权允许跨来源并行。Ample 持续监督器继续同一原始队列；IO 暂缓时保持 24 小时有界等待，恢复 deferred/pending，不重测或改写已经失败/通过的条目。定位仍为 `runtime/ample-factory-chain.local.json`。00:12 只读快照为 LP 原批 17 通过/18 失败；AGM 3 通过、1 原失败、27 待测、1 IO 暂缓、1 缺 AGMPk，尚非整批终态。后续失败独立重试仍待原批结束。
