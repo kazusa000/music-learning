@@ -11,6 +11,10 @@ from music_learning.settings import ROOT
 from native_host import NativeHost
 
 
+def test_loading_budget_distinguishes_idle_resource_progress_and_absolute_limit():
+    subprocess.run([str(ROOT / 'runtime/build/engine-v1/bin/ml_loading_budget_probe.exe')], check=True, timeout=5)
+
+
 @pytest.fixture
 def node_case(tmp_path):
     descriptor = NativeHost(diagnostics=tmp_path / "inspect").call(dict(
@@ -21,6 +25,7 @@ def node_case(tmp_path):
         binary_sha256=descriptor["binary_sha256"], version=descriptor["version"],
         state_base64=descriptor["state_base64"],
         state_sha256=hashlib.sha256(__import__("base64").b64decode(descriptor["state_base64"])).hexdigest(),
+        description_xml=descriptor['description_xml'],
         parameters={ids["Gain"]: 1, ids["Mode"]: 0, ids["Sidechain Gain"]: .5}, sidechain=True)
     project = dict(sample_rate=48000, block_size=512, duration_samples=48000,
         ppq_offset=0, tempo=[dict(sample=0, bpm=120)], meter=[dict(sample=0, numerator=4, denominator=4)],
@@ -43,10 +48,29 @@ def node_case(tmp_path):
         report = json.loads((output / "report.json").read_bytes())
         assert report["ok"] is success, (process.returncode, report, process.stderr)
         audio = array("f")
-        audio.frombytes((output / "output.f32").read_bytes())
+        if (output / "output.f32").exists():
+            audio.frombytes((output / "output.f32").read_bytes())
         return report, list(audio[::2]), list(audio[1::2])
 
     return project, ids, save, run
+
+
+def test_legacy_node_without_cached_description_keeps_verified_discovery(node_case):
+    project, _, _, run = node_case
+    project['tracks'][0]['plugins'][0].pop('description_xml')
+    report, left, right = run([dict(sample=0, main=.1, side=.2, chase=True)])
+    assert report['initial']['status'] == 'ready'
+    assert left[128:] == pytest.approx([.2] * (len(left) - 128), abs=1e-6)
+    assert right == left
+
+
+@pytest.mark.parametrize('field,value', [('identifier', 'invented'), ('version', '0.0.invalid'),
+    ('description_xml', '<PLUGIN/>'), ('binary_sha256', '0' * 64), ('state_sha256', '0' * 64)])
+def test_cached_description_does_not_bypass_identity_or_state_checks(node_case, field, value):
+    project, _, _, run = node_case
+    project['tracks'][0]['plugins'][0][field] = value
+    report, left, right = run([], success=False)
+    assert report['error'] and left == right == []
 
 
 def test_stereo_sidechain_latency_and_input_ownership(node_case):

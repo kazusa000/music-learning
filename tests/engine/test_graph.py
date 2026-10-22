@@ -168,7 +168,7 @@ def test_cold_first_dsp_quantum_is_prefetched_without_silence(graph_case, tmp_pa
         action='inspect', plugin=dict(path=str(ROOT / 'runtime/build/engine-dynamic-fixture/MLDynamicFixture_artefacts/Release/VST3/MLDynamicFixture.vst3'))))['plugin']
     a, program = node('cold', 1, [.125] * 2048)
     plugin = program['tracks'][0]['plugins'][0]
-    for key in ('path', 'identifier', 'binary_sha256', 'version'):
+    for key in ('path', 'identifier', 'binary_sha256', 'version', 'description_xml'):
         plugin[key] = descriptor[key]
     a['plugin_project_path'] = save(program)
     monkeypatch.setenv('ML_DYNAMIC_FIRST_PROCESS_DELAY', '1')

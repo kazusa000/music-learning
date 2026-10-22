@@ -1,6 +1,7 @@
 #pragma once
 #include "PluginSource.h"
 #include "SharedNode.h"
+#include "LoadBudget.h"
 
 namespace mlengine {
 // Control/producer thread only. Each request retains exclusive ownership of the
@@ -13,6 +14,8 @@ class NodeSource final {
     uint64_t sequence=0, epoch=0;
     bool pending=false, failed=false;
     double requestedAt=0, configuredAt=0;
+    double inspectedAt=0;
+    LoadBudget loadBudget;
     uint64_t maximumRenderMicros=0,maximumRoundTripMicros=0;
     juce::String failure;
     void fail(const juce::String& message) {
@@ -27,7 +30,18 @@ class NodeSource final {
         DWORD exit=STILL_ACTIVE;
         if(GetExitCodeProcess(process.value,&exit)&&exit!=STILL_ACTIVE){fail("Graph worker exited: "+juce::String((int)exit));return;}
         const auto now=juce::Time::getMillisecondCounterHiRes();
-        if(shared->appliedEpoch.load()!=epoch&&now-configuredAt>45000)fail("Graph worker loading timed out");
+        if(shared->appliedEpoch.load()!=epoch){
+            if(now-inspectedAt>=250){
+                IO_COUNTERS io{};FILETIME created{},exited{},kernel{},user{};
+                const bool ioOk=GetProcessIoCounters(process.value,&io)!=0;
+                const bool cpuOk=GetProcessTimes(process.value,&created,&exited,&kernel,&user)!=0;
+                const auto ticks=[](const FILETIME& value){return ((uint64_t)value.dwHighDateTime<<32)|value.dwLowDateTime;};
+                loadBudget.observe(now,ioOk?io.ReadTransferCount:loadBudget.readBytes,
+                    ioOk?io.ReadOperationCount:loadBudget.readOperations,cpuOk?ticks(kernel)+ticks(user):loadBudget.cpu100ns);
+                inspectedAt=now;
+            }
+            if(loadBudget.expired(now))fail("Graph worker loading timed out at stage "+juce::String((int)shared->stage.load()));
+        }
         if(pending&&now-requestedAt>2000)fail("Graph worker processing stalled");
     }
 public:
@@ -66,10 +80,18 @@ public:
     NodeSource(const NodeSource&)=delete;
     NodeSource& operator=(const NodeSource&)=delete;
     ~NodeSource(){
-        if(shared)shared->quit.store(1);
-        if(job.value)TerminateJobObject(job.value,0);
-        if(process.value)WaitForSingleObject(process.value,2000);
+        requestClose();
+        // Control/background teardown only: let the plugin release resources
+        // and shared state normally before using the bounded crash fallback.
+        if(process.value&&WaitForSingleObject(process.value,750)!=WAIT_OBJECT_0){
+            if(job.value)TerminateJobObject(job.value,1);
+            WaitForSingleObject(process.value,2000);
+        }
         if(shared)UnmapViewOfFile(shared);
+    }
+    void requestClose(){
+        if(shared)shared->quit.store(1,std::memory_order_release);
+        if(requestEvent.value)SetEvent(requestEvent.value);
     }
     void configure(const juce::File& file) {
         if(pending)throw std::runtime_error("Graph program update requires an idle node");
@@ -82,13 +104,14 @@ public:
         for(size_t i=0;i<words.size();++i)shared->configHash[i].store(words[i]);
         shared->status.store(0);epoch=shared->programEpoch.fetch_add(1,std::memory_order_release)+1;
         program=text;configuredAt=juce::Time::getMillisecondCounterHiRes();
+        loadBudget=LoadBudget(configuredAt);inspectedAt=0;
         if(requestEvent.value)SetEvent(requestEvent.value);
     }
     bool ready(){inspect();return !failed&&shared->status.load(std::memory_order_acquire)==1&&shared->appliedEpoch.load()==epoch;}
     bool isFailed(){inspect();return failed;}
     bool isPending()const{return pending;}
     int pendingFrames()const{return (int)shared->frames;}
-    void waitReady(int milliseconds=45000,std::atomic<bool>* cancel=nullptr) {
+    void waitReady(int milliseconds=120000,std::atomic<bool>* cancel=nullptr) {
         const auto until=juce::Time::getMillisecondCounterHiRes()+milliseconds;
         while(!ready()){
             if(cancel&&cancel->load())throw std::runtime_error("Graph preparation cancelled");
@@ -148,6 +171,9 @@ public:
         value->setProperty("maximum_round_trip_micros",(juce::int64)maximumRoundTripMicros);
         value->setProperty("load_micros",(juce::int64)shared->loadMicros.load());
         value->setProperty("load_stage",(int)shared->stage.load());
+        value->setProperty("load_read_bytes",(juce::int64)loadBudget.readBytes);
+        value->setProperty("load_read_operations",(juce::int64)loadBudget.readOperations);
+        value->setProperty("load_cpu_micros",(juce::int64)(loadBudget.cpu100ns/10));
         value->setProperty("chase_count",(juce::int64)shared->chaseCount.load());
         value->setProperty("audio_buffer_bytes",(juce::int64)bytes());
         if(failed)value->setProperty("error",failure);return juce::var(value);

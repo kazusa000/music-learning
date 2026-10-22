@@ -49,7 +49,8 @@ inline int runNodeWorker(const String& name,const File& directory) {
                     shared->stage.store(1);
                     if(!renderer) {
                         const auto started=Time::getHighResolutionTicks();
-                        renderer=std::make_unique<TrackRenderer>(project,nullptr,true);
+                        renderer=std::make_unique<TrackRenderer>(project,nullptr,true,
+                            [shared](uint32_t stage){shared->stage.store(stage,std::memory_order_release);});
                         scheduling=std::make_unique<mlengine::AudioScheduling>();
                         shared->loadMicros.store((uint64_t)(Time::highResolutionTicksToSeconds(Time::getHighResolutionTicks()-started)*1000000));
                     }else renderer->update(project);

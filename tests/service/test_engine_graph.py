@@ -1,6 +1,8 @@
 import copy
 import time
 
+import pytest
+
 from conftest import invoke
 from music_learning import contracts as c
 from test_engine_plugins import ready
@@ -108,6 +110,29 @@ def test_worker_uses_actual_device_queue_deadline_without_premature_silence(serv
         assert all(value['missed_blocks'] == 0 for value in state['plugins'].values()), state
         assert state['meters'][revision['snapshot']['tracks'][0]['id']] > 0
         assert state['plugins'][revision['snapshot']['tracks'][0]['id']]['maximum_render_micros'] >= 12000, state
+    finally:
+        invoke(service, 'engine.close')
+
+
+@pytest.mark.parametrize('hang', [False, True])
+def test_routed_worker_releases_normally_with_bounded_hung_destructor_fallback(service, project, tmp_path, monkeypatch, hang):
+    import psutil
+
+    dynamic_short_project(service, project, tmp_path)
+    marker = tmp_path / 'normal-release.txt'
+    monkeypatch.setenv('ML_DYNAMIC_RELEASE_MARKER', str(marker))
+    if hang:
+        monkeypatch.setenv('ML_DYNAMIC_RELEASE_HANG', '1')
+    try:
+        invoke(service, 'engine.open', dict(project_id=project['id']))
+        state = ready(service)
+        pids = [value['pid'] for value in state['plugins'].values()]
+        marker.unlink(missing_ok=True)
+        began = time.monotonic()
+        invoke(service, 'engine.close')
+        assert time.monotonic() - began < 4
+        assert not any(psutil.pid_exists(pid) for pid in pids)
+        assert marker.exists() is not hang
     finally:
         invoke(service, 'engine.close')
 

@@ -97,7 +97,7 @@ def main():
         def opened(source):
             start = time.perf_counter()
             state = broker.command('open', dict(manifest=source, position_sample=0, playing=False))
-            while (state['status'] != 'ready' or state.get('applied_revision') != source['revision_id']) and time.perf_counter() - start < 65:
+            while (state['status'] != 'ready' or state.get('applied_revision') != source['revision_id']) and time.perf_counter() - start < 130:
                 time.sleep(.02)
                 state = broker.status()
                 if state.get('file_error'):

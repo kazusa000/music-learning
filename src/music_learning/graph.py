@@ -165,6 +165,8 @@ def compile_project(snapshot, revision_id, descriptors, paths, resources, *, tai
                 state_sha256=plugin.state_asset_id,
                 parameters=plugin.parameters,
             )
+            if descriptor.get("description_xml"):
+                spec["description_xml"] = descriptor["description_xml"]
             if plugin.resource_entrypoint:
                 spec["sfizz_sfz_path"] = resources[plugin.id]["entrypoint"]
             if any(e.get("plugin_id") == plugin.id for e in edges):

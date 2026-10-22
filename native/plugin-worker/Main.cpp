@@ -1,11 +1,15 @@
 #define NOMINMAX
+#include "VerifiedFormat.h"
 // Reuse the verified state/resource/VST3 loader without modifying its source
 // or replacing any running verification or legacy executable.
 #define main ml_offline_main
+#define VST3PluginFormatHeadless ml::WorkerVST3Format
 #include "../audio-host/Main.cpp"
+#undef VST3PluginFormatHeadless
 #undef main
 #include "../audio-host/Render.cpp"
 #include "../engine/SharedPlugin.h"
+#include "VerifiedPlugin.h"
 #include "TrackRenderer.h"
 #include <cstdio>
 #include "NodeWorker.h"

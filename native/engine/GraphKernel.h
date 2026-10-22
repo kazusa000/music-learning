@@ -290,6 +290,7 @@ public:
         for(size_t i=0;i<edges.size();++i)edges[i].slot=sideSlots[i];
         plan->audioBytes.store(retiredBytes);std::lock_guard lock(plan->mutex);plan->retained=retiredPrograms;
     }
+    ~GraphKernel(){for(auto& node:nodes)if(node->worker)node->worker->requestClose();}
     GraphKernel(const var& manifest,int64_t start,bool loop,int64_t begin,int64_t end,bool offline=false,std::atomic<bool>* stopping=nullptr,size_t available=budget)
         :cancel(stopping),rate((double)manifest["sample_rate"]),origin(start),processingSample(start),loopStart(begin),loopEnd(end),looping(loop),strict(offline){
         if(!(rate>=8000&&rate<=192000)||start<0||(loop&&(begin<0||end<=begin)))throw std::runtime_error("Invalid graph source clock");
@@ -345,7 +346,7 @@ public:
         // Workers start concurrently above. Polling here belongs only to the
         // preparation/producer path, never to the audio device callback.
         for(auto& node:nodes)if(node->worker){
-            try{node->worker->waitReady(45000,cancel);}catch(...){if(strict||(cancel&&cancel->load()))throw;}
+            try{node->worker->waitReady(120000,cancel);}catch(...){if(strict||(cancel&&cancel->load()))throw;}
         }
         plan();
     }
@@ -487,7 +488,7 @@ public:
             }
             nodes[i]->worker->configure(changed[i]);
         }
-        for(auto& node:nodes)if(node->worker)node->worker->waitReady(45000,cancel);
+        for(auto& node:nodes)if(node->worker)node->worker->waitReady(120000,cancel);
         for(size_t i=0;i<nodes.size();++i){
             if(nodes[i]->worker&&(nodes[i]->worker->latency()!=nodes[i]->arrival-nodes[i]->inputDelay||nodes[i]->worker->pluginLatencies()!=nodes[i]->pluginDelays)){
                 nodes[i]->invalidLatency.store(true);replanWanted=true;

@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新N7加载排查（2026-10-22）：active/正式未部署；endurance-v5终态失败，两首整曲均clock/gap/late/underrun0，但重载Pianoteq超时，30分钟未开始，不按旧locator称运行。后续Keyscape也复现加载超时，非已确认单插件缺陷。新worker正常退出750ms后兜底强杀，加载阶段/CPU/I/O诊断、已验描述缓存避免重复类扫描但保留DLL/实际类版本/完整状态身份，旧无描述仍扫描。仅有实际进展的加载可超过45秒，45秒后空闲>5秒拒绝、绝对120秒；DSP期限/2块256MiB及发声入库检查不改。59相关回归过，真实重载仍未验收。当前独立reopen-stack-v4抓自有worker栈未终态（导出符号名不能当私有语义），v1–v5及排查原失败保留；不重开长测、不部署。其他Ample/构建probe脚本/obj等不暂存清理，H/NAS/固定验证/旧拒绝边界同前。
+
 最新N7恢复（2026-10-22）：用户明确恢复暂停目标，active。先读docs/benchmarks/native-engine-n7.md顶部恢复段。cec23c4固定源码含a257a5b期限修复，完整451过/1符号链接权限跳过/0败；本次唯一长测endurance-v5，定位runtime/engine-acceptance-job.local.json，固定bundle6381ced35b93da581e1a587d297997bbadf6195dced40cad5e0c51c88b69cec6。两首整曲+1800秒循环未终态不能称通过，不改固定运行文件、不开第二批。新候选runtime/engine-release.resume-20261022.local.json仅暂存，正式未部署；v1–v4原失败保留。恢复前九表/head14pin一致。其他工作已提交Kontakt保留、未提交Ample/obj等不暂存或清理，H/NAS/固定验证/历史拒绝边界不变。
 
 最新N7实际消费期限（2026-10-21）：目标active/正式仍未部署。endurance-v4已失败终止：两首整曲各通过（clock0/gap0），30分钟段543秒一个声部3迟到、设备欠载/xrun0；不能按旧locator声称运行或通过。节点期限现由实际消费QPC+输出序列算整块绝对deadline，覆盖全部层/重采样，保留1ms余量；仍2块/256MiB，不放宽迟到/欠载检查。初始/暂停替换预备2块才ready。动态夹具第20块实际12ms、最大DSP≥12000us、设备和声部丢块0，另装载中A/B取消恢复，deadline-metrics50项过；最新完整快照和长测待跑。新增最大DSP/往返诊断。主页去旧playback.get依赖，8组UI音频/PCM/旧plan/JS0。7eb053a旧候选已实际源服务HTTP SDK CLI4组过，但其原生bundle742667早于新deadline，禁止拿它做最终部署，须新提交/候选。App发布选择器/部署脚本有源码/web/native校验、停止+同一启动锁+中断标记，不碰DB。仅本目标早期pytest夹具20745文件/18227目录清理，空闲实增2.370GiB，9联接及36父目录跳过，前后九表/head14pin一致，N2固定run和旧拒绝目录不动。H/NAS/固定Pianoteq/其他工作文件边界不变。

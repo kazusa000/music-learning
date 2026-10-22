@@ -19,6 +19,12 @@ class DynamicFixture final:public Fixture {
     }
 public:
     DynamicFixture(){if(std::getenv("ML_DYNAMIC_LOAD_DELAY"))std::this_thread::sleep_for(std::chrono::milliseconds(200));}
+    ~DynamicFixture()override{
+        if(const auto* marker=std::getenv("ML_DYNAMIC_RELEASE_MARKER")){
+            if(std::getenv("ML_DYNAMIC_RELEASE_HANG"))std::this_thread::sleep_for(std::chrono::seconds(2));
+            juce::File(juce::String::fromUTF8(marker)).appendText("released\n");
+        }
+    }
     void prepareToPlay(double rate,int frames)override{Fixture::prepareToPlay(rate,frames);select();firstProcess=true;processed=0;}
     void reset()override{Fixture::prepareToPlay(getSampleRate(),getBlockSize());cursor=0;for(auto& channel:extra)channel.fill(0);}
     const juce::String getName()const override{return "MLDynamicFixture";}

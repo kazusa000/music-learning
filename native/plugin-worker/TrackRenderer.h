@@ -127,16 +127,19 @@ class TrackRenderer final : public AudioSource {
         else require(preceding==latency,"Worker plugin latency changed; reopen track");
     }
 public:
-    explicit TrackRenderer(const var& value, mlengine::PluginRing* diagnostics=nullptr,bool graph=false) :graphMode(graph) {
+    explicit TrackRenderer(const var& value, mlengine::PluginRing* diagnostics=nullptr,bool graph=false,
+                           std::function<void(uint32_t)> loading={}) :graphMode(graph) {
         formats.registerBasicFormats(); project=value; track=array(value,"tracks")[0];
         rate=number(project,"sample_rate",44100); quantum=(int)integer(project,"block_size",512);
         require(rate>=8000&&rate<=192000&&quantum>=16&&quantum<=8192,"Invalid worker clock");
         makeTimeline();
         for(auto spec:array(track,"plugins")) {
             if(diagnostics)diagnostics->loadStage.store(1);
+            if(loading)loading(1);
             auto initial=spec.clone();initial.getDynamicObject()->removeProperty("parameters");
-            auto plugin=load(initial,rate,quantum);
+            auto plugin=loadWorkerPlugin(initial,rate,quantum);
             if(diagnostics)diagnostics->loadStage.store(2);
+            if(loading)loading(2);
             std::map<String,float> values;
             for(auto* value:plugin->getParameters())values[parameterId(value)]=value->getValue();
             baseline.push_back(std::move(values));
@@ -151,6 +154,7 @@ public:
             plugin->setNonRealtime(needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()));
             plugin->setPlayHead(timeline.get());plugin->setRateAndBufferSizeDetails(rate,quantum);plugin->prepareToPlay(rate,quantum);
             if(diagnostics)diagnostics->loadStage.store(3);
+            if(loading)loading(3);
             if(needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()))MessageManager::getInstance()->runDispatchLoopUntil(10000);
             latency+=plugin->getLatencySamples();plugins.push_back(std::move(plugin));
         }
@@ -164,6 +168,7 @@ public:
         activeNotes.resize(plugins.size());rebuildAutomation();
         graphExpected.assign(plugins.size(),std::numeric_limits<int64>::min());
         if(diagnostics)diagnostics->loadStage.store(4);
+        if(loading)loading(4);
     }
     ~TrackRenderer() override {for(auto& plugin:plugins){plugin->releaseResources();plugin->setPlayHead(nullptr);}}
     void prepareToPlay(int,double) override {}
