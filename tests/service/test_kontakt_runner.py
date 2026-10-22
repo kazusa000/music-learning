@@ -110,8 +110,13 @@ def test_runner_accepts_receipt_ack_then_stops_its_complete_process_tree(tmp_pat
     assert len(execution["observed_output_sha256"]) == 64
 
     child_pid = int(child_pid_path.read_text(encoding="ascii"))
-    with pytest.raises(psutil.NoSuchProcess):
+    # Windows may still expose the terminated process object while handles
+    # are draining. Both an absent PID and a completed wait prove termination;
+    # an actually live child must still fail with TimeoutExpired.
+    try:
         psutil.Process(child_pid).wait(timeout=3)
+    except psutil.NoSuchProcess:
+        pass
 
 
 def test_runner_timeout_kills_only_its_owned_process_tree_and_records_failure(tmp_path):

@@ -14,6 +14,8 @@
 
 前端/桌面夹具JSON显式UTF-8，防止系统默认GBK误解中文路径；固定发布验收入口校验源码清单、实际导入包位置、native bundle与代码摘要，只将资源路径指向原仓库，不把运行时代码切回可变工作树。QA代码静态检查通过；正式仍未部署，整体目标active。
 
+f4bb46c将上述QA顺序和固定发布入口存档。应用src/services/native/web与03f325d逐项manifest相同，native/web SHA相同，证据`io-aware-code-equivalence.json`；每段播放检查体AST逐项相同，证据`phase-check-equivalence.json`。首次误将模型测试也交给app环境，因该隔离环境不含mido/torch而收集失败，原`full-io-aware`日志保留，不安装/调用模型。随后服务套件453通过/1权限跳过/1失败：Kontakt进程树测试的wait已返回，但测试错误地只接受NoSuchProcess异常。Windows退出对象尚可查询不是活进程；现接受成功wait或PID已消失，活进程仍因3秒TimeoutExpired失败，不改runner/JobObject或固定验证器。四项`child-termination`回归通过。新固定快照还需完整后端范围（service+engine+release）重跑，原失败不覆盖。
+
 ### 最新装载收口
 
 8be052a固定源码最终 `full-final-short` **500通过、1符号链接权限跳过、0失败**，187.45秒。先前一次为新Ample标签测试使用相对运行队列路径，一次为较长basetemp触及Windows路径上限；保持固定源码、在项目运行目录使用短临时根后整套通过，未修改固定验证器或放宽断言。
