@@ -9,6 +9,8 @@ import base64
 from contextlib import contextmanager
 import hashlib
 import json
+import os
+import subprocess
 import struct
 from pathlib import Path
 
@@ -560,6 +562,81 @@ def test_fullrunner_resume_evidence_rejects_checkpoint_path_escape(tmp_path, fie
 
     with pytest.raises(ValueError, match="evidence escaped its owned item directory"):
         resume_evidence(item, library_run)
+
+
+def _directory_reparse_or_skip(link, target):
+    if os.name == "nt":
+        command = "mklink /J " + subprocess.list2cmdline([str(link), str(target)])
+        result = subprocess.run(["cmd.exe", "/d", "/c", command], capture_output=True, text=True)
+        if result.returncode:
+            pytest.skip(f"directory junction fixture is unavailable: {result.stderr or result.stdout}")
+        return
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"directory reparse fixture is unavailable: {error}")
+
+
+def _remove_directory_reparse(link):
+    if os.name == "nt":
+        link.rmdir()
+    else:
+        link.unlink()
+
+
+def test_fullrunner_resume_evidence_rejects_library_root_reparse_before_resolving_children(
+    tmp_path, monkeypatch,
+):
+    from music_learning import kontakt_import
+
+    real_root, item = _resume_evidence_fixture(tmp_path)
+    linked_root = tmp_path / "linked-library-run"
+    _directory_reparse_or_skip(linked_root, real_root)
+    item.update({
+        "candidate": str(linked_root / "i" / item["id"][-12:] / "candidate.json"),
+        "receipt": str(linked_root / "i" / item["id"][-12:] / "a" / "receipt.json"),
+        "evidence_root": str(linked_root / "i" / item["id"][-12:] / "a"),
+    })
+    resolved_children = []
+    original_resolve_under = kontakt_import._resolve_under
+
+    def track_child_resolution(*args, **kwargs):
+        resolved_children.append(args[1])
+        return original_resolve_under(*args, **kwargs)
+
+    monkeypatch.setattr(kontakt_import, "_resolve_under", track_child_resolution)
+
+    try:
+        with pytest.raises(ValueError, match="root contains a link or reparse point"):
+            resume_evidence(item, linked_root)
+        assert resolved_children == []
+    finally:
+        _remove_directory_reparse(linked_root)
+
+
+def test_fullrunner_reverify_conversion_rejects_batch_root_reparse_before_reading_evidence(
+    tmp_path, monkeypatch,
+):
+    from music_learning import kontakt_import
+
+    item, real_root = _conversion_resume_fixture(tmp_path)
+    linked_root = tmp_path / "linked-batch-root"
+    _directory_reparse_or_skip(linked_root, real_root)
+    resolved_children = []
+    original_resolve_under = kontakt_import._resolve_under
+
+    def track_child_resolution(*args, **kwargs):
+        resolved_children.append(args[1])
+        return original_resolve_under(*args, **kwargs)
+
+    monkeypatch.setattr(kontakt_import, "_resolve_under", track_child_resolution)
+
+    try:
+        with pytest.raises(ValueError, match="root contains a link or reparse point"):
+            reverify_conversion(item, linked_root)
+        assert resolved_children == []
+    finally:
+        _remove_directory_reparse(linked_root)
 
 
 def test_fullrunner_treats_publication_pending_preview_handoff_as_a_successful_terminal_state():
