@@ -43,7 +43,34 @@ def main():
         return service.execute(dict(operation=operation, arguments=arguments or {}, expected_revision=revision,
             idempotency_key=c.new_id() if c.OPERATIONS[operation][1] else None))['result']
 
+    def capture(name, frequencies):
+        target = directory / (name + '.wav')
+        result = subprocess.run([str(bundle / 'ml_engine_loopback.exe'), str(target), '1.2'],
+            capture_output=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
+        assert result.returncode == 0, result.stderr.decode('utf-8', 'replace')
+        rate, audio = pcm(target)
+        audio = audio[rate // 5:]
+        assert len(audio) >= rate // 2, 'Incomplete loopback observation'
+        device = json.loads(result.stdout.decode().splitlines()[-1])
+        assert all(device[key] == 0 for key in ('discontinuities', 'timestamp_errors', 'gap_frames', 'out_of_order_packets')), device
+        levels = {str(key): abs(sum(x * cmath.exp(-2j * math.pi * frequency * i / rate) for i, x in enumerate(audio))) * 2 / len(audio)
+                  for key, frequency in frequencies.items()}
+        return dict(levels=levels, device=device)
+
     try:
+        bundle, _ = pin()
+        # Measure the shared endpoint before emitting our marker. Integer-period
+        # sampled carriers avoid musical background tones and loop discontinuity;
+        # the MIDI edit must still double the selected physical frequency.
+        invoke('engine.configure', dict(sample_rate=48000, buffer_frames=512))
+        candidates = (4410, 4900, 6300, 7350, 8820)
+        ambient = capture('baseline', {str(f): f for f in sorted({f for c in candidates for f in (c, c*2)})})
+        carrier = min(candidates, key=lambda f: max(ambient['levels'][str(f)], ambient['levels'][str(f*2)]))
+        frequencies = {'93': carrier, '105': carrier*2}
+        report['ambient_candidates'] = ambient
+        report['probe'] = dict(carrier_hz=carrier, octave_hz=carrier*2, midi_keys=[93, 105],
+            selection='Least ambient pair before source playback; fixed amplitude and unchanged contrast thresholds')
+        report['baseline'] = dict(levels={key: ambient['levels'][str(frequency)] for key, frequency in frequencies.items()}, device=ambient['device'])
         project = invoke('projects.create', dict(title='N7 actual AI native edit'))
         provenance = dict(origin='rule', source_id='n7-ai')
 
@@ -56,7 +83,7 @@ def main():
         tone = directory / 'tone.wav'
         with wave.open(str(tone), 'wb') as output:
             output.setparams((1, 2, 44100, 0, 'NONE', 'not compressed'))
-            frequency = 440 * 2 ** ((93 - 69) / 12)
+            frequency = carrier
             output.writeframes(b''.join(struct.pack('<h', round(5000 * math.sin(2 * math.pi * frequency * i / 44100))) for i in range(4410)))
         host = NativeHost(diagnostics=directory / 'inspect')
         path = str(settings.plugin_roots[0] / 'sfizz.vst3')
@@ -85,21 +112,8 @@ def main():
             raise RuntimeError(state)
 
         state = ready(revision['id'])
-        bundle, _ = pin()
-
-        def capture(name):
-            target = directory / (name + '.wav')
-            result = subprocess.run([str(bundle / 'ml_engine_loopback.exe'), str(target), '1.2'],
-                capture_output=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
-            assert result.returncode == 0, result.stderr.decode('utf-8', 'replace')
-            rate, audio = pcm(target)
-            audio = audio[rate // 5:]
-            levels = {str(pitch): abs(sum(x * cmath.exp(-2j * math.pi * (440 * 2 ** ((pitch - 69) / 12)) * i / rate) for i, x in enumerate(audio))) * 2 / len(audio) for pitch in (93, 105)}
-            return dict(levels=levels, device=json.loads(result.stdout.decode().splitlines()[-1]))
-
-        report['baseline'] = capture('baseline')
         invoke('engine.transport', dict(engine_session=state['engine_session'], generation=state['generation'], playing=True))
-        report['before'] = capture('before')
+        report['before'] = capture('before', frequencies)
         assert report['before']['levels']['93'] > max(.0001, report['baseline']['levels']['93'] * 3), report['before']
         turn = invoke('dialogue.submit', dict(project_id=project['id'], revision_id=revision['id'], model=args.model,
             login_mode='existing', text='把 Test melody 轨道中的唯一音符提高一个八度，从 MIDI 93 改为 105。请实际修改并回读最新音符，其他时值、音色、推子都保留。'), revision['id'])
@@ -116,7 +130,7 @@ def main():
         state = ready(changed['id'])
         report['applied'] = state
         assert state['playing'], state
-        report['after'] = capture('after')
+        report['after'] = capture('after', frequencies)
         assert report['after']['levels']['105'] > max(.0001, report['baseline']['levels']['105'] * 3), report['after']
         assert report['after']['levels']['93'] < max(report['before']['levels']['93'] * .1, report['baseline']['levels']['93'] * 2), report['after']
         jobs = invoke('jobs.list', dict(project_id=project['id']))
