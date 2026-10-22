@@ -12,18 +12,22 @@
 
 ## 发布顺序
 
-在项目根目录 PowerShell 执行。下面以恢复执行的候选描述为例，后续发布必须使用对应验收记录里的描述路径。
+在项目根目录 PowerShell 执行。下面以当前候选描述为例；它仍在长测、尚未激活，必须等完整验收通过后才执行激活。后续发布使用对应验收记录里的描述路径。
 
 ```powershell
-& data/envs/app/Scripts/python.exe scripts/deploy_app_release.py runtime/engine-release.resume-20261022.local.json
+& data/envs/app/Scripts/python.exe scripts/deploy_app_release.py runtime/engine-release.io-aware-v2.local.json
 .\stop.cmd
-& data/envs/app/Scripts/python.exe scripts/deploy_app_release.py runtime/engine-release.resume-20261022.local.json --apply
+& data/envs/app/Scripts/python.exe scripts/deploy_app_release.py runtime/engine-release.io-aware-v2.local.json --apply
 .\start.cmd
 ```
 
 第一条只检查源码、前端、原生文件与数据位置。激活要求本应用所有者进程已退出、端口空闲，并持有统一启动锁；不会终止占用同一端口的未知程序。成功后仍用原有 `start.cmd`，启动器先验证发布清单，再进入固定源码。
 
 若发布途中中断，`application-release.pending.local.json` 会阻止普通启动。重新执行**同一份**已验证描述的 `--apply` 完成发布；不要手动删除中断标记或绕过选择器启动开发源码。
+
+## H盘资源约束
+
+音源库保持用户指定H盘，不擅自搬盘。维护验证先用已有loading_budget连续观察空闲窗口，忙时延期；只读性能计数，不扫描全库。重型冷加载和验证串行，尽量复用已装载worker，记录超时诊断，不能把I/O竞争视为音色损坏。这个维护预算不阻塞产品播放回调，也不放宽音频欠载/迟到与预设身份检查。
 
 ## 日常音频恢复
 

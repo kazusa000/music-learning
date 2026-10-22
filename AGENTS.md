@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新N7慢盘候选（2026-10-22）：目标active/正式未部署。2bc6e4a固定完整后端(service+engine+release)501过/1权限跳过/0败，224.44秒；一次app环境误收模型测试缺mido/torch，及一次Windows子进程已退出但测试只接收NoSuchProcess失败，原记录保留，修的是测试退出语义，不改runner。当前唯一长测endurance-v7，runtime/engine-acceptance-job.local.json，源码2bc6e4a/bundle ce4876固定；已实查reference305-full运行、actual Python47212（wrapper7556），不能把未完成的三段称通过。启动前复用loading_budget对H三次busy0/1/1%、queue0，全空闲，原记录endurance-v7-storage.json；新顺序只载音源一次并核对PID复用。九表/head14pin前审计一致。不得修改v7固定脚本/bundle/报告或开第二批；H库不搬盘、不写，NAS/固定验证/其他任务/历史拒绝边界同前。
+
 最新N7磁盘约束（2026-10-22）：用户明确H读写差且经常满载，音源不擅自搬盘；避免并行冷开/反复扫库，忙时不额外启动采样器。实读H队列曾20，之后回落；不可由此断言全部加载失败均为磁盘。03f325d完整501过/1权限跳过；配套4K UI8组、实际桌面4组、默认端口HTTP SDK CLI5组、真Codex及恢复通过，仍非长测成功。最新endurance-v6初始加载超时、0阶段，已终态且进程退出，原报告/前后九表14pin一致保留，locator仅历史，不称运行。后续长测先独立参考音频，再一次音源装载连续整曲/30分钟并核对PID复用；检查标准不放宽，独立3次真实冷重开证据保留。目标active/正式未部署。库/NAS/固定验证/其他任务/旧拒绝路径不动。
 
 最新N7端口与整套（2026-10-22）：8be052a固定源码full-final-short500过/1符号链接权限跳过/0败（187.45s）。原失败分别为测试相对queue路径及Windows长basetemp，固定源码在项目cwd短根全过，原日志保留。Windows现保留8761–8860，8765/8794/8796/8797实际bind10013，未改系统；独立QA改18794/18796/18797，正式计划激活时仅项目配置改18765（可bind）。SDK/CLI默认共用配置端口，显式URL优先，7回归过；该新增源码须新固定候选/完整回归。UI/桌面可--release校验配套web/native及JS SHA，API用固定源码。目标active/正式未部署/当前无长测运行，v5旧locator为失败历史。库/正式九表/固定14pin/NAS/其他工作/旧拒绝边界保持。
