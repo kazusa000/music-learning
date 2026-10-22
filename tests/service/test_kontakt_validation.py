@@ -1,0 +1,475 @@
+"""Fixture-only tests for the Kontakt source/candidate/audio-validation boundary.
+
+These tests exercise persisted contracts with synthetic state and response files.
+They do not launch Kontakt, render audio, or read an installed sample library.
+"""
+from __future__ import annotations
+
+import base64
+from contextlib import contextmanager
+import hashlib
+import json
+import struct
+from pathlib import Path
+
+import pytest
+
+from music_learning import kontakt_validation as validation
+from music_learning.kontakt_import import build_batch
+from music_learning import kontakt_catalog_metadata
+from scripts.instruments import prepare_kontakt_full_job as prepare_job
+from scripts.instruments.run_kontakt_full_intake import SUCCESS_STATUSES, validate_coverage
+
+
+_MEMORY_ALPHABET = ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
+_SOURCE_SHA = hashlib.sha256(b"fixture factory source").hexdigest()
+
+
+def _encode_memory_block(value: bytes) -> str:
+    accumulator = 0
+    bits = 0
+    encoded = []
+    for byte in value:
+        accumulator |= byte << bits
+        bits += 8
+        while bits >= 6:
+            encoded.append(_MEMORY_ALPHABET[accumulator & 0x3F])
+            accumulator >>= 6
+            bits -= 6
+    if bits:
+        encoded.append(_MEMORY_ALPHABET[accumulator & 0x3F])
+    return f"{len(value)}.{''.join(encoded)}"
+
+
+def _native_plugin(*, count=4145, name="Factory Instrument"):
+    component = b"fixture component bytes"
+    controller = b"fixture controller bytes"
+    xml = (
+        "<VST3PluginState><IComponent>" + _encode_memory_block(component)
+        + "</IComponent><IEditController>" + _encode_memory_block(controller)
+        + "</IEditController></VST3PluginState>"
+    ).encode("utf-8")
+    raw_state = b"VC2!" + struct.pack("<I", len(xml)) + xml
+    return {
+        "path": "K:/fixture/Kontakt.vst3",
+        "identifier": validation.IDENTIFIER,
+        "binary_sha256": validation.WRAPPER_SHA256,
+        "vst3_class_id": validation.CLASS_ID,
+        "version": validation.VERSION,
+        "state_base64": base64.b64encode(raw_state).decode("ascii"),
+        "state_sha256": hashlib.sha256(raw_state).hexdigest(),
+        "native_identity": {
+            "schema_version": 1,
+            "method": "owned-component-layout-reader",
+            "version": validation.VERSION,
+            "module_sha256": validation.CORE_SHA256,
+            "instrument_count": 1,
+            "instrument_indices": [0],
+            "instruments": [{"index": 0, "name": name}],
+            "memory_bytes_read": 128,
+            "memory_budget_bytes": 65536,
+        },
+        "parameters_readback": [
+            {"id": f"kontakt-param-{index:04d}", "value": float(index % 127) / 127}
+            for index in range(count)
+        ],
+    }
+
+
+def _replace_serialized_state(plugin, *, component: bytes, controller: bytes = b"fixture controller bytes"):
+    xml = (
+        "<VST3PluginState><IComponent>" + _encode_memory_block(component)
+        + "</IComponent><IEditController>" + _encode_memory_block(controller)
+        + "</IEditController></VST3PluginState>"
+    ).encode("utf-8")
+    raw = b"VC2!" + struct.pack("<I", len(xml)) + xml
+    return {**plugin, "state_base64": base64.b64encode(raw).decode("ascii"),
+            "state_sha256": hashlib.sha256(raw).hexdigest()}
+
+
+def _expected_identity(plugin):
+    return validation.verifier().verify({"expected_identity": {"source_sha256": _SOURCE_SHA}}, plugin)
+
+
+def _profile():
+    return {
+        "schema_version": 1,
+        "kind": "midi_context",
+        "source_factory_sha256": _SOURCE_SHA,
+        "instruments": [{
+            "index": 0,
+            "midi_channel": 1,
+            "key_range": [24, 108],
+            "velocity_range": [1, 127],
+            "mute": False,
+            "solo": False,
+        }],
+        "controllers": [],
+    }
+
+
+def _candidate(plugin, tmp_path):
+    params = validation._param_map(plugin)
+    source_sha = hashlib.sha256(b"installed source manifest").hexdigest()
+    entrypoint = "Presets/kontakt-fixture.vstpreset"
+    payload = validation.preset_bytes(plugin)
+    bank = tmp_path / "Bank"
+    preset = bank / entrypoint
+    preset.parent.mkdir(parents=True)
+    preset.write_bytes(payload)
+    return {
+        "id": "kontakt-fixture",
+        "library_id": "kontakt-factory",
+        "expected_identity": _expected_identity(plugin),
+        "expected_parameters": params,
+        "installed_library": {
+            "library_id": "kontakt-factory",
+            "bank_root": "Bank",
+            "manifest_path": "installed-manifest.json",
+            "manifest_sha256": hashlib.sha256(b"installed manifest").hexdigest(),
+        },
+        "bank_root": "Bank",
+        "entrypoint": entrypoint,
+        "resources": {entrypoint: {"bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}},
+        "idempotency_key": "fixture-only",
+        "plugin_path": plugin["path"],
+        "plugin_sha256": plugin["binary_sha256"],
+        "identifier": plugin["identifier"],
+        "vst3_class_id": plugin["vst3_class_id"],
+        "source_manifest_sha256": source_sha,
+        "performance_profile": _profile(),
+    }
+
+
+def test_capture_source_requires_one_owned_persisted_execution_and_full_native_state(tmp_path):
+    plugin = _native_plugin()
+    output = tmp_path / "capture"
+    source_file = tmp_path / "Kontakt.vst3"
+    source_file.write_bytes(b"fixture plugin placeholder; never executed")
+    entered = []
+
+    @contextmanager
+    def startup():
+        entered.append("start")
+        yield
+        entered.append("stop")
+
+    class Host:
+        diagnostics = output / "calls"
+
+        def call(self, request, *, timeout):
+            assert timeout == 180
+            assert request["action"] == "inspect"
+            assert "preset_path" not in request["plugin"]
+            call = self.diagnostics / "one-call"
+            call.mkdir(parents=True)
+            (call / "request.json").write_text("{}", encoding="utf-8")
+            (call / "response.json").write_text("{}", encoding="utf-8")
+            (call / "execution.json").write_text(
+                json.dumps({"status": "completed", "returncode": 0}), encoding="utf-8"
+            )
+            return {"plugin": plugin}
+
+    captured = validation.capture_source(
+        Host(), validation.plugin_spec(source_file, "fixture"), output,
+        startup=startup, expected_identity=_expected_identity(plugin),
+    )
+
+    assert captured["native_identity"]["instruments"][0]["name"] == "Factory Instrument"
+    assert len(captured["parameters_readback"]) == 4145
+    assert entered == ["start", "stop"]
+    index = json.loads((output / "capture.json").read_bytes())
+    assert set(index["refs"]) == {"request", "response", "execution", "state"}
+    assert index["refs"]["state"]["path"] == "state.json"
+
+
+def test_capture_source_rejects_hidden_preset_or_state_override_before_startup(tmp_path):
+    plugin = _native_plugin()
+    output = tmp_path / "capture"
+    source = tmp_path / "Kontakt.vst3"
+    source.write_bytes(b"placeholder")
+    called = []
+
+    with pytest.raises(ValueError, match="directly"):
+        validation.capture_source(
+            type("Host", (), {"diagnostics": output / "calls", "call": lambda *_args, **_kwargs: called.append(1)})(),
+            {**validation.plugin_spec(source, "fixture"), "preset_path": "elsewhere.vstpreset"},
+            output, startup=lambda: called.append(2), expected_identity=_expected_identity(plugin),
+        )
+    assert called == []
+
+
+def test_preset_serialization_contains_the_captured_component_and_controller_state():
+    source = _native_plugin()
+    serialized = validation.preset_bytes(source)
+    assert serialized[:4] == b"VST3"
+    assert serialized[8:40] == validation.CLASS_ID.encode("ascii")
+    assert b"fixture component bytes" in serialized
+    assert b"fixture controller bytes" in serialized
+
+    changed = _native_plugin(name="Different Source")
+    changed["state_base64"] = source["state_base64"]
+    changed["state_sha256"] = source["state_sha256"]
+    assert validation.preset_bytes(changed) == serialized
+    changed_state = _replace_serialized_state(source, component=b"other component state")
+    assert validation.preset_bytes(changed_state) != serialized
+
+
+def test_make_candidate_freezes_native_identity_and_all_source_parameters(monkeypatch, tmp_path):
+    plugin = _native_plugin()
+    observed = {}
+    monkeypatch.setattr(validation, "_candidate_for_catalog", lambda candidate: observed.update(candidate) or candidate)
+    identity = _expected_identity(plugin)
+    source_item = {"id": "kontakt-fixture", "library_id": "kontakt-factory",
+                   "source": {"path": "Factory/Fixture.nki", "sha256": _SOURCE_SHA}}
+    conversion = {
+        "observed_identity": identity,
+        "playback_context": {"instruments": [{
+            "index": 0, "midi_channel": 1, "key_range": [24, 108],
+            "velocity_range": [1, 127], "mute": False, "solo": False,
+        }]},
+    }
+    metadata = {"source_name": "Factory Instrument", "model_basis": "source fixture evidence",
+                "model_spec": {"key": "fixture", "name": "Fixture", "kind": "instrument"},
+                "variant_name": "Factory"}
+    candidate = validation.make_candidate(
+        metadata, source_item, conversion, plugin, bank_root="Bank", entrypoint="Presets/fixture.vstpreset",
+        resources={"Presets/fixture.vstpreset": {"bytes": 4, "sha256": hashlib.sha256(b"four").hexdigest()}},
+        runtime_dependencies=[], installed_library={"library_id": "kontakt-factory"},
+        source_manifest_sha256=hashlib.sha256(b"manifest").hexdigest(),
+    )
+
+    assert candidate["expected_identity"] == identity
+    assert candidate["expected_parameters"] == validation._param_map(plugin)
+    assert len(candidate["expected_parameters"]) == 4145
+    assert candidate["source_factory_sha256"] == _SOURCE_SHA
+    assert candidate["performance_profile"]["source_factory_sha256"] == _SOURCE_SHA
+    assert observed == candidate
+
+
+def _roundtrip_artifacts(output, first_plugin, reopen_plugin):
+    output.mkdir(parents=True, exist_ok=False)
+    refs = {}
+    for phase, plugin in (("first", first_plugin), ("reopen", reopen_plugin)):
+        path = output / f"{phase}-response.json"
+        path.write_text(json.dumps({"result": {"tracks": [{"plugin_readback_after": [plugin]}]}}), encoding="utf-8")
+        refs[phase] = {"response": {"path": path.name}}
+    return refs
+
+
+def _validation_fixture(tmp_path, monkeypatch, *, first_plugin=None, reopen_plugin=None):
+    source = _native_plugin()
+    candidate = _candidate(source, tmp_path)
+    output = tmp_path / "validation"
+    starts = []
+
+    @contextmanager
+    def empty_startup():
+        starts.append("empty")
+        yield
+
+    def roundtrip(_host, _state, path, *, empty_startup, profile, timeout_seconds):
+        assert profile.profile["instruments"][0]["index"] == 0
+        assert timeout_seconds == 180
+        with empty_startup():
+            pass
+        with empty_startup():
+            pass
+        return _roundtrip_artifacts(output, first_plugin or source, reopen_plugin or source)
+
+    monkeypatch.setattr(validation, "captured_state_roundtrip", roundtrip)
+    monkeypatch.setattr("music_learning.installed_libraries.verify_installed_library", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(validation, "verify_receipt", lambda *_args, **_kwargs: {
+        "first": {"audio": {"rms": 0.1, "peak": 0.2}},
+        "reopen": {"audio": {"rms": 0.1, "peak": 0.2}},
+    })
+    validator_code, host_binary = tmp_path / "validator.py", tmp_path / "probe.exe"
+    validator_code.write_bytes(b"fixture validator")
+    host_binary.write_bytes(b"fixture host")
+    pin = validation.ValidatorPin("fixture", "1", validator_code, host_binary)
+    return source, candidate, output, empty_startup, starts, pin
+
+
+def test_validate_captured_binds_bytes_and_checks_full_native_identity_after_both_empty_rack_probes(
+    tmp_path, monkeypatch,
+):
+    source, candidate, output, empty_startup, starts, pin = _validation_fixture(tmp_path, monkeypatch)
+    result = validation.validate_captured(
+        object(), candidate, source, output, empty_startup=empty_startup, validator_pin=pin,
+        resource_root=tmp_path,
+    )
+
+    assert len(candidate["expected_parameters"]) == 4145
+    assert starts == ["empty", "empty"]
+    assert result["summary"]["first"]["audio"]["rms"] == 0.1
+    receipt = json.loads((output / "receipt.json").read_bytes())
+    assert receipt["startup"] == {"first": "empty", "reopen": "empty"}
+    assert receipt["source_state_sha256"] == source["state_sha256"]
+
+
+@pytest.mark.parametrize("phase", ["first", "reopen"])
+def test_validate_captured_rejects_native_identity_change_after_midi_in_either_process(
+    tmp_path, monkeypatch, phase,
+):
+    changed = _native_plugin(name="Different actual model after MIDI")
+    first, reopen = (changed, None) if phase == "first" else (None, changed)
+    source, candidate, output, empty_startup, _starts, pin = _validation_fixture(
+        tmp_path, monkeypatch, first_plugin=first, reopen_plugin=reopen,
+    )
+    with pytest.raises(ValueError, match="native instrument identity"):
+        validation.validate_captured(
+            object(), candidate, source, output, empty_startup=empty_startup, validator_pin=pin,
+            resource_root=tmp_path,
+        )
+    assert not (output / "receipt.json").exists()
+
+
+def test_validate_captured_rejects_installed_preset_bytes_not_bound_to_source_before_audio(
+    tmp_path, monkeypatch,
+):
+    source = _native_plugin()
+    candidate = _candidate(source, tmp_path)
+    preset = tmp_path / "Bank" / candidate["entrypoint"]
+    preset.write_bytes(b"different source state")
+    output = tmp_path / "validation"
+    started = []
+    monkeypatch.setattr(validation, "captured_state_roundtrip", lambda *_args, **_kwargs: started.append(True))
+    monkeypatch.setattr("music_learning.installed_libraries.verify_installed_library", lambda *_args, **_kwargs: {})
+    code, host = tmp_path / "validator.py", tmp_path / "probe.exe"
+    code.write_bytes(b"fixture")
+    host.write_bytes(b"fixture")
+    with pytest.raises(ValueError, match="not the captured source state"):
+        validation.validate_captured(
+            object(), candidate, source, output, empty_startup=lambda: None,
+            validator_pin=validation.ValidatorPin("fixture", "1", code, host), resource_root=tmp_path,
+        )
+    assert started == []
+
+
+def _coverage_fixture():
+    records = [
+        {"path": "Factory/One.nki", "format": "nki", "bytes": 5,
+         "sha256": hashlib.sha256(b"one!!").hexdigest(), "mtime_ns": 10},
+        {"path": "Factory/Two.nkm", "format": "nkm", "bytes": 5,
+         "sha256": hashlib.sha256(b"two!!").hexdigest(), "mtime_ns": 20},
+    ]
+    conversion = build_batch("fixture-coverage", "kontakt-factory", records)
+    work = {"schema_version": 1, "library_id": "kontakt-factory", "items": [
+        {"id": row["id"], "source": row["source"], "status": "pending"}
+        for row in conversion["items"]
+    ]}
+    return records, conversion, work
+
+
+def test_fullrunner_resume_coverage_accepts_exact_records_and_ignores_inventory_mtime_field():
+    records, conversion, work = _coverage_fixture()
+    assert validate_coverage(records, conversion, work) == 2
+
+
+@pytest.mark.parametrize("mutation", [
+    "missing_conversion", "extra_conversion", "duplicate_work_id", "retargeted_source", "unknown_status",
+])
+def test_fullrunner_resume_coverage_rejects_omitted_added_or_retargeted_sources(mutation):
+    from copy import deepcopy
+
+    records, conversion, work = _coverage_fixture()
+    conversion, work = deepcopy(conversion), deepcopy(work)
+    if mutation == "missing_conversion":
+        conversion["items"].pop()
+    elif mutation == "extra_conversion":
+        extra = build_batch("extra-coverage", "kontakt-factory", [{
+            "path": "Factory/Three.nki", "format": "nki", "bytes": 5,
+            "sha256": hashlib.sha256(b"three").hexdigest(),
+        }])["items"][0]
+        conversion["items"].append(extra)
+    elif mutation == "duplicate_work_id":
+        work["items"].append(deepcopy(work["items"][0]))
+    elif mutation == "retargeted_source":
+        work["items"][0]["source"]["sha256"] = "0" * 64
+    elif mutation == "unknown_status":
+        work["items"][0]["status"] = "silently_skipped"
+
+    with pytest.raises(ValueError):
+        validate_coverage(records, conversion, work)
+
+
+def test_fullrunner_treats_publication_pending_preview_handoff_as_a_successful_terminal_state():
+    assert "published_pending_preview_handoff" in SUCCESS_STATUSES
+    assert "validation_finished_pending_publication" in SUCCESS_STATUSES
+    assert "published_and_previews_dispatched" in SUCCESS_STATUSES
+
+
+def test_prepare_job_pins_each_inventory_and_freezes_only_nki_nkm_source_paths(monkeypatch, tmp_path):
+    repo = tmp_path / "fake-repo"
+    allowed = repo / "data/maintenance/instrument-intake"
+    prep = allowed / "resource-prep"
+    prep.mkdir(parents=True)
+    inventory = repo / "data/maintenance/instrument-intake/20261021-batch-v2/inventory"
+    inventory.mkdir(parents=True)
+    expected = {}
+    for library_id, count in (("kontakt-factory", 500), ("css", 300), ("css-solo", 192)):
+        paths = [f"{library_id}/Instrument-{number:04}.nki" for number in range(count)]
+        paths.extend([f"{library_id}/not-an-instrument.wav", f"{library_id}/ignored.txt"])
+        (inventory / f"{library_id}.json").write_text(json.dumps({"presets": paths}), encoding="utf-8")
+        expected[library_id] = paths[:count]
+
+    probe = repo / "runtime/build/instrument-probe/kontakt-reader-b/ml_kontakt_probe.exe"
+    probe.parent.mkdir(parents=True)
+    probe.write_bytes(b"fixture probe placeholder; never launched")
+    (probe.parent / "build.json").write_text(json.dumps({
+        "status": "built", "executable_sha256": prepare_job.sha(probe),
+    }), encoding="utf-8")
+    empty = repo / "data/maintenance/instrument-intake/20261022-resume/kontakt-clean-rack/empty.nkm"
+    empty.parent.mkdir(parents=True)
+    empty.write_bytes(b"fixture empty Multi placeholder; never loaded")
+    (repo / "config/instruments").mkdir(parents=True)
+    (repo / "config/instruments/kontakt-catalog-assignments.json").write_text("{}", encoding="utf-8")
+    (repo / "data/maintenance/instrument-intake/20261022-resume").mkdir(parents=True, exist_ok=True)
+    (repo / "data/maintenance/instrument-intake/20261022-resume/before.json").write_text(
+        json.dumps({"pins": ["protected-file-sha"]}), encoding="utf-8"
+    )
+    (repo / "runtime").mkdir(parents=True, exist_ok=True)
+    (repo / "runtime/app.local.json").write_text(json.dumps({
+        "host": "127.0.0.1", "port": 8765, "data_root": str(repo / "private-data"),
+    }), encoding="utf-8")
+    source_dir = repo / "src/music_learning"
+    source_dir.mkdir(parents=True)
+    (source_dir / "fixture.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (repo / "scripts/instruments").mkdir(parents=True)
+    (repo / "scripts/native_host.py").write_text("# fixture\n", encoding="utf-8")
+    (repo / "scripts/instruments/run_kontakt_full_intake.py").write_text("# fixture\n", encoding="utf-8")
+
+    real_sha = prepare_job.sha
+    monkeypatch.setattr(prepare_job, "ROOT", repo)
+    monkeypatch.setattr(prepare_job, "sha", lambda path: (
+        "c1e8123fc5f0387abebe841a9c7b1d51d81cd128f3e9b50307c843691dea8155"
+        if Path(path).resolve() == empty.resolve() else real_sha(path)
+    ))
+    monkeypatch.setattr(kontakt_catalog_metadata, "build_kontakt_catalog_metadata", lambda _paths: [None] * 992)
+
+    run = allowed / "fixture-job"
+    result = prepare_job.prepare(run, prep)
+    plan = json.loads(Path(result["plan"]).read_bytes())
+    pins = json.loads(Path(plan["pins_path"]).read_bytes())["files"]
+
+    assert result["status"] == "prepared"
+    assert plan["libraries"]["kontakt-factory"]["expected_source_paths"] == expected["kontakt-factory"]
+    assert plan["libraries"]["css"]["expected_source_paths"] == expected["css"]
+    assert plan["libraries"]["css-solo"]["expected_source_paths"] == expected["css-solo"]
+    for library_id in expected:
+        inventory_copy = run / "code/data/maintenance/instrument-intake/20261021-batch-v2/inventory" / f"{library_id}.json"
+        assert str(inventory_copy) in pins
+        assert pins[str(inventory_copy)] == real_sha(inventory_copy)
+    assert sum(len(paths) for paths in (row["expected_source_paths"] for row in plan["libraries"].values())) == 992
+
+
+def test_prepare_job_requires_explicit_publication_before_preview_handoff(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    allowed = repo / "data/maintenance/instrument-intake"
+    prep = allowed / "prep"
+    prep.mkdir(parents=True)
+    run = allowed / "new-job"
+    monkeypatch.setattr(prepare_job, "ROOT", repo)
+    with pytest.raises(ValueError, match="only be handed off"):
+        prepare_job.prepare(run, prep, preview_handoff=True, publish=False)
+    assert not run.exists()
