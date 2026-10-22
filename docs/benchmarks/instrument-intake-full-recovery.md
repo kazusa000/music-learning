@@ -87,3 +87,27 @@ chain以PID、创建时间、命令行、队列真实终态和固定pin核对交
 本轮代码收口再次只读核对正式九表/head、14项保护文件和1252项catalog，均与恢复前一致；证据为`20261022-resume/formal-after-code.json`及`pins-after-code.json`。本轮还没有新增入库条目。源码规则、探针和串行器已按主题提交；并发本地引擎与AD2 obj/pdb不混入。
 
 Riffer诊断还暴露了共享产品链缺口：验证用特殊触发事件时，当前普通目录/试听短句/AI查询不会自动携带这些事件。Ample发布适配器因此拒绝将带`event_profile`或`performance_profile`的诊断项丢弃演奏信息后当作普通MIDI音色发布；原始验证仍可继续。后续需把经实际证明的演奏profile统一贯穿候选指纹、目录、试听与AI查询，并核对Riff内容本身的状态恢复，才发布该类预设；单次触发发声不能替代这条产品链。
+
+## Kontakt / MODO 优先恢复窗口（2026-10-22）
+
+用户明确要求继续修复Kontakt与MODO。为避免并行采样竞争，LP在原队列安全边界暂停，35个唯一项实际为17通过、11失败、7待测、0运行；原暂停请求保留。原串行链因LP尚未终态成为`blocked/lp_exited_before_terminal_queue`，没有启动AGM或SC；此前记录的LP/chain PID均已退出，不再按旧locator称运行。后续归还通道时仍续同一队列和固定证据。
+
+### Kontakt：空机架恢复与实际音频已通过，语义身份仍待接通
+
+新证据集中在`data/maintenance/instrument-intake/km22/`。空机架的最小请求与含模块绑定字段的请求分别约6.58秒、1.41秒零退出，说明旧60秒初始化超时并非必现，也不能据此认定模块绑定字段造成失败。
+
+`clean-audio-a/audio/evidence-index.json`记录了实际两阶段控制：首次装入官方Lua保存的Grand Piano Multi并捕获完整VST3状态；第一个profile租约退出后，第二阶段安装独立Lua验证过的0乐器Multi，再恢复首次捕获状态。两次原生执行均退出0，实际解码均为44.1kHz、双声道、220500帧（5秒）；首次/重开RMS分别`0.008325974238380968`、`0.008291844125151175`，峰值`0.1324634552001953`、`0.13245928287506104`，削波均0，完整参数图一致。私有default字节已恢复且没有残留自有进程。这修正了旧双阶段预装同款音色的验证缺口；本控制状态仍为`audio_passed_pending_factory_identity`，没有入库。
+
+官方Lua直接读取源NKM和由源NKM槽位生成的控制文件，均读回1个Grand Piano、索引0、MIDI通道0。但是由真实IComponent槽位移植生成的NKM，在60秒观测控制中实际弹出`This patch is corrupted and cannot be loaded!`，没有Lua ACK。该候选明确无效，不能继续把它仅归因于磁盘慢，也不重试未变输入。原始证据位于`20261022-resume/kontakt/slot-getter-controls/component-slot-20261022d-observed/`；整个自有树已退出，约190.6MB为逻辑进程树I/O计数，不能称作物理H盘读取上限。
+
+NI容器外壳可解析并不证明项目态与NKM文件语义兼容；实际程序子树仍不透明。现有IUnitInfo只有MIDI通道/通用程序编号，无法确认当前NKI。官方Lua源回执与profile捕获可证明来源链，但不冒充原生组件语义getter，也不替代现有身份检查。继续研究插件实例内真实只读身份通路，992项全量转换/发声/入库尚未启动。
+
+### MODO：确认实际恢复入口，收窄追踪
+
+原输入包含目标`'70s J-Bass`，恢复回调和模型加载器两次都读取默认`Y60sPBass`，随后保存状态仍为`'60s P-Bass`。改用内部资源ID及FPCh容器的旧控制也没有改变结果，不能简单归因为显示名转换、缺Controller状态或bank程序索引。尚无本机edition/授权状态证据，不猜许可原因。
+
+两次setter追踪只保留前128条，而第一轮就有481次写入，因此早期索引113的默认值只能证明该次调用，不能断言目标从未在后续写入。第二轮探针约4.2秒、19.5MB逻辑I/O、所有自有进程退出，但结束码`0x80000004`属于未解决的探针单步异常，不能当作干净生命周期通过或产品故障。
+
+通过只读RTTI和小段反汇编，定位实际`IK::Products::MB2::AudioProcessor`主vtable为`0x180e18868`，`setStateInformation`槽位`+0x110`为`0x180935c00`；不是此前的构造器`0x180920110`。恢复入口解析树后经`0x180961420`按schema逐属性合并，属性转换回调在写入`0x1809626f0`之前运行。下一次定向探针应记录BassModel完整转换前后及写入顺序，同时修正自有单步处理；不再依赖通用前128条采样。静态定位证据在`km22/modo-static/vtable.json`。
+
+本阶段只读复核`km22/protection-after-controls.json`：正式九表/head、14项固定文件摘要与恢复前一致，catalog仍1252项且SHA未变。没有正式工程/服务/渲染/音乐模型写入，没有NAS访问；源包、固定Pianoteq验证和历史拒绝路径保持不动。并发N7长测在运行时不额外冷开采样器，只按当前进程和报告实际状态安排控制窗口，不按历史locator推断空闲。
