@@ -266,6 +266,29 @@ def test_snapshot_ancestry_matches_exact_parent_and_stops_at_target():
     assert ample_retry_planning.process_row_matches_ancestor_snapshot(target, 200, [target, current])
 
 
+def test_snapshot_ancestry_ignores_incomplete_unrelated_system_rows():
+    target = {"pid": 100, "ppid": 999, "created_ticks": 100,
+              "command_line": "python supervise_ample_final_bank_riff_retry.py --run-dir E:\\retry"}
+    current = {"pid": 200, "ppid": 100, "created_ticks": 200,
+               "command_line": "python supervise_ample_failed_retry.py --run-dir E:\\retry"}
+    system_idle = {"pid": 0, "ppid": 0, "created_ticks": 0,
+                   "name": "System Idle Process", "command_line": ""}
+    protected_process = {"pid": 4, "ppid": 0, "created_ticks": 0,
+                         "name": "System", "command_line": ""}
+
+    assert ample_retry_planning.process_row_matches_ancestor_snapshot(
+        target, 200, [system_idle, target, protected_process, current]
+    )
+
+    # An incomplete row for a PID on the actual path makes that identity
+    # ambiguous and must still fail closed.
+    incomplete_target = {"pid": 100, "ppid": 999, "created_ticks": 100,
+                         "name": "python.exe", "command_line": ""}
+    assert not ample_retry_planning.process_row_matches_ancestor_snapshot(
+        target, 200, [target, incomplete_target, current]
+    )
+
+
 def test_snapshot_ancestry_rejects_same_script_sibling_and_reused_parent():
     target = {"pid": 100, "ppid": 10, "created_ticks": 300,
               "command_line": "python supervise_ample_final_bank_riff_retry.py --run-dir E:\\retry"}

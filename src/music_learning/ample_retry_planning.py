@@ -167,11 +167,29 @@ def process_row_matches_ancestor_snapshot(
     if target is None or target[0] == current_pid:
         return False
     by_pid: dict[int, tuple[int, int, int | float, object]] = {}
+    ambiguous_pids: set[int] = set()
     for row in rows:
         value = identity(row)
-        if value is None or value[0] in by_pid:
-            return False
-        by_pid[value[0]] = value
+        if value is None:
+            # System/protected processes in a CIM snapshot may omit creation
+            # time or command line. Such unrelated rows do not invalidate a
+            # proof; if the missing row's PID is on the actual path, traversal
+            # below fails closed because no usable identity exists for it.
+            pid = row.get("pid") if isinstance(row, dict) else None
+            if type(pid) is int and pid > 0:
+                ambiguous_pids.add(pid)
+                by_pid.pop(pid, None)
+            continue
+        pid = value[0]
+        if pid in ambiguous_pids:
+            continue
+        if pid in by_pid:
+            ambiguous_pids.add(pid)
+            by_pid.pop(pid, None)
+            continue
+        by_pid[pid] = value
+    if target[0] in ambiguous_pids or current_pid in ambiguous_pids:
+        return False
     if target[0] not in by_pid or by_pid[target[0]] != target:
         return False
     if current_pid not in by_pid:
@@ -184,7 +202,7 @@ def process_row_matches_ancestor_snapshot(
         if parent_pid <= 0 or parent_pid in seen:
             return False
         parent = by_pid.get(parent_pid)
-        if parent is None or parent[2] > child[2]:
+        if (parent_pid in ambiguous_pids or parent is None or parent[2] > child[2]):
             return False
         if parent_pid == target[0]:
             return parent == target

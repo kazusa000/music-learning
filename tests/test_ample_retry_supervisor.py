@@ -277,6 +277,27 @@ def test_supervisor_conflict_scan_does_not_exempt_shell_text_or_sibling_child():
     assert supervisor._matching_run_rows([shell, current, sibling], run_dir, 200) == [sibling]
 
 
+def test_supervisor_conflict_scan_exempts_verified_python_launcher_ancestor():
+    run_dir = Path(r"E:\repo\data\maintenance\instrument-intake\run")
+    wrapper_path = supervisor.ROOT / "scripts/instruments/supervise_ample_final_bank_riff_retry.py"
+    launcher = {"pid": 100, "ppid": 10, "created_ticks": 100,
+                "name": "python.exe", "executable_path": "python.exe",
+                "command_line": f'python -c "bootstrap --run-dir {run_dir}"'}
+    outer = {"pid": 200, "ppid": 100, "created_ticks": 200,
+             "name": "python.exe", "executable_path": "python.exe",
+             "command_line": f'python "{wrapper_path}" --run-dir "{run_dir}"'}
+    current = {"pid": 300, "ppid": 200, "created_ticks": 300,
+               "name": "python.exe", "executable_path": "python.exe",
+               "command_line": f'python "{supervisor.ROOT / "scripts/instruments/supervise_ample_failed_retry.py"}" --run-dir "{run_dir}"'}
+    sibling = {"pid": 400, "ppid": 99, "created_ticks": 400,
+               "name": "python.exe", "executable_path": "python.exe",
+               "command_line": f'python "{wrapper_path}" --run-dir "{run_dir}"'}
+
+    # The launcher is not a known wrapper command, but its exact birth-ordered
+    # ancestry is proven; an independent sibling remains a conflict.
+    assert supervisor._matching_run_rows([launcher, outer, current, sibling], run_dir, 300) == [sibling]
+
+
 def test_spawned_runner_requires_exact_parent_and_pinned_command():
     run_dir = Path(r"E:\repo\data\maintenance\instrument-intake\run")
     active = {"pid": 200, "ppid": 100,

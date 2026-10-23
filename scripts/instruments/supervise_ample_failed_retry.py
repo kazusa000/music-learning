@@ -288,10 +288,6 @@ def _matching_runner_rows(rows: list[dict], run_dir: Path, supervisor_pid: int) 
 def _matching_run_rows(rows: list[dict], run_dir: Path, supervisor_pid: int) -> list[dict]:
     token = _norm(str(run_dir))
     host = _norm(str(run_dir / "pinned/instrument_probe_host.exe"))
-    wrapper_paths = (
-        _norm(str(ROOT / "scripts/instruments/supervise_ample_failed_retry.py")),
-        _norm(str(ROOT / "scripts/instruments/supervise_ample_final_bank_riff_retry.py")),
-    )
     matches = []
     for row in rows:
         if row["pid"] == supervisor_pid:
@@ -303,16 +299,13 @@ def _matching_run_rows(rows: list[dict], run_dir: Path, supervisor_pid: int) -> 
                           or host in executable or host in command)
         if not references_run:
             continue
-        # The outer durable supervisor and a Python launcher can carry the
-        # child queue path in their command line. Exempt one only when the
-        # current process inventory proves this exact PID/creation/PPID/command
-        # row is on our birth-ordered parent chain. A same-script sibling,
-        # reused PID, or shell that merely prints text remains a conflict.
-        is_supervisor_wrapper = (
-            name in {"python.exe", "pythonw.exe"}
-            and any(path in command for path in wrapper_paths)
-        )
-        if (is_supervisor_wrapper
+        # A Python launcher, bootstrap, or supervisor can carry the child queue
+        # path in its command line. Exempt it only when this inventory proves
+        # the exact PID/creation/PPID/command row is on our birth-ordered parent
+        # chain. A same-script sibling, reused PID, or shell that merely prints
+        # text remains a conflict.
+        is_python_process = name in {"python.exe", "pythonw.exe"}
+        if (is_python_process
                 and process_row_matches_ancestor_snapshot(row, supervisor_pid, rows)):
             continue
         matches.append(row)
