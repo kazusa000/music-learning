@@ -1,6 +1,6 @@
 # 本地 DAW 架构决策
 
-状态：2026-10-22，N1–N7已经验收并默认部署，固定源码d4852c6、原生bundle f0563ad2；两首整曲及30分钟循环通过。开发顺序见[迁移计划](../plans/native-daw-migration.md)，当前证据与性能差距见[最终核对](../benchmarks/native-engine-completion.md)，路径见[仓库目录约定](../development/repository-layout.md)。本文覆盖早期架构文档中“浏览器负责工程音频播放”的设计；保留现有工程、版本、素材、AI 与模型能力。
+状态：本地音频引擎已默认使用。实际源码、前端、原生与桌面版本从 `runtime/application-release.local.json` 读取。实现边界与历史实测见[验收摘要](../benchmarks/native-engine-completion.md)，当前目录见[目录职责](../development/repository-layout.md)。本文保留架构决策的背景，旧阶段计划由 Git 历史保存。
 
 ## 当前问题及范围
 

@@ -41,7 +41,7 @@ def main() -> None:
     ninja = ROOT / "runtime/tooling/Scripts/ninja.exe"
     compiler = shutil.which("cl.exe", path=env.get("PATH", env.get("Path")))
     if not cmake.exists() or not ninja.exists() or compiler is None:
-        sys.exit("MSVC, CMake or Ninja missing; see docs/11-native-host.md")
+        sys.exit("MSVC, CMake or Ninja missing; see docs/development/native-release-operations.md")
     build = ROOT / "runtime/build/msvc"
     command = [str(cmake), "-S", str(ROOT), "-B", str(build), "-G", "Ninja",
                "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_C_COMPILER=cl",

@@ -10,7 +10,7 @@
 | Microsoft.Web.WebView2 1.0.4258.31 / .NET Framework 4.8 | 桌面壳使用本机.NET编译器及微软[WebView2 NuGet包](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31)，下载SHA固定在scripts/build_desktop.py。SDK/DLL/EXE位于忽略的runtime/desktop；使用系统已有WebView2 Runtime，未把组件提交源码或系统安装包。包内许可随下载保留。 |
 | portable-msvc | [mmozeiko 原始脚本](https://gist.github.com/mmozeiko/7f3162ec2988e81e56d5c4e22cde9977)，锁定 revision 和摘要，运行前已审查，添加目录边界与清单固定包装；脚本本身不复制进源码仓库。 |
 | innoextract | [官方工具](https://constexpr.org/innoextract/)，用于提取安装包到项目目录，不运行插件系统安装。 |
-| Surge XT / CHOW Tape / sfizz | 仅下载各自官方二进制并在本地宿主加载；来源和摘要见 config/native-dependencies.json，插件列表见 docs/10-free-vst3-candidates.md。 |
+| Surge XT / CHOW Tape / sfizz | 仅下载各自官方二进制并在本地宿主加载；来源和摘要见 config/native-dependencies.json，音源操作见 docs/guides/instruments.md。 |
 
 sfizz 1.2.3 文件加载适配依据其 [SfizzVstState.cpp](https://github.com/sfztools/sfizz-ui/blob/1.2.3/plugins/vst/SfizzVstState.cpp) 和 SDK 字符串格式实现，仅用于已识别的版本，不适用于未知私有状态。测试音频和 SFZ 由本项目脚本生成。
 
@@ -30,7 +30,7 @@ P0b 模型依赖独立记录：
 
 ## 实际音色库补充
 
-六套采样库的官方仓库、固定 commit、下载 SHA-256 与许可标识见 `config/instrument-sources.json`；本机原许可保存在 H: 各库内，来源和用途见 [音源与映射](docs/21-instrument-library.md)。Salamander 为 CC BY 3.0；Shinyguitar/Swagbass 为 CC0；Naked Drums 为 CC BY 4.0；SSO 保存 CC Sampling Plus 1.0 原许可；jRhodes3d 按作者 LICENSE 区分音乐使用、控制文件和样本再分发，不把样本统称 CC0。库文件不随源码重新分发。
+六套采样库的官方仓库、固定 commit、下载 SHA-256 与许可标识见 `config/instrument-sources.json`；本机原许可保存在 H: 各库内，来源和用途见 [音源与映射](docs/guides/instruments.md)。Salamander 为 CC BY 3.0；Shinyguitar/Swagbass 为 CC0；Naked Drums 为 CC BY 4.0；SSO 保存 CC Sampling Plus 1.0 原许可；jRhodes3d 按作者 LICENSE 区分音乐使用、控制文件和样本再分发，不把样本统称 CC0。库文件不随源码重新分发。
 
 宿主 Surge FXP 适配依据固定 [SurgeSynthesizerIO.cpp](https://github.com/surge-synthesizer/surge/blob/release_xt_1.3.4/src/common/SurgeSynthesizerIO.cpp) 的 loadPatchByPath/loadRaw 与 [SurgeSynthProcessor.cpp](https://github.com/surge-synthesizer/surge/blob/release_xt_1.3.4/src/surge-xt/SurgeSynthProcessor.cpp) 的组件状态入口实现。sfizz 仍固定 1.2.3；新库的格式/奏法兼容性仅按已执行用例记录，不宣称所有 SFZ/FXP 都经过实测。
 

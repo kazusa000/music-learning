@@ -1,6 +1,6 @@
 # 本地 DAW 目标收口核对
 
-2026-10-22。**N0–N7已验收并切为正式默认。** 本页把完整目标对应到证据；不以短测或构建替代实际连续播放。详细原始失败保留于[N7记录](native-engine-n7.md)，开发范围见[迁移计划](../plans/native-daw-migration.md)。
+2026-10-22。**N0–N7已验收并切为正式默认。** 本页把完整目标对应到证据；不以短测或构建替代实际连续播放。详细原始失败保留于[N7记录](native-engine-n7.md)，开发范围见迁移计划（历史文档见 Git）。
 
 部署源码d4852c6，原描述`runtime/engine-release.desktop-final.local.json`，正式指针`runtime/application-release.local.json`，原生bundle f0563ad22e55a09049379daea6b6a61e74a8d54c22e4fea56d68e92166fbad6d、桌面aa81f952。完整后端510通过/1权限跳过；实际不可变桌面包四组、真实AI、两首整曲和1800秒循环均已通过。正常入口已启动固定源码，正式主页及默认SDK/CLI只读检查通过。证据根为`data/maintenance/native-engine/`；没有写正式音乐修订或新建正式任务。
 

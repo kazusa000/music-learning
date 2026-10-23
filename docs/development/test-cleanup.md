@@ -1,43 +1,22 @@
-# 测试临时目录与收尾
+# 测试与临时文件清理
 
-2026-10-23。开发测试统一使用：
+开发测试统一使用：
 
 ```powershell
 & scripts/maintenance/run-tests.ps1
-# 指定短套件
 & scripts/maintenance/run-tests.ps1 -PytestArgs @('tests/test_release_runtime.py','-q')
 ```
 
-默认运行app环境中的service/engine/release套件；不自动调用音乐模型、音源全量验证或长时间连续播放。需要模型环境的测试单独安排，不能用默认app环境强行收集全部测试。
+- 夹具、临时工程、录音及 pytest 缓存只写 `data/tmp/tests/<run-id>`，退出默认清理。
+- 小型日志、JUnit、退出码和清理结果写 `runtime/test-reports`。不要为清理重跑长测。
+- 明确调查需要时才使用 `-KeepFixtures`，调查结束后跟进清理；失败录音不默认永久积累。
+- obj/pdb 与构建中间文件写 `runtime/build/<target>`，不写项目根目录。
+- 一次性维护清单和前后核对写 `runtime/maintenance/<task>`。
 
-- 临时工程、音频、pytest缓存统一在`data/tmp/tests/<run-id>/`；新测试使用`tmp_path`，不再向根目录或`data/t`固定路径写临时文件。
-- 日志、JUnit、退出码及清理结果统一在`runtime/test-reports/`。正常或失败退出都会清临时目录；不自动永久保留失败的大录音。只有明确需要调查时用`-KeepFixtures`，随后要写明保留路径和后续清理。
-- 仅清本次新建目录；检查是否仍有进程引用，不追踪链接目标、不修改只读属性。检测到活动进程则保留并告警，不能为了清理而终止音源入库任务。
-- 新构建的obj/pdb必须输出到`runtime/build/<target>/`。历史未提交的AD2文件由其他入库工作产生，本次保留，不在运行中搬动。
-- 产品数据、模型、音源试听缓存、发布包和固定验证记录不归测试清理器管理。历史拒绝目录、固定N2和原始run报告仍保留。
+删除前核对精确绝对路径、活动进程、固定文件和链接边界。清理器不跟随 reparse/junction，不修改只读属性，不为清理停止验证或播放任务。存在用户数据或归属不明的路径先保留。
 
-`clean-workspace.ps1`只接收已审核的本轮精确白名单，默认只检查，`-Execute`才清理；它不是全盘或任意目录删除器。2026-10-23本机清理计划与结果位于`runtime/maintenance/cleanup-20261023/`，只涉及E盘本项目，不触碰H库、NAS或整个音源入库工作区。
+正式工程、模型、已安装环境、当前音源试听缓存、产品发布、固定 N2 数据、最终 N7 验收和全部活动 Kontakt 路径不归临时测试清理器管理。此前被拒绝的 `data/t/manual-nz9w4u0m`、`runtime/build/codex-protocol-controls` 保留，不换方法绕过。
 
-## 本次实际结果
+`clean-workspace.ps1`使用本轮审核白名单，默认只检查，`-Execute`才删除。现有授权清单不得扩成任意目录删除器。
 
-40个精确目标：28个旧版无owner播放会话、旧浏览器profile、两份已结束N7 pytest夹具、六份历史UI测试profile、两项小缓存、独立动态夹具的CMake中间文件。删除15641文件/2285目录，0错误；清理窗口E盘空闲净增约1.896GiB，不把此前共享文件的路径大小当释放量。
-
-根目录旧`debugger-fixture.log`归到`runtime/logs/development/`；本次盘点和计划集中在`runtime/maintenance/cleanup-20261023/`。模型、env、音色试听缓存、正式素材、整个instrument-intake和data/t、原始run报告及固定发布都保留。数据库空页压缩暂缓，避免运行中增加数据库锁占用。
-
-只做了入口/退出及删除边界核对：`pytest --version`退出0、无效选项退出4均自动删除本次临时目录；项目根和H路径被范围检查拒绝；新建junction只删链接且保留目标，检查自身临时目录也已删除。没有运行功能回归、整曲、音源发声或模型测试。
-
-`after.json`确认正式九表/head相同、发布身份/四个原生文件SHA相同、入库进程47956身份相同、HTTP健康正常；服务未重启，没有向H或NAS读写。根目录其他入库工作的AD2 obj/pdb文件仍留原位，加入构建产物忽略规则，未删除或移动它们。
-
-
-## 音源导入专项退役清理（2026-10-23）
-
-用户取消 Ample 后，本次单独授权清理它的导入副本和历史实验，不扩大默认测试清理器白名单。精确清单与结果集中在 `runtime/maintenance/instrument-intake-retirement-20261023/`；先移除目录锁保护下的79个Ample catalog条目，再删除废弃测试/构建和H库副本，另清169条Ample旧试听及其缓存。原始下载、正式工程、Kontakt全部活动目录和可复用规则、产品发布、固定宿主均保留；运行中的Kontakt验证/发布/试听不停止、不搬动。
-
-后续目录职责：`scripts/instruments`、`src/music_learning/kontakt_*`、`config/instruments/kontakt-*`保留规则；`data/maintenance/instrument-intake/kf22`保留活动数据和来源证据，当前禁止搬动/裁剪；`runtime/maintenance`仅存精确清理审计，不保留大录音和整份过时库备份。Ample历史源代码留Git供追溯，但它的任务和52项旧预热已取消，不得自动恢复。
-
-
-## DAW缓存和历史测试专项清理（2026-10-23）
-
-本次独立用户授权，白名单和前后核对在`runtime/maintenance/daw-cleanup-20261023/`，不扩大默认清理器。uv原生清理器在自己的锁下清除安装缓存，不使用force，不删已安装环境。旧测试目录先排除活动进程、Kontakt目录和固定文件，再由owned-cleanup执行；旧N7仅清重复音频/编译产物，保留455份JSON报告、最终endurance-v8及实际AI验收。
-
-累计43903文件：uv21705，其余22198；另16797目录，0删除错误。10个历史reparse节点和两个既往拒绝路径保留；N2、模型、环境、正式工程、试听缓存、当前发布、全部Kontakt任务和固定包保留。硬链接与同期写入使逻辑大小不能当释放量，实测E窗口空闲增加1.981GiB。三Kontakt进程身份、正式九表/head和受保护SHA前后相同，API可用且入库持续推进。未重跑功能/音频/长测。
+本机已完成的精确清理记录集中在 `runtime/maintenance/cleanup-20261023`、`instrument-intake-retirement-20261023` 和 `daw-cleanup-20261023`。旧过程数字不在当前说明反复追加，历史文档由 Git 保存。

@@ -1,29 +1,11 @@
 # Python SDK / CLI
 
-Implementation: `src/music_learning/sdk.py` and `cli.py`, currently run from the
-source checkout with `PYTHONPATH=src`. They only use the HTTP API; there is no SDK-side project
-writer. `Client.call`, `execute`, ordered `batch`, streaming `upload`,
-`import_audio`, `wait`, cursor-based `events`, and `asset_bytes` cover all P1
-transports. Capabilities and argument schemas come from `describe_capabilities`.
+SDK 实现在 `src/music_learning/sdk.py`，CLI 由根目录 `music.cmd` 进入。两者调用同一个 HTTP 工程服务，不直接写工程数据库。
 
-`batch` stops on the first error. Previous successful commands stay committed;
-it is not a multi-command transaction. Save complete envelopes with stable
-idempotency keys to safely replay a batch. A single `revisions.commit` atomically
-publishes a validated snapshot and advances the authoritative revision.
+`Client.call`、有序 `batch`、素材上传、导入、任务等待和事件查询使用服务发布的能力与参数契约。能力以实际 `describe_capabilities` 为准，不在本文固定操作总数。
 
-P2 adds `import_audio(..., preprocess=True)`, `Client.preprocess`, and the shared
-`jobs.stages`, `jobs.retry`, `preprocessing.get/adopt` operations. Wait for the
-import job, then its `result.preprocess_job_id`; upload/import success alone is
-not a ready project. Reanalysis creates a candidate when revisions already
-contain music data. See `docs/14-project-service.md` and
-`docs/15-preprocessing-pipeline.md` for runnable examples and phase boundaries.
+`batch` 遇到首个错误停止，之前成功的命令仍保留；它不是跨命令事务。需要安全重试时保留完整请求和稳定幂等键；单次编辑事务由服务原子提交并推进修订。
 
-P3 adds `Client.edit`, `render`, `measure`, with `projects.fork`,
-`edits.apply`, `controllers.query`, `graph.get`, `plugins.presets`,
-`revisions.compare/restore`, `renders.list`, and persisted `audition.get/set/report`.
-`jobs.submit` accepts `project.render`, `audio.measure`, and `project.export`.
-All 38 operations use the same discovered schema and generic CLI `call` route.
-`edits.apply` is one atomic scoped transaction; ordinary batch is still ordered,
-not atomic. A new revision invalidates its audio; query its completed renders
-before claiming it is audible. Render/export retry retains the original target
-revision even after the project head changes. See `docs/17-daw-implementation.md`.
+导入完成与预处理完成分别回读。工程修订、运行中的播放图和导出文件也分别确认；不要把提交成功当成声音已加载。客户端收到修订冲突后重新读取状态。
+
+示例和入口见[统一接口](../../docs/development/unified-api.md)，工程音频规则见[本地架构](../../docs/architecture/native-daw.md)。

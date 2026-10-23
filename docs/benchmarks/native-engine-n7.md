@@ -128,7 +128,7 @@ f4bb46c将上述QA顺序和固定发布入口存档。应用src/services/native/
 
 恢复前正式九表/head和14个固定文件SHA均与N1保护基线相同，见 `n7/resume-20261022-before.json`。本次候选描述为 `runtime/engine-release.resume-20261022.local.json`，只是暂存，尚未激活。
 
-2026-10-21。**进行中，尚未部署正式默认；整体目标保持 active。** N0–N6阶段已完成，见[计划](../plans/native-daw-migration.md)。此文随最终实测补齐，不将构建或短测当作整曲验收。
+2026-10-21。**进行中，尚未部署正式默认；整体目标保持 active。** N0–N6阶段已完成，见计划（历史文档见 Git）。此文随最终实测补齐，不将构建或短测当作整曲验收。
 
 ## 当前实现与修复
 
