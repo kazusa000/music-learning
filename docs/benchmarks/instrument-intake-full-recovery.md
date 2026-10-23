@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 15:00 UTC：原控制终态、真实512基线与中文语义修复
+
+Goal保持ACTIVE。`goal-progress-20261023-145959.json`实核full-h47740/46344的出生时间与原plan命令，156通过/7失败/829待测，正在推进；Kontakt正式入库仍0。正式九表/head及E12固定SHA同14:37基线；H两pin未在原队列活动时重读。
+
+Ample原441 `execution-04`已于14:54:52自然结束，两次独立输出均精确静音。chain03随后实际完成当前512同源基线：first/reopen都返回原身份、完整2298参数和同一非零WAV，但仅第一音48有声，60/72窗口仍精确静音。因此报告的`strict_audio_and_state_pass`只沿用原整体非零检查，**不代表完整乐句通过**。原报告不重标、不覆盖，也没有把441对照直接判成唯一根因。
+
+chain03在14:56:26自然终态`blocked_midi_delivery_stage`：外层H门控通过后，嵌套MIDI探针在before-catalog再次遇到H的90%占用，返回`deferred`/exit2。`q/md07`仅有progress，无私有application或native产物。`root-cause-chain-03/terminal-assessment-01/assessment.json`（SHA `d163006f8d5643eb143498dd175084e7b92cf5495c3e85df5195ee484da1f692`）逐项确认协调器、wrapper、runner及观测子进程均已消失，允许独立原因控制，未声称实际音频成功。不能继续按v3旧PID称运行；后续须跳过已完成的441/512，唯一新通道安排64/32消息派发对照和未完成的MIDI/Riff，每次独立输出与新门控，不为瞬时H繁忙重写旧证据。
+
+`1e5b162`新增共享语境翻译，按taxonomy区分合唱低音/弦乐低音、三角铁/三角波、竖笛音域与萨克斯，修正鼓与乐器术语及明显短语误译。仅更正已知旧机器翻译或给新导入提供术语，保留人工自定义中文、英文原名与产品名。992条E映射投影有63条展示修正，逐条candidate fingerprint和native state相同，源assignment文件未改，原full-h冻结输入也未改。102项相关回归及Ruff通过，夹具自动清理0错；首轮测试因对比classify前后新增字段的夹具假设失败已保留。证据`kontakt-translation-review-01`与`kontakt-translation-projection-01`；未把名称复核冒充音质验证。
+
+V9仅准备未激活：冻结8173e41源码740文件，完整service842通过/3跳过，244.37秒，`runtime/test-reports/20261023-144403-78eec099`。其中确有E内MLFixture/MLDynamicFixture合成原生执行，不是零native调用；没有加载H第三方音源或写正式DB，测试进程均退出。清理6222文件/7488目录、0错。active仍11f0/4ade/f056/aa81及原app.local SHA；新翻译尚未部署，避免将候选结果当正式界面已经生效。52项让路试听仍必须在实际共享修复/产品验收后续回。
+
 ## 2026-10-23 14:37 UTC：实际续跑链、调用链回归与单因素诊断准备
 
 Goal 保持 ACTIVE，旧暂停记录不生效。`goal-progress-20261023-143749.json`再次逐 PID/出生时间/实际 plan 命令核实 full-h47740/46344，仍145通过/7失败/840待测、0Kontakt正式入库，H忙时原批保留等待。正式九表/head与E内12固定SHA相同；H两pin未在忙盘期重读。没有停改原Kontakt或441控制，也没有改正式工程。
