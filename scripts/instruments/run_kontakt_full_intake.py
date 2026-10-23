@@ -281,6 +281,11 @@ def execute(plan_path, expected_plan_sha256):
     )
     from music_learning.instrument_probe_budget import loading_budget
     from music_learning.kontakt_import import atomic_write_json, build_batch, source_record, write_batch
+    from music_learning.instrument_queue_io import atomic_queue_write
+
+    original_atomic_write = atomic_write_json
+    def atomic_write_json(path, value):
+        return atomic_queue_write(original_atomic_write, path, value)
     from music_learning.kontakt_import import _resolve_root
     from music_learning.kontakt_runner import _queue_lock, run_batch
     from music_learning.kontakt_default_multi import scoped_default_multi
@@ -641,7 +646,9 @@ def execute(plan_path, expected_plan_sha256):
                                 lib_run / "preview-handoff.json", client.prepare_instrument_preview)
                     save(status="published_and_previews_dispatched")
     except Exception as error:
-        save(status="blocked_no_automatic_retry", error=repr(error))
+        import traceback
+
+        save(status="blocked_no_automatic_retry", error=repr(error), traceback=traceback.format_exc())
     finally:
         after = dict(formal=formal_snapshot(repo), pins={p: digest(p) for p in plan["protected_files"]})
         atomic_write_json(run / ("protection-after-" + str(os.getpid()) + ".json"), after)

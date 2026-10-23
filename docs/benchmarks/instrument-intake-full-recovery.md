@@ -1,5 +1,21 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23：修复试听注册遗留、加载等待和空间误判
+
+收尾实测：`preview-recovery-01/completion.json`记录49条环境错误全部ready，Daf/Djembes/Bass三条静音项也全部ready，实际API各返回HTTP200和5秒非零PCM（peak约0.06180/0.03485/0.05893）。合计52条恢复；当时全Kontakt试听92ready、1loading、530queued、0failed，623条已入库。缓存和后台队列继续增长，这些是时间点快照。
+
+用户要求修复产品试听故障。原full-h验证失败仍保留，Ample/MODO仍暂停，不重做已通过入库验证。
+
+- 48个旧失败来自Kontakt插件路径未注册，路径修复后没有补排。另1个来自预设复制沿用了整曲导入3GiB保留量。原行及失败文件保留，`kf22/preview-recovery-01/environment-retry-before.json`与`environment-retry-results.json`记录一次定向重排。
+- Daf - Dayereh、Djembes同样的完整入库状态和MIDI，在原验证probe有声而产品预览静音。独立产品宿主只加入帧零前1000ms墙钟等待，两者分别恢复RMS 0.0009962293/0.0009726976、peak 0.01698762/0.00871649，与验证probe一致。产品宿主没有给异步采样加载足够时间；probe的额外身份检查带来的耗时不能作为产品加载保证。没有改音符、键位、采样或接受阈值。
+- 采用可复建的wait-only适配宿主：构建器核对a803原宿主源四文件及固定运行库SHA，只向独立Render副本插入等待；原宿主及原验证固定实现不改。`loading-host.local.json`绑定base host SHA和新exe SHA，已有成功PCM沿用原缓存身份，新生成另存实际renderer.json。适配器不是任意宿主替换，也不据此认可将来改变DSP的构建兼容缓存。
+- 完整native_admission直接使用已经验证的完整状态，不再复制随后会丢弃的preset_path资源。资源身份检查保留。短试听检查实际PCM预算与instrument_min_free_bytes；空间压力保留queued、退避20秒，不标为损坏。
+- 现有队列worker执行重试；新增Bass [a]同类静音也只重排一次。两款打击乐加Band Electric Guitar已通过实际产品renderer完整状态/音频检查，输出见`product-controls.json`。产品API缓存重试结果另存收尾记录，不以隔离renderer结果冒充前端成功。
+
+代码cbf756a，独立发布a469857（6文件覆盖原11f0）；48项相关回归、45项冻结发布回归、Ruff通过。正式九表/head及E内12固定文件SHA前后相同，所有原ready记录保留；三个监督任务42160/48160/17580身份相同，原队列未重启。H内两固定资源未重复读取；旧错误/原报告未覆盖。全局warm=false与4GiB缓存保持。证据根`data/maintenance/instrument-intake/kf22/preview-recovery-01`。
+
+上述身份不变指发布窗口。随后19:59:46原验证42160/13212自行以PermissionError终止，623通过/15失败/354待测。新项目录为空、队列仍pending，说明错误位于创建目录后、提交running检查点前；旧实现只记repr、无traceback，不能认定具体文件API或哪个并发读者导致拒绝。`pending-only-resume-02`保存原progress/locator及三队列字节，空目录经绝对路径和空内容检查后移入独立证据目录。恢复副本沿用01终态跳过逻辑，只加原子队列写拒绝的8次有界退避及外层完整traceback；2项共享回归通过。新wrapper62064已进入Sub Bass 5，未重复任何通过项/失败项验证；原固定脚本、计划和历史报告未改。最新持久入口仍为runtime/kontakt-full-job.local.json。发布/试听跟随进程未重启；正式九表/head收尾相同。
+
 ## 2026-10-23：补齐既有入库和新增通过项的试听
 
 最新用户授权将Kontakt“验证通过→增量入库→准备试听”串起来，并明确已入库项也要补齐。验证仍只处理原未完成队列，原失败不重试；试听跟随器不访问验证WAV、转换记录或重复恢复证明，只取原队列passed与正式catalog中audio_verified/native_admission条目的交集。
