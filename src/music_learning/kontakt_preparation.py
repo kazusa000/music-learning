@@ -282,6 +282,7 @@ class KontaktPreparationSupervisor:
     def __init__(self, repo_root: Path, *, library_root: Path = DEFAULT_LIBRARY_ROOT,
                  runtime_source: Path = DEFAULT_RUNTIME_SOURCE,
                  attempt_id: str | None = None,
+                 refresh_factory_inventory: bool = False,
                  sampler: Callable[[], Mapping[str, Any]] | None = None,
                  sleep: Callable[[float], None] = time.sleep,
                  clock: Callable[[], float] = time.monotonic,
@@ -292,6 +293,7 @@ class KontaktPreparationSupervisor:
         self.library_root = Path(library_root)
         self.bank_root = self.library_root / "Kontakt"
         self.runtime_source = Path(runtime_source)
+        self.refresh_factory_inventory = bool(refresh_factory_inventory)
         self.prep = self.repo / PREPARATION_DIR
         if attempt_id is not None and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", attempt_id):
             raise ValueError("Kontakt preparation attempt id must be a short filesystem-safe token")
@@ -459,6 +461,66 @@ class KontaktPreparationSupervisor:
                 raise RuntimeError("Kontakt runtime SHA audit failed: " + json.dumps(audit.get("failures", []), ensure_ascii=False))
             return audit
 
+    def _factory_inventory_revision(self, data: Mapping[str, Any]) -> dict[str, Any]:
+        """Refresh factory metadata only after an idle gate, then pin the E revision."""
+        from .kontakt_inventory_revision import (
+            load_pinned_inventory_override,
+            refresh_inventory_revision,
+        )
+
+        override_result_path = self.run_dir / "factory-inventory-override-result.json"
+        if override_result_path.exists():
+            result = json.loads(override_result_path.read_bytes())
+            if result.get("status") == "unchanged":
+                return dict(data)
+            if result.get("status") != "revised":
+                raise ValueError("Existing factory inventory refresh is not a frozen revision; preserving it")
+        else:
+            while True:
+                self._save(status="checking_storage", phase="factory_inventory_metadata_stat",
+                           current_library="kontakt-factory", current_path=None)
+                result = refresh_inventory_revision(
+                    self.repo, data["inventory_path"], self.prep / "inventory-revisions",
+                    library_id="kontakt-factory",
+                    expected_source_root=data["source_root"],
+                    budget_probe=lambda: self.budget.probe(phase="factory_inventory_metadata_stat"),
+                )
+                if result.get("status") == "deferred_io":
+                    self._save(status="waiting_storage", phase=result.get("phase"),
+                               current_library="kontakt-factory", current_path=None,
+                               last_storage_budget=result.get("storage_budget"))
+                    self._wait_for_storage(str(result.get("phase", "factory_inventory_metadata_stat")))
+                    continue
+                if result.get("status") == "unchanged":
+                    # The original inventory already matches all current metadata.
+                    # No revision is needed; this is still a fresh stat, not a SHA claim.
+                    _write_once(override_result_path, result)
+                    return dict(data)
+                if result.get("status") != "revised":
+                    _write_once(override_result_path, result)
+                    raise ValueError("Factory source metadata changed outside the allowed .nkc policy: "
+                                     + json.dumps(result.get("unexpected_changes", result.get("failures", [])),
+                                                  ensure_ascii=False))
+                _write_once(override_result_path, result)
+                break
+
+        descriptor = Path(result["override_descriptor"])
+        descriptor_sha = result["override_descriptor_sha256"]
+        inventory, inventory_raw, revision = load_pinned_inventory_override(
+            self.repo, "kontakt-factory", data["inventory"], data["inventory_raw"],
+            descriptor, descriptor_sha,
+        )
+        refreshed = dict(data)
+        refreshed.update({"inventory": inventory, "inventory_raw": inventory_raw,
+                          "inventory_path": Path(result["revision_inventory"]),
+                          "inventory_sha256": hashlib.sha256(inventory_raw).hexdigest(),
+                          "inventory_revision": revision})
+        self._save(status="factory_inventory_revision_ready", phase="factory_inventory_metadata_stat",
+                   current_library="kontakt-factory", current_path=None,
+                   factory_inventory_revision=revision,
+                   factory_inventory_override=str(override_result_path))
+        return refreshed
+
     def _make_runtime_result(self, runtime_state: Mapping[str, Any], runtime_audit: Mapping[str, Any],
                              profile: Mapping[str, Any]) -> dict[str, Any]:
         runtime_root = Path(runtime_state["runtime_root"])
@@ -522,6 +584,8 @@ class KontaktPreparationSupervisor:
             return result
         if failure_path.exists():
             raise ValueError("Kontakt library has a preserved failure record; automatic retry is disabled: " + library_id)
+        if library_id == "kontakt-factory" and self.refresh_factory_inventory:
+            data = self._factory_inventory_revision(data)
         destination = Path(data["destination"])
         source_root = Path(data["source_root"])
         try:
@@ -558,6 +622,7 @@ class KontaktPreparationSupervisor:
                 result = dict(audit)
                 result.update({"status": "audited", "source_root": str(source_root),
                                "preparation_path": str(destination / "preparation.json"),
+                               "source_inventory_revision": data.get("inventory_revision"),
                                "preparation_status": preparation["status"],
                                "catalog_written": False, "audio_verified": False,
                                "plugin_validation_complete": False, "formal_project_writes": 0})
@@ -655,7 +720,8 @@ def _attempt_paths(attempt_id: str | None) -> tuple[Path, Path]:
             PREPARATION_DIR / "attempts" / attempt_id)
 
 
-def launch(repo_root: Path, *, attempt_id: str | None = None) -> dict[str, Any]:
+def launch(repo_root: Path, *, attempt_id: str | None = None,
+           refresh_factory_inventory: bool = False) -> dict[str, Any]:
     """Launch one hidden supervisor, or return the already-live matching one."""
     import psutil
     import subprocess
@@ -666,6 +732,8 @@ def launch(repo_root: Path, *, attempt_id: str | None = None) -> dict[str, Any]:
     command = [str(python), str(script), "--supervise"]
     if attempt_id is not None:
         command.extend(["--attempt-id", attempt_id])
+    if refresh_factory_inventory:
+        command.append("--refresh-factory-inventory")
     locator_relative, prep_relative = _attempt_paths(attempt_id)
     locator = repo / locator_relative
     launch_lock = repo / "runtime/kontakt-preparation-launch.lock"
@@ -690,6 +758,7 @@ def launch(repo_root: Path, *, attempt_id: str | None = None) -> dict[str, Any]:
                   "creation_time": instance.create_time(), "command": command,
                   "working_directory": str(repo), "started_at_utc": _timestamp(),
                   "attempt_id": attempt_id,
+                  "refresh_factory_inventory": refresh_factory_inventory,
                   "progress": str(prep / "progress.json"),
                   "stdout": str(stdout_path), "stderr": str(stderr_path),
                   "formal_project_writes": 0, "catalog_written": False}
@@ -697,7 +766,8 @@ def launch(repo_root: Path, *, attempt_id: str | None = None) -> dict[str, Any]:
         return result
 
 
-def run_from_repo(repo_root: Path, *, attempt_id: str | None = None) -> dict[str, Any]:
+def run_from_repo(repo_root: Path, *, attempt_id: str | None = None,
+                  refresh_factory_inventory: bool = False) -> dict[str, Any]:
     import psutil
 
     repo = Path(repo_root).resolve(strict=True)
@@ -706,7 +776,10 @@ def run_from_repo(repo_root: Path, *, attempt_id: str | None = None) -> dict[str
         outcome = "failed"
         error_text = None
         try:
-            result = KontaktPreparationSupervisor(repo, attempt_id=attempt_id).run()
+            result = KontaktPreparationSupervisor(
+                repo, attempt_id=attempt_id,
+                refresh_factory_inventory=refresh_factory_inventory,
+            ).run()
             outcome = result.get("status", "completed")
             return result
         except Exception as error:

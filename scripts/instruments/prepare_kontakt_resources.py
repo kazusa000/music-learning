@@ -18,13 +18,18 @@ def main() -> int:
     group.add_argument("--start", action="store_true", help="launch one hidden low-priority supervisor")
     group.add_argument("--supervise", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--attempt-id", help="isolate progress/checkpoints for a new preserved attempt")
+    parser.add_argument("--refresh-factory-inventory", action="store_true",
+                        help="create an E-side pinned metadata revision for safe changed .nkc companions")
     args = parser.parse_args()
     try:
         if args.attempt_id is None:
-            result = launch(ROOT) if args.start else run_from_repo(ROOT)
+            result = (launch(ROOT, refresh_factory_inventory=args.refresh_factory_inventory) if args.start
+                      else run_from_repo(ROOT, refresh_factory_inventory=args.refresh_factory_inventory))
         else:
-            result = launch(ROOT, attempt_id=args.attempt_id) if args.start else run_from_repo(
-                ROOT, attempt_id=args.attempt_id)
+            result = (launch(ROOT, attempt_id=args.attempt_id,
+                             refresh_factory_inventory=args.refresh_factory_inventory) if args.start
+                      else run_from_repo(ROOT, attempt_id=args.attempt_id,
+                                         refresh_factory_inventory=args.refresh_factory_inventory))
     except Exception as error:
         print(json.dumps({"status": "failed", "error": repr(error)}, ensure_ascii=False))
         return 1
