@@ -157,6 +157,9 @@ public:
         midi->setProperty("events_submitted", (juce::int64)shared->midiDelivery.eventsSubmitted.load(std::memory_order_acquire));
         midi->setProperty("records_dropped", (juce::int64)shared->midiDelivery.recordsDropped.load(std::memory_order_acquire));
         midi->setProperty("audio_blocks_dropped", (juce::int64)shared->midiDelivery.audioBlocksDropped.load(std::memory_order_acquire));
+        midi->setProperty("midi_record_capacity", (int)midiDeliveryRecordCapacity);
+        midi->setProperty("audio_blocks_capacity", (int)midiDeliveryAudioCapacity);
+        midi->setProperty("ample_readiness_capacity", (int)ampleReadinessRecordCapacity);
         juce::Array<juce::var> records;
         const auto count = std::min<uint64_t>(shared->midiDelivery.recordsPublished.load(std::memory_order_acquire),
                                                midiDeliveryRecordCapacity);
@@ -181,8 +184,7 @@ public:
         }
         midi->setProperty("records", records);
         juce::Array<juce::var> audioBlocks;
-        const auto audioCount = std::min<uint64_t>(shared->midiDelivery.audioBlocksPublished.load(std::memory_order_acquire),
-                                                    midiDeliveryRecordCapacity);
+        const auto audioCount = midiDeliveryAudioBlockCount(shared->midiDelivery);
         for (uint64_t i = 0; i < audioCount; ++i) {
             const auto& item = shared->midiDelivery.audioBlocks[static_cast<size_t>(i)];
             if (item.sequence.load(std::memory_order_acquire) != i + 1) continue;
@@ -237,6 +239,18 @@ public:
                 : juce::var());
             record->setProperty("component_vtable", juce::String::toHexString(
                 static_cast<juce::int64>(item.componentVtable)));
+            record->setProperty("normalized_component_vtable",
+                item.normalizedComponentVtable == 0 ? juce::var()
+                    : juce::var(juce::String::toHexString(
+                        static_cast<juce::int64>(item.normalizedComponentVtable))));
+            record->setProperty("normalized_component_wrapper",
+                item.normalizedComponentWrapper == 0 ? juce::var()
+                    : juce::var(juce::String::toHexString(
+                        static_cast<juce::int64>(item.normalizedComponentWrapper))));
+            record->setProperty("component_normalized_offset",
+                (juce::int64)item.componentNormalizedOffset);
+            record->setProperty("component_pointer_reads", (int)item.componentPointerReads);
+            record->setProperty("component_bytes_read", (int)item.componentBytesRead);
             record->setProperty("processor_subobject", juce::String::toHexString(
                 static_cast<juce::int64>(item.processorSubobject)));
             record->setProperty("processor_subobject_vtable",

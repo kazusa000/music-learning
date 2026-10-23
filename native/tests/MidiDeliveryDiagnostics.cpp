@@ -99,5 +99,33 @@ int main() {
                   << diagnostics.recordsDropped.load() << "\n";
         return 6;
     }
+
+    if (mlengine::midiDeliveryAudioCapacity != 4096
+        || mlengine::midiDeliveryRecordCapacity != 512) {
+        std::cerr << "Diagnostic capacities differ from the build08 contract\n";
+        return 9;
+    }
+    for (uint64_t block = 3; block <= 1366; ++block)
+        ml::recordProcessBlockAudio(&shared, block, 0,
+            static_cast<int64_t>((block - 1) * 512), silence);
+    if (diagnostics.audioBlocksPublished.load() != 1366
+        || mlengine::midiDeliveryAudioBlockCount(diagnostics) != 1366
+        || diagnostics.audioBlocks[1365].sequence.load() != 1366
+        || diagnostics.audioBlocks[1365].processBlock != 1366
+        || diagnostics.audioBlocksDropped.load() != 0) {
+        std::cerr << "Audio producer/consumer lost a 1366-block trace\n";
+        return 10;
+    }
+    for (uint64_t block = 1367; block <= 4097; ++block)
+        ml::recordProcessBlockAudio(&shared, block, 0,
+            static_cast<int64_t>((block - 1) * 512), silence);
+    if (diagnostics.audioBlocksPublished.load() != 4096
+        || mlengine::midiDeliveryAudioBlockCount(diagnostics) != 4096
+        || diagnostics.audioBlocks[4095].sequence.load() != 4096
+        || diagnostics.audioBlocks[4095].processBlock != 4096
+        || diagnostics.audioBlocksDropped.load() != 1) {
+        std::cerr << "Audio ring failed its exact-capacity overflow boundary\n";
+        return 11;
+    }
     return 0;
 }

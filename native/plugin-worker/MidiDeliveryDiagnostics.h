@@ -68,7 +68,7 @@ inline void recordProcessBlockAudio(mlengine::PluginRing* shared, uint64_t block
     if (shared == nullptr || blockOrdinal == 0) return;
     auto& diagnostics = shared->midiDelivery;
     const auto index = diagnostics.audioBlocksPublished.load(std::memory_order_relaxed);
-    if (index >= mlengine::midiDeliveryRecordCapacity) {
+    if (index >= mlengine::midiDeliveryAudioCapacity) {
         diagnostics.audioBlocksDropped.fetch_add(1, std::memory_order_relaxed);
         return;
     }

@@ -8,7 +8,13 @@ constexpr uint32_t pluginProtocol = 1;
 constexpr uint32_t pluginCapacity = 8;
 constexpr uint32_t pluginMaxFrames = 4096;
 #if defined(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+#ifndef ML_MIDI_DELIVERY_AUDIO_CAPACITY
+#define ML_MIDI_DELIVERY_AUDIO_CAPACITY 512
+#endif
 constexpr uint32_t midiDeliveryRecordCapacity = 512;
+constexpr uint32_t midiDeliveryAudioCapacity = ML_MIDI_DELIVERY_AUDIO_CAPACITY;
+static_assert(midiDeliveryAudioCapacity >= 512 && midiDeliveryAudioCapacity <= 4096,
+              "Diagnostic audio trace capacity must be bounded from 512 to 4096");
 struct MidiDeliveryRecord {
     std::atomic<uint64_t> sequence{0};
     uint64_t processBlock = 0;
@@ -35,8 +41,11 @@ struct AmpleReadinessRecord {
     int32_t fieldsRead = 0, ready = 0, loadingByteRead = 0;
     int32_t loaderErrorCountRead = 0, statusRead = 0;
     int32_t loadingByte = -1, loaderErrorCount = -1;
-    uint64_t componentVtable = 0, processorSubobject = 0;
+    uint64_t componentVtable = 0, normalizedComponentVtable = 0;
+    uint64_t normalizedComponentWrapper = 0, componentNormalizedOffset = 0;
+    uint64_t processorSubobject = 0;
     uint64_t processorSubobjectVtable = 0, primaryProcessor = 0;
+    uint32_t componentPointerReads = 0, componentBytesRead = 0;
     char product[64]{};
     char version[32]{};
     char modulePath[512]{};
@@ -50,9 +59,14 @@ struct MidiDeliveryDiagnostics {
     std::atomic<uint64_t> audioBlocksPublished{0}, audioBlocksDropped{0};
     std::atomic<uint64_t> ampleReadinessPublished{0}, ampleReadinessDropped{0};
     std::array<MidiDeliveryRecord, midiDeliveryRecordCapacity> records;
-    std::array<ProcessBlockAudioRecord, midiDeliveryRecordCapacity> audioBlocks;
+    std::array<ProcessBlockAudioRecord, midiDeliveryAudioCapacity> audioBlocks;
     std::array<AmpleReadinessRecord, ampleReadinessRecordCapacity> ampleReadiness;
 };
+
+inline uint64_t midiDeliveryAudioBlockCount(const MidiDeliveryDiagnostics& diagnostics) noexcept {
+    const auto published = diagnostics.audioBlocksPublished.load(std::memory_order_acquire);
+    return published < midiDeliveryAudioCapacity ? published : midiDeliveryAudioCapacity;
+}
 #endif
 static_assert(std::atomic<uint64_t>::is_always_lock_free);
 static_assert(std::atomic<double>::is_always_lock_free);

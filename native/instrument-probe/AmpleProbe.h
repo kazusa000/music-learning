@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Host.h"
-#include "AmpleReadinessReader.h"
+#include "ample-component-layout-rea-02/AmpleComponentLayoutReader.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -156,6 +156,25 @@ inline juce::var serialize(const ample_readiness::Snapshot& snapshot,
         {"scope", "read-only loading diagnostic; not identity/audio acceptance"},
     });
 }
+
+inline const char* layoutErrorName(ample_layout_diagnostic::Error error) noexcept
+{
+    using ample_layout_diagnostic::Error;
+    switch (error)
+    {
+        case Error::ok: return "ok";
+        case Error::unsupported_product: return "unsupported_product";
+        case Error::unsupported_version: return "unsupported_version";
+        case Error::unsupported_module: return "unsupported_module";
+        case Error::invalid_module: return "invalid_module";
+        case Error::unreadable_component_view: return "unreadable_component_view";
+        case Error::unrecognized_component_vtable: return "unrecognized_component_vtable";
+        case Error::wrapper_underflow: return "wrapper_underflow";
+        case Error::unreadable_wrapper_vtable: return "unreadable_wrapper_vtable";
+        case Error::wrapper_vtable_mismatch: return "wrapper_vtable_mismatch";
+    }
+    return "unknown_component_layout_error";
+}
 } // namespace ample_probe_detail
 
 inline juce::var ampleReadiness(juce::AudioPluginInstance& plugin,
@@ -231,15 +250,38 @@ inline juce::var ampleReadiness(juce::AudioPluginInstance& plugin,
         static_cast<juce::int64>(moduleBase)));
     result->setProperty("image_size", static_cast<int>(imageSize));
 
+    const auto product = description.name.toStdString();
     const auto version = description.version.toStdString();
-    RuntimeIdentity runtime{
-        "Ample Guitar LP", version, digest,
-        moduleBase, imageSize, componentAddress};
-    const auto snapshot = inspect(runtime, kAGLP40, checkedRead);
+    const ample_layout_diagnostic::RuntimeIdentity runtime{
+        product, version, digest, moduleBase, imageSize, componentAddress};
+    const auto inspected = ample_layout_diagnostic::inspect_readiness(
+        runtime, ample_layout_diagnostic::kAgLp40InstalledLayout, checkedRead);
+    const auto& snapshot = inspected.readiness;
+    const auto& componentLayout = inspected.component;
+    const auto componentLayoutStatus = ample_probe_detail::layoutErrorName(
+        componentLayout.error);
+    result->setProperty("component_layout", object({
+        {"status", componentLayoutStatus},
+        {"valid", componentLayout.valid},
+        {"observed_vtable", juce::String::toHexString(
+            static_cast<juce::int64>(componentLayout.observed_vtable))},
+        {"normalized_wrapper", componentLayout.wrapper == 0
+            ? juce::var() : juce::var(juce::String::toHexString(
+                static_cast<juce::int64>(componentLayout.wrapper)))},
+        {"normalized_offset", static_cast<juce::int64>(
+            componentLayout.normalized_offset)},
+        {"pointer_reads", static_cast<int>(componentLayout.pointer_reads)},
+        {"bytes_read", static_cast<int>(componentLayout.bytes_read)},
+        {"readiness_reader_invoked", inspected.readiness_reader_invoked},
+    }));
     result->setProperty("readiness", ample_probe_detail::serialize(snapshot, checkedRead));
-    result->setProperty("status", juce::String(error_name(snapshot.error).data()));
-    result->setProperty("fields_read", snapshot.fields_read);
-    result->setProperty("ready", snapshot.ready);
+    result->setProperty("status", inspected.readiness_reader_invoked
+        ? juce::String(error_name(snapshot.error).data())
+        : juce::String(componentLayoutStatus));
+    result->setProperty("fields_read", inspected.readiness_reader_invoked
+        && snapshot.fields_read);
+    result->setProperty("ready", inspected.readiness_reader_invoked
+        && snapshot.ready);
     return juce::var(result.release());
 }
 } // namespace ml

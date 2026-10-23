@@ -55,6 +55,11 @@ inline void recordAmpleReadiness(mlengine::PluginRing* shared,
     record.loadingByte = -1;
     record.loaderErrorCount = -1;
     record.componentVtable = 0;
+    record.normalizedComponentVtable = 0;
+    record.normalizedComponentWrapper = 0;
+    record.componentNormalizedOffset = 0;
+    record.componentPointerReads = 0;
+    record.componentBytesRead = 0;
     record.processorSubobject = 0;
     record.processorSubobjectVtable = 0;
     record.primaryProcessor = 0;
@@ -86,9 +91,20 @@ inline void recordAmpleReadiness(mlengine::PluginRing* shared,
                 outer->getProperty("module_path").toString());
             copyReadinessText(record.moduleSha256, sizeof(record.moduleSha256),
                 outer->getProperty("module_sha256").toString());
+            const auto* layout = outer->getProperty("component_layout").getDynamicObject();
+            if (layout != nullptr) {
+                record.normalizedComponentWrapper = readinessPointer(layout,
+                    "normalized_wrapper");
+                record.componentNormalizedOffset = static_cast<uint64_t>(
+                    layout->getProperty("normalized_offset"));
+                record.componentPointerReads = static_cast<uint32_t>(
+                    layout->getProperty("pointer_reads"));
+                record.componentBytesRead = static_cast<uint32_t>(
+                    layout->getProperty("bytes_read"));
+            }
             const auto* snapshot = outer->getProperty("readiness").getDynamicObject();
             if (snapshot != nullptr) {
-                record.componentVtable = readinessPointer(snapshot,
+                record.normalizedComponentVtable = readinessPointer(snapshot,
                     "component_vtable");
                 record.processorSubobject = readinessPointer(snapshot,
                     "processor_subobject");
@@ -116,6 +132,7 @@ inline void recordAmpleReadiness(mlengine::PluginRing* shared,
                 copyReadinessText(record.statusString, sizeof(record.statusString),
                     snapshot->getProperty("status_string").toString());
             }
+            record.componentVtable = readinessPointer(outer, "component_vtable");
         }
     } catch (const std::exception& error) {
         copyReadinessText(record.status, sizeof(record.status),
