@@ -604,7 +604,7 @@ def supervise(run_dir: Path, python: Path, native_host: Path, checkpoint_dir: Pa
                     }
                 _checkpoint(state_path, state, status="running_child",
                             runner_pid=active["pid"], runner_created_ticks=active.get("created_ticks"),
-                            child_elapsed_seconds=round(used + max_total_seconds - remaining, 3))
+                            child_elapsed_seconds=round(elapsed_seconds(state, clock(timezone.utc)), 3))
                 if elapsed_seconds(state, clock(timezone.utc)) >= max_total_seconds:
                     _write_pause_request(run_dir, "supervisor_24h_limit")
                     _checkpoint(state_path, state, status="pausing_at_boundary",
