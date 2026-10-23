@@ -1,7 +1,9 @@
 """Build a provenance-pinned retry from one terminal Ample queue.
 
-This module only reads the source run and installed factory states. It does
-not load a plug-in, edit the source run, publish catalog data, or write to H:.
+This module reads the source run, installed factory states, and (for an
+explicit final-bank retry) the product config plus the audited bank path. It
+does not load a plug-in, walk/hash the bank, edit the source run, publish
+catalog data, or write to H:.
 """
 
 from __future__ import annotations
@@ -10,8 +12,10 @@ from collections import Counter
 from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import xml.etree.ElementTree as ET
 from typing import Callable, Iterable
 
 from .ample_retry_planning import RetryPlanningError, find_active_ample_processes
@@ -80,6 +84,145 @@ def _pin_receipt(run_dir: Path) -> tuple[dict, str]:
             or _sha256(host.read_bytes()) != host_receipt):
         raise RetryPlanningError("Source pinned Ample host differs from its manifest")
     return manifest, manifest_sha
+
+
+def apply_audited_installed_library(
+    queue: dict,
+    audit_result_path: str | Path,
+    *,
+    repository_root: str | Path,
+    library_root: str | Path = r"H:\music\Sound Library",
+) -> dict:
+    """Bind a retry to an audited installed bank and its live plug-in config.
+
+    The audit proves the bank's resource identity, while the config proves that
+    the validation host will be pointed at that exact bank. This function does
+    not scan or modify the library; the actual strict probe still verifies the
+    sample family, native state, and audio.
+    """
+    root = Path(repository_root).resolve(strict=True)
+    intake = (root / "data/maintenance/instrument-intake").resolve(strict=True)
+    audit_path = Path(audit_result_path)
+    if audit_path.is_symlink():
+        raise RetryPlanningError("Installed-library audit result must not be a link")
+    audit_path = _within(audit_path, intake, "installed-library audit result")
+    audit, audit_sha = _read_json(audit_path, "installed-library audit result")
+    if audit.get("status") != "audited":
+        raise RetryPlanningError("Installed-library audit has not reached audited status")
+    product = audit.get("product")
+    installed = audit.get("installed_library")
+    verification = audit.get("verification")
+    if (not isinstance(product, str) or not isinstance(installed, dict)
+            or not isinstance(verification, dict)):
+        raise RetryPlanningError("Installed-library audit is missing its product/verification receipt")
+    manifest_sha = installed.get("manifest_sha256")
+    resource_sha = audit.get("source_manifest_sha256")
+    resource_audit = audit.get("resource_audit_manifest")
+    bank_relative = installed.get("bank_root")
+    library_id = installed.get("library_id")
+    if (not isinstance(manifest_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha)
+            or not isinstance(resource_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", resource_sha)
+            or not isinstance(bank_relative, str) or not bank_relative
+            or not isinstance(library_id, str) or not library_id
+            or not isinstance(resource_audit, dict)):
+        raise RetryPlanningError("Installed-library audit identity fields are malformed")
+    resource_manifest_sha = resource_audit.get("manifest_sha256")
+    if not isinstance(resource_manifest_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", resource_manifest_sha):
+        raise RetryPlanningError("Installed-library resource-audit manifest identity is malformed")
+    checked = verification.get("files_checked")
+    prepared = audit.get("prepared_file_count")
+    if (not isinstance(checked, int) or not isinstance(prepared, int)
+            or checked != prepared or verification.get("manifest_sha256") != manifest_sha):
+        raise RetryPlanningError("Installed-library audit did not verify its complete fixed manifest")
+
+    from pathlib import PurePosixPath
+
+    relative = PurePosixPath(bank_relative)
+    if (relative.is_absolute() or not relative.parts or ".." in relative.parts
+            or any(":" in part for part in relative.parts)):
+        raise RetryPlanningError("Installed-library bank root is not a safe relative path")
+    try:
+        base = Path(library_root).resolve(strict=True)
+        bank = (base.joinpath(*relative.parts)).resolve(strict=True)
+    except OSError as error:
+        raise RetryPlanningError("Configured Sound Library or audited bank path is unavailable") from error
+    try:
+        bank.relative_to(base)
+    except ValueError as error:
+        raise RetryPlanningError("Installed-library bank escaped the configured Sound Library") from error
+    if not bank.is_dir():
+        raise RetryPlanningError("Installed-library bank root is not a directory")
+
+    selected = queue.get("items")
+    if (not isinstance(selected, list) or not selected
+            or any(item.get("instrument") != product for item in selected)):
+        raise RetryPlanningError("Installed-library audit product does not match every selected retry item")
+
+    config_receipts = {}
+    for item in selected:
+        config = Path(item.get("config", ""))
+        if config.is_symlink() or not config.is_file():
+            raise RetryPlanningError(f"Plug-in config is missing or linked: {config}")
+        try:
+            config = config.resolve(strict=True)
+            config_raw = config.read_bytes()
+        except OSError as error:
+            raise RetryPlanningError(f"Cannot read plug-in config: {config}") from error
+        try:
+            config_xml = ET.fromstring(config_raw)
+        except ET.ParseError as error:
+            raise RetryPlanningError(f"Plug-in config is invalid XML: {config}") from error
+        inst_dirs = config_xml.findall("VALUE[@name='InstDir']")
+        if len(inst_dirs) != 1 or not inst_dirs[0].get("val"):
+            raise RetryPlanningError(f"Plug-in config has no unique InstDir value: {config}")
+        try:
+            configured = Path(inst_dirs[0].get("val", "")).resolve(strict=True)
+        except OSError as error:
+            raise RetryPlanningError(f"Configured plug-in bank path is unavailable: {config}") from error
+        if os.path.normcase(str(configured)) != os.path.normcase(str(bank)):
+            raise RetryPlanningError(
+                f"Plug-in InstDir does not point at the audited installed bank: {configured}"
+            )
+        config_sha = _sha256(config_raw)
+        previous_library = item.get("library")
+        receipt = {
+            "previous_library": previous_library,
+            "installed_library": str(bank),
+            "installed_bank_root": bank_relative,
+            "installed_library_id": library_id,
+            "installed_manifest_sha256": manifest_sha,
+            "resource_manifest_sha256": resource_manifest_sha,
+            "source_manifest_sha256": resource_sha,
+            "audit_result_path": str(audit_path),
+            "audit_result_sha256": audit_sha,
+            "config_path": str(config),
+            "config_sha256": config_sha,
+            "configured_inst_dir": str(configured),
+            "files_checked": checked,
+            "selection_reason": "retry against the audited installed bank currently selected by the product InstDir",
+        }
+        origin = item.get("retry_batch_origin")
+        if not isinstance(origin, dict):
+            raise RetryPlanningError("Selected item has no immutable source retry receipt")
+        origin["installed_library_override"] = receipt
+        item["library"] = str(bank)
+        config_receipts[str(config)] = {"sha256": config_sha, "inst_dir": str(configured)}
+
+    manifest = {
+        "product": product,
+        "bank_root": bank_relative,
+        "library_id": library_id,
+        "installed_manifest_sha256": manifest_sha,
+        "resource_manifest_sha256": resource_manifest_sha,
+        "source_manifest_sha256": resource_sha,
+        "audit_result_path": str(audit_path),
+        "audit_result_sha256": audit_sha,
+        "files_checked": checked,
+        "configs": config_receipts,
+    }
+    queue["installed_library_override"] = manifest
+    queue.setdefault("selection", {})["installed_library_override"] = manifest
+    return manifest
 
 
 def _item_error(item: dict) -> str | None:

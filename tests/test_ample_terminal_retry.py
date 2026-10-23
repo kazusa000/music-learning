@@ -8,7 +8,10 @@ import pytest
 
 from music_learning.ample_riffer_mapping import profile_from_factory
 from music_learning.ample_retry_planning import RetryPlanningError
-from music_learning.ample_terminal_retry import build_terminal_profile_correction_queue
+from music_learning.ample_terminal_retry import (
+    apply_audited_installed_library,
+    build_terminal_profile_correction_queue,
+)
 
 
 def _sha(path: Path) -> str:
@@ -211,4 +214,134 @@ def test_terminal_profile_correction_fails_closed_on_live_process_or_status_mism
     with pytest.raises(RetryPlanningError, match="counts do not match"):
         build_terminal_profile_correction_queue(
             run, repository_root=tmp_path / "checkout", active_process_scan=lambda _: [],
+        )
+
+
+def _audit_result(path: Path, bank_root: str, *, product: str = "AGM") -> Path:
+    _write_json(path, {
+        "schema_version": 1,
+        "status": "audited",
+        "product": product,
+        "source_manifest_sha256": "b" * 64,
+        "prepared_file_count": 3,
+        "installed_library": {
+            "bank_root": bank_root,
+            "library_id": "ample-guitar-agm-test",
+            "manifest_sha256": "a" * 64,
+        },
+        "resource_audit_manifest": {"manifest_sha256": "c" * 64},
+        "verification": {"files_checked": 3, "manifest_sha256": "a" * 64},
+    })
+    return path
+
+
+def test_audited_installed_bank_override_binds_manifest_and_live_config(tmp_path):
+    checkout = tmp_path / "checkout"
+    run, originals = _terminal_run(tmp_path)
+    queue, _ = build_terminal_profile_correction_queue(
+        run, repository_root=checkout,
+        failed_item_ids=[hashlib.sha256(b"failed-riff").hexdigest()[:24]],
+        active_process_scan=lambda _: [],
+    )
+    library_root = tmp_path / "Sound Library"
+    bank = library_root / "Ample Sound" / "AGM 4.0.0"
+    bank.mkdir(parents=True)
+    config = tmp_path / "AGM_inst.xml"
+    config.write_text(f'<ROOT><VALUE name="InstDir" val="{bank}"/></ROOT>', encoding="utf-8")
+    for item in queue["items"]:
+        item["config"] = str(config)
+    audit = _audit_result(
+        checkout / "data/maintenance/instrument-intake/audit/AGM-result.json",
+        "Ample Sound/AGM 4.0.0",
+    )
+
+    receipt = apply_audited_installed_library(
+        queue, audit, repository_root=checkout, library_root=library_root,
+    )
+
+    assert receipt["installed_manifest_sha256"] == "a" * 64
+    assert receipt["resource_manifest_sha256"] == "c" * 64
+    assert receipt["audit_result_sha256"] == _sha(audit)
+    assert receipt["configs"][str(config)]["sha256"] == _sha(config)
+    assert queue["items"][0]["library"] == str(bank.resolve())
+    item_receipt = queue["items"][0]["retry_batch_origin"]["installed_library_override"]
+    assert item_receipt["installed_library_id"] == "ample-guitar-agm-test"
+    assert item_receipt["config_sha256"] == _sha(config)
+    assert item_receipt["configured_inst_dir"] == str(bank.resolve())
+    assert queue["selection"]["installed_library_override"] == receipt
+    assert (run / "queue.json").read_bytes() == originals["queue"]
+    assert (run / "status.json").read_bytes() == originals["status"]
+
+
+def test_audited_installed_bank_override_rejects_product_mismatch_and_wrong_instdir(tmp_path):
+    checkout = tmp_path / "checkout"
+    run, _ = _terminal_run(tmp_path)
+    item_id = hashlib.sha256(b"failed-riff").hexdigest()[:24]
+    queue, _ = build_terminal_profile_correction_queue(
+        run, repository_root=checkout, failed_item_ids=[item_id],
+        active_process_scan=lambda _: [],
+    )
+    library_root = tmp_path / "Sound Library"
+    bank = library_root / "Ample Sound" / "AGM 4.0.0"
+    bank.mkdir(parents=True)
+    wrong_bank = library_root / "wrong"
+    wrong_bank.mkdir()
+    config = tmp_path / "AGM_inst.xml"
+    config.write_text(f'<ROOT><VALUE name="InstDir" val="{wrong_bank}"/></ROOT>', encoding="utf-8")
+    queue["items"][0]["config"] = str(config)
+    audit = _audit_result(
+        checkout / "data/maintenance/instrument-intake/audit/AGM-result.json",
+        "Ample Sound/AGM 4.0.0",
+    )
+
+    with pytest.raises(RetryPlanningError, match="does not point at the audited installed bank"):
+        apply_audited_installed_library(
+            queue, audit, repository_root=checkout, library_root=library_root,
+        )
+
+    config.write_text(f'<ROOT><VALUE name="InstDir" val="{bank}"/></ROOT>', encoding="utf-8")
+    queue["items"][0]["instrument"] = "AGLP"
+    with pytest.raises(RetryPlanningError, match="does not match every selected retry item"):
+        apply_audited_installed_library(
+            queue, audit, repository_root=checkout, library_root=library_root,
+        )
+
+
+def test_audited_installed_bank_override_rejects_incomplete_manifest_and_path_escape(tmp_path):
+    checkout = tmp_path / "checkout"
+    run, _ = _terminal_run(tmp_path)
+    item_id = hashlib.sha256(b"failed-riff").hexdigest()[:24]
+    queue, _ = build_terminal_profile_correction_queue(
+        run, repository_root=checkout, failed_item_ids=[item_id],
+        active_process_scan=lambda _: [],
+    )
+    audit = _audit_result(
+        checkout / "data/maintenance/instrument-intake/audit/AGM-result.json",
+        "../outside",
+    )
+    library_root = tmp_path / "Sound Library"
+    library_root.mkdir()
+    config = tmp_path / "AGM_inst.xml"
+    wrong_bank = library_root / "wrong"
+    wrong_bank.mkdir()
+    config.write_text(f'<ROOT><VALUE name="InstDir" val="{wrong_bank}"/></ROOT>', encoding="utf-8")
+    queue["items"][0]["config"] = str(config)
+
+    with pytest.raises(RetryPlanningError, match="safe relative path"):
+        apply_audited_installed_library(
+            queue, audit, repository_root=checkout, library_root=library_root,
+        )
+
+    audit_data = json.loads(audit.read_text(encoding="utf-8"))
+    audit_data["verification"]["files_checked"] = 2
+    _write_json(audit, audit_data)
+    audit_data["installed_library"]["bank_root"] = "Ample Sound/AGM 4.0.0"
+    _write_json(audit, audit_data)
+    bank = library_root / "Ample Sound" / "AGM 4.0.0"
+    bank.mkdir(parents=True)
+    config.write_text(f'<ROOT><VALUE name="InstDir" val="{bank}"/></ROOT>', encoding="utf-8")
+
+    with pytest.raises(RetryPlanningError, match="did not verify its complete fixed manifest"):
+        apply_audited_installed_library(
+            queue, audit, repository_root=checkout, library_root=library_root,
         )

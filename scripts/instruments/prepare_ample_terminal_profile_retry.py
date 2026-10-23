@@ -11,7 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from music_learning.ample_terminal_retry import build_terminal_profile_correction_queue  # noqa: E402
+from music_learning.ample_terminal_retry import (  # noqa: E402
+    apply_audited_installed_library,
+    build_terminal_profile_correction_queue,
+)
 from run_ample_factory_validation import atomic_json, pin_runtime, sha256  # noqa: E402
 
 
@@ -23,6 +26,10 @@ def main() -> None:
     parser.add_argument(
         "--failed-id", action="append", default=None,
         help="Select an exact failed-only subset; repeat once per source item ID.",
+    )
+    parser.add_argument(
+        "--installed-library-audit", type=Path,
+        help="Bind every selected item to a fresh audited bank only when its live InstDir matches.",
     )
     args = parser.parse_args()
 
@@ -41,6 +48,11 @@ def main() -> None:
     queue, status = build_terminal_profile_correction_queue(
         args.source_run, repository_root=ROOT, failed_item_ids=args.failed_id,
     )
+    library_override = None
+    if args.installed_library_audit is not None:
+        library_override = apply_audited_installed_library(
+            queue, args.installed_library_audit, repository_root=ROOT,
+        )
     output.mkdir(parents=True, exist_ok=False)
     atomic_json(output / "queue.json", queue)
     atomic_json(output / "status.json", status)
@@ -63,6 +75,7 @@ def main() -> None:
         "host_sha256": pin.get("host_sha256"),
         "selection": queue["selection"],
         "exact_failed_id_selection": args.failed_id,
+        "installed_library_override": library_override,
         "automatic_retry": False,
         "formal_project_writes": 0,
         "catalog_writes": 0,
