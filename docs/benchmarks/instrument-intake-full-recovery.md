@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 17:56 UTC：实际回调对象和独立 Lua 消费合同
+
+Goal ACTIVE。`goal-progress-20261023-175559.json`实核full-h原47740/46344出生时间/命令仍匹配，499通过/15失败/1运行/477待测，Kontakt正式入库0；正式九表/head/E12固定SHA相同，原队列不改。H两pin继续不在活动原批期间重读。
+
+09-rebuild02在原完整preflight通过后于17:48:19启动唯一实际通道，wrapper5232/coordinator15460，attempt `20261023T174829Z-bce2b7a92a`。plan SHA8d6e16c3…、64/32宿主SHA1895f2e1…/094714c6…、immutable core报告c51def47…固定；构建时05完整5366源/JUCE5347、07 core16/extra9和05 lib前后相同，原消息夹具及新增间接根槽/界限夹具均实际CTest通过，原完整verifier与五份额外manifest通过。初始误抄pin、fixture编译和rebuild01旧parent builder绑定失败均保留；新元数据使用immutable core-report→plan→summary，不再形成报告hash环。
+
+前三项均有实际exit0/released收据。32-reopen已记录初次正确PID39016/ctime/三项精确argv，并产生ok response/WAV，但后次OS清单校验报`process identity differs from exact launch argv`，无最终execution.json；故原checkpoint保留严格失败，不称四项严格完成。原始不符的CIM行没有落盘，不能臆断PID复用或退出竞态。仅对已存在的raw独立分析，不为修summary重跑音频；未来小型inventory记录适配器保持原rows/验证结果，保存目标PID原始行，供类似错误归因。
+
+实际第一派发前队列读到了稳定的根指针与header，派发后为空。64-first count38/cap32/截6，64-reopen count34/截2，不能推断未采到的类型不存在。32-first count32没有截断：Timer消息和三个pending=1的AsyncUpdaterMessage可见，三个owner slot+8 RVA分别5924b0、6f2820、6c0320。独立PE RTTI与REA函数证据将其对应为ChangeBroadcasterCallback、AEGRiffer+0x550（回调为空RET）、AGLocalPluginController+0x28（异步UI队列）；Timer消息vtable51ff5f0/callback367e60也与原静态证据匹配。`windows-message-static-01/actual09-owner-RTTI-01.json`、`actual09-owner-functions-05.json`及`actual09-owner-followups-06.json`保存完整证据。排队对象身份与pending状态不是直接函数执行追踪，尚未确定哪个目标造成静音；下一步沿真实ChangeBroadcaster listener-list和TimerThread目标做有限只读观察，不屏蔽回调、不改合法许可/插件行为。REA当前session仍开，已完成导入，后续须复用该数据库。
+
+`f63127c`把Kontakt源键位查询升级v2，以E内官方Lua5.4.9编译器/解释器实际通过语法和明确mock执行；未知基底抑制indexed rows，缺API/类型错误保留原状态。`a7d0434`增加共享TSV消费解析器：`parse_file(path_text, expected_tags)`核对八个声明标签；`validate_restore_pair`只核对声明相符、phase和不同restore ID/path，明确不证明真实host身份/独立恢复。只投影已知zone字段，条件仍unknown，不生成MIDI候选或修改入库规则。23相关回归/Ruff通过、临时夹具清理0错；样本是Lua mock，不是原992真实源证据。实际getter读取和源/完整state/两次空机架及三窗音频仍须原批终态后执行。默认11f0、V9/新翻译未部署，52试听仍须在真实修复验收后续回。
+
 ## 2026-10-23 17:25 UTC：出厂默认两轮也复现同一截断
 
 Goal ACTIVE；`goal-progress-20261023-172523.json`再次逐PID/ctime/命令核对原full-h47740/46344，443通过/15失败/1运行/533待测，Kontakt正式0；正式九表/head和E12固定SHA相同。原批不改、不重复开批。
