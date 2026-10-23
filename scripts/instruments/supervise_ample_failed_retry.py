@@ -476,7 +476,9 @@ def _wait_existing_runner(rows_provider, run_dir: Path, state: dict, state_path:
         unexpected = _matching_runner_rows(rows, run_dir, os.getpid())
         if unexpected:
             raise SupervisorError("A runner for this pinned queue exists outside the recorded process tree")
-        _checkpoint(state_path, state, active_runner=None, observed_tree={}, last_runner_exit_seen_at=now_iso())
+        _checkpoint(state_path, state, active_runner=None, observed_tree={},
+                    surviving_processes=[], unexpected_processes=[],
+                    last_runner_exit_seen_at=now_iso())
         return True
 
 
@@ -697,6 +699,7 @@ def supervise(run_dir: Path, python: Path, native_host: Path, checkpoint_dir: Pa
             summary = validate_retry_state(queue, status)
             signature = _progress_signature(queue)
             _checkpoint(state_path, state, active_runner=None, observed_tree={},
+                        surviving_processes=[], unexpected_processes=[],
                         last_runner_returncode=returncode, last_runner_finished_at=now_iso(),
                         queue_counts=summary["counts"], last_observed_run_status=status.get("status"),
                         last_progress_signature=signature)

@@ -53,3 +53,18 @@ def test_unknown_birth_time_is_not_used_to_discard_a_possible_owned_process(born
     child = process(30, 10, born, "owned native host")
     with pytest.raises(supervisor.SupervisorError, match="creation"):
         supervisor.verified_observed_survivors(root, {"30": child}, [])
+
+
+def test_adopted_checkpoint_clears_only_proven_stale_child_wait(tmp_path):
+    run = tmp_path / "run"
+    root = process(10, 1, 1000, str(run / "pinned/scripts/run_ample_factory_validation.py"))
+    old = process(20, 10, 200, "unrelated old tail")
+    state = {"active_runner": root, "observed_tree": {"20": old},
+             "surviving_processes": [old]}
+    assert supervisor._wait_existing_runner(
+        lambda: [old], run, state, tmp_path / "assessment.json",
+        sleep=lambda _: pytest.fail("No genuine child exists to wait for"),
+        poll_seconds=1, max_total_seconds=100, stop_after_limit=False)
+    assert state["active_runner"] is None
+    assert state["observed_tree"] == {}
+    assert state["surviving_processes"] == []
