@@ -9,6 +9,10 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from instruments.cadence_execution_contract import bind_execution_contract
 
 ROOT = Path(__file__).resolve().parents[2]
 INTAKE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
@@ -126,6 +130,12 @@ def snapshot_manifest(root: Path, paths: list[str]) -> dict:
         raise RuntimeError("Duplicate overlay source paths")
     return {"schema_version": 1, "source_root": str(resolved),
             "file_count": len(entries), "files": entries}
+
+
+def linked_runtime_library_manifest() -> dict:
+    manifest = snapshot_manifest(BASE_05_BUILD, ["ml_audio_runtime.lib"])
+    manifest["artifact_type"] = "immutable_05_static_library"
+    return manifest
 
 
 def patch_render_text(text: str) -> str:
@@ -322,11 +332,7 @@ def main() -> None:
     write_json(core_manifest_path, core_snapshot)
     write_json(extra_manifest_path, extra_snapshot)
     linked_lib_manifest = EVIDENCE / "linked-runtime-library-manifest.json"
-    write_json(linked_lib_manifest, {
-        "schema_version": 1, "artifact_type": "immutable_05_static_library",
-        "path": str(BASE_05_LIB.resolve()), "bytes": BASE_05_LIB.stat().st_size,
-        "sha256": digest(BASE_05_LIB),
-    })
+    write_json(linked_lib_manifest, linked_runtime_library_manifest())
     source_pin = {
         "schema_version": 1, "status": "isolated_source_frozen_before_build",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -393,8 +399,9 @@ def main() -> None:
         hosts[str(cadence)] = {"path": str(binary.resolve()), "sha256": digest(binary),
                                "bytes": binary.stat().st_size, "executed": False}
     test_binary = cmake_build / "ml_test_windows_message_observer.exe"
+    core_report_path = EVIDENCE / "build-report-core.json"
     report_path = EVIDENCE / "build-report.json"
-    report = {
+    core_report = {
         "schema_version": 1, "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "status": "built_not_executed" if ctest_code == 0 else "build_succeeded_test_failed",
         "inputs_before": input_pins, "inputs_after": input_pins_after,
@@ -410,7 +417,7 @@ def main() -> None:
         "constraints": {"host_launched": False, "plugin_loaded": False, "formal_project_written": False,
                         "h_or_nas_accessed": False, "shared_juce_modified": False, "production_renderer_changed": False},
     }
-    write_json(report_path, report)
+    write_json(core_report_path, core_report)
     if ctest_code:
         raise SystemExit("Observer fixture failed; diagnostic hosts were not launched")
 
@@ -442,7 +449,7 @@ def main() -> None:
                        "only_compile_time_cadence_interval_differs_between_hosts": True,
                        "host_executions": 0, "audio_render_executions": 0},
         "source_positive_control": plan07["source_positive_control"],
-        "build_report": {"path": str(report_path.resolve()), "sha256": digest(report_path)},
+        "build_report": {"path": str(core_report_path.resolve()), "sha256": digest(core_report_path)},
         "request_output_root": {"path": str(OUTPUT_ROOT.resolve()), "absent_before_run": True,
                                 "windows_max_path_chars": 259},
         "execution_constraints": {"diagnostic_only_not_admission": True, "host_launched": False,
@@ -477,8 +484,16 @@ def main() -> None:
                         "started": False, "only_json_field_changed": "output_path",
                         "derived_from_07_request_sha256": source_variant["request_sha256"]})
         prepared["request_variants"][case] = variant
+    prepared = bind_execution_contract(
+        prepared, plan07,
+        builder_path=str(Path(__file__).resolve()),
+        builder_sha256=digest(Path(__file__).resolve()),
+    )
     plan_path = EVIDENCE / "prepared-plan.json"
     write_json(plan_path, prepared)
+    report = dict(core_report)
+    report["build_report_core"] = {"path": str(core_report_path.resolve()),
+                                  "sha256": digest(core_report_path)}
     report["prepared_plan"] = {"path": str(plan_path.resolve()), "sha256": digest(plan_path)}
     write_json(report_path, report)
     print(f"build_report={report_path}\nprepared_plan={plan_path}")
