@@ -27,3 +27,10 @@
 只做了入口/退出及删除边界核对：`pytest --version`退出0、无效选项退出4均自动删除本次临时目录；项目根和H路径被范围检查拒绝；新建junction只删链接且保留目标，检查自身临时目录也已删除。没有运行功能回归、整曲、音源发声或模型测试。
 
 `after.json`确认正式九表/head相同、发布身份/四个原生文件SHA相同、入库进程47956身份相同、HTTP健康正常；服务未重启，没有向H或NAS读写。根目录其他入库工作的AD2 obj/pdb文件仍留原位，加入构建产物忽略规则，未删除或移动它们。
+
+
+## 音源导入专项退役清理（2026-10-23）
+
+用户取消 Ample 后，本次单独授权清理它的导入副本和历史实验，不扩大默认测试清理器白名单。精确清单与结果集中在 `runtime/maintenance/instrument-intake-retirement-20261023/`；先移除目录锁保护下的79个Ample catalog条目，再删除废弃测试/构建和H库副本，另清169条Ample旧试听及其缓存。原始下载、正式工程、Kontakt全部活动目录和可复用规则、产品发布、固定宿主均保留；运行中的Kontakt验证/发布/试听不停止、不搬动。
+
+后续目录职责：`scripts/instruments`、`src/music_learning/kontakt_*`、`config/instruments/kontakt-*`保留规则；`data/maintenance/instrument-intake/kf22`保留活动数据和来源证据，当前禁止搬动/裁剪；`runtime/maintenance`仅存精确清理审计，不保留大录音和整份过时库备份。Ample历史源代码留Git供追溯，但它的任务和52项旧预热已取消，不得自动恢复。

@@ -1,5 +1,7 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+音源导入清理／Ample退库（2026-10-23 20:34 UTC）：用户取消Ample及其他未完成新来源导入，明确授权清除其导入副本、废弃诊断和无用备份，覆盖旧Ample暂停/52试听必须续回/保留全部历史intake约定。Ample79条catalog项在共享library锁内精确移除，其余条目逐项不变；169条旧Ample试听记录/25缓存音频和38旧任务入口已清。64个已审核精确目录删除41234文件/10148目录，额外删除63文件，均0错/0跳链；逻辑体积32.544GiB，E窗口空闲增加5.812GiB，H仍保留原始素材硬链接，不把逻辑体积冒充释放量。H仅移除Sound Library/Ample Sound，Htmp/NAS未写，Keyscape/Pianoteq和正式工程保留。Kontakt full-h/prep/所有kf22现有记录与共享规则、固定134输入/14保护文件、当前产品包不改不搬；实际验证62064、发布22256及试听17580均按最新locator核验健康，前后正式九表/head和保护SHA相同。清理后API无Ample来源（搜索Ample会匹配Keyscape的Sampler名称，勿误删），Kontakt持续新增，Keyscape455/Pianoteq797仍可查询。runtime/maintenance/instrument-intake-retirement-20261023集中保存清理清单、最小退库记录和前后检查；旧Ample根入口已清，中央取消标记禁止恢复。以后仅继续当前Kontakt验证/入库/已运行试听，不扩展失败修复。
+
 ## 2026-10-23 20:21 UTC：增量发布的目录替换拒绝恢复
 
 轻量检查发现02发布进程已自然终止；原stderr明确定位到`instrument_intake_publication._atomic_json`的`os.replace`，目标为用户H库catalog.json，WinError5。638条先前入库记录未丢失，验证与试听跟随仍健康。
