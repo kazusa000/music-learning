@@ -746,7 +746,8 @@ def test_fullrunner_treats_publication_pending_preview_handoff_as_a_successful_t
 
 
 @pytest.mark.parametrize("with_override", [False, True])
-def test_prepare_job_pins_each_inventory_and_freezes_only_nki_nkm_source_paths(monkeypatch, tmp_path, with_override):
+@pytest.mark.parametrize("with_release", [False, True])
+def test_prepare_job_pins_each_inventory_and_freezes_only_nki_nkm_source_paths(monkeypatch, tmp_path, with_override, with_release):
     repo = tmp_path / "fake-repo"
     allowed = repo / "data/maintenance/instrument-intake"
     prep = allowed / "resource-prep"
@@ -794,21 +795,59 @@ def test_prepare_job_pins_each_inventory_and_freezes_only_nki_nkm_source_paths(m
     (repo / "scripts/native_host.py").write_text("# fixture\n", encoding="utf-8")
     (repo / "scripts/instruments/run_kontakt_full_intake.py").write_text("# fixture\n", encoding="utf-8")
 
+    source_release = None
+    if with_release:
+        commit = "a" * 40
+        frozen = repo / "runtime/releases" / commit
+        files = {}
+        for relative in ("src/music_learning/fixture.py", "scripts/native_host.py",
+                         "scripts/instruments/run_kontakt_full_intake.py",
+                         "config/instruments/kontakt-catalog-assignments.json"):
+            destination = frozen / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes((repo / relative).read_bytes())
+            files[relative] = prepare_job.sha(destination)
+        manifest = frozen / "release-source.json"
+        manifest.write_text(json.dumps({"schema_version": 1, "commit": commit,
+                                        "files": files}), encoding="utf-8")
+        source_release = repo / "runtime/fixture-release.json"
+        source_release.write_text(json.dumps({"schema_version": 1, "commit": commit,
+            "source_root": str(frozen), "source_manifest_sha256": prepare_job.sha(manifest)}), encoding="utf-8")
+        (source_dir / "fixture.py").write_text("VALUE = 999\n", encoding="utf-8")
+
+    assignment_inputs = []
+
+    def metadata_fixture(_paths, assignment):
+        assignment_inputs.append(assignment)
+        return [None] * 992
+
     real_sha = prepare_job.sha
     monkeypatch.setattr(prepare_job, "ROOT", repo)
     monkeypatch.setattr(prepare_job, "sha", lambda path: (
         "c1e8123fc5f0387abebe841a9c7b1d51d81cd128f3e9b50307c843691dea8155"
         if Path(path).resolve() == empty.resolve() else real_sha(path)
     ))
-    monkeypatch.setattr(kontakt_catalog_metadata, "build_kontakt_catalog_metadata", lambda _paths: [None] * 992)
+    monkeypatch.setattr(kontakt_catalog_metadata, "build_kontakt_catalog_metadata", metadata_fixture)
 
     run = allowed / "fixture-job"
     result = prepare_job.prepare(run, prep, inventory_overrides=(
-        {"kontakt-factory": override} if with_override else None))
+        {"kontakt-factory": override} if with_override else None), source_release=source_release)
     plan = json.loads(Path(result["plan"]).read_bytes())
     pins = json.loads(Path(plan["pins_path"]).read_bytes())["files"]
 
     assert result["status"] == "prepared"
+    assert (run / "code/src/music_learning/fixture.py").read_text(encoding="utf-8") == "VALUE = 1\n"
+    expected_root = frozen if with_release else repo
+    assert assignment_inputs == [expected_root / "config/instruments/kontakt-catalog-assignments.json"]
+    if with_release:
+        assert plan["source_release"]["commit"] == commit
+        assert plan["source_release"]["source_root"] == str(frozen)
+        assert pins[str(run / "source-release.json")] == real_sha(source_release)
+        assert pins[str(run / "source-release-files.json")] == real_sha(manifest)
+        assert (run / "source-release.json").read_bytes() == source_release.read_bytes()
+        assert (source_dir / "fixture.py").read_text(encoding="utf-8") == "VALUE = 999\n"
+    else:
+        assert "source_release" not in plan
     assert plan["libraries"]["kontakt-factory"]["expected_source_paths"] == expected["kontakt-factory"]
     assert plan["libraries"]["css"]["expected_source_paths"] == expected["css"]
     assert plan["libraries"]["css-solo"]["expected_source_paths"] == expected["css-solo"]

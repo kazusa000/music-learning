@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts")]
 from music_learning.kontakt_import import atomic_write_json  # noqa: E402
 
 
@@ -49,7 +49,7 @@ def inventory_inputs(overrides=None):
 
 
 def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handoff=False,
-            preparation_progress=None, inventory_overrides=None):
+            preparation_progress=None, inventory_overrides=None, source_release=None):
     run = run.resolve()
     allowed = ROOT / "data/maintenance/instrument-intake"
     if run == allowed or not run.is_relative_to(allowed) or run.exists():
@@ -63,6 +63,30 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
         preparation_progress = Path(preparation_progress).resolve(strict=True)
         if not preparation_progress.is_relative_to(prep):
             raise ValueError("Preparation progress must stay within the selected evidence directory")
+    source_root, release_info, release_files = ROOT, None, None
+    if source_release is not None:
+        from music_learning.kontakt_import import _resolve_root, _resolve_under
+        from release_runtime import verify_source
+        runtime = _resolve_root(ROOT / 'runtime')
+        descriptor = Path(source_release)
+        if not descriptor.is_absolute():
+            descriptor = ROOT / descriptor
+        try:
+            relative = descriptor.relative_to(runtime).as_posix()
+        except ValueError as error:
+            raise ValueError('Source release descriptor must remain within this runtime') from error
+        descriptor = _resolve_under(runtime, relative, must_exist=True)
+        record = json.loads(descriptor.read_bytes())
+        source_root = verify_source(ROOT, record)
+        source_manifest = source_root / 'release-source.json'
+        manifest = json.loads(source_manifest.read_bytes())
+        if (record.get('commit') != manifest.get('commit')
+                or source_root.name != record.get('commit')):
+            raise ValueError('Source release commit identity differs')
+        release_files = manifest['files']
+        release_info = dict(commit=record['commit'], source_root=str(source_root),
+                            descriptor_sha256=sha(descriptor),
+                            source_manifest_sha256=sha(source_manifest))
     probe = ROOT / "runtime/build/instrument-probe/kontakt-reader-b/ml_kontakt_probe.exe"
     build = json.loads((probe.parent / "build.json").read_bytes())
     if build.get("status") != "built" or sha(probe) != build.get("executable_sha256"):
@@ -70,27 +94,39 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
     empty = ROOT / "data/maintenance/instrument-intake/20261022-resume/kontakt-clean-rack/empty.nkm"
     if sha(empty) != "c1e8123fc5f0387abebe841a9c7b1d51d81cd128f3e9b50307c843691dea8155":
         raise ValueError("Independent empty Multi changed")
-    assignment = ROOT / "config/instruments/kontakt-catalog-assignments.json"
+    assignment = source_root / "config/instruments/kontakt-catalog-assignments.json"
     inventories = inventory_inputs(inventory_overrides)
     # Validate all 992 reviewed assignments before creating any background job.
     from music_learning.kontakt_catalog_metadata import build_kontakt_catalog_metadata
-    records = build_kontakt_catalog_metadata(list(inventories.values()))
+    records = build_kontakt_catalog_metadata(list(inventories.values()), assignment)
     if len(records) != 992:
         raise ValueError("Kontakt full job must cover the complete 992-source inventory")
     run.mkdir(parents=True, exist_ok=False)
     code = run / "code"
-    sources = sorted((ROOT / "src/music_learning").rglob("*.py"))
-    sources += [ROOT / "scripts/native_host.py", ROOT / "scripts/instruments/run_kontakt_full_intake.py", assignment]
-    sources += list(inventories.values())
+    source_files = sorted((source_root / "src/music_learning").rglob("*.py"))
+    source_files += [source_root / "scripts/native_host.py", source_root / "scripts/instruments/run_kontakt_full_intake.py", assignment]
+    sources = [(source_root, path) for path in source_files]
+    sources += [(ROOT, path) for path in inventories.values()]
     pins = {}
-    for source in sources:
-        target = code / source.relative_to(ROOT)
+    for origin, source in sources:
+        relative = source.relative_to(origin)
+        target = code / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         before = sha(source)
+        if origin == source_root and release_files is not None and release_files.get(relative.as_posix()) != before:
+            raise ValueError('Source differs from the verified Git release: ' + str(relative))
         shutil.copy2(source, target)
         if sha(target) != before or sha(source) != before:
             raise ValueError("Source changed while freezing the Kontakt job")
         pins[str(target)] = before
+    if release_info is not None:
+        for name, source in (('source-release.json', descriptor), ('source-release-files.json', source_manifest)):
+            target = run / name
+            shutil.copy2(source, target)
+            expected = release_info['descriptor_sha256' if name == 'source-release.json' else 'source_manifest_sha256']
+            if sha(target) != expected or sha(source) != expected:
+                raise ValueError('Verified source release changed during freezing')
+            pins[str(target)] = expected
     frozen_empty = run / "empty.nkm"
     shutil.copy2(empty, frozen_empty)
     pins[str(frozen_empty)] = sha(empty)
@@ -115,6 +151,8 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
                 service_token_file=str(Path(app["data_root"]) / "session-token.local"),
                 preparation_progress=str(preparation_progress) if preparation_progress is not None else None,
                 historical_preparation_failures={str(path): sha(path) for path in prep.glob("*-fail.json")})
+    if release_info is not None:
+        plan['source_release'] = release_info
     atomic_write_json(run / "plan.json", plan)
     plan_sha256 = sha(run / "plan.json")
     result = dict(status="prepared", run_root=str(run), expected_sources=992, plan=str(run / "plan.json"),
@@ -142,6 +180,8 @@ if __name__ == "__main__":
     parser.add_argument("--preview-handoff", action="store_true")
     parser.add_argument("--preparation-progress", type=Path)
     parser.add_argument("--inventory-override", action="append", default=[], metavar="LIBRARY=PATH")
+    parser.add_argument("--source-release", type=Path,
+                        help="Freeze code/config from a verified immutable release, excluding concurrent worktree edits")
     args = parser.parse_args()
     overrides = {}
     for argument in args.inventory_override:
@@ -152,4 +192,4 @@ if __name__ == "__main__":
     print(json.dumps(prepare(args.run, args.prep, start=args.start, publish=args.publish,
                              preview_handoff=args.preview_handoff,
                              preparation_progress=args.preparation_progress,
-                             inventory_overrides=overrides), ensure_ascii=False))
+                             inventory_overrides=overrides, source_release=args.source_release), ensure_ascii=False))
