@@ -97,7 +97,7 @@ end
 local function api_call(name, ...)
   local member_ok, method = pcall(function() return Kontakt[name] end)
   if not member_ok then return {status = "unknown", detail = tostring(method)} end
-  if type(method) ~= "function" then return {status = "unknown", detail = "api_member_unavailable"} end
+  if type(method) ~= "function" then return {status = "unsupported", detail = "api_member_unavailable_or_not_plain_function"} end
   local call_ok, value = pcall(method, ...)
   if not call_ok then return {status = "unknown", detail = tostring(value)} end
   return {status = "known", value = value}
@@ -106,7 +106,7 @@ end
 local function api_property(name)
   local ok, value = pcall(function() return Kontakt[name] end)
   if not ok then return {status = "unknown", detail = tostring(value)} end
-  if value == nil then return {status = "unknown", detail = "api_property_unavailable"} end
+  if value == nil then return {status = "unsupported", detail = "api_property_unavailable"} end
   return {status = "known", value = value}
 end
 
@@ -131,9 +131,10 @@ local function emit_result(file, state, record, field, result)
   if result.status == "known" then
     status, value = encoded(result.value)
   else
-    status, value = "unknown", hex(result.detail or "api_result_unknown")
+    status, value = result.status or "unknown", hex(result.detail or "api_result_unknown")
   end
   if status == "unknown" then state.unknown = state.unknown + 1 end
+  if status == "unsupported" then state.unknown = state.unknown + 1 end
   emit(file, state, record, field, status, value)
   return status, value
 end
@@ -141,7 +142,7 @@ end
 local function emit_option(file, state, field, options_result)
   if options_result.status ~= "known" or type(options_result.value) ~= "table" then
     state.unknown = state.unknown + 1
-    emit(file, state, "option", field, "unknown", hex(options_result.detail or "instrument_options_unavailable"))
+    emit(file, state, "option", field, options_result.status or "unknown", hex(options_result.detail or "instrument_options_unavailable"))
     return
   end
   local value = options_result.value[field]
@@ -153,6 +154,36 @@ local function emit_option(file, state, field, options_result)
     if status == "unknown" then state.unknown = state.unknown + 1 end
   end
   emit(file, state, "option", field, status, payload)
+end
+
+local function pair_known(pair)
+  return pair.first.status == "known" and pair.second.status == "known"
+end
+
+local function pair_unknown(pair)
+  return pair.first.status ~= "known" and pair.second.status ~= "known"
+end
+
+local function infer_index_base(count, first_probe, terminal_probe)
+  if count == 0 then return "empty" end
+  if pair_known(first_probe) and pair_unknown(terminal_probe) then return "zero_based" end
+  if pair_unknown(first_probe) and pair_known(terminal_probe) then return "one_based" end
+  return "unknown"
+end
+
+local function emit_index_base(file, state, collection, base)
+  if base == "zero_based" or base == "one_based" then
+    emit(file, state, "enumeration", collection .. "_index_base", "inferred", base)
+  elseif base == "empty" then
+    emit(file, state, "enumeration", collection .. "_index_base", "empty", "")
+  else
+    state.unknown = state.unknown + 1
+    emit(file, state, "enumeration", collection .. "_index_base", "unknown", hex("boundary_probe_did_not_prove_index_base"))
+  end
+end
+
+local function emit_index_boundary(file, state, collection, api_index, first_result, second_result)
+  emit(file, state, "index_boundary", collection, tostring(api_index), first_result.status, second_result.status)
 end
 
 local function emit_script(file, state, instrument_index, script_index)
@@ -184,7 +215,7 @@ local function emit_script(file, state, instrument_index, script_index)
     local source = api_call("get_instrument_script_source", instrument_index, script_index)
     if source.status ~= "known" then
       state.unknown = state.unknown + 1
-      emit(file, state, "script_source", tostring(script_index), "unknown", hex(source.detail or "api_result_unknown"))
+      emit(file, state, "script_source", tostring(script_index), source.status or "unknown", hex(source.detail or "api_result_unknown"))
     elseif type(source.value) ~= "string" then
       state.unknown = state.unknown + 1
       emit(file, state, "script_source", tostring(script_index), "unknown", hex("invalid_script_source_type"))
@@ -227,17 +258,37 @@ local function query_one_instrument(file, state, instrument_index)
   end, "group_count")
   local group_count_status = emit_result(file, state, "instrument", "group_count", groups)
   if group_count_status == "known" then
-    for group_index = 0, groups.value - 1 do
-      emit(file, state, "group_index", tostring(group_index))
-      emit_result(file, state, "group", "name_" .. group_index,
-        checked(api_call("get_group_name", instrument_index, group_index), function(value)
+    if groups.value == 0 then
+      emit_index_base(file, state, "group", "empty")
+    else
+      local function group_name(index)
+        return checked(api_call("get_group_name", instrument_index, index), function(value)
           return type(value) == "string"
-        end, "group_name"))
-      emit_result(file, state, "group", "start_options_" .. group_index,
-        checked(api_call("get_group_start_options", instrument_index, group_index), function(value)
+        end, "group_name")
+      end
+      local function group_options(index)
+        return checked(api_call("get_group_start_options", instrument_index, index), function(value)
           return type(value) == "table"
-        end, "group_start_options"))
+        end, "group_start_options")
+      end
+      local first_probe = {first = group_name(0), second = group_options(0)}
+      local terminal_probe = {first = group_name(groups.value), second = group_options(groups.value)}
+      local group_index_base = infer_index_base(groups.value, first_probe, terminal_probe)
+      emit_index_base(file, state, "group", group_index_base)
+      emit_index_boundary(file, state, "group", 0, first_probe.first, first_probe.second)
+      emit_index_boundary(file, state, "group", groups.value, terminal_probe.first, terminal_probe.second)
+      if group_index_base == "zero_based" or group_index_base == "one_based" then
+        local first_index = group_index_base == "zero_based" and 0 or 1
+        local last_index = group_index_base == "zero_based" and groups.value - 1 or groups.value
+        for group_index = first_index, last_index do
+          emit(file, state, "group_index", tostring(group_index))
+          emit_result(file, state, "group", "name_" .. group_index, group_name(group_index))
+          emit_result(file, state, "group", "start_options_" .. group_index, group_options(group_index))
+        end
+      end
     end
+  else
+    emit_index_base(file, state, "group", "unknown")
   end
 
   local zones = checked(api_call("get_num_zones", instrument_index), function(value)
@@ -245,11 +296,12 @@ local function query_one_instrument(file, state, instrument_index)
   end, "zone_count")
   emit_result(file, state, "instrument", "zone_count", zones)
   if zones.status == "known" then
-    for zone_index = 0, zones.value - 1 do
-      emit(file, state, "zone_index", tostring(zone_index))
+    if zones.value == 0 then
+      emit_index_base(file, state, "zone", "empty")
+    else
       local zone_fields = {
         {"group", "get_zone_group", function(value)
-          return type(value) == "number" and value % 1 == 0 and value >= 0 and value < MAX_GROUPS
+          return type(value) == "number" and value % 1 == 0 and value >= 0 and value <= MAX_GROUPS
         end},
         {"low_key", "get_zone_low_key", function(value)
           return type(value) == "number" and value % 1 == 0 and value >= 0 and value <= 127
@@ -268,23 +320,46 @@ local function query_one_instrument(file, state, instrument_index)
         end},
         {"geometry", "get_zone_geometry", function(value) return type(value) == "table" end},
       }
-      for _, field in ipairs(zone_fields) do
-        emit_result(file, state, "zone_" .. zone_index, field[1],
-          checked(api_call(field[2], instrument_index, zone_index), field[3], field[1]))
+      local function zone_group(index)
+        return checked(api_call("get_zone_group", instrument_index, index), zone_fields[1][3], "zone_group")
       end
-      local sample = api_call("get_zone_sample", instrument_index, zone_index)
-      if sample.status ~= "known" then
-        state.unknown = state.unknown + 1
-        emit(file, state, "zone_" .. zone_index, "sample_presence", "unknown", hex(sample.detail or "api_result_unknown"))
-      elseif sample.value == nil or sample.value == "" then
-        emit(file, state, "zone_" .. zone_index, "sample_presence", "absent", "")
-      elseif type(sample.value) == "string" then
-        emit(file, state, "zone_" .. zone_index, "sample_presence", "present", "")
-      else
-        state.unknown = state.unknown + 1
-        emit(file, state, "zone_" .. zone_index, "sample_presence", "unknown", hex("invalid_sample_result_type"))
+      local function zone_geometry(index)
+        return checked(api_call("get_zone_geometry", instrument_index, index), zone_fields[7][3], "zone_geometry")
+      end
+      local first_probe = {first = zone_group(0), second = zone_geometry(0)}
+      local terminal_probe = {first = zone_group(zones.value), second = zone_geometry(zones.value)}
+      local zone_index_base = infer_index_base(zones.value, first_probe, terminal_probe)
+      emit_index_base(file, state, "zone", zone_index_base)
+      emit_index_boundary(file, state, "zone", 0, first_probe.first, first_probe.second)
+      emit_index_boundary(file, state, "zone", zones.value, terminal_probe.first, terminal_probe.second)
+      if zone_index_base == "zero_based" or zone_index_base == "one_based" then
+        local first_index = zone_index_base == "zero_based" and 0 or 1
+        local last_index = zone_index_base == "zero_based" and zones.value - 1 or zones.value
+        for zone_index = first_index, last_index do
+          emit(file, state, "zone_index", tostring(zone_index))
+          for _, field in ipairs(zone_fields) do
+            emit_result(file, state, "zone_" .. zone_index, field[1],
+              checked(api_call(field[2], instrument_index, zone_index), field[3], field[1]))
+          end
+          local sample = api_call("get_zone_sample", instrument_index, zone_index)
+          if sample.status ~= "known" then
+            state.unknown = state.unknown + 1
+            emit(file, state, "zone_" .. zone_index, "sample_presence", sample.status or "unknown", hex(sample.detail or "api_result_unknown"))
+          elseif sample.value == nil then
+            emit(file, state, "zone_" .. zone_index, "sample_presence", "absent_nil", "z")
+          elseif sample.value == "" then
+            emit(file, state, "zone_" .. zone_index, "sample_presence", "absent_empty", "s:")
+          elseif type(sample.value) == "string" then
+            emit(file, state, "zone_" .. zone_index, "sample_presence", "present", "")
+          else
+            state.unknown = state.unknown + 1
+            emit(file, state, "zone_" .. zone_index, "sample_presence", "unknown", hex("invalid_sample_result_type"))
+          end
+        end
       end
     end
+  else
+    emit_index_base(file, state, "zone", "unknown")
   end
 
   local script_capacity = checked(api_property("max_num_scripts"), function(value)
@@ -292,9 +367,35 @@ local function query_one_instrument(file, state, instrument_index)
   end, "max_num_scripts")
   emit_result(file, state, "instrument", "script_capacity", script_capacity)
   if script_capacity.status == "known" then
-    for script_index = 0, script_capacity.value - 1 do
-      emit_script(file, state, instrument_index, script_index)
+    if script_capacity.value == 0 then
+      emit_index_base(file, state, "script", "empty")
+    else
+      local function script_name(index)
+        return checked(api_call("get_instrument_script_name", instrument_index, index), function(value)
+          return type(value) == "string"
+        end, "script_name")
+      end
+      local function script_linked(index)
+        return checked(api_call("is_instrument_script_linked", instrument_index, index), function(value)
+          return type(value) == "boolean"
+        end, "script_linked")
+      end
+      local first_probe = {first = script_name(0), second = script_linked(0)}
+      local terminal_probe = {first = script_name(script_capacity.value), second = script_linked(script_capacity.value)}
+      local script_index_base = infer_index_base(script_capacity.value, first_probe, terminal_probe)
+      emit_index_base(file, state, "script", script_index_base)
+      emit_index_boundary(file, state, "script", 0, first_probe.first, first_probe.second)
+      emit_index_boundary(file, state, "script", script_capacity.value, terminal_probe.first, terminal_probe.second)
+      if script_index_base == "zero_based" or script_index_base == "one_based" then
+        local first_index = script_index_base == "zero_based" and 0 or 1
+        local last_index = script_index_base == "zero_based" and script_capacity.value - 1 or script_capacity.value
+        for script_index = first_index, last_index do
+          emit_script(file, state, instrument_index, script_index)
+        end
+      end
     end
+  else
+    emit_index_base(file, state, "script", "unknown")
   end
 end
 
@@ -308,7 +409,7 @@ local function run_capture()
   if not file then error("metadata_output_open_failed:" .. tostring(open_error)) end
   local state = {bytes = 0, unknown = 0}
   local ok, failure = pcall(function()
-    emit(file, state, "schema", "kontakt-source-keymap-v1")
+    emit(file, state, "schema", "kontakt-source-keymap-v2")
     emit(file, state, "identity", "source_nki_sha256", hex(SOURCE_NKI_SHA256))
     emit(file, state, "identity", "source_component_sha256", hex(SOURCE_COMPONENT_SHA256))
     emit(file, state, "identity", "restored_state_sha256", hex(RESTORED_STATE_SHA256))
@@ -346,7 +447,7 @@ local function run_capture()
       emit(file, state, "context", "selected_instrument_index", "unknown", hex("instrument_inventory_unavailable"))
     end
     emit(file, state, "summary", state.unknown == 0 and "metadata_complete" or "metadata_partial",
-      "getter_unknown_count", tostring(state.unknown))
+      "metadata_unknown_count", tostring(state.unknown))
     local flush_ok, flush_error = file:flush()
     if not flush_ok then error("metadata_flush_failed:" .. tostring(flush_error)) end
   end)
