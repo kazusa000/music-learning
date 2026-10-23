@@ -294,14 +294,43 @@ var render(const var& request)
             require(pluginIds.insert(id).second, "Duplicate plugin instance ID");
             auto plugin = load(spec, rate, blockSize);
             const bool mainOnly = needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription());
-            require(plugin->getTotalNumInputChannels() <= 4
-                    && (plugin->getTotalNumOutputChannels() == 2
-                        || (mainOnly && plugin->getTotalNumOutputChannels() == 18)),
-                    "Expected stereo output and optional stereo sidechain");
-            processChannels = std::max(processChannels, plugin->getTotalNumOutputChannels());
+            const bool sidechainRequested = static_cast<bool>(field(spec, "sidechain", false));
             plugin->setPlayHead(&timeline);
             plugin->setRateAndBufferSizeDetails(rate, blockSize);
             plugin->prepareToPlay(rate, blockSize);
+            const auto afterPrepareLayout = routingLayoutDiagnostic(*plugin);
+            require(selectStereoMainOutput(*plugin, AudioChannelSet::stereo(), mainOnly)
+                        && (!sidechainRequested
+                            || configureStereoSidechainInput(*plugin, AudioChannelSet::stereo(), true)),
+                    "Could not reapply supported bus routing after prepareToPlay; "
+                        + routingLayoutDiagnostic(*plugin));
+            if (routingLayoutDiagnostic(*plugin) != afterPrepareLayout)
+            {
+                // Some VST3s reassert their saved layout during prepare. If
+                // host routing had to correct it, prepare once more against
+                // the selected buses, then require that the layout stays put.
+                plugin->releaseResources();
+                plugin->setRateAndBufferSizeDetails(rate, blockSize);
+                plugin->prepareToPlay(rate, blockSize);
+                const auto afterSecondPrepare = routingLayoutDiagnostic(*plugin);
+                require(selectStereoMainOutput(*plugin, AudioChannelSet::stereo(), mainOnly)
+                            && (!sidechainRequested
+                                || configureStereoSidechainInput(*plugin, AudioChannelSet::stereo(), true)),
+                        "Could not stabilize supported bus routing after prepareToPlay; "
+                            + routingLayoutDiagnostic(*plugin));
+                require(routingLayoutDiagnostic(*plugin) == afterSecondPrepare,
+                        "Plugin changed its bus layout again after host negotiation; "
+                            + routingLayoutDiagnostic(*plugin));
+            }
+            const int inputChannels = plugin->getTotalNumInputChannels();
+            require(inputChannels >= 0 && inputChannels <= 4,
+                    "Expected at most four input channels for a stereo sidechain; "
+                        + routingLayoutDiagnostic(*plugin));
+            require(hasSupportedStereoMainOutput(*plugin, AudioChannelSet::stereo(), mainOnly),
+                    "Expected stereo output and optional stereo sidechain; "
+                        + routingLayoutDiagnostic(*plugin));
+            processChannels = std::max({processChannels, inputChannels,
+                                        plugin->getTotalNumOutputChannels()});
             // Keyscape 1.3.3d returns from state loading before its sample worker
             // is ready. Offline blocks can otherwise finish before any sample
             // arrives. This wall-clock settling does not advance musical time;

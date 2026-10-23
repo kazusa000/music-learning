@@ -2,6 +2,7 @@
 #include <juce_audio_processors_headless/juce_audio_processors_headless.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_cryptography/juce_cryptography.h>
+#include "../include/MainOutputBus.h"
 #include <vector>
 #include <memory>
 
@@ -16,6 +17,7 @@ String text(const var&, const char*);
 void writeJson(const File&, const var&);
 AudioProcessorParameter* parameter(AudioPluginInstance&, const String&);
 var pluginSnapshot(AudioPluginInstance&);
+String routingLayoutDiagnostic(AudioProcessor&);
 bool needsKeyscapeAuxiliaryOutputs(const PluginDescription&);
 std::unique_ptr<AudioPluginInstance> load(const var&, double, int);
 var render(const var&);

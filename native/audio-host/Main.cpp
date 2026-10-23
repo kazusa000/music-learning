@@ -166,7 +166,8 @@ std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int bloc
         plugin->enableAllBuses();
     else
         plugin->disableNonMainBuses();
-    if (static_cast<bool>(field(spec, "sidechain", false)))
+    const bool sidechainRequested = static_cast<bool>(field(spec, "sidechain", false));
+    if (sidechainRequested)
     {
         auto* bus = plugin->getBus(true, 1);
         require(bus != nullptr && bus->enable(true), "Plugin does not support an enabled sidechain bus");
@@ -299,9 +300,40 @@ std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int bloc
             require(std::abs(p->getValue() - value) <= 1e-4f,
                     "Plugin did not retain the requested normalized parameter value");
         }
-    require(activateMainOutput(*plugin, AudioChannelSet::stereo()),
-            "Plugin rejected main output bus activation");
+    const bool keepAuxiliaryOutputs = needsKeyscapeAuxiliaryOutputs(description);
+    require(selectStereoMainOutput(*plugin, AudioChannelSet::stereo(), keepAuxiliaryOutputs),
+            "Could not negotiate a stereo main output after state restore; " + routingLayoutDiagnostic(*plugin));
+    require(!sidechainRequested
+                || configureStereoSidechainInput(*plugin, AudioChannelSet::stereo(), true),
+            "Could not configure the requested stereo sidechain input; " + routingLayoutDiagnostic(*plugin));
+    require(!sidechainRequested || plugin->getTotalNumInputChannels() == 4,
+            "Requested sidechain did not produce the supported four-channel input layout; "
+                + routingLayoutDiagnostic(*plugin));
     return plugin;
+}
+
+String routingLayoutDiagnostic(AudioProcessor& plugin)
+{
+    String result = "input_channels=" + String(plugin.getTotalNumInputChannels())
+        + "; output_channels=" + String(plugin.getTotalNumOutputChannels()) + "; buses=[";
+    bool first = true;
+    for (const bool input : {true, false})
+        for (int index = 0; index < plugin.getBusCount(input); ++index)
+        {
+            const auto* bus = plugin.getBus(input, index);
+            if (bus == nullptr)
+                continue;
+            if (!first) result += "; ";
+            first = false;
+            result += (input ? "input" : "output") + String("[") + String(index) + "] name=\""
+                + bus->getName() + "\" enabled=" + (bus->isEnabled() ? "true" : "false")
+                + " channels=" + String(bus->getNumberOfChannels())
+                + " current=\"" + bus->getCurrentLayout().getDescription()
+                + "\" default=\"" + bus->getDefaultLayout().getDescription()
+                + "\" last=\"" + bus->getLastEnabledLayout().getDescription() + "\"";
+        }
+    result += "]";
+    return result;
 }
 
 var pluginSnapshot(AudioPluginInstance& plugin)
@@ -309,6 +341,9 @@ var pluginSnapshot(AudioPluginInstance& plugin)
     MemoryBlock state;
     plugin.getStateInformation(state);
     auto result = descriptionJson(plugin.getPluginDescription());
+    result.getDynamicObject()->setProperty("total_input_channels", plugin.getTotalNumInputChannels());
+    result.getDynamicObject()->setProperty("total_output_channels", plugin.getTotalNumOutputChannels());
+    result.getDynamicObject()->setProperty("routing_layout", routingLayoutDiagnostic(plugin));
     result.getDynamicObject()->setProperty("state_base64", Base64::toBase64(state.getData(), state.getSize()));
     result.getDynamicObject()->setProperty("state_encoding", "rfc4648-juce-vst3-state");
     result.getDynamicObject()->setProperty("state_sha256", SHA256(state).toHexString());
@@ -325,7 +360,10 @@ var pluginSnapshot(AudioPluginInstance& plugin)
             const auto* bus = plugin.getBus(isInput, index);
             buses.add(object({{"direction", isInput ? "input" : "output"}, {"index", index},
                                {"name", bus->getName()}, {"channels", bus->getNumberOfChannels()},
-                               {"enabled", bus->isEnabled()}}));
+                               {"enabled", bus->isEnabled()},
+                               {"current_layout", bus->getCurrentLayout().getDescription()},
+                               {"default_layout", bus->getDefaultLayout().getDescription()},
+                               {"last_enabled_layout", bus->getLastEnabledLayout().getDescription()}}));
         }
     result.getDynamicObject()->setProperty("buses", buses);
     if (auto* client = plugin.getVST3Client())

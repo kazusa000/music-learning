@@ -1,4 +1,5 @@
 #pragma once
+#include "../include/MainOutputBus.h"
 
 namespace ml {
 struct NodeTimeline final : Timeline {
@@ -155,7 +156,9 @@ public:
                 if(std::abs(target->getValue()-wanted)>1e-6f)target->setValueNotifyingHost(wanted);
             }
             require(plugin->getTotalNumInputChannels()<=(graphMode?4:2),"Worker sidechain needs graph support");
-            require(plugin->getTotalNumOutputChannels()==2||needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()),"Worker requires stereo output");
+            require(hasSupportedStereoMainOutput(*plugin, AudioChannelSet::stereo(),
+                                                 needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription())),
+                    "Worker requires a supported stereo main output");
             channels=std::max(channels,plugin->getTotalNumOutputChannels());
             plugin->setNonRealtime(needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()));
             plugin->setPlayHead(timeline.get());plugin->setRateAndBufferSizeDetails(rate,quantum);plugin->prepareToPlay(rate,quantum);

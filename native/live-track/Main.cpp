@@ -103,7 +103,9 @@ public:
         for(auto spec:array(track,"plugins")) {
             auto plugin=load(spec,rate,blockSize);
             require(plugin->getTotalNumInputChannels()<=2,"Live track does not accept sidechains");
-            require(plugin->getTotalNumOutputChannels()==2||needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()),"Live track needs stereo output");
+            require(hasSupportedStereoMainOutput(*plugin, AudioChannelSet::stereo(),
+                                                 needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription())),
+                    "Live track needs a supported stereo main output");
             channels=std::max(channels,plugin->getTotalNumOutputChannels());
             // This child produces PCM ahead of the browser clock; it is not a
             // device callback. Keyscape must finish its sample work per block.
