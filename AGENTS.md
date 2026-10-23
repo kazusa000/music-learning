@@ -1,5 +1,7 @@
 # 项目开发约定
 
+用户最新收窄范围（2026-10-23）：先让 Kontakt 原 full-h 剩余队列全部跑完，失败项暂时不管。本条覆盖旧失败分析/修复/重试、源键位查询、发布及试听的自动推进指示。健康批次保持运行，仅轻量查进度，不额外全量重验已有结果，不重启触发重复恢复检查。失败保留并继续后续项；全部终态后一次汇报并暂停跟进等待安排。Ample/MODO继续暂停，正式工程及原报告不动。
+
 Kontakt-only后续（2026-10-23 18:48 UTC）：49316/28632原ctime/精确argv仍实核匹配，状态starting在重验原通过证据，CPU/读取持续增长，无新native实例；队列仍518过/15败/459待测。kf22/kontakt-only-resume-20261023/progress-184819.json记录正式九表/head/E12及full-h134固定输入相同，不因观测间隔重启。3c26f91修source keymap实际入口：Lua应交Kontakt 8.exe，不能交ml_kontakt_probe.exe的JSON协议；新增纯生成器清空独立rack、核验load slot/name并在reset前拒覆盖output，34回归含真实Lua解释器/模拟Kontakt API通过，非真实Kontakt getter通过。kf22/source-keymap-preparation-01/prepared.json已E-only准备12个有原source capture失败项的24份Lua，3个超时项须先重新conversion/capture；原批终态前不执行，tags只关联旧VST3状态不能冒充Lua恢复过它。Ample/MODO仍暂停，原宿主/队列/正式工程未改。
 
 用户改为仅推进 Kontakt（2026-10-23 18:40 UTC）：最新明确指示“暂停ample，先把kontack全部入库解决了吧，后面再说”，覆盖下方全体暂停和旧Ample自主续跑。Goal仅Kontakt ACTIVE；Ample全部验证/诊断/52项试听仍暂停，MODO仍暂缓。原full-h的134固定输入及暂停时三validation SHA已实核，518过/15败/459待测；原实现/plan不变续跑，runtime/kontakt-full-job.local.json记录新wrapper49316/worker28632的启动身份，后续每次仍核PID/ctime/argv。启动前发现唯一pending项FM Freaks 2的空目录（无子文件），预检先拒绝；在精确E路径核验后移到独立resume证据目录保留，未改队列/报告。全部记录在kf22/kontakt-only-resume-20261023，旧locator/progress/总入口均原字节保存；新stdout/stderr不覆盖旧日志。当前已启动但仍在原通过项重验阶段，不称新增通过/入库。自动跟进keyscape已ACTIVE且严格限本聊天Kontakt；先完成原剩余队列，终态后集中失败项独立修复重试、产品兼容、additions-only发布及Kontakt试听。不得恢复Ample，正式工程/NAS/Htmp/固定14边界不变。
