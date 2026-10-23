@@ -70,6 +70,12 @@
 .discussion-compose textarea { width: 100%; display: block; margin: 0; min-height: 64px; max-height: none; resize: none; padding: 11px 12px; font-size: 13px; line-height: 1.7; border-radius: 9px; border-color: #ffffff14; background: #242426; color: #e2d7c9; }
 .discussion-compose textarea:focus-visible { outline-width: 1px; outline-offset: 0; outline-color: #aa784c; border-color: #b0805a55; }
 .compose-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.compose-actions > .reasoning-mode { flex: none; width: 88px; min-width: 0; min-height: 28px; padding: 5px 7px; border: 1px solid #ffffff0d; border-radius: 6px; background: #202022; color: #a99e92; font-size: 10px; cursor: pointer; }
+.compose-actions > .reasoning-mode:hover { border-color: #c0966b44; color: #e2d3c1; }
+.compose-actions > .reasoning-mode[data-effort="medium"] { color: #dfba93; background: #302821; border-color: #bd926a33; }
+.compose-actions > .codex-fast-mode { display: inline-flex; justify-content: center; align-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 1px solid #ffffff0d; border-radius: 6px; color: #837b74; background: #202022; }
+.compose-actions > .codex-fast-mode[aria-pressed="true"] { color: #f0bf81; border-color: #c49a5d55; background: #392c20; }
+.compose-actions > .codex-fast-mode:hover:not(:disabled) { color: #ffe0af; border-color: #c49a5d66; }
 .compose-actions > .send-discussion { flex: none; color: #201a14; background: #e8d5bc; font-size: 10px; padding: 6px 9px; border-radius: 6px; }
 .compose-actions > .send-discussion:hover:not(:disabled) { background: #ffe6c5; color: #201a14; }
 .compose-actions > .discussion-settings { position: static; flex: 1; min-width: 0; font-size: 10px; }

@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新AI设置（2026-10-23）：思考强度与Codex快速模式独立，输入框底部紧凑下拉＋闪电开关，不增输入区高度。reasoning_effort从模型目录取档位，fast_mode按实际目录映射priority/fast，关闭明确default；本机固定Codex握手default→priority→default且始终medium通过，未生成推理。偏好和每轮参数保存SQLite，旧队列/幂等回执兼容；会话/回复/设置重开恢复及短回归通过。4K/窄窗studio-ui-1792746543674935400通过。临时测试自动清；runtime/build/codex-protocol-controls清理被blocked by policy拒绝，保留不绕过。H/NAS/固定包/音源验证不动。详见docs/architecture/ai-conversation-controls.md。
+
 最新滚动与画布修正（2026-10-23）：默认已发布1845a75，原生f056/桌面aa81不变。编排为唯一纵向滚动容器，LinkedTrackScroll同帧驱动左栏平移，取消双scrollTop追赶；两边滚轮统一推进，中键左栏转交中央。删除音符摘要/片段/原曲波形上的覆盖文字，保留左名与标尺。实际4K/窄窗短流程通过，左右快速正反/首尾218帧最大偏移0px；报告studio-ui-1792715550186988200，临时工程与profile自动清。runtime/maintenance/linked-scroll-20261023记录默认发布/保护；未动H/NAS、音源入库或重跑长测。详见composition-workspace文档末段。
 
 最新创作工作区（2026-10-23）：已发布bc53939源码／新前端，原生f056与桌面aa81包不变，18765正常启动。主页从零编曲／导入双入口；composition创建速度／拍号／小节网格＋空乐器轨，空时间轴原生静音时钟，保留编辑／音色／混音／版本A-B／导出，隐藏原曲。原分析侧栏替换为共享Markdown笔记，统一自动操作AI新增notes_read/notes_write，notes.list/save/delete/agent共用Service，note行持久化，无DB迁移；显式SDK只读兼容。音轨／编排共用行高滚动、Alt纵缩／轨高滑杆、左栏拖名称排序且可撤销重开；原曲往返旧滚动偏移和专注侧栏覆盖修复。44后端短回归＋最终4K/窄窗实际UI通过，真实E内MLFixture发声／边播调音量静音／笔记／拖轨／版本A-B，AI为provider链路测试，不冒充真模型或全库音质。测试临时工程/录音/profile自动清；未重跑整曲长测。runtime/maintenance/composition-20261023前后九表/head、12项E固定SHA、四native一致；H两pin未读、H/NAS本任务无访问。Kontakt supervisor26132/full276及Ample chain45856身份保持，子验证正常结束后链等待磁盘空闲，未停改入库任务。详见docs/architecture/composition-workspace.md；默认start.cmd已走新发布。

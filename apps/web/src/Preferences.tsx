@@ -1,9 +1,10 @@
 import {createContext,useContext,useEffect,useRef,useState} from 'react';
 import type {ReactNode} from 'react';
 import {call} from './api';
-export type Preferences={default_model:string|null;login_mode:'isolated'|'existing';level_match:boolean};
+export type ReasoningEffort=string;
+export type Preferences={default_model:string|null;login_mode:'isolated'|'existing';level_match:boolean;reasoning_effort:ReasoningEffort;fast_mode:boolean};
 export type SettingsView={version:number;configured:boolean;preferences:Preferences;runtime:{data_root:string;instrument_library:string|null;plugin_roots:string[]};analysis_models:Array<{id:string;name:string;purpose:string}>;background_verification:{status:string;total:number;counts:Record<string,number>}|null};
-const initial:Preferences={default_model:null,login_mode:'isolated',level_match:true};
+const initial:Preferences={default_model:null,login_mode:'isolated',level_match:true,reasoning_effort:'low',fast_mode:false};
 const Context=createContext<{view:SettingsView|null;prefs:Preferences;error:string;update:(patch:Partial<Preferences>)=>Promise<void>;refresh:()=>Promise<void>}>({view:null,prefs:initial,error:'',update:async()=>{},refresh:async()=>{}});
 export const usePreferences=()=>useContext(Context);
 export function PreferencesProvider({ready,children}:{ready:Promise<unknown>;children:ReactNode}){

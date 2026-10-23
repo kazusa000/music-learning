@@ -204,9 +204,23 @@ class DialogueWorker:
                 raise DomainError(
                     "model_unavailable", "所选模型当前不可用，请重新选择；没有自动改用其他模型。", 422
                 )
+            effort = turn["payload"].get("reasoning_effort") or "low"
+            selected = next(m for m in models if m["id"] == model)
+            from .model_catalog import capabilities
+            supported = capabilities(selected)
+            if supported["reasoning_efforts"] is not None and effort not in supported["reasoning_efforts"]:
+                raise DomainError("reasoning_effort_unavailable", "此模型不支持所选思考强度，请切换模式或模型。", 422)
+            fast = turn["payload"].get("fast_mode", False)
+            tiers = supported["service_tiers"]
+            # Pinned Codex catalogs may advertise Fast by its wire id "priority".
+            tier = ("priority" if tiers and "priority" in tiers else "fast") if fast else "default"
+            if fast and tiers is not None and not {"fast", "priority"}.intersection(tiers):
+                raise DomainError("fast_mode_unavailable", "此模型暂不支持 Codex 快速模式，请切换模型或关闭快速模式。", 422)
             turn["context"]["provider"] = {
                 "name": "codex-app-server",
                 "model": model,
+                "reasoning_effort": effort,
+                "service_tier": tier,
                 "ephemeral_provider_thread": True,
                 "login_mode": turn["payload"]["login_mode"],
             }
@@ -391,14 +405,16 @@ class DialogueWorker:
                     "cwd": str(directory),
                     "ephemeral": True,
                     "model": model,
+                    "serviceTier": tier,
                     "sandbox": "read-only",
                     "approvalPolicy": "on-request",
                     "dynamicTools": tools,
                     "baseInstructions": EDIT_INSTRUCTIONS if editable else INSTRUCTIONS,
-                    "config": {"model_reasoning_effort": "low"},
+                    "config": {"model_reasoning_effort": effort},
                 },
             )
             thread_id = thread["thread"]["id"]
+            turn["context"]["provider"]["service_tier"] = thread.get("serviceTier") or tier
             with self.database.transaction() as db:
                 history = list(
                     db.execute(
@@ -441,7 +457,8 @@ class DialogueWorker:
                 self.checkpoint(turn, terminal="cancelled")
                 return
             started = await session.request(
-                "turn/start", {"threadId": thread_id, "input": [{"type": "text", "text": prompt}]}
+                "turn/start", {"threadId": thread_id, "effort": effort, "serviceTierForTurn": tier,
+                               "input": [{"type": "text", "text": prompt}]}
             )
             turn_id = started["turn"]["id"]
             deadline, last_save = time.monotonic() + 180, 0

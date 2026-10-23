@@ -239,6 +239,10 @@ def submit(service, db, args, request, *, retry_of=None):
     changes = {}
     if args.model is None:
         changes["model"] = prefs["default_model"]
+    if args.reasoning_effort is None:
+        changes["reasoning_effort"] = prefs["reasoning_effort"]
+    if args.fast_mode is None:
+        changes["fast_mode"] = prefs["fast_mode"]
     if "login_mode" not in args.model_fields_set:
         changes["login_mode"] = prefs["login_mode"]
     if changes:

@@ -29,6 +29,15 @@ try{
  await until(async()=>(await call('notes.list',{project_id:project.id})).length===1,'Notebook not saved');
  await page.getByRole('button',{name:'预览',exact:true}).click();await page.locator('.notebook-preview h1').waitFor();
  await page.getByRole('tab',{name:'讨论',exact:true}).click();assert.equal(await page.getByRole('button',{name:'改编',exact:true}).count(),0);
+ const mode=page.getByLabel('思考强度',{exact:true}),fast=page.getByRole('button',{name:'Codex 快速模式',exact:true});assert.equal(await mode.inputValue(),'low');
+ const beforeHeight=await page.locator('.discussion-compose').evaluate(n=>n.getBoundingClientRect().height);
+ await mode.selectOption('medium');await until(async()=>(await call('application.settings.get')).preferences.reasoning_effort==='medium','Reasoning preference not saved');
+ await fast.click();await until(async()=>(await call('application.settings.get')).preferences.fast_mode===true,'Codex Fast mode not saved');assert.equal(await mode.inputValue(),'medium');
+ let submitted;const intercept=async route=>{const body=route.request().postDataJSON();if(body.operation==='dialogue.submit'){submitted=body.arguments;await route.fulfill({json:{ok:true,result:{}}});}else await route.continue();};
+ await page.route('**/v1/commands',intercept);await page.getByLabel('讨论问题',{exact:true}).fill('用思考模式检查配器');await page.getByRole('button',{name:'发送',exact:false}).click();
+ await until(async()=>!!submitted,'No dialogue request');assert.equal(submitted.reasoning_effort,'medium');assert.equal(submitted.fast_mode,true);await page.unroute('**/v1/commands',intercept);
+ assert.equal(await page.locator('.discussion-compose').evaluate(n=>n.getBoundingClientRect().height),beforeHeight);
+ await page.screenshot({path:path.join(out,'reasoning-4k.png')});
  report.checks.push('Create composition from home; no original; Markdown notebook persists; unified AI');
  await until(async()=>(await call('engine.status')).status==='ready','Empty timeline not ready');
  await page.getByRole('button',{name:'播放',exact:true}).click();await until(async()=>{const s=await call('engine.status');return s.playing&&s.position_sample>0;},'Empty timeline clock failed');
@@ -45,6 +54,9 @@ try{
  await page.getByRole('button',{name:'恢复侧栏',exact:true}).click();await aligned();
  await page.screenshot({path:path.join(out,'composition-4k.png')});
  await page.reload();await page.locator('.studio').waitFor();await until(async()=>page.locator('.track-card').count().then(n=>n===2),'Composition reopen failed');
+ await until(async()=>page.getByLabel('思考强度',{exact:true}).inputValue().then(v=>v==='medium'),'Reasoning mode not restored');
+ assert.equal(await fast.getAttribute('aria-pressed'),'true');await fast.click();await until(async()=>(await call('application.settings.get')).preferences.fast_mode===false,'Fast mode off not saved');assert.equal(await mode.inputValue(),'medium');
+ report.checks.push('Independent reasoning and Codex Fast controls; both sent and restored; composer height unchanged');
  assert.deepEqual((await call('revisions.get',{project_id:project.id})).snapshot.track_order,[ids[1],ids[0]]);
  await page.getByRole('tab',{name:'笔记',exact:true}).click();await page.locator('.notebook-list button').first().click();await until(async()=>page.getByLabel('笔记内容').inputValue().then(s=>s.includes('钢琴与贝斯')),'Notes reopen failed');
  report.checks.push('Empty native transport; add track; drag persists on reopen; aligned vertical zoom');
@@ -87,6 +99,10 @@ try{
  await page.screenshot({path:path.join(out,'original-4k.png')});report.checks.push('Reconstruction scrolling and Alt zoom aligned; original rows and notebook');
  await page.setViewportSize({width:1120,height:720});await page.getByRole('button',{name:/重建/}).click();await page.locator('.daw-playlist-row').first().waitFor();await aligned();
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'Narrow studio overflows horizontally');
+ await page.getByRole('tab',{name:'讨论',exact:true}).click();
+ const layout=await page.locator('.compose-actions').evaluate(n=>({width:n.clientWidth,scroll:n.scrollWidth,boxes:[...n.children].map(c=>({top:c.getBoundingClientRect().top,bottom:c.getBoundingClientRect().bottom}))}));
+ assert(layout.scroll<=layout.width+1,JSON.stringify(layout));assert(layout.boxes.every(b=>Math.abs((b.top+b.bottom)/2-(layout.boxes[0].top+layout.boxes[0].bottom)/2)<2),JSON.stringify(layout));
+ await page.screenshot({path:path.join(out,'reasoning-narrow.png')});
  assert.deepEqual(report.errors,[]);report.status='succeeded';
 }catch(e){report.status='failed';report.failure=String(e.stack??e);await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});throw e;}
 finally{await writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));await call('engine.close').catch(()=>{});await browser.close();}

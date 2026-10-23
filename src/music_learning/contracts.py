@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 Id = Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]
 Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 Sample = Annotated[int, Field(ge=0, strict=True)]
+ReasoningEffort = Annotated[str, Field(min_length=1, max_length=32, pattern=r"^[a-z][a-z0-9_]*$")]
 
 
 def new_id() -> str:
@@ -1119,6 +1120,8 @@ class AvailableModel(Model):
     id: str
     name: str
     is_default: bool
+    reasoning_efforts: list[str] | None = None
+    service_tiers: list[str] | None = None
 
 
 class AvailableModels(Model):
@@ -1145,6 +1148,8 @@ class SubmitDialogue(RevisionRef):
     edit_mode: Literal["auto", "read_only"] = "auto"
     session_id: Id | None = None
     model: str | None = Field(default=None, min_length=1, max_length=200)
+    reasoning_effort: ReasoningEffort | None = None
+    fast_mode: bool | None = None
     text: str = Field(min_length=1, max_length=12000)
     start_sample: Sample = 0
     end_sample: Sample | None = None
@@ -1236,12 +1241,16 @@ class ApplicationPreferences(Model):
     default_model: str | None = Field(default=None, min_length=1, max_length=128)
     login_mode: Literal["isolated", "existing"] = "isolated"
     level_match: bool = True
+    reasoning_effort: ReasoningEffort = "low"
+    fast_mode: bool = False
 
 
 class PreferencesPatch(Model):
     default_model: str | None = Field(default=None, min_length=1, max_length=128)
     login_mode: Literal["isolated", "existing"] | None = None
     level_match: bool | None = None
+    reasoning_effort: ReasoningEffort | None = None
+    fast_mode: bool | None = None
 
 
 class UpdateApplicationSettings(Model):

@@ -88,6 +88,7 @@ class CodexAppServer:
             "features.shell_tool": False,
             "features.apps": False,
             "features.multi_agent": False,
+            "features.fast_mode": True,
             "features.code_mode": False,
             "features.code_mode_host": True,
             "features.shell_snapshot": False,

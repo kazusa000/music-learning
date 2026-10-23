@@ -9,6 +9,18 @@ _cache = {}
 _lock = threading.Lock()
 
 
+def capabilities(model):
+    """Preserve advertised capabilities; missing metadata means unknown, not unsupported."""
+    efforts = model.get("supportedReasoningEfforts")
+    tiers = model.get("serviceTiers")
+    legacy_tiers = model.get("additionalSpeedTiers")
+    tier_ids = list(dict.fromkeys([t["id"] for t in (tiers or [])] + (legacy_tiers or [])))
+    return {
+        "reasoning_efforts": [e["reasoningEffort"] for e in efforts] if efforts is not None else None,
+        "service_tiers": tier_ids if tiers is not None or legacy_tiers is not None else None,
+    }
+
+
 def models(settings, login_mode, *, refresh=False):
     key = (str(settings.model_runtime), login_mode)
     with _lock:
@@ -29,7 +41,8 @@ def models(settings, login_mode, *, refresh=False):
                 result, cursor = [], None
                 while True:
                     page = await session.request("model/list", {"limit": 100, **({"cursor": cursor} if cursor else {})})
-                    result.extend({"id": m["id"], "name": m.get("displayName") or m["id"], "is_default": bool(m.get("isDefault"))} for m in page["data"])
+                    result.extend({"id": m["id"], "name": m.get("displayName") or m["id"], "is_default": bool(m.get("isDefault")),
+                        **capabilities(m)} for m in page["data"])
                     cursor = page.get("nextCursor")
                     if not cursor or len(result) >= 1000:
                         break

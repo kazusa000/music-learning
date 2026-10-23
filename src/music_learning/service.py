@@ -126,6 +126,10 @@ class Service:
                         hash_arguments.pop(key)
             if isinstance(args, c.SaveNote) and args.note_id is None:
                 hash_arguments.pop("note_id", None)
+            if isinstance(args, c.UpdateApplicationSettings):
+                for optional in ("reasoning_effort", "fast_mode"):
+                    if hash_arguments["preferences"].get(optional) is None:
+                        hash_arguments["preferences"].pop(optional, None)
             if request.operation == "audition.set" and args.engine_ack is None:
                 hash_arguments.pop("engine_ack",None)
             plugin_entities = list(hash_arguments.get("snapshot", {}).get("plugins", []))
@@ -148,7 +152,7 @@ class Service:
             if isinstance(args, c.SubmitDialogue):
                 if args.edit_mode == "auto":
                     hash_arguments.pop("edit_mode", None)
-                for optional in ("session_id", "model"):
+                for optional in ("session_id", "model", "reasoning_effort", "fast_mode"):
                     if hash_arguments.get(optional) is None:
                         hash_arguments.pop(optional, None)
             if isinstance(args, c.SaveVersion) and args.track_levels is None:

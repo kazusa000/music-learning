@@ -1,4 +1,5 @@
 import {usePreferences} from './Preferences';
+import type {ReasoningEffort} from './Preferences';
 import {Icon} from './Icon';
 import {PanelResize,usePanelSize} from './PanelResize';
 import {useCallback,useEffect,useRef,useState} from 'react';
@@ -13,6 +14,8 @@ const time=(s:number)=>`${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).
 const active=(t:DialogueTurn)=>['queued','running','cancel_requested'].includes(t.status);
 const statusText:Record<string,string>={queued:'排队中',running:'处理中',cancel_requested:'正在停止',cancelled:'已停止',failed:'未完成',succeeded:'已完成'};
 export type InstrumentDraft={id:string;text:string;revisionId:string;trackId:string};
+type ChatModel={id:string;name:string;is_default:boolean;reasoning_efforts?:string[]|null;service_tiers?:string[]|null};
+const effortNames:Record<string,string>={none:'无',minimal:'极低',low:'低',medium:'中',high:'高',xhigh:'极高',max:'最高',ultra:'超高'};
 
 function ToolHistory({tools}:{tools:DialogueTurn['tools']}){
   const [open,setOpen]=useState(false),[expanded,setExpanded]=useState<number|null>(null);
@@ -30,13 +33,22 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
   const sessionKey='discussion.session.'+revision.project_id;
   const [sessionId,setSessionId]=useState<string|null>(()=>localStorage.getItem(sessionKey));
   const [sessions,setSessions]=useState<ChatSession[]>([]),[model,setModel]=useState(prefs.default_model??'');
-  const [models,setModels]=useState<Array<{id:string;name:string;is_default:boolean}>>([]),[modelsBusy,setModelsBusy]=useState(false);
+  const [models,setModels]=useState<ChatModel[]>([]),[modelsBusy,setModelsBusy]=useState(false);
+  const [effort,setEffort]=useState<ReasoningEffort>(prefs.reasoning_effort);
+  const [fastMode,setFastMode]=useState(prefs.fast_mode);
+  useEffect(()=>setEffort(prefs.reasoning_effort),[prefs.reasoning_effort]);
+  useEffect(()=>setFastMode(prefs.fast_mode),[prefs.fast_mode]);
+  const selectedModel=models.find(m=>m.id===model)??(!model?models.find(m=>m.is_default):undefined);
+  const supportedEfforts=selectedModel?.reasoning_efforts;
+  const effortAvailable=!supportedEfforts||supportedEfforts.includes(effort);
+  const effortOptions=supportedEfforts??['low','medium','high','xhigh'];
+  const fastAvailable=!selectedModel?.service_tiers||selectedModel.service_tiers.some(t=>t==='fast'||t==='priority');
   const sessionRef=useRef(sessionId);sessionRef.current=sessionId;
   const filteredTurns=(items:DialogueTurn[],id:string|null)=>items.filter(t=>(t.session_id??null)===id);
   useEffect(()=>{let live=true;void call<ChatSession[]>('dialogue.sessions.list',{project_id:revision.project_id,limit:1000}).then(items=>{if(live)setSessions(items);}).catch(()=>{});return()=>{live=false;};},[revision.project_id,sessionId]);
   function chooseSession(id:string|null){sessionRef.current=id;setSessionId(id);setTurns([]);setText('');setScope('whole');setDraftBinding(null);try{if(id)localStorage.setItem(sessionKey,id);else localStorage.removeItem(sessionKey);}catch{/* view preference */}}
   async function newSession(){setError('');try{const created=await call<ChatSession>('dialogue.sessions.create',{project_id:revision.project_id,title:'会话 '+(sessions.length+1)},headId,true);setSessions(current=>[created,...current]);chooseSession(created.id);}catch(e){setError((e as Error).message);}}
-  async function loadModels(force=false){if(modelsBusy)return;const requestedLogin=login;setModelsBusy(true);try{const result=await call<{models:Array<{id:string;name:string;is_default:boolean}>}>('dialogue.models',{login_mode:login,refresh:force});if(loginRef.current===requestedLogin)setModels(result.models);}catch(e){setError((e as Error).message);}finally{setModelsBusy(false);}}
+  async function loadModels(force=false){if(modelsBusy)return;const requestedLogin=login;setModelsBusy(true);try{const result=await call<{models:ChatModel[]}>('dialogue.models',{login_mode:login,refresh:force});if(loginRef.current===requestedLogin)setModels(result.models);}catch(e){setError((e as Error).message);}finally{setModelsBusy(false);}}
   const [inputSize,setInputSize]=usePanelSize('discussion.input-height',84,64,320);
   const root=useRef<HTMLDivElement>(null),menu=useRef<HTMLDetailsElement>(null),settings=useRef<HTMLDetailsElement>(null);
   const [availableHeight,setAvailableHeight]=useState(window.innerHeight);
@@ -88,8 +100,8 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
     const timer=setInterval(()=>void update().catch(()=>{}),900);
     return()=>{live=false;clearInterval(timer);};
   },[revision.project_id,activeIds,sessionId]);
-  function questionArgs(question:string){return {project_id:revision.project_id,revision_id:revision.id,session_id:sessionId,model:model||null,text:question,start_sample:a,end_sample:b,track_id:trackId,workspace,reference_track_id:referenceTrackId,login_mode:login,edit_mode:'auto'};}
-  async function submit(){if(!text.trim())return;const submittedSession=sessionId;setBusy(true);setError('');try{
+  function questionArgs(question:string){return {project_id:revision.project_id,revision_id:revision.id,session_id:sessionId,model:model||null,reasoning_effort:effort,fast_mode:fastMode,text:question,start_sample:a,end_sample:b,track_id:trackId,workspace,reference_track_id:referenceTrackId,login_mode:login,edit_mode:'auto'};}
+  async function submit(){if(!text.trim())return;if(!effortAvailable||fastMode&&!fastAvailable){setError('此模型不支持所选思考强度或快速模式，请调整设置或切换模型。');return;}const submittedSession=sessionId;setBusy(true);setError('');try{
     if(draftBinding&&(draftBinding.revisionId!==revision.id||draftBinding.trackId!==trackId))throw new Error('乐器草稿绑定的版本或声部已改变，请重新选择乐器。');
     await call('dialogue.submit',questionArgs(text),headId,true);if(sessionRef.current===submittedSession){setText('');setDraftBinding(null);await refresh();}
     }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
@@ -153,7 +165,11 @@ export function Discussion({revision,headId,start,end,trackId,onLocate,jobs,onCo
           <label>Codex 登录方式 <select aria-label="Codex 登录方式" value={login} onChange={e=>{setLogin(e.target.value);setModels([]);void updatePreferences({login_mode:e.target.value as 'existing'|'isolated'}).catch(e=>setError(e.message));}}><option value="isolated">应用独立登录</option><option value="existing">使用既有 Codex 登录</option></select></label>
           <p>Enter 发送 · Shift+Enter 换行</p>
         </div></details>
-        <button className="send-discussion" title="Enter 发送，Shift+Enter 换行" disabled={!text.trim()||busy||turns.some(active)} onClick={()=>void submit()}>{busy?'保存中':<>发送 <Icon name="send" size={13}/></>}</button>
+        <select className="reasoning-mode" data-effort={effort} aria-label="思考强度" title="思考强度，从下一条消息生效" value={effort} onFocus={()=>{if(!models.length)void loadModels();}} onChange={e=>{const next=e.target.value;setEffort(next);void updatePreferences({reasoning_effort:next}).catch(e=>{setEffort(prefs.reasoning_effort);setError(e.message);});}}>
+          {!effortOptions.includes(effort)&&<option value={effort} disabled>思考 · {effortNames[effort]??effort}</option>}{effortOptions.map(value=><option key={value} value={value}>思考 · {effortNames[value]??value}</option>)}
+        </select>
+        <button className="codex-fast-mode" aria-label="Codex 快速模式" aria-pressed={fastMode} title={!fastAvailable&&!fastMode?'此模型暂不支持 Codex 快速模式':`Codex 快速模式${fastMode?'已开启':'已关闭'} · 速度更快，额度消耗更高`} disabled={!fastAvailable&&!fastMode} onClick={()=>{const next=!fastMode;setFastMode(next);void updatePreferences({fast_mode:next}).catch(e=>{setFastMode(prefs.fast_mode);setError(e.message);});}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m13 2-9 12h7l-1 8 10-13h-7Z"/></svg></button>
+        <button className="send-discussion" title={!effortAvailable?'此模型不支持所选思考强度':fastMode&&!fastAvailable?'此模型不支持快速模式':'Enter 发送，Shift+Enter 换行'} disabled={!text.trim()||busy||turns.some(active)||!effortAvailable||fastMode&&!fastAvailable} onClick={()=>void submit()}>{busy?'保存中':<>发送 <Icon name="send" size={13}/></>}</button>
       </div>
       {error&&<p className="discussion-error" role="alert">{error}</p>}
     </div>
