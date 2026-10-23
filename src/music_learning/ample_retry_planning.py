@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 from typing import Callable, Iterable
 
 
@@ -102,6 +103,90 @@ def _compact_result(item: dict) -> dict:
     return {key: value for key, value in compact.items() if value is not None}
 
 
+def process_row_matches_current_process(process_info: dict) -> bool:
+    """Match a process snapshot to this PID, creation time, parent, and command."""
+    try:
+        import psutil
+    except ImportError:
+        return False
+    try:
+        pid = process_info.get("pid")
+        if pid != os.getpid():
+            return False
+        process = psutil.Process(pid)
+        return (
+            process_info.get("create_time") == process.create_time()
+            and process_info.get("ppid") == process.ppid()
+            and tuple(process_info.get("cmdline") or ()) == tuple(process.cmdline())
+        )
+    except (ImportError, psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+        return False
+
+
+def process_row_matches_current_ancestor(process_info: dict, *, max_depth: int = 64) -> bool:
+    """Prove a process row is an exact, birth-ordered ancestor of this process.
+
+    Only walks as far as the candidate row. Any unknown identity, PID reuse,
+    cycle, command-access failure, or depth limit leaves the candidate
+    unverified so callers keep it as an active conflict.
+    """
+    try:
+        import psutil
+    except ImportError:
+        return False
+    try:
+        if not isinstance(max_depth, int) or not 1 <= max_depth <= 64:
+            return False
+        target_pid = process_info.get("pid")
+        target_created = process_info.get("create_time")
+        target_ppid = process_info.get("ppid")
+        target_command = tuple(process_info.get("cmdline") or ())
+        if not isinstance(target_pid, int) or target_created is None or target_ppid is None:
+            return False
+        child = psutil.Process(os.getpid())
+        child_created = child.create_time()
+        seen = {child.pid}
+        for _ in range(max_depth):
+            parent_pid = child.ppid()
+            if parent_pid <= 0 or parent_pid in seen:
+                return False
+            parent = psutil.Process(parent_pid)
+            parent_created = parent.create_time()
+            parent_ppid = parent.ppid()
+            parent_command = tuple(parent.cmdline())
+            if child.ppid() != parent_pid or parent_created > child_created:
+                return False
+            if parent_pid == target_pid:
+                return (
+                    parent_created == target_created
+                    and parent_ppid == target_ppid
+                    and parent_command == target_command
+                )
+            seen.add(parent_pid)
+            child, child_created = parent, parent_created
+        return False
+    except (ImportError, psutil.NoSuchProcess, psutil.AccessDenied, OSError, TypeError):
+        return False
+
+
+def _exact_preparer_source_binding(argv: list[str], expected_preparer: Path,
+                                   roots: list[str]) -> bool:
+    """Require an exact preparer path immediately followed by exact source binding."""
+    normalized = " ".join(argv).replace("/", "\\").casefold()
+    expected = str(expected_preparer).replace("/", "\\").casefold()
+    if not roots:
+        return False
+    source_alternation = "|".join(re.escape(root) for root in roots)
+    binding = re.compile(
+        rf"(?<![a-z0-9_]){re.escape(expected)}[\"']?\s+"
+        rf"--source-run(?:=|\s+)(?:\"(?P<quoted>{source_alternation})\"|"
+        rf"'(?P<single>{source_alternation})'|"
+        rf"(?P<bare>{source_alternation})(?=$|\s|[;&]))",
+        re.IGNORECASE,
+    )
+    return binding.search(normalized) is not None
+
+
 def find_active_ample_processes(run_dirs: Iterable[Path]) -> list[dict]:
     """Read-only process scan; fail closed if process inspection is unavailable."""
     try:
@@ -110,58 +195,32 @@ def find_active_ample_processes(run_dirs: Iterable[Path]) -> list[dict]:
         raise RetryPlanningError("psutil is required to prove all original Ample run trees are idle") from error
     resolved_roots = [Path(path).resolve() for path in run_dirs]
     roots = [str(path).casefold() for path in resolved_roots]
-    # The queue-preparation CLI is explicitly passed --source-run so it can
-    # read and pin the immutable source evidence. Its own command line therefore
-    # contains the source path, but it is not a probe/host that can mutate or
-    # hold that run. Exclude only this exact, current CLI process; all other
-    # processes that reference a source run still fail closed.
     expected_preparer = (Path(__file__).resolve().parents[2]
                          / "scripts/instruments/prepare_ample_terminal_profile_retry.py").resolve()
-    def is_read_only_preparer_self(pid: object, argv: list[str]) -> bool:
-        # Prefer the OS process snapshot's argument vector to sys.argv[0]. A
-        # Windows launcher can normalize or replace sys.argv[0] while the
-        # actual process command still names this exact read-only preparer.
-        # PID equality alone is insufficient: both executable identity and
-        # the explicit source-run binding must match before self is excluded.
-        if pid != os.getpid():
-            return False
-        exact_preparer_argv = False
-        for argument in argv:
-            try:
-                if Path(argument).resolve() == expected_preparer:
-                    exact_preparer_argv = True
-                    break
-            except (OSError, RuntimeError):
-                continue
-        if not exact_preparer_argv:
-            return False
-        for index, argument in enumerate(argv):
-            source_argument = None
-            if argument == "--source-run" and index + 1 < len(argv):
-                source_argument = argv[index + 1]
-            elif argument.startswith("--source-run="):
-                source_argument = argument.partition("=")[2]
-            if source_argument:
-                try:
-                    if str(Path(source_argument).resolve()).casefold() in roots:
-                        return True
-                except (OSError, RuntimeError):
-                    return False
-        return False
 
     active = []
-    for process in psutil.process_iter(["pid", "name", "cmdline", "create_time"]):
+    for process in psutil.process_iter(["pid", "ppid", "name", "cmdline", "create_time"]):
         try:
-            argv = process.info.get("cmdline") or []
-            pid = process.info.get("pid")
+            info = process.info
+            argv = info.get("cmdline") or []
             command = " ".join(argv)
-            if is_read_only_preparer_self(pid, argv):
-                continue
             folded = command.casefold()
-            if any(root in folded for root in roots):
-                active.append({"pid": pid,
-                               "created": process.info.get("create_time"),
-                               "name": process.info.get("name"), "command": command})
+            if not any(root in folded for root in roots):
+                continue
+            exact_preparer = _exact_preparer_source_binding(argv, expected_preparer, roots)
+            is_current = process_row_matches_current_process(info)
+            is_ancestor = (
+                not is_current and exact_preparer
+                and process_row_matches_current_ancestor(info)
+            )
+            if exact_preparer and (is_current or is_ancestor):
+                continue
+            active.append({
+                "pid": info.get("pid"),
+                "created": info.get("create_time"),
+                "name": info.get("name"),
+                "command": command,
+            })
         except psutil.NoSuchProcess:
             continue
         except (psutil.AccessDenied, OSError) as error:

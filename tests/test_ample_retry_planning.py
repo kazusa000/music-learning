@@ -63,8 +63,23 @@ def _identity_sha(instrument: str, ids: list[str]) -> str:
 
 
 class _Process:
-    def __init__(self, pid: int, command: list[str], name: str = "python.exe"):
-        self.info = {"pid": pid, "name": name, "cmdline": command, "create_time": 1.0}
+    def __init__(self, pid: int, command: list[str], name: str = "python.exe", *,
+                 created: float = 1.0, ppid: int = 0):
+        self.pid = pid
+        self._command = command
+        self._created = created
+        self._ppid = ppid
+        self.info = {"pid": pid, "ppid": ppid, "name": name,
+                     "cmdline": command, "create_time": created}
+
+    def create_time(self) -> float:
+        return self._created
+
+    def ppid(self) -> int:
+        return self._ppid
+
+    def cmdline(self) -> list[str]:
+        return self._command
 
 
 @pytest.fixture
@@ -177,14 +192,18 @@ def test_preparer_does_not_block_on_its_own_read_only_source_argument(tmp_path, 
     run.mkdir()
     preparer = (Path(ample_retry_planning.__file__).resolve().parents[2]
                 / "scripts/instruments/prepare_ample_terminal_profile_retry.py").resolve()
-    own_pid = 123456
+    own_pid, wrapper_pid, missing_grandparent_pid = 123456, 123457, 999999
     # The Python launcher may not preserve the script path as sys.argv[0];
-    # the OS process snapshot still identifies the exact preparer command.
+    # its exact PID and verified launch ancestry identify this read-only call.
     monkeypatch.setattr(sys, "argv", ["python.exe", "-c", "launcher-wrapper"])
     monkeypatch.setattr(ample_retry_planning.os, "getpid", lambda: own_pid)
-    own = _Process(own_pid, ["python.exe", str(preparer), "--source-run", str(run),
-                             "--output-dir", str(tmp_path / "new-retry")])
-    monkeypatch.setattr(psutil, "process_iter", lambda attrs: iter([own]))
+    own = _Process(own_pid, ["python.exe", str(preparer), "--source-run", str(run)],
+                   created=100.0, ppid=wrapper_pid)
+    wrapper = _Process(wrapper_pid, ["python.exe", str(preparer), "--source-run", str(run)],
+                       created=90.0, ppid=missing_grandparent_pid)
+    processes = {item.pid: item for item in (own, wrapper)}
+    monkeypatch.setattr(psutil, "Process", lambda pid: processes[pid])
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs: iter([own, wrapper]))
 
     assert find_active_ample_processes([run]) == []
 
@@ -196,17 +215,70 @@ def test_preparer_still_blocks_on_a_distinct_live_retry_process(tmp_path, monkey
     run.mkdir()
     preparer = (Path(ample_retry_planning.__file__).resolve().parents[2]
                 / "scripts/instruments/prepare_ample_terminal_profile_retry.py").resolve()
-    own_pid = 123456
-    worker_pid = 123457
+    own_pid, shell_pid, worker_pid = 123456, 123457, 123458
     monkeypatch.setattr(sys, "argv", [str(preparer), "--source-run", str(run)])
     monkeypatch.setattr(ample_retry_planning.os, "getpid", lambda: own_pid)
-    own = _Process(own_pid, ["python.exe", str(preparer), "--source-run", str(run)])
-    worker = _Process(worker_pid, ["python.exe", "scripts/instruments/supervise_ample_failed_retry.py",
-                                   "--run-dir", str(run)])
-    monkeypatch.setattr(psutil, "process_iter", lambda attrs: iter([own, worker]))
+    own = _Process(own_pid, ["python.exe", str(preparer), "--source-run", str(run)],
+                   created=100.0, ppid=shell_pid)
+    shell = _Process(shell_pid, ["pwsh.exe", "-Command",
+                                 f"& python.exe '{preparer}' --source-run '{run}'"],
+                     name="pwsh.exe", created=90.0)
+    worker = _Process(worker_pid,
+                      ["python.exe", str(preparer), "--source-run", str(run),
+                       "--output-dir", str(tmp_path / "other-retry")],
+                      created=95.0, ppid=shell_pid)
+    processes = {item.pid: item for item in (own, shell, worker)}
+    monkeypatch.setattr(psutil, "Process", lambda pid: processes[pid])
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs: iter([own, shell, worker]))
 
     active = find_active_ample_processes([run])
     assert [row["pid"] for row in active] == [worker_pid]
+
+
+def test_preparer_does_not_exempt_shell_that_only_mentions_script_text(tmp_path, monkeypatch):
+    import psutil
+
+    run = (tmp_path / "source-retry").resolve()
+    run.mkdir()
+    preparer = (Path(ample_retry_planning.__file__).resolve().parents[2]
+                / "scripts/instruments/prepare_ample_terminal_profile_retry.py").resolve()
+    own_pid, shell_pid = 123456, 123457
+    monkeypatch.setattr(ample_retry_planning.os, "getpid", lambda: own_pid)
+    own = _Process(own_pid, ["python.exe", str(preparer), "--source-run", str(run)],
+                   created=100.0, ppid=shell_pid)
+    shell = _Process(shell_pid, ["pwsh.exe", "-Command",
+                                 f"Write-Output '{preparer}'; Write-Output '--source-run {run}'"],
+                     name="pwsh.exe", created=90.0)
+    processes = {item.pid: item for item in (own, shell)}
+    monkeypatch.setattr(psutil, "Process", lambda pid: processes[pid])
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs: iter([own, shell]))
+
+    active = find_active_ample_processes([run])
+    assert [row["pid"] for row in active] == [shell_pid]
+
+
+def test_preparer_refuses_a_pid_reused_parent_chain(tmp_path, monkeypatch):
+    import psutil
+
+    run = (tmp_path / "source-retry").resolve()
+    run.mkdir()
+    own_pid, reused_parent_pid = 123456, 123457
+    own = _Process(own_pid, ["python.exe", "prepare"], created=100.0,
+                   ppid=reused_parent_pid)
+    preparer = (Path(ample_retry_planning.__file__).resolve().parents[2]
+                / "scripts/instruments/prepare_ample_terminal_profile_retry.py").resolve()
+    reused_parent = _Process(
+        reused_parent_pid,
+        ["pwsh.exe", "-Command", f"& python.exe '{preparer}' --source-run '{run}'"],
+        name="pwsh.exe", created=101.0,
+    )
+    processes = {own_pid: own, reused_parent_pid: reused_parent}
+    monkeypatch.setattr(ample_retry_planning.os, "getpid", lambda: own_pid)
+    monkeypatch.setattr(psutil, "Process", lambda pid: processes[pid])
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs: iter([own, reused_parent]))
+
+    active = find_active_ample_processes([run])
+    assert [row["pid"] for row in active] == [reused_parent_pid]
 
 
 def test_plan_refuses_incomplete_chain_receipts(complete_chain):

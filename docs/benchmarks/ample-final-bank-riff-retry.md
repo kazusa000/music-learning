@@ -54,17 +54,29 @@ specific process that triggered the refusal cannot be reconstructed. This is
 not evidence that the preparer matched itself or that the source run changed.
 The common guard now records bounded process identity evidence, redacting
 credential-shaped command arguments, and a regression checks both the blocking
-identity and redaction. A new independent attempt03 reproduced the guard with
-exact evidence: PID 49956 (`python.exe`, creation time 1792755836.7075658)
-was the preparer command itself, with the exact `--source-run` path and both
-selected IDs. The command snapshot named
-`prepare_ample_terminal_profile_retry.py`, but the guard's self-detection also
-required `sys.argv[0]` to name that script; this Windows launch did not preserve
-that assumption. The fix now requires the current OS PID, the exact expected
-preparer path in that PID's OS command arguments, and an exact `--source-run`
-match before excluding it. It does not exclude any other PID, and a separate
-live retry process still blocks. The failed attempt02/03 plans, locators,
-checkpoints and logs remain unchanged; recovery uses a distinct attempt04.
+identity and redaction. Independent attempts03/04 reproduced the guard, but
+their retained process rows do not contain enough parent/creation-time evidence
+to distinguish the current preparer from its launcher. The earlier claim that
+`sys.argv[0]` was the root cause was unsupported and is superseded. A new
+no-write diagnostic showed the app Python launcher and parent PowerShell
+command are distinct processes from the active interpreter; a source-path
+substring or script name alone cannot identify either one as the current
+invocation.
+
+The shared process matcher now exempts only (a) the current process when its
+PID, creation time, parent PID, and full command match the OS snapshot and the
+command is the exact preparer with the exact source-run argument, or (b) an
+exact invocation process proven to be on the current PID's parent chain. The
+chain is checked edge by edge using PID, creation time, parent PID, and full
+command, with parent creation time no later than its child; a reused PID,
+cycle, unknown candidate, or depth limit leaves that candidate blocking.
+Ancestry proof stops at the candidate, so a vanished unrelated grandparent
+above an established launcher does not block preparation. A sibling running
+the same preparer/source remains a conflict, as does a shell that merely
+prints the script path and source flag. The E-only regressions cover these
+cases. A direct no-write preflight reports zero matching processes and zero
+queue/catalog/formal writes. Attempts02–04 and their reports remain intact;
+the next recovery uses a separate attempt05.
 
 2026-10-23. This note tracks the two remaining AGLP Riffer items that may be
 rechecked against the final installed bank. It distinguishes a changed sample
