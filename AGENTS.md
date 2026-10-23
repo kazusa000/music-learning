@@ -1,5 +1,7 @@
 # 项目开发约定
 
+Kontakt续跑修复（2026-10-23）：用户明确要求消除重复核验，已在starting/current=null、无子进程且三队列无running的边界核对身份后停止旧49316/28632。共享runner跳过passed/failed，不读取终态项音频/状态/转换证据；pending原验证及独立发布检查不变。4项短回归通过。独立pending-only-resume-01/run_kontakt_full_intake.py只对原full-h脚本应用同一终态跳过补丁，原固定代码/plan/原结果不改；启动副本实际dispatch检查518通过+15失败跳过、459待测进入。新启动PID42160/ctime1792781863.7604077，后续以runtime/kontakt-full-job.local.json实核为准。原三validation SHA停止/启动前一致；目录含旧入口/进度、队列快照及runner-change.json。仅继续原待测项，失败不分析不重试，Ample/MODO仍暂停。
+
 用户最新收窄范围（2026-10-23）：先让 Kontakt 原 full-h 剩余队列全部跑完，失败项暂时不管。本条覆盖旧失败分析/修复/重试、源键位查询、发布及试听的自动推进指示。健康批次保持运行，仅轻量查进度，不额外全量重验已有结果，不重启触发重复恢复检查。失败保留并继续后续项；全部终态后一次汇报并暂停跟进等待安排。Ample/MODO继续暂停，正式工程及原报告不动。
 
 Kontakt-only后续（2026-10-23 18:48 UTC）：49316/28632原ctime/精确argv仍实核匹配，状态starting在重验原通过证据，CPU/读取持续增长，无新native实例；队列仍518过/15败/459待测。kf22/kontakt-only-resume-20261023/progress-184819.json记录正式九表/head/E12及full-h134固定输入相同，不因观测间隔重启。3c26f91修source keymap实际入口：Lua应交Kontakt 8.exe，不能交ml_kontakt_probe.exe的JSON协议；新增纯生成器清空独立rack、核验load slot/name并在reset前拒覆盖output，34回归含真实Lua解释器/模拟Kontakt API通过，非真实Kontakt getter通过。kf22/source-keymap-preparation-01/prepared.json已E-only准备12个有原source capture失败项的24份Lua，3个超时项须先重新conversion/capture；原批终态前不执行，tags只关联旧VST3状态不能冒充Lua恢复过它。Ample/MODO仍暂停，原宿主/队列/正式工程未改。

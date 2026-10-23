@@ -277,7 +277,7 @@ def execute(plan_path, expected_plan_sha256):
     from native_host import NativeHost
     from music_learning.instrument_intake_publication import (
         ValidatorPin, create_queue, record_receipt, build_publication_plan,
-        publish_catalog_atomic, verify_receipt,
+        publish_catalog_atomic,
     )
     from music_learning.instrument_probe_budget import loading_budget
     from music_learning.kontakt_import import atomic_write_json, build_batch, source_record, write_batch
@@ -432,13 +432,9 @@ def execute(plan_path, expected_plan_sha256):
                             if conversion["status"] == "converted_pending_validation":
                                 reverify_conversion(conversion, lib_run)
                 for item in work_items:
-                    if item["status"] == "passed":
-                        resume_evidence(item, lib_run)
-                        reverify_conversion(next(row for row in load(conversion_queue)["items"] if row["id"] == item["id"]), lib_run)
-                        verify_receipt(load(item["candidate"]), load(item["receipt"]), Path(item["evidence_root"]),
-                                       verifier(), validator, resource_root=Path(plan["resource_root"]))
-                        continue
-                    if item["status"] == "failed":
+                    # Terminal rows are durable checkpoints. Resume only pending
+                    # work; publication validates its receipts independently.
+                    if item["status"] in {"passed", "failed"}:
                         continue
                     if time.monotonic() >= deadline:
                         raise TimeoutError("Kontakt full job reached its bounded duration")
