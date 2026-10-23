@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -565,6 +566,16 @@ def static_preflight(plan_path: Path) -> dict:
 
 
 def main() -> None:
+    global EVIDENCE, OUT, OUTPUT_ROOT
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--attempt", choices=("initial", "rebuild-01", "rebuild-02", "rebuild-03"),
+                        default="initial")
+    attempt = parser.parse_args().attempt
+    if attempt != "initial":
+        suffix = attempt
+        EVIDENCE = INTAKE / f"windows-message-queue-object-09-{suffix}"
+        OUT = ROOT / f"runtime/build/ample-windows-message-queue-09-{suffix}"
+        OUTPUT_ROOT = ROOT / f"data/maintenance/instrument-intake/q/wmq09-{suffix}"
     if OUT.exists() or EVIDENCE.exists() or OUTPUT_ROOT.exists():
         raise SystemExit(f"Refusing to overwrite existing 09 roots: {OUT}, {EVIDENCE}, {OUTPUT_ROOT}")
 

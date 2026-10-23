@@ -209,17 +209,17 @@ int main()
             const auto& object = (*objectRows)[0];
             ok &= check(static_cast<int>(object.getProperty(juce::Identifier("raw_bytes_read"), 0)) == 64,
                         "each object raw capture is bounded at 64 bytes");
-            ok &= check(object.getProperty(juce::Identifier("vtable_module")).getProperty(
+            ok &= check(object.getProperty(juce::Identifier("vtable_module"), {}).getProperty(
                             juce::Identifier("resolved"), false),
                         "fixture vtable identity resolves to the own module");
-            ok &= check(object.getProperty(juce::Identifier("callback_module")).getProperty(
+            ok &= check(object.getProperty(juce::Identifier("callback_module"), {}).getProperty(
                             juce::Identifier("resolved"), false),
                         "virtual slot plus eight callback identity resolves");
             ok &= check(object.getProperty(juce::Identifier("recognized_async_updater_message"), false),
                         "only the exact pinned fixture vtable enters the known object path");
             ok &= check(static_cast<int>(object.getProperty(
                             juce::Identifier("async_pending_original_value"), -1)) == 1
-                        && object.getProperty(juce::Identifier("async_pending_read_status")).toString() == "ok",
+                        && object.getProperty(juce::Identifier("async_pending_read_status"), {}).toString() == "ok",
                         "original pending value is read without mutation");
             ok &= check(object.getProperty(juce::Identifier("async_owner_address_hex"), {}).toString()
                             .endsWith(juce::String::toHexString(static_cast<juce::int64>(
@@ -228,16 +228,16 @@ int main()
             ok &= check(static_cast<int>(object.getProperty(
                             juce::Identifier("async_owner_raw_bytes_read"), 0)) == 64,
                         "owner raw capture is bounded at 64 bytes");
-            ok &= check(object.getProperty(juce::Identifier("async_owner_callback_module")).getProperty(
+            ok &= check(object.getProperty(juce::Identifier("async_owner_callback_module"), {}).getProperty(
                             juce::Identifier("resolved"), false),
                         "owner virtual slot plus eight callback identity resolves");
 
             const auto& unknown = (*objectRows)[1];
             ok &= check(!unknown.getProperty(
                             juce::Identifier("recognized_async_updater_message"), true)
-                        && unknown.getProperty(juce::Identifier("owner")).toString() == "unknown"
+                        && unknown.getProperty(juce::Identifier("owner"), {}).toString() == "unknown"
                         && unknown.getProperty(juce::Identifier(
-                            "async_pending_read_status")).toString()
+                            "async_pending_read_status"), {}).toString()
                             == "not_applicable_unrecognized_vtable",
                         "unrecognized vtable remains raw-only without speculative owner reads");
         }
@@ -258,7 +258,7 @@ int main()
     const auto mismatchRows = child(mismatchReport, "dispatches").getArray();
     ok &= check(mismatchRows != nullptr && mismatchRows->size() == 1
                 && child((*mismatchRows)[0], "before").getProperty(
-                       juce::Identifier("status")).toString()
+                       juce::Identifier("status"), {}).toString()
                     == "unsupported_or_mismatched_module_identity",
                 "a nonmatching module pin is rejected before queue memory access");
 
@@ -269,7 +269,7 @@ int main()
     const auto invalidRows = child(invalidReport, "dispatches").getArray();
     ok &= check(invalidRows != nullptr && invalidRows->size() == 3
                 && child((*invalidRows)[2], "before").getProperty(
-                       juce::Identifier("status")).toString()
+                       juce::Identifier("status"), {}).toString()
                     == "invalid_queue_header_bounds",
                 "count above capacity is rejected without enumerating objects");
 
