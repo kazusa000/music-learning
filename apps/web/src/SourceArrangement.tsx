@@ -53,7 +53,6 @@ export function SourceArrangement({revision,reference,start,end,position,selecte
       }else if(track.kind==='midi'){const notes=(reference.notes??[]).filter(n=>n.end_sample>start&&n.start_sample<end),low=Math.min(48,...notes.map(n=>n.pitch)),high=Math.max(72,...notes.map(n=>n.pitch));ctx.fillStyle=color;
         for(const n of notes)ctx.fillRect(Math.max(0,x(n.start_sample)),y+124-(n.pitch-low)/(high-low+1)*100,Math.max(2,x(Math.min(end,n.end_sample))-Math.max(0,x(n.start_sample))),4);
       }
-      ctx.fillStyle='#aba5a0';ctx.font='11px system-ui';ctx.fillText(track.kind==='midi'?'人声旋律 · MIDI · 不发声':track.name+' · 音频',12,y+20);
       ctx.fillStyle='#ffffff0b';ctx.fillRect(0,y+149,width,1);
     });
   },[reference,waves,width,start,end,lines,displayScale,laneHeight]);

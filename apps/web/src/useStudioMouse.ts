@@ -8,6 +8,7 @@ export function useStudioMouse(){
       if(!target.closest('main')||target.closest('.daw-editor,input,textarea,select,[contenteditable=true]'))return;
       e.preventDefault();
       let node=target as HTMLElement;
+      if(target.closest('.aligned-tracks .track-panel'))node=target.closest('.studio-body')?.querySelector<HTMLElement>('.daw-playlist-scroll,.source-wave-scroll')??node;
       while(node&&node.tagName!=='MAIN'){
         const style=getComputedStyle(node);
         if(/auto|scroll/.test(style.overflowY)&&node.scrollHeight>node.clientHeight){drag={node,x:e.clientX,y:e.clientY,pointer:e.pointerId};node.setPointerCapture(e.pointerId);node.dataset.panning='true';return;}

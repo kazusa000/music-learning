@@ -278,6 +278,9 @@
 .aligned-source .track-panel>.all-tracks{height:113px;min-height:113px;align-items:flex-end;padding-bottom:8px}.aligned-source .source-reference-heading{height:48px;padding-block:6px}.aligned-source .source-arrangement{border:0;border-radius:0}.aligned-source .track-panel>.panel-heading{height:34px}.aligned-source .track-panel>.all-tracks{height:113px}.aligned-source .source-ruler{height:31px}
 .track-panel .track-select[draggable=true]{cursor:grab}
 .studio.is-focused .studio-body>.track-panel,.studio.is-chat-focused .studio-body>.track-panel{display:none}
+.track-cards-content{display:contents}
+.aligned-tracks .track-cards{overflow:clip}
+.aligned-tracks .track-cards-content{display:flex;flex-direction:column;flex:none;min-height:100%;will-change:transform}
 .studio-bottom { display: none; }
 @media(max-width:1400px) { .studio-song-title { max-width: 105px; } .studio-toolbar { gap: 5px !important; } .studio-toolbar .soft-button { font-size: 0; width: 24px; padding: 4px; } .studio-toolbar .soft-button::after { content: '⛶'; font-size: 16px; } }
 @media(max-width:1150px) { .studio-toolbar .zoom-control input,.studio-toolbar .zoom-control > button:nth-last-child(1) { display: none; } .studio-toolbar .zoom-control { min-width: 88px; } .studio-song-title { max-width: 80px; } .transport-popover > summary { font-size: 0; } .transport-popover > summary::after { content:'起止'; font-size:10px; } .studio-toolbar .clock > span { display:none; } }

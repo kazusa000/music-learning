@@ -65,8 +65,15 @@ try{
  assert.equal(await page.getByRole('button',{name:'原曲',exact:true}).isVisible(),false);await page.getByRole('button',{name:/编曲 B/}).click();
  report.checks.push('Fresh composition real native MIDI audio and live volume/mute; no renders');
  await page.goto(base+'/?project='+f.project.id+'&view=workbench');await page.locator('.studio').waitFor();await page.locator('.track-card').nth(9).waitFor();await aligned();
+ assert.equal(await page.locator('.daw-playlist-row svg text').count(),0,'No writing over clips or notes');
  await page.locator('.daw-playlist-scroll').evaluate(n=>n.scrollTop=450);await page.waitForTimeout(100);await aligned();
- await page.locator('.track-cards').evaluate(n=>n.scrollTop=800);await page.waitForTimeout(100);await aligned();
+ await page.evaluate(()=>{
+   window.__linkedFrames={count:0,maxDrift:0,running:true};
+   const sample=()=>{const result=window.__linkedFrames;if(!result.running)return;const card=document.querySelector('.track-card'),row=document.querySelector(`[data-track-id="${card.dataset.track}"]`);result.count++;result.maxDrift=Math.max(result.maxDrift,Math.abs(card.getBoundingClientRect().top-row.getBoundingClientRect().top));requestAnimationFrame(sample);};requestAnimationFrame(sample);
+ });
+ for(const selector of ['.track-cards','.daw-playlist-scroll']){const rect=await page.locator(selector).boundingBox();await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);for(const dy of [90,180,-60,250,-180,500,500,500,-160,-500,-500,-500]){await page.mouse.wheel(0,dy);await page.waitForTimeout(18);}await page.waitForTimeout(260);await aligned();}
+ const frames=await page.evaluate(()=>{window.__linkedFrames.running=false;return window.__linkedFrames;});assert(frames.count>=20);assert(frames.maxDrift<1.1,JSON.stringify(frames));report.linkedScroll=frames;
+ assert.equal(await page.locator('.track-cards').evaluate(n=>n.scrollTop),0,'Track controls have no independent scroll position');
  const height=await page.getByLabel('编排轨道高度').inputValue();const b=await page.locator('.daw-playlist-scroll').boundingBox();await page.mouse.move(b.x+b.width/2,b.y+100);await page.keyboard.down('Alt');await page.mouse.wheel(0,-70);await page.keyboard.up('Alt');await page.waitForTimeout(100);assert(+await page.getByLabel('编排轨道高度').inputValue()>+height);await aligned();
  await page.screenshot({path:path.join(out,'reconstruction-4k.png')});
  await page.getByRole('button',{name:'原曲',exact:true}).click();await page.locator('.source-arrangement').waitFor();
