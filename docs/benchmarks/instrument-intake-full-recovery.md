@@ -1,5 +1,15 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 用户明确恢复目标与全部剩余入库
+
+用户明确纠正此前暂停判断，要求设立 goal、全部剩余入库前持续推进、常规 bug 自主修复且不逐项询问。本聊天 goal 已 active，原 keyscape 跟进恢复 ACTIVE，目标仍仅为音源导入聊天；旧暂停文字已撤销，历史暂停记录只留作经过。MODO 仍沿用用户暂缓范围，AGMPk 缺失如实保留，不伪造资源或通过结果，也不因此停掉其余工作。
+
+恢复时按各轮队列的最新同 ID 结果合并，Ample 113 项为81通过/31失败/1缺采样，尚未发布。新增共享资源审计 `f7daee7` 复用稳定文件签名、完整 SHA、分块 IO 预算与断点续审机制，不信任旧样本哈希；从原始准备日志核对全部 ASCF/DBConfig 覆盖与硬链接/独立副本关系，产出产品 bank 相对的内容寻址 installed manifest。8项新回归及9项已有资源审计回归全部通过，Ruff通过，测试夹具由统一入口清理。
+
+不可变资源审计已启动于 `20261023-ample-shared-fix/fresh-resource-audit-01`，定位 `runtime/ample-resource-audit-job.local.json`，plan SHA `46262d918af7afcc1bf917c183bf43a96166eca32c20552b0e325a9a1da9d601`。启动包装 PID35592，实际 Python43428/ctime1792743769.618822（每次必须重核命令和 creation_time）；H忙分块暂缓，不改旧报告/清单/采样。产品结果写入该run的 `{AGM,AGLP,AGSC}-result.json`。实际发声适配与严格入库证据桥接跨来源独立推进，不把这份资源审计当成音频通过。
+
+Kontakt 已完成资源准备审计；下一步为 b5d27bd 实际路径 descriptor 修复的首开/独立空机架恢复控制，通过后再新建 full-f 固定验证，使用显式 Factory inventory revision，保留 full-e 全部原始失败。恢复前正式九表/head及14固定SHA快照在 `20261023-goal-resume/protection-before.json`；不停止用户正式引擎、不在正式工程验证、不触碰 NAS/tmp 原素材。
+
 ## 2026-10-23 自动跟进保持暂停
 
 本次唤醒的末条约束明确要求保持暂停，只有用户明确恢复才启用；因此未启动新控制、验证队列、发布或预热。发现调度配置实际为 ACTIVE，已通过应用的 automation_update 将原 keyscape 跟进改回 PAUSED，保留原提示、周期与本音源导入聊天归属；未唤醒开发聊天。此前任务的完成不视为恢复授权。
