@@ -1,5 +1,19 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 固定源码、真实控制与严格发布桥接
+
+目标继续 active；不根据历史暂停段或旧 locator 停任务。Kontakt 标准 NativeHost 180 秒边界的独立空机架首次/重开已真实输出非静音、无削波音频。`run-06` 的原失败保留；`e458a99` 修复通用试听控制状态比较：全部 4,145 个参数 ID 仍必须完整，非试听参数精确相等，明确发出的 CC1/CC11 严格核对对应标准归一化值。58 项专项通过，E 内新 assessment 重放原请求/状态/退出码/录音，不覆盖原报告。`api-compat-run06/result.json` 另记录实际产品 `import_admitted` 接入 E 隔离目录，完整状态 SHA、插件类和参数一致、无新录音及正式工程写入。
+
+`fb7a2a4` 增加 full-job `--source-release`，先验证不可变 Git release 再冻结代码及分类清单，显式输入清单仍单独固定；脏工作树不会混入后台批次，53 项专项通过。新的 `kf22/full-f` 实际启动后在 CSS 的 `Libraries/css/Samples/CSS.nkc` 内容校验处终态，原 `progress.json` 和保护报告保留，不能把旧 PID2640/36560 称为运行。正在成组核对三库派生索引变化及清单修订；不放宽样本 SHA 或反复启动同一失败批次。后续恢复必须使用新的独立 attempt，并实查 PID、创建时间、命令与队列。
+
+Ample 三个最终 bank 的完整新资源审计均 audited：AGLP363、AGM136、AGSC363 个文件；不是音色入库数量。E 内 `strict-publication-preflight-04` 重放原音频和完整状态，113 项为81原队列通过，其中73项严格可准备、8项需补证、31原失败、1缺AGMPk。AGM 数值 wire-format 的共享兼容修复及新报告另行保留，不按容差或只看 status 放行。
+
+最终路径 Default 控制的 AGLP/AGSC 已真实首开及独立重开非静音、无削波，完整主机参数及原始状态链可核。监督器额外规则错误地要求首次加载 preset 的请求也含 inline state，并误读已结束 offset locator，另有 audit SHA 被空值覆盖。原报告不改；已核对 worker45444 创建时间/命令、无子进程/活动 attempt 且三配置原始 SHA 恢复，停止的仅是该自有空等待器，记录 `final-bank-supervisor-gate-repair-01/stopped-waiter.json`，没有停止插件或正式引擎。共享门控修复、新离线 assessment 和仅剩 AGM 最终路径控制继续推进，不重复录制已闭合两库。
+
+新增严格物化/发布桥接 `631b639`：只从固定 preflight 选取完整证据通过项，按产品和固定 validator 指纹分组，小型 preset 原子追加且拒绝覆盖，正式发布前重放 `verify_receipt` 和真实产品导入；45 项相关回归通过。`9dbf8d8` 另补最终采样路径安装：当前 LP/SC 配置为 NOT FOUND、AGM 为旧 tmp 路径；须等最终控制释放配置后，用原字节 E 备份与 CAS 把唯一 InstDir 接到对应 H Sound Library bank，保留其他配置，4 项专测通过。准备、原始 probe 通过及排队均不等于发布完成；catalog/API/试听预热另核验。
+
+完整固定 b159146 service 回归631通过/2跳过/0失败，报告 `runtime/test-reports/20261023-085805-b1d9b8bc`，不能替代全库发声。默认产品由并行开发独立推进至8edf924，web fc05、native f056、desktop aa81；本任务不回退默认或停用户引擎。恢复以来正式表/head与14固定文件最新比较独立保存；若并发 API 造成变化如实记录，不恢复旧基线。根目录工具、历史证据及他人文件均不混入本任务提交。
+
 ## 2026-10-23 用户明确恢复目标与全部剩余入库
 
 用户明确纠正此前暂停判断，要求设立 goal、全部剩余入库前持续推进、常规 bug 自主修复且不逐项询问。本聊天 goal 已 active，原 keyscape 跟进恢复 ACTIVE，目标仍仅为音源导入聊天；旧暂停文字已撤销，历史暂停记录只留作经过。MODO 仍沿用用户暂缓范围，AGMPk 缺失如实保留，不伪造资源或通过结果，也不因此停掉其余工作。
