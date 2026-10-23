@@ -214,6 +214,25 @@ def _sha(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha_verified(path: Path, expected_signature: list[int]) -> str:
+    """Hash an existing file only while its opened and named identity is stable."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        before = _signature(os.fstat(stream.fileno()))
+        if before != expected_signature:
+            raise ValueError("Kontakt runtime file identity changed before SHA: " + str(path))
+        while True:
+            data = stream.read(COPY_CHUNK_BYTES)
+            if not data:
+                break
+            digest.update(data)
+        after = _signature(os.fstat(stream.fileno()))
+    named_after = _signature(_ordinary_file(path)[1])
+    if before != after or after != expected_signature or named_after != expected_signature:
+        raise ValueError("Kontakt runtime file identity changed during SHA: " + str(path))
+    return digest.hexdigest()
+
+
 def _atomic_checkpoint(path: Path, value: Mapping[str, Any]) -> None:
     target = _absolute(path)
     _ensure_checkpoint_parent(target.parent)
@@ -280,16 +299,33 @@ def _copy_one(source_root: Path, destination_root: Path, row: Mapping[str, Any])
     hardlink = not row["profile"] and _hardlink_candidate(relative, row["bytes"])
     if target.exists() or target.is_symlink():
         target_path, target_stat = _ordinary_file(target)
+        target_signature = _signature(target_stat)
+        same_file = (target_stat.st_dev, target_stat.st_ino) == (before.st_dev, before.st_ino)
         if hardlink:
-            if (target_stat.st_dev, target_stat.st_ino) != (before.st_dev, before.st_ino):
-                raise ValueError("Existing Kontakt runtime binary is not the inventoried hardlink: " + relative)
-            transfer, digest = "hardlink", None
+            if same_file:
+                transfer, digest = "hardlink", None
+            else:
+                # A prior, more conservative classifier may have made an
+                # independent copy before a later rule recognizes this path
+                # as immutable vendor data. Preserve that copy only after a
+                # fresh, stable source/target SHA check; never replace it.
+                if target_stat.st_size != before.st_size:
+                    raise ValueError("Existing Kontakt runtime copy differs; preserving it: " + relative)
+                target_digest = _sha_verified(target_path, target_signature)
+                source_digest = _sha_verified(source_path, row["signature"])
+                if target_digest != source_digest:
+                    raise ValueError("Existing Kontakt runtime copy differs; preserving it: " + relative)
+                transfer, digest = "independent_copy", target_digest
         else:
-            if (target_stat.st_dev, target_stat.st_ino) == (before.st_dev, before.st_ino):
+            if same_file:
                 raise ValueError("Kontakt profile/runtime data unexpectedly aliases its source: " + relative)
-            if target_stat.st_size != before.st_size or _sha(target_path) != _sha(source_path):
+            if target_stat.st_size != before.st_size:
                 raise ValueError("Existing Kontakt runtime copy differs; preserving it: " + relative)
-            transfer, digest = "independent_copy", _sha(target_path)
+            target_digest = _sha_verified(target_path, target_signature)
+            source_digest = _sha_verified(source_path, row["signature"])
+            if target_digest != source_digest:
+                raise ValueError("Existing Kontakt runtime copy differs; preserving it: " + relative)
+            transfer, digest = "independent_copy", target_digest
     elif hardlink:
         os.link(source_path, target)
         target_path, target_stat = _ordinary_file(target)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 import stat
@@ -35,6 +36,42 @@ def _source(tmp_path: Path) -> Path:
     _write(source / "UserData" / "boost_interprocess" / "scan.mtx", b"stale lock")
     _write(source / ".kontakt-default-multi-transactions" / "pending" / "marker", b"transient")
     return source
+
+
+def _prior_independent_copy_checkpoint(source: Path, destination: Path, checkpoint: Path,
+                                       relative: str, target: Path) -> None:
+    """Create an old-policy journal entry for a verified independent file."""
+    source = source.resolve(strict=True)
+    rows, excluded = kontakt_runtime._walk(source, "UserData")
+    plan = {"schema_version": 1, "source_root": str(source),
+            "destination": str(destination.absolute()), "profile_relative": "UserData",
+            "files": rows, "excluded_files": excluded}
+    plan_sha = hashlib.sha256(kontakt_runtime._json_bytes(plan)).hexdigest()
+    planned = next(row for row in rows if row["path"] == relative)
+    source_file = source.joinpath(*Path(relative).parts)
+    source_path, source_stat = kontakt_runtime._ordinary_file(source_file)
+    target_path, target_stat = kontakt_runtime._ordinary_file(target)
+    assert (source_stat.st_dev, source_stat.st_ino) != (target_stat.st_dev, target_stat.st_ino)
+    assert source_stat.st_size == target_stat.st_size == planned["bytes"]
+    source_sha = kontakt_runtime._sha_verified(source_path, planned["signature"])
+    target_sha = kontakt_runtime._sha_verified(target_path, kontakt_runtime._signature(target_stat))
+    assert source_sha == target_sha
+    completed = {relative: {"source": relative, "path": relative, "bytes": planned["bytes"],
+                            "transfer": "independent_copy", "sha256": target_sha,
+                            "signature": kontakt_runtime._signature(target_stat), "profile": False}}
+    state = {"schema_version": 1, "plan_sha256": plan_sha, "plan": plan,
+             "status": "running", "completed": completed, "failures": []}
+    kontakt_runtime._atomic_checkpoint(checkpoint, state)
+
+
+def _write_sparse_pair(source_file: Path, target_file: Path, *, size: int,
+                       source_prefix: bytes = b"same", target_prefix: bytes = b"same") -> None:
+    for path, prefix in ((source_file, source_prefix), (target_file, target_prefix)):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("wb") as stream:
+            stream.truncate(size)
+            stream.seek(0)
+            stream.write(prefix)
 
 
 def test_runtime_clone_hardlinks_static_assets_and_copies_profile(tmp_path):
@@ -102,6 +139,70 @@ def test_runtime_clone_hardlinks_large_immutable_preset_tree_assets(tmp_path, su
     assert entry["transfer"] == "hardlink"
     assert (source_file.stat().st_dev, source_file.stat().st_ino) == (
         target.stat().st_dev, target.stat().st_ino)
+
+
+def test_runtime_checkpoint_preserves_verified_old_independent_copy_after_policy_expansion(tmp_path):
+    source = _source(tmp_path)
+    root = tmp_path / "Sound Library"
+    root.mkdir()
+    destination = root / "Kontakt" / "Runtime"
+    relative = "Kontakt 8/Presets/Effects/Convolution/10 large voc.wav"
+    source_file = source / Path(relative)
+    target = destination / Path(relative)
+    _write_sparse_pair(source_file, target,
+                      size=kontakt_runtime.MAX_INDEPENDENT_COPY_BYTES + 1)
+    checkpoint = tmp_path / "maint" / "runtime.json"
+    _prior_independent_copy_checkpoint(source, destination, checkpoint, relative, target)
+
+    report = prepare_runtime(source, destination, allowed_library_root=root,
+                             checkpoint_path=checkpoint)
+
+    assert report["status"] == "prepared", report["failures"]
+    row = next(item for item in report["files"] if item["path"] == relative)
+    assert row["transfer"] == "independent_copy"
+    assert row["sha256"] == kontakt_runtime._sha(source_file)
+    assert (source_file.stat().st_dev, source_file.stat().st_ino) != (
+        target.stat().st_dev, target.stat().st_ino)
+
+
+def test_runtime_checkpoint_rejects_modified_old_copy_after_policy_expansion(tmp_path):
+    source = _source(tmp_path)
+    root = tmp_path / "Sound Library"
+    root.mkdir()
+    destination = root / "Kontakt" / "Runtime"
+    relative = "Kontakt 8/Presets/Effects/Convolution/10 large voc.wav"
+    source_file = source / Path(relative)
+    target = destination / Path(relative)
+    _write_sparse_pair(source_file, target,
+                      size=kontakt_runtime.MAX_INDEPENDENT_COPY_BYTES + 1)
+    checkpoint = tmp_path / "maint" / "runtime.json"
+    _prior_independent_copy_checkpoint(source, destination, checkpoint, relative, target)
+    with target.open("r+b") as stream:
+        stream.write(b"altered")
+
+    with pytest.raises(ValueError, match="Existing Kontakt runtime copy differs; preserving it"):
+        prepare_runtime(source, destination, allowed_library_root=root,
+                        checkpoint_path=checkpoint)
+    with target.open("rb") as stream:
+        assert stream.read(7) == b"altered"
+
+
+def test_runtime_still_rejects_profile_files_that_alias_the_source(tmp_path):
+    source = _source(tmp_path)
+    root = tmp_path / "Sound Library"
+    root.mkdir()
+    destination = root / "Kontakt" / "Runtime"
+    relative = Path("UserData/Settings.cfg")
+    target = destination / relative
+    target.parent.mkdir(parents=True)
+    os.link(source / relative, target)
+
+    report = prepare_runtime(source, destination, allowed_library_root=root,
+                             checkpoint_path=tmp_path / "maint" / "runtime.json")
+
+    assert report["status"] == "failed"
+    assert report["failures"][0]["path"] == relative.as_posix()
+    assert "unexpectedly aliases its source" in report["failures"][0]["reason"]
 
 
 def test_runtime_checkpoint_resumes_only_matching_files_and_rejects_conflict(tmp_path):
