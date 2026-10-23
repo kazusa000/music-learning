@@ -77,3 +77,25 @@ def test_wrapper_refuses_existing_or_escaped_output(tmp_path, monkeypatch):
     existing.mkdir()
     with pytest.raises(ValueError, match="must not already exist"):
         wrapper.validate_new_output(existing)
+
+
+def test_midi_attempt_descriptor_hash_is_not_the_archived_release_hash():
+    intake = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
+    continuation = json.loads((intake / "root-cause-chain-03/continuation-07/plan.json").read_bytes())
+    execution = json.loads((intake / "root-cause-chain-03/continuation-07/midi-attempts/attempt-02/execution.json").read_bytes())
+    stage_path = intake / "midi-delivery-stage-plan-01.json"
+    stage = json.loads(stage_path.read_bytes())
+    stage_sha = hashlib.sha256(stage_path.read_bytes()).hexdigest()
+    release_path = ROOT / "runtime/application-release.intake-preview-20261023-v8.local.json"
+    release_sha = hashlib.sha256(release_path.read_bytes()).hexdigest()
+    frozen_probe = wrapper.load_pinned_probe()
+
+    assert execution["descriptor_sha256"] == stage_sha
+    assert continuation["midi_retry"]["descriptor_sha256"] == stage_sha
+    stage_argv = [stage["execution"]["executable"], *stage["execution"]["argv"]]
+    output_index = stage_argv.index("--output") + 1
+    stage_argv[output_index] = execution["output"]
+    assert execution["argv"] == stage_argv
+    assert stage["release_source_control"]["immutable_descriptor"]["sha256"] == release_sha
+    assert frozen_probe.ARCHIVED_SOURCE_CONTROL_DESCRIPTOR_SHA256 == release_sha
+    assert stage_sha != release_sha
