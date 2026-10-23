@@ -149,6 +149,18 @@ def _within_intake(path: Path) -> Path:
     return candidate
 
 
+def _native_phase_paths(output: Path, variant: str, phase: str) -> tuple[Path, Path]:
+    """Create the owned diagnostics/audio parents required by a native phase."""
+    output = _within_intake(output)
+    if variant not in VARIANTS or phase not in {"first", "reopen"}:
+        raise ValueError("Native phase paths require a known variant and capture phase")
+    diagnostics = output / "native-calls" / variant / phase
+    wav = output / "audio" / variant / f"{phase}.wav"
+    diagnostics.mkdir(parents=True, exist_ok=True)
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    return diagnostics, wav
+
+
 def _final_bank_path(instrument: str) -> Path:
     try:
         product = PRODUCTS[instrument]
@@ -322,11 +334,11 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
                     _write_json(output / "report.json", report)
                     return report
                 scoped_project = project_for_variant if phase == "first" else phases["first"]["snapshot"]
-                wav = output / "audio" / name / f"{phase}.wav"
+                diagnostics, wav = _native_phase_paths(output, name, phase)
                 with sample_path(config, library, instrument):
                     response = _call_render(
                         NativeHost(executable=host_path,
-                                   diagnostics=output / "native-calls" / name / phase),
+                                   diagnostics=diagnostics),
                         {"schema_version": 1, "action": "render", "project": scoped_project},
                         wav, timeout=300,
                     )

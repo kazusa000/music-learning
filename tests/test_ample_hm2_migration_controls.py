@@ -15,6 +15,7 @@ from scripts.instruments.probe_ample_hm2_migration import (
     PRODUCTS,
     VARIANTS,
     _final_bank_path,
+    _native_phase_paths,
     _source_item,
     build_variants,
 )
@@ -119,6 +120,33 @@ def test_final_bank_control_path_is_product_specific_and_authorized(instrument):
 def test_final_bank_control_rejects_unknown_product():
     with pytest.raises(ValueError, match="Unsupported Ample product"):
         _final_bank_path("OTHER")
+
+
+def test_native_phase_paths_create_owned_diagnostics_and_audio_parents(tmp_path, monkeypatch):
+    intake = tmp_path / "data/maintenance/instrument-intake"
+    intake.mkdir(parents=True)
+    monkeypatch.setattr("scripts.instruments.probe_ample_hm2_migration.ROOT", tmp_path)
+    output = intake / "control/attempt/probe"
+
+    diagnostics, wav = _native_phase_paths(output, VARIANTS[0], "first")
+
+    assert diagnostics == output / "native-calls" / VARIANTS[0] / "first"
+    assert diagnostics.is_dir()
+    assert wav == output / "audio" / VARIANTS[0] / "first.wav"
+    assert wav.parent.is_dir()
+
+
+@pytest.mark.parametrize(
+    ("variant", "phase"),
+    [("unknown", "first"), (VARIANTS[0], "middle")],
+)
+def test_native_phase_paths_reject_unknown_variant_or_phase(tmp_path, monkeypatch, variant, phase):
+    intake = tmp_path / "data/maintenance/instrument-intake"
+    intake.mkdir(parents=True)
+    monkeypatch.setattr("scripts.instruments.probe_ample_hm2_migration.ROOT", tmp_path)
+
+    with pytest.raises(ValueError, match="known variant and capture phase"):
+        _native_phase_paths(intake / "control/attempt", variant, phase)
 
 
 @pytest.mark.parametrize("instrument", tuple(PRODUCTS))

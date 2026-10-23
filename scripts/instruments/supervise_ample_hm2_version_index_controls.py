@@ -50,6 +50,7 @@ EXCLUSIVE_PROBE_TOKENS = (
 LOCATOR_NAMES = {
     "ample-hm2-version-index-controls.local.json",
     "ample-hm2-version-index-controls-06.local.json",
+    "ample-hm2-version-index-controls-07.local.json",
 }
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
