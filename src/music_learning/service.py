@@ -449,6 +449,9 @@ class Service:
             from .arranging import dispatch
 
             return dispatch(self, db, op, args, request)
+        if op.startswith("styles."):
+            from .style_library import dispatch
+            return dispatch(op, args)
         if op.startswith("dialogue.") or op.startswith("notes.") or op == "music.query":
             from .dialogue import dispatch
 

@@ -197,3 +197,5 @@ nav strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; fon
 .import-steps [data-status=succeeded] i {background:#38302a;border-color:#65503f;color:#eac09f}
 .import-progress.has-failed {border-color:#795044}
 @media(max-width:700px) {.import-progress {padding:18px}.import-steps {grid-template-columns:repeat(2,minmax(0,1fr))}.import-progress-heading>strong {font-size:22px}}
+
+.style-entry-button{display:flex;align-items:center;gap:10px;width:100%;background:#24201e;color:#c8ad94;border:1px solid #ad82531c;border-radius:7px;padding:11px 12px;margin:9px 0 16px;font-size:11px}.style-entry-button>small{margin-left:auto;font-size:9px;color:#7e6b5a}

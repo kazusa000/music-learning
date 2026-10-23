@@ -6024,6 +6024,77 @@
       "title": "Stem",
       "type": "object"
     },
+    "StyleQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "default": "search",
+          "enum": [
+            "search",
+            "detail",
+            "related"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "query": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Query",
+          "type": "string"
+        },
+        "category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category"
+        },
+        "style_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Style Id"
+        },
+        "limit": {
+          "default": 12,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "title": "StyleQuery",
+      "type": "object"
+    },
+    "StyleRef": {
+      "additionalProperties": false,
+      "properties": {
+        "style_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Style Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "style_id"
+      ],
+      "title": "StyleRef",
+      "type": "object"
+    },
     "SubmitDialogue": {
       "additionalProperties": false,
       "properties": {
@@ -6464,6 +6535,38 @@
     }
   },
   "operations": {
+    "styles.index": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "styles.get": {
+      "arguments": "StyleRef",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "styles.graph": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "styles.query": {
+      "arguments": "StyleQuery",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
     "engine.update": {
       "arguments": "EngineUpdate",
       "result": {

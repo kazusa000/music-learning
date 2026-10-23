@@ -1129,6 +1129,18 @@ class AvailableModels(Model):
     login_mode: Literal["isolated", "existing"]
 
 
+class StyleRef(Model):
+    style_id: str = Field(min_length=1, max_length=80)
+
+
+class StyleQuery(Model):
+    action: Literal["search", "detail", "related"] = "search"
+    query: str = Field(default="", max_length=200)
+    category: str | None = None
+    style_id: str | None = Field(default=None, max_length=80)
+    limit: int = Field(default=12, ge=1, le=30)
+
+
 class CreateDialogueSession(ProjectRef):
     title: str = Field(default="新会话", min_length=1, max_length=120)
 
@@ -1284,6 +1296,10 @@ class LiveChunk(LiveSession):
 
 
 OPERATIONS = {
+    "styles.index": (Empty, False),
+    "styles.get": (StyleRef, False),
+    "styles.graph": (Empty, False),
+    "styles.query": (StyleQuery, False),
     "engine.update": (EngineUpdate, False),
     "engine.open": (EngineOpen, False),
     "engine.transport": (EngineTransport, False),
@@ -1382,6 +1398,10 @@ OPERATIONS = {
 }
 
 RESULT_TYPES = {
+    "styles.index": dict,
+    "styles.get": dict,
+    "styles.graph": dict,
+    "styles.query": dict,
     "engine.update": dict,
     "engine.open": dict,
     "engine.transport": dict,

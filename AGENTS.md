@@ -1,5 +1,7 @@
 # 项目开发约定
 
+本地风格库（2026-10-23）：资源在resources/styles/catalog.json，1023风格／29分类／2641关系，保留事实索引／曲目／出处，本地编曲提示与21重点说明独立整理；无原站程序、文章、图片或音频。主页及工作台有风格库，懒加载、搜索／收藏／年代／关系图；工作台模态保持编辑器、抑制空格播放。styles.index/get/graph/query共用API/SDK/CLI，AI新增style_query只读工具；不接工程案例与音色映射。19短回归及4K／窄窗界面通过，外部请求和JS错0，临时测试自动清。保护记录runtime/maintenance/style-library-20261023，H/NAS/入库/固定包不动。详见docs/architecture/style-library.md与资源README。
+
 AI设置发布收尾（2026-10-23）：默认8edf924已激活并重开应用，18765新API/前端SHA匹配，九表/head和native/desktop SHA不变；保护记录runtime/maintenance/ai-controls-20261023。其他任务进程在窗口内退出如实记录，不按旧locator称运行，不停改音源验证。下述协议生成临时目录清理拒绝仍保留。
 
 最新AI设置（2026-10-23）：思考强度与Codex快速模式独立，输入框底部紧凑下拉＋闪电开关，不增输入区高度。reasoning_effort从模型目录取档位，fast_mode按实际目录映射priority/fast，关闭明确default；本机固定Codex握手default→priority→default且始终medium通过，未生成推理。偏好和每轮参数保存SQLite，旧队列/幂等回执兼容；会话/回复/设置重开恢复及短回归通过。4K/窄窗studio-ui-1792746543674935400通过。临时测试自动清；runtime/build/codex-protocol-controls清理被blocked by policy拒绝，保留不绕过。H/NAS/固定包/音源验证不动。详见docs/architecture/ai-conversation-controls.md。

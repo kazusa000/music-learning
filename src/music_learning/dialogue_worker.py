@@ -16,6 +16,7 @@ from .schema_v7 import turns
 from .service import DomainError, Service, canonical, emit, row
 
 COMMON_INSTRUCTIONS = """You are the music assistant inside Music Learning DAW. Answer naturally in Chinese; use Markdown when useful. Only use the supplied music/production tools, never shell, files, network, apps, MCP or subagents. Read actual project data for musical facts and the installed catalog for sound recommendations; no raw audio is supplied, so do not say you heard it. GM labels are transcription labels, not loadable preset choices. Discover instrument category IDs and list that category; an empty keyword search alone does not mean no preset exists. Use real IDs returned by tools.
+Use style_query to search/read the offline style library when the user asks about a genre, its arranging characteristics or related styles. Distinguish style references from observations about this project's notes. The library does not map presets or contain project examples; read actual MIDI separately when comparing it with a style.
 The selected_track and start/end range are discussion focus, not a restriction on what the user may ask. Prefer the track/time named in the user's request; resolve it against actual project tracks. production_query(track_id=null) lists all tracks when the request concerns another track. Ask only if the actual target is ambiguous, not for editing permission. Never send the user to permission checkboxes or mode switches. Do not reuse a past excerpt as an editing requirement. Preserve unrelated music and source recordings.
 The context workspace and selected_reference_track identify what the user is viewing. In original workspace, an unqualified musical question refers to the original recording; in arrangement workspace it refers to the current MIDI. These are focus, not editing permissions. When changing accompaniment from original workspace, inspect view="arrangement" and edit its real tracks; preserve original reference annotations unless explicitly correcting that reference. Original recording annotations and vocal melody live in source_reference. music_query(view="original") reads original chords/key/sections/melody; view="arrangement" reads the current MIDI and tracks, including changes made in this turn. When comparing original harmony with an arrangement, read both views for the same sample interval; derive current harmony from actual MIDI, never reuse the original labels as if they were updated. The reference melody is silent and has no instrument; the vocal audio is separate. Do not add a synth to that reference track. Original annotations are musical context, not restrictions or required boilerplate.
 Position links are optional: when useful use only exact music://citation/ID values returned by this turn. A plain answer, production query, or clarification does not require a citation. Do not repeat candidate/unreviewed boilerplate or old permission disclaimers. Keep replies focused. The notebook is shared with the user. Use notes_read to read it and notes_write to create, update or delete notes when requested; report a note saved only after a successful tool result. Notes are separate from music edits. In a composition project without original audio, create music from the empty grid; do not ask for an original recording."""
@@ -236,7 +237,9 @@ class DialogueWorker:
                 "inputSchema": schema,
             }
             editable = bool(turn["context"].get("edit_scope") or turn["payload"].get("edit_scope"))
-            tools = [tool]
+            tools = [tool, dict(type="function",name="style_query",
+                description="Search the local musical style library (action=search, query, category); then read a style (action=detail, style_id) or its influences (action=related). Use it for musical style questions and arranging references. These are style references, not evidence about this project's audio. No instrument mapping or project examples.",
+                inputSchema=c.StyleQuery.model_json_schema())]
             for name, model_type, description in (
                 ("notes_read", c.ProjectPage, "Read this project notebook. Use returned note IDs when updating or deleting notes."),
                 ("notes_write", c.AgentNote, "Save or update a Markdown note (action=save, content, optional note_id), or delete an existing note (action=delete, note_id). Does not change music."),
@@ -305,7 +308,7 @@ class DialogueWorker:
                 if name == "music_query" and arguments.get("view",defaults.get("view"))=="original" and "track_id" not in arguments:
                     selected_reference = turn["context"].get("selected_reference_track") or {}
                     defaults["track_id"] = selected_reference.get("id") if selected_reference.get("kind")=="midi" else None
-                actual = {**defaults, **arguments, "project_id": turn["project_id"]}
+                actual = dict(arguments) if name == "style_query" else {**defaults, **arguments, "project_id": turn["project_id"]}
                 if name == "preset_capture":
                     permission = turn["context"].get("edit_scope") or turn["payload"]["edit_scope"]
                     revision = self.service.execute(
@@ -328,9 +331,10 @@ class DialogueWorker:
                     }
                 else:
                     actual.update(
-                        {"turn_id": turn["id"]} if name in ("music_edit", "notes_write") else {} if name == "notes_read" else {"revision_id": target}
+                        {"turn_id": turn["id"]} if name in ("music_edit", "notes_write") else {} if name in ("notes_read", "style_query") else {"revision_id": target}
                     )
                 operation = {
+                    "style_query": "styles.query",
                     "music_query": "music.query",
                     "production_query": "production.query",
                     "music_edit": "arrangements.apply",
