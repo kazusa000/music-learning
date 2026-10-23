@@ -132,7 +132,11 @@ def publish_completed_batch(resource_root, prepared, *, expected_catalog_sha256)
         for item in additions:
             publish_state(root, item["entry"], item["native"])
         if additions:
-            _atomic_json(path, {**base, "presets": combined})
+            from .instrument_queue_io import atomic_queue_write
+
+            # Keep the catalog lock and the CAS-checked payload throughout a
+            # bounded retry when a concurrent Windows reader denies replace.
+            atomic_queue_write(_atomic_json, path, {**base, "presets": combined})
         return dict(published=len(additions), ids=[x["entry"]["id"] for x in additions],
                     catalog_count=len(combined), catalog_sha256=sha256_bytes(path.read_bytes()))
 

@@ -93,6 +93,25 @@ def test_catalog_concurrency_conflict_preserves_other_writer(tmp_path):
     assert json.loads(values[0].read_bytes()) == updated
 
 
+def test_catalog_sharing_violation_retries_write_without_repeating_admission(tmp_path, monkeypatch):
+    import music_learning.instrument_checkpoint_publication as module
+
+    values = checkpoint(tmp_path)
+    item = prepare(values)
+    original = module._atomic_json
+    attempts = []
+    def temporarily_locked(path, value):
+        attempts.append(path)
+        if len(attempts) < 3:
+            raise PermissionError(13, "reader holds catalog")
+        return original(path, value)
+    monkeypatch.setattr(module, "_atomic_json", temporarily_locked)
+    result = publish_completed_batch(tmp_path, [item],
+                                    expected_catalog_sha256=sha256_bytes(values[0].read_bytes()))
+    assert len(attempts) == 3 and result["published"] == 1
+    assert sum(e["id"] == item["entry"]["id"] for e in json.loads(values[0].read_bytes())["presets"]) == 1
+
+
 def test_catalog_existing_entry_cannot_be_replaced(tmp_path):
     values = checkpoint(tmp_path)
     item = prepare(values)

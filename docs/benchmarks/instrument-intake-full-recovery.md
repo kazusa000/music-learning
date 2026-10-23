@@ -1,5 +1,13 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 20:21 UTC：增量发布的目录替换拒绝恢复
+
+轻量检查发现02发布进程已自然终止；原stderr明确定位到`instrument_intake_publication._atomic_json`的`os.replace`，目标为用户H库catalog.json，WinError5。638条先前入库记录未丢失，验证与试听跟随仍健康。
+
+共享`publish_completed_batch`在持有catalog锁且CAS已确认的同一payload上调用有界原子写退避，最多8次/总1.4秒；永久拒绝仍抛错，不盲目重启、不改接受规则。15相关回归及Ruff通过。新独立`kf22/incremental-publication-03`仅复制02冻结实现并加入该修复与progress写退避；保留全部旧错误/日志/报告，沿用原产品模块，原通过项根据已入库ID跳过。canonical locator指向22256/62624，启动后15个积压项追加成功，共653入库、deferred0，实际产品查询通过，旧catalog所有条目逐项相同。正式九表/head及验证/试听跟随进程身份相同。
+
+试听跟随02无需重启即发现新入库项，当前653 eligible、waiting_admission0。它的旧publication_run指向02，最终完成判断应读取canonical publisher03和实际试听counts，而非等待其自身status=completed；全部队列终态后再核验关闭仅入队跟随器。证据`incremental-publication-03/recovery-check.json`；不触碰活动验证固定输入或原失败音色。
+
 ## 2026-10-23：修复试听注册遗留、加载等待和空间误判
 
 收尾实测：`preview-recovery-01/completion.json`记录49条环境错误全部ready，Daf/Djembes/Bass三条静音项也全部ready，实际API各返回HTTP200和5秒非零PCM（peak约0.06180/0.03485/0.05893）。合计52条恢复；当时全Kontakt试听92ready、1loading、530queued、0failed，623条已入库。缓存和后台队列继续增长，这些是时间点快照。
