@@ -59,10 +59,15 @@ SHA-256 `9ad172688a0cb695039257e46e4df2b034c99f36167e1f4fd195dfccba9b0fff`),
 timed out at the fixed 180-second conversion limit in both full-g and full-h.
 Each recorded `timeout_kill`, exit code 1, and no observed NKM or receipt; the
 Lua log contains two unresolved-resource messages followed by the script-start
-line. Full-g therefore had no successful conversion receipt for the seeder to
-reuse. These records do not identify whether the timeout came from storage
-pressure, runtime/resource initialization, or this source; they are not proof
-that the NKI or sample library is corrupt. Full-h's original failure remains
+line. Those same two messages also appear in successful CSS logs, so they do
+not distinguish the timed-out load. The same CSS 2nd Violins source SHA timed
+out in full-e but later converted in full-g (Lua success in 125,883 ms);
+successful CSS siblings in those runs ranged from about 21 to 142 seconds.
+CSS Cellos timed out in full-e and full-g but remains pending in full-h at this
+snapshot. The failure records do not include per-process I/O or stage telemetry,
+so they do not identify whether a timeout came from storage pressure,
+runtime/resource initialization, or the source itself. They are not proof that
+an NKI or sample library is corrupt. Full-h's original failure remains
 unchanged, and its later queue progress must be assessed only after the frozen
 batch reaches terminal state.
 
