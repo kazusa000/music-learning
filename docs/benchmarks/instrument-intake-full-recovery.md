@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 18:07 UTC：用户要求暂停，准备切换模型
+
+**当前已暂停；此段覆盖下方所有旧ACTIVE/自动续跑文字。未经用户明确恢复，不运行验证、修复、构建、入库或自动恢复。** 自动跟进`keyscape`已用工具保持PAUSED并更新提示，两个工作子agent已中断，MODO待初始化agent也收到了明确停止指示。
+
+Kontakt原full-h在条目之间停止：先核47740/46344创建时间/精确命令，暂停协调器后确认current=null、validation无running、无native child，再终止这两个自有进程，均实核退出。最终 **518通过、15失败、459待测，0运行，Kontakt正式入库0**。三份原validation队列文件SHA前后相同，原pass/failure与progress/locator原字节保留；旧locator的started/validating不再表示运行。暂停记录`user-pause-20261023-180656/pause-result.json`和`protection-after-pause.json`保留停止前后证据，后者正式九表/head/E12 SHA相同。权威持久入口为`runtime/instrument-intake-pause.local.json`，status=paused_by_user、auto_resume=false。
+
+Ample仍未修好：79条已在目录，完整三音的后两音仍静音。09四份WAV与原07逐字节相同，64/32仍在32767/16383截止；独立评估`windows-message-queue-object-09-rebuild-02/root-message-assessment-01.json` SHA9afc5456…已完成，前三轮严格正常退出，第四仅raw成功而身份收尾失败，全部自有进程已退出。已拿到排队对象/静态类型，尚无具体回调导致静音的直接证据。最新准备方向是10：只在load返回后、首次prepare前处理1ms消息，测试初始化顺序；**尚未完成源码/构建/实测**，原08/09及全部负结果保持。若10失败，再沿已证实的ChangeBroadcaster listeners/TimerThread目标读有限身份；不得屏蔽回调或绕过许可。
+
+Kontakt Lua v2与消费解析器已经提交（f63127c/a7d0434），23相关回归通过；这是实际Lua语法与mock协议证据，实际Kontakt getter仍未运行。新的`owned_process_inventory_trace.py`、service测试和architecture说明是**暂停时WIP**：早期六模拟测试曾过，后续privacy/大小边界改动未完成最终复测；仅保存源码，不部署/不改变冻结runner。未来用于保留CIM错误原row并原样返回inventory，不放宽身份规则。
+
+REA已关闭，13个函数/13条证据的10,180,712字节快照在`windows-message-static-01/analysis-snapshot-user-pause-20261023.json`。默认仍11f0，V9/新翻译未激活，52项试听待真实修复验收后续回。正式工程未写，NAS/Htmp只读边界保持。切换模型后，只有用户明确恢复才可继续；先核对本段、暂停持久入口、原队列/固定源，再续剩余459，不把旧locator当活动任务或重复全批。
+
 ## 2026-10-23 17:56 UTC：实际回调对象和独立 Lua 消费合同
 
 Goal ACTIVE。`goal-progress-20261023-175559.json`实核full-h原47740/46344出生时间/命令仍匹配，499通过/15失败/1运行/477待测，Kontakt正式入库0；正式九表/head/E12固定SHA相同，原队列不改。H两pin继续不在活动原批期间重读。
