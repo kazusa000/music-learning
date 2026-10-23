@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23：补齐既有入库和新增通过项的试听
+
+最新用户授权将Kontakt“验证通过→增量入库→准备试听”串起来，并明确已入库项也要补齐。验证仍只处理原未完成队列，原失败不重试；试听跟随器不访问验证WAV、转换记录或重复恢复证明，只取原队列passed与正式catalog中audio_verified/native_admission条目的交集。
+
+入口 `runtime/kontakt-preview-job.local.json` 指向 `kf22/incremental-previews-02`。共享 `admission_preview_handoff.py` 调用当前11f0产品的既有后台入队逻辑，按缓存指纹去重。ready/queued/loading不重新生成，failed先保留；此前为了暂停预热而cancelled的项补排一次，后续主动取消和缓存淘汰不循环恢复。历史49个失败试听也保留，不将其误报为已就绪。每轮128项、30秒轮询，新通过项在publisher入库后自动进入；只使用产品现有的单一试听worker，priority -5保持手动点击优先，H盘忙则等门控。
+
+全局自动warm仍关闭，避免误恢复Ample/MODO。原2GiB缓存已有约1.59GB，额外992款短试听可能触发淘汰，因此本机上限调至4GiB；原缓存位置不移动。确认播放/试听/jobs/对话空闲后仅重启产品后端，默认产品版本不变、窗口保留，九正式表摘要相同。原验证42160和入库48160身份持续有效，未重启。
+
+首个跟随器01已经实际补排并观察ready增加；随后独立02修正“旧cancelled尚未补排”必须计入未完成数量，避免协调器过早结束。只停止无子音频进程的旧协调器，保存旧入口/进度，继承offered和既有receipt；实际音频worker、验证器、publisher及队列内容保留。02固定runner/helper/原验证plan的SHA，后续不修改活动副本。
+
+3项短回归覆盖既有补排和新增通过项、缓存/活动任务复用、失败保留、手动取消优先、重启幂等及批次待办计数，Ruff通过。证据 `kf22/incremental-previews-01` 与 `-02`。既有keyscape跟进更新为监督三任务，正常运行保持安静，全部终态后一次汇报各阶段真实统计；不把排队称为试听就绪。
+
 ## 2026-10-23：Kontakt 在产品中试听被插件路径注册拦截
 
 Band Electric Guitar 的“音源文件检查失败”原始错误为 `plugin path outside configured local allowlist`。音色已入库、完整状态可读取并不等于产品配置已经允许加载插件；此前产品查询验证漏掉了这一层。保留原失败记录，补充 `runtime/app.local.json` 中精确的 `H:\music\Sound Library\Kontakt\Runtime\Kontakt 8\x64\VST3\Kontakt 8 Portable.vst3` 路径，没有放宽到整个磁盘。
