@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from instruments import supervise_ample_block_alignment_control as block_control
+from instruments import supervise_ample_root_cause_chain as chain
 
 
 def _row(pid: int, command_line: str, *, name: str = "python.exe",
@@ -94,3 +95,77 @@ def test_prepared_512_baseline_is_source_identical_except_unique_output_paths() 
         output_paths.append(output)
 
     assert output_paths[0] != output_paths[1]
+
+
+def test_512_request_accepts_only_the_pinned_unused_e_output(tmp_path: Path,
+                                                              monkeypatch) -> None:
+    monkeypatch.setattr(chain, "ROOT", tmp_path)
+    output = tmp_path / "prepared" / "first.wav"
+    item = {"output_path": str(output)}
+    request = {"output_path": str(output),
+               "project": {"block_size": 512, "sample_rate": 44100}}
+
+    assert chain._validate_512_request(request, item, phase="first") == output
+    request["output_path"] = str(tmp_path / "other.wav")
+    try:
+        chain._validate_512_request(request, item, phase="first")
+    except chain.ChainError as error:
+        assert "prepared E-only path" in str(error)
+    else:
+        raise AssertionError("A different output path must not enter the frozen control")
+
+
+def test_512_request_rejects_output_outside_workspace(tmp_path: Path,
+                                                     monkeypatch) -> None:
+    monkeypatch.setattr(chain, "ROOT", tmp_path)
+    request = {"output_path": "H:/outside.wav",
+               "project": {"block_size": 512, "sample_rate": 44100}}
+    try:
+        chain._validate_512_request(request, {"output_path": "H:/outside.wav"},
+                                    phase="first")
+    except chain.ChainError as error:
+        assert "escaped the E:" in str(error)
+    else:
+        raise AssertionError("A non-E output must be rejected before any gate or host call")
+
+
+def test_runtime_bundle_gate_checks_pointer_config_and_real_file_hashes(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    bundle = tmp_path / "native-bundle"
+    bundle.mkdir()
+    native = bundle / "ml_engine.exe"
+    native.write_bytes(b"immutable-native-engine")
+    native_sha = hashlib.sha256(native.read_bytes()).hexdigest()
+    pointer_path = tmp_path / "application-release.local.json"
+    pointer = {"commit": "source", "native_audio_bundle": str(bundle),
+               "native_files": {"ml_engine.exe": native_sha}}
+    pointer_path.write_text(json.dumps(pointer), encoding="utf-8")
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    config_path = runtime / "app.local.json"
+    config_path.write_text(json.dumps({"native_audio_bundle": str(bundle)}),
+                           encoding="utf-8")
+    monkeypatch.setattr(chain, "RUNTIME", runtime)
+    desc = {"release_source_control": {
+        "active_pointer_snapshot": {"path": str(pointer_path)},
+        "native_bundle_sha256": "native-bundle",
+        "immutable_descriptor": {"object": {
+            "native_audio_bundle": str(bundle),
+            "native_files": {"ml_engine.exe": native_sha},
+        }},
+    }}
+
+    snapshot = chain._runtime_bundle_snapshot(desc)
+    assert snapshot["active_pointer"]["native_audio_bundle"] == str(bundle)
+    assert snapshot["runtime_config"]["native_audio_bundle"] == str(bundle)
+    assert snapshot["native_bundle_files"] == {"ml_engine.exe": native_sha}
+
+    config_path.write_text(json.dumps({"native_audio_bundle": str(tmp_path / "other")}),
+                           encoding="utf-8")
+    try:
+        chain._runtime_bundle_snapshot(desc)
+    except chain.ChainError as error:
+        assert "Runtime configuration selects" in str(error)
+    else:
+        raise AssertionError("A divergent runtime config must not pass launch preflight")
