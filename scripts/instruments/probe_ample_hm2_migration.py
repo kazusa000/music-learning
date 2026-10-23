@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
 from native_host import NativeHost  # noqa: E402
-from probe_staged_ample import sample_path  # noqa: E402
+from probe_staged_ample import _wav_window_metrics, sample_path  # noqa: E402
 from music_learning.ample_presets import (  # noqa: E402
     component_xml, database, native_identity, parameters, parse_xml, verify_state,
 )
@@ -254,7 +254,7 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
                    "host_path": str(host_path), "host_sha256": _sha(host_path),
                    "sample_library": str(library), "config": str(config)},
         "factory_state_edited": False, "formal_project_writes": 0,
-        "catalog_writes": 0, "nas_access": False,
+        "catalog_writes": 0, "library_asset_writes": 0, "nas_access": False,
         "variants": {},
     }
     for name, (preset, details) in variants.items():
@@ -311,6 +311,9 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
                 phase_record = {
                     "metrics": {key: response.get(key) for key in
                                 ("rms", "peak", "clipped_samples", "frames", "sample_rate", "channels")},
+                    "whole_wav": _wav_window_metrics(
+                        wav, {"start_sample": 0,
+                              "end_sample": int(project_for_variant["duration_samples"])}),
                     "state": _state_summary(plugin_state, expected),
                     "wav_sha256": _sha(wav.read_bytes()), "wav_bytes": wav.stat().st_size,
                     "snapshot": response["snapshot"],
@@ -327,12 +330,17 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
                 phases["first"]["state"]["strict_factory_state"]
                 and phases["reopen"]["state"]["strict_factory_state"])
             record["audio_nonzero_first_reopen"] = all(
-                phase["metrics"].get("rms") is not None
-                and float(phase["metrics"]["rms"]) >= 1e-6
+                phase["whole_wav"].get("rms") is not None
+                and float(phase["whole_wav"]["rms"]) >= 1e-6
+                for phase in phases.values())
+            record["audio_unclipped_first_reopen"] = all(
+                phase["metrics"].get("clipped_samples") == 0
+                and phase["whole_wav"].get("peak", 2.0) < 1.0
                 for phase in phases.values())
             record["status"] = "passed_control" if (
                 record["identity_equal"] and record["full_factory_state_exact"]
                 and record["audio_nonzero_first_reopen"]
+                and record["audio_unclipped_first_reopen"]
             ) else "failed_control"
         report["status"] = "completed_diagnostic"
         report["elapsed_seconds"] = time.monotonic() - started
