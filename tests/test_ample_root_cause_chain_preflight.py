@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
 from pathlib import Path
 
@@ -58,3 +60,37 @@ def test_explicit_aglp_config_claim_still_conflicts_during_passive_wait() -> Non
     )
 
     assert [row["pid"] for row in conflicts] == [coordinator["pid"]]
+
+
+def test_prepared_512_baseline_is_source_identical_except_unique_output_paths() -> None:
+    root = Path(__file__).resolve().parents[1]
+    preparation_path = (
+        root / "data/maintenance/instrument-intake/20261023-ample-shared-fix/"
+        "block-alignment-control-01/execution-05-512-baseline-prep-02/preparation.json"
+    )
+    preparation = json.loads(preparation_path.read_text(encoding="utf-8"))
+    assert preparation["status"] == "prepared_waiting_execution04_terminal_and_fresh_gate"
+    assert preparation["comparison"]["only_musical_field_difference_between_controls"] == "project.block_size"
+    assert preparation["comparison"]["baseline_target"] == 512
+
+    output_paths = []
+    for phase in ("first", "reopen"):
+        record = preparation["phases"][phase]
+        source_path = Path(record["source_request_path"])
+        request_path = Path(record["baseline_request_path"])
+        source_bytes = source_path.read_bytes()
+        request_bytes = request_path.read_bytes()
+        assert hashlib.sha256(request_bytes).hexdigest() == record["baseline_request_sha256"]
+        source = json.loads(source_bytes)
+        request = json.loads(request_bytes)
+        changed = block_control._changed_paths(source, request)
+        assert changed == ["output_path"]
+        assert request["project"]["block_size"] == 512
+        assert request["project"]["sample_rate"] == 44100
+        assert record["source_state_sha256"] == record["captured_state_bytes_sha256"]
+        assert record["note_events_sha256"] == "3adfd5022f9b577766a3956dbbccc5f20305b472b2bcdf9d6cb80f2b07de23d4"
+        output = Path(record["output_path"])
+        assert not output.exists()
+        output_paths.append(output)
+
+    assert output_paths[0] != output_paths[1]
