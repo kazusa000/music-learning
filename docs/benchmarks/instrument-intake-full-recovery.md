@@ -1,5 +1,15 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 full-h续队与实际产品后端更新
+
+`full-g-transition-01` 已捕捉到无活动条目/插件且profile锁持有的安全窗口，仅停止已核验worker50676，wrapper52468自然退出。原g报告/失败不改；stop采集器在进程退出后误用psutil.returncode的异常单独记录，随后补录进程缺席/profile原字节与mtime/无journal/正式表及14pin一致。`full-h` 已从固定cd13f0b启动，plan SHA `fe099852116f8d05e1c385d60d364250ddc1b5de32577c14969dc786a0f1a0b5`、134源码/输入pin，publish/preview均false。11份完成的Lua转换经原始请求/回执/执行及NKM SHA重放后复制到新run（CSS5/Solo6），981份仍需转换；全部992份原生验证队列重新建立，不能把来源复用称作音频通过。locator现指向h，wrapper47740/worker46344只是启动时身份，须持续重核命令及creation_time。
+
+`0b79f96` 不可变产品后端完整service回归732通过/3跳过/0失败（259.16s，`runtime/test-reports/20261023-101908-b5991bdc`），先前cd13的5个旧夹具失败原日志保留；修的是冻结测试的证据根与新AI字段/工具合同，产品逻辑没有为了测试放宽。正式引擎无会话/播放、jobs及对话无活动后，经stop.request平滑退出并部署该后端，保留最新3b9d前端/f056原生/aa81桌面及三个Ample精确插件路径。`product-preview-recovery-01/activation-*.json` 与保护报告记录正式十项摘要（九表+heads）前后相同、E内12pin相同；H两pin未在繁忙窗口重读，上述g→h窗口的14项独立完整核对保留。
+
+原79个试听行目前3ready/76failed的E-only诊断已归档，不能当作79款音源失效：66是旧key_range错误、1是早期allowlist、6是实际silent、3个AGM由旧宿主输出布局门控拒绝。原request/failure/stderr保留；旧raw.wav/response已被原预览清理流程移除，不能伪称复算过这些WAV。进一步发现预览只载入factory .vstpreset，而音轨复用完整native_admission状态；`711af51` 将所有带该共享协议的未来音源试听统一为load_admitted、完整state_base64和加载后身份/完整参数检查，不回退原始preset。缓存键只给新native_admission加入状态引用与策略版本，旧1252份缓存键不改。40项专项通过，独立v3固定快照已准备；实际同MIDI的preset/full-state音频对照及最终发布仍继续，尚不把此代码通过称作非静音验收。
+
+Ample两款完整Riff重试入口为 `runtime/ample-phrase-duration-retest-02-job.local.json`；仅2个ID，原短句失败保留。剩余SEQ/HM2/T-Track等按共同原因继续隔离，活动固定诊断不改。跟进仍ACTIVE且仅绑定音源导入聊天，已更新为上述持久入口，不唤醒开发聊天。
+
 ## 2026-10-23 首批79款已发布与产品试听收口
 
 用户明确要求目标持续 active；常规故障自行修复并续跑，不按旧暂停记录停止。`admission-publication-02/publication-state.json` 已 completed：AGLP22、AGSC39、AGM18，共79款 additions-only 正式入库，总目录1331（原Keyscape455、Pianoteq797未改）。每组重放原始完整状态/音频/来源回执，实际不可变产品后端在E隔离目录走 `import_admitted`，没有旧捕获回退、新录音或正式工程写入。79不是113全部完成；2款Riff需完整乐句补测，31款原失败和1款确缺AGMPk继续独立处理，原报告保留。
