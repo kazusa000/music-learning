@@ -13,7 +13,9 @@ import threading
 import time
 import uuid
 
-from .instrument_preview_audio import VERSION, RATE, phrase, phrase_spec, normalize
+from .instrument_preview_audio import (
+    PROFILE_PHRASE_POLICY_VERSION, VERSION, RATE, phrase, phrase_spec, normalize,
+)
 from .instruments import catalog, materialize, preset_spec, resource_path
 from .installed_libraries import verify_installed_library
 from .processes import OwnedProcess
@@ -90,6 +92,8 @@ def fingerprint(settings, entry):
     # reuse audio produced with ordinary piano-roll events or another trigger.
     if entry.get("performance_profile") is not None:
         preset["performance_profile"] = entry["performance_profile"]
+        if entry["performance_profile"].get("kind") == "riff_toggle":
+            preset["performance_phrase_policy"] = PROFILE_PHRASE_POLICY_VERSION
     return hashlib.sha256(
         encoded(
             dict(

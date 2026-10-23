@@ -10,7 +10,7 @@ from typing import Mapping
 
 from .ample_riffer_mapping import profile_from_factory
 from .instrument_intake_publication import json_fingerprint, sha256_file
-from .instrument_performance_profiles import MAX_PREVIEW_SECONDS, trigger_phrase
+from .instrument_performance_profiles import MAX_COMPLETE_RIFF_SECONDS, trigger_phrase
 
 
 TARGET_IDS = frozenset({
@@ -260,10 +260,12 @@ def build_phrase_duration_retest(
             report_item, planned_item.get("artifact_refs"), evidence_root
         )
 
-        phrase = trigger_phrase(profile, sample_rate=sample_rate, max_seconds=MAX_PREVIEW_SECONDS)
+        phrase = trigger_phrase(profile, sample_rate=sample_rate,
+                                max_seconds=MAX_COMPLETE_RIFF_SECONDS)
         duration, tail = phrase.get("duration_samples"), phrase.get("tail_samples")
         if (type(duration) is not int or duration < 1 or type(tail) is not int or tail < 0
-                or duration + tail > (MAX_PREVIEW_SECONDS + 1) * sample_rate):
+                or duration + tail > (MAX_COMPLETE_RIFF_SECONDS + 1) * sample_rate
+                or phrase.get("preview_bars") != profile.get("bars")):
             raise PhraseRetestError(f"{factory_id} source-pinned phrase exceeds the shared duration bound")
         old_request_durations = {}
         for phase in _PHASES:
@@ -276,14 +278,16 @@ def build_phrase_duration_retest(
                     or not isinstance(tracks, list) or len(tracks) != 1
                     or not isinstance(tracks[0], dict)):
                 raise PhraseRetestError(f"{factory_id} {phase} old request lacks pinned timing fields")
-            if (project["duration_samples"] == duration and project["tail_samples"] == tail
-                    and tracks[0].get("notes") == phrase.get("notes")):
-                raise PhraseRetestError(f"{factory_id} {phase} does not require the planned phrase retest")
             old_request_durations[phase] = {
                 "duration_samples": project["duration_samples"],
                 "tail_samples": project["tail_samples"],
                 "sample_rate": project["sample_rate"],
                 "notes_sha256": _canonical_sha(tracks[0].get("notes")),
+                "matches_complete_source_phrase": (
+                    project["duration_samples"] == duration
+                    and project["tail_samples"] == tail
+                    and tracks[0].get("notes") == phrase.get("notes")
+                ),
             }
 
         pin_dir = _inside(Path(selected["validator_pin_directory"]), intake, "source validator pin")
@@ -304,7 +308,7 @@ def build_phrase_duration_retest(
             "profile_sha256": json_fingerprint(profile),
             "mapping_evidence_sha256": json_fingerprint(mapping_evidence),
             "sample_rate": sample_rate,
-            "max_preview_seconds": MAX_PREVIEW_SECONDS,
+            "max_complete_source_phrase_seconds": MAX_COMPLETE_RIFF_SECONDS,
             "duration_samples": duration,
             "tail_samples": tail,
             "notes": phrase["notes"],
@@ -376,7 +380,7 @@ def build_phrase_duration_retest(
             "generator": "music_learning.instrument_performance_profiles.trigger_phrase",
             "generator_pins": profile_pins,
             "sample_rate": sample_rate,
-            "max_preview_seconds": MAX_PREVIEW_SECONDS,
+            "max_complete_source_phrase_seconds": MAX_COMPLETE_RIFF_SECONDS,
             "source": "each queue item's SHA-pinned factory AGLP state and derived Riffer profile",
             "enforcement": "shared strict publication verifier; exact duration, tail, notes, controllers, tempo, and meter",
         },

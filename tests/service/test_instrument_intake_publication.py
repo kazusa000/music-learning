@@ -613,20 +613,31 @@ def test_request_must_include_at_least_one_native_plugin_selector(tmp_path):
         _verify_run(candidate, evidence, refs, VERIFIER.verify, "first")
 
 
-def test_profile_phrase_is_bounded_by_preview_budget_and_tail(tmp_path):
+def test_profile_phrase_over_complete_riff_ceiling_is_rejected():
+    with pytest.raises(ValueError, match="Complete source Riff exceeds the 120-second safety limit"):
+        _riff_profile_candidate(bpm=1, bars=1)
+
+
+def test_profile_phrase_preserves_long_complete_riff_and_uses_profile_audio_bound():
     from music_learning.instrument_intake_publication import _performance_phrase_contract
     from music_learning.instrument_performance_profiles import trigger_phrase
 
-    candidate, _ = _riff_profile_candidate(bpm=1, bars=1)
+    candidate, _ = _riff_profile_candidate(bpm=60, bars=10)
     phrase = trigger_phrase(candidate["performance_profile"], sample_rate=44100)
     request = {"project": {
         "sample_rate": 44100,
         "duration_samples": phrase["duration_samples"],
         "tail_samples": phrase["tail_samples"],
         "tracks": [{"notes": phrase["notes"], "controllers": phrase["controllers"]}],
+        "tempo": phrase["tempo"],
+        "meter": phrase["meter"],
     }}
-    with pytest.raises(ValueError, match="bounded phrase-plus-tail limit"):
-        _performance_phrase_contract(candidate, request)
+    total_frames, window = _performance_phrase_contract(candidate, request)
+
+    assert phrase["preview_bars"] == 10
+    assert phrase["duration_samples"] == 40 * 44100
+    assert total_frames == 41 * 44100
+    assert window[0] < window[1] <= phrase["duration_samples"]
 
 
 def test_unprofiled_audio_keeps_the_five_second_cap(tmp_path):

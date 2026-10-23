@@ -3,6 +3,7 @@ import math
 import struct
 import time
 import wave
+from array import array
 
 import pytest
 
@@ -168,6 +169,59 @@ def test_phrases_respect_ranges_and_normalization_is_nonzero_and_peak_safe(tmp_p
     tone(raw, 0)
     with pytest.raises(ValueError, match="silent"):
         normalize(raw, target)
+
+
+def test_riffer_preview_keeps_the_complete_source_pattern():
+    entry = {
+        "id": "long-riff",
+        "family": "electric-guitar",
+        "performance_profile": {
+            "schema_version": 1,
+            "kind": "riff_toggle",
+            "factory_riff_sha256": "a" * 64,
+            "riff_name": "Long factory pattern",
+            "riff_type": "Riff",
+            "tempo_bpm": 60,
+            "numerator": 4,
+            "denominator": 4,
+            "bars": 10,
+            "trigger_note": 94,
+            "trigger_velocity": 1.0,
+            "stop_velocity": 1 / 127,
+        },
+    }
+
+    preview = phrase_spec(entry)
+
+    assert preview["preview_bars"] == 10
+    assert preview["duration_samples"] == 40 * RATE
+    assert preview["notes"][-1]["sample"] == preview["duration_samples"] - 1
+
+
+def test_read_pcm_accepts_complete_riff_audio_larger_than_old_cap(tmp_path):
+    path = tmp_path / "50-second-riff.wav"
+    frames = RATE * 50
+    samples = array("f", [0.125]) * (frames * 2)
+    with wave.open(str(path), "wb") as stream:
+        stream.setparams((2, 4, RATE, frames, "NONE", "not compressed"))
+        stream.writeframes(samples.tobytes())
+
+    values, channels, sample_rate = read_pcm(path)
+
+    assert len(values) == frames * 2
+    assert channels == 2 and sample_rate == RATE
+
+
+def test_read_pcm_rejects_audio_longer_than_complete_phrase_and_tail_limit(tmp_path):
+    path = tmp_path / "over-limit.wav"
+    frames = RATE * 122
+    samples = array("h", [1]) * frames
+    with wave.open(str(path), "wb") as stream:
+        stream.setparams((1, 2, RATE, frames, "NONE", "not compressed"))
+        stream.writeframes(samples.tobytes())
+
+    with pytest.raises(ValueError, match="exceeds the 120-second profile limit"):
+        read_pcm(path)
 
 
 def test_ordinary_preview_accepts_undeclared_range_without_claiming_one():

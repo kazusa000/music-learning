@@ -574,7 +574,9 @@ def _performance_phrase_contract(candidate: Mapping, request: Mapping) -> tuple[
     profile = candidate.get("performance_profile")
     if profile is None:
         return None
-    from .instrument_performance_profiles import MAX_PREVIEW_SECONDS, trigger_phrase, validate
+    from .instrument_performance_profiles import (
+        MAX_COMPLETE_RIFF_SECONDS, MAX_PREVIEW_SECONDS, trigger_phrase, validate,
+    )
 
     profile = validate(profile, expected_source_sha256=candidate.get("source_factory_sha256"))
     try:
@@ -586,11 +588,13 @@ def _performance_phrase_contract(candidate: Mapping, request: Mapping) -> tuple[
         track = tracks[0]
     except (KeyError, TypeError, IndexError) as error:
         raise ValueError("Performance-profile request lacks one bounded project track") from error
-    phrase = trigger_phrase(profile, sample_rate=rate, max_seconds=MAX_PREVIEW_SECONDS)
+    phrase_limit_seconds = (MAX_COMPLETE_RIFF_SECONDS if profile.get("kind") == "riff_toggle"
+                            else MAX_PREVIEW_SECONDS)
+    phrase = trigger_phrase(profile, sample_rate=rate, max_seconds=phrase_limit_seconds)
     duration = phrase.get("duration_samples")
     tail = phrase.get("tail_samples")
     if (type(duration) is not int or duration < 1 or type(tail) is not int or tail < 0
-            or duration + tail > (MAX_PREVIEW_SECONDS + 1) * rate):
+            or duration + tail > (phrase_limit_seconds + 1) * rate):
         raise ValueError("Performance profile exceeds the bounded phrase-plus-tail limit")
     if project.get("duration_samples") != duration or project.get("tail_samples") != tail:
         raise ValueError("Rendered request duration differs from the source-pinned performance phrase")

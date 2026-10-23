@@ -187,9 +187,8 @@ def test_builds_only_two_source_pinned_first_reopen_phrase_retests(tmp_path):
     assert all(item["status"] == "pending_staging" for item in queue["items"])
     assert all(item["phrase_duration_retest_origin"]["prior_status"] == "passed"
                for item in queue["items"])
-    assert all(item["source_pinned_phrase_contract"]["duration_samples"]
-               < item["phrase_duration_retest_origin"]["prior_request_durations"]["first"]["duration_samples"]
-               for item in queue["items"])
+    assert all(item["phrase_duration_retest_origin"]["prior_request_durations"]["first"]
+               ["matches_complete_source_phrase"] for item in queue["items"])
     assert all(item["library"].endswith("Ample Sound\\AGLP 4.0.0") for item in queue["items"])
 
 

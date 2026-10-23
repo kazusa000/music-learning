@@ -11,6 +11,9 @@ import wave
 
 VERSION = "musical-preview-v1"
 RATE = 44100
+PROFILE_PHRASE_POLICY_VERSION = "complete-source-riff-v1"
+MAX_PROFILE_PREVIEW_SECONDS = 121  # 120-second source phrase plus its one-second tail
+MAX_PROFILE_PREVIEW_BYTES = RATE * MAX_PROFILE_PREVIEW_SECONDS * 2 * 4 + 4096
 
 
 def _ordinary_phrase(entry):
@@ -100,8 +103,11 @@ def phrase(entry):
 
 
 def read_pcm(path):
-    raw = Path(path).read_bytes()
-    if len(raw) > 16 * 1024**2 or raw[:4] != b"RIFF" or raw[8:12] != b"WAVE":
+    source = Path(path)
+    if source.stat().st_size > MAX_PROFILE_PREVIEW_BYTES:
+        raise ValueError("Preview WAV exceeds the 120-second profile limit")
+    raw = source.read_bytes()
+    if raw[:4] != b"RIFF" or raw[8:12] != b"WAVE":
         raise ValueError("Invalid preview WAV")
     fmt = data = None
     offset = 12
@@ -122,6 +128,8 @@ def read_pcm(path):
         tag = struct.unpack_from("<H", fmt, 24)[0]
     if channels not in (1, 2) or rate != RATE or alignment != channels * (bits // 8) or len(data) % alignment:
         raise ValueError("Invalid preview audio format")
+    if len(data) // alignment > rate * MAX_PROFILE_PREVIEW_SECONDS:
+        raise ValueError("Preview WAV exceeds the 120-second profile limit")
     if tag == 3 and bits == 32:
         values = array("f")
         values.frombytes(data)

@@ -8,6 +8,8 @@
 
 实际试听handoff共请求79款，12次API回执成功、67次500；这不是67款音源损坏。原始API栈证明普通试听错误地强制读取可选的key_range。`8664384` 修复共享普通短句：未声明物理音域时沿用乐器类别的标准音区、不向目录伪造音域；显式范围仍严格校验。后台预热在忙盘时保持queued，20秒后重新检查，不启动额外采样器；采样不占SQLite写锁，期间取消无法被晚到的加载覆盖。28项预览专项及Ruff通过，需在新不可变产品后端部署后复核实际ready/failed及实际音轨加载，不能把提交/排队算作预热完成。
 
+Ample Riffer 的完整源乐句规则修复：先前 30 秒预览上限会把 8/10 小节 factory Riff 缩到 7 小节，提前发送 stop note；旧成功请求完整播放分别约 30.968 秒和 40 秒，新短请求首开均得到精确全零。E-only 对照记录在 `20261023-ample-shared-fix/phrase-duration-retest-01/diagnostics/strict-duration-compare-01.json`，确认 host、preset、加载状态、节拍/拍号和最终资源清单一致，原始失败不覆盖。共享规则现让 Riff 始终按完整 source bars 触发，最多 120 秒；超过上界直接拒绝，不截短 trigger。产品试听缓存按新 phrase policy 版本换键，WAV 检查上界涵盖 120 秒 phrase + 1 秒尾音，未放宽非 profile 音频原有 5 秒限制。108 项相关回归通过。`phrase-duration-retest-01` 两项均已终态失败并保留；下一步在独立 `retry-02` 中用最终 AGLP bank 仅重测这两个 ID，first/reopen 和声音/状态/来源阈值不变。
+
 Kontakt `full-g` 已真实进入来源转换，但模块间descriptor归一化丢失is_instrument，导致下游二次验证拒绝；`39976b1` 保留该身份字段，54专项通过。旧批及失败保留，`a928940` 新E-only续队工具对已转换NKM重新复核Lua请求/原回执/执行及输出SHA后复制到独立attempt，失败/待处理项仍需重做；旧音频验证不复用。需在旧批无活动条目/插件、profile完整恢复后才切新固定批次，PID与实际命令每次核验。派生NKC索引与固定静态资源分离记录，但不修改受保护的installed_libraries验证器；最终批结束后还需无Kontakt进程时双快照与静态清单复核。
 
 ## 2026-10-23 固定源码、真实控制与严格发布桥接

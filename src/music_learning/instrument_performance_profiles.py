@@ -39,6 +39,7 @@ _AMPLE_STRUMMER_FIELDS = {
     "numerator", "denominator", "quantize", "steps_per_bar",
 }
 MAX_PREVIEW_SECONDS = 30.0
+MAX_COMPLETE_RIFF_SECONDS = 120.0
 _AMPLE_RIFFER_TYPES = frozenset({"Riff", "ARP", "Fill", "Strum"})
 _AMPLE_SEQUENCE_TRIGGER_NOTES = (48, 49, 51, 54, 56, 58, 61, 63)
 
@@ -250,12 +251,14 @@ def profile_fingerprint(profile: Mapping) -> str:
 
 def trigger_phrase(profile: Mapping, *, sample_rate: int = 44100,
                    max_seconds: float = MAX_PREVIEW_SECONDS) -> dict:
-    """Build bounded preview events for a strictly validated source profile.
+    """Build an exact source phrase for a strictly validated profile.
 
-    Slow or long factory Riffs may exceed the preview budget.  In that case
-    the preview plays the first complete bars and sends the matching stop event
-    at the end of those bars; the stored factory profile is never truncated.
-    Other kinds own their source-specific event generation.
+    Ample Riffer phrases are indivisible transport patterns: shortening their
+    bar count moves the stop trigger and can silence a factory Riff entirely.
+    They therefore always preserve the complete source pattern, with a hard
+    120-second ceiling. A smaller ``max_seconds`` never truncates a Riff;
+    ``max_seconds`` bounds other profile kinds. Unprofiled audio previews
+    retain their separate five-second limit.
     """
     profile = validate(profile)
     if profile["kind"] == "midi_context":
@@ -274,8 +277,11 @@ def trigger_phrase(profile: Mapping, *, sample_rate: int = 44100,
 
     beats_per_bar = profile["numerator"] * 4.0 / profile["denominator"]
     seconds_per_bar = 60.0 / profile["tempo_bpm"] * beats_per_bar
-    preview_bars = min(profile["bars"], max(1, math.floor(max_seconds / seconds_per_bar)))
-    duration = round(sample_rate * seconds_per_bar * preview_bars)
+    phrase_seconds = seconds_per_bar * profile["bars"]
+    if phrase_seconds > MAX_COMPLETE_RIFF_SECONDS:
+        raise ValueError("Complete source Riff exceeds the 120-second safety limit")
+    preview_bars = profile["bars"]
+    duration = round(sample_rate * phrase_seconds)
     if duration < sample_rate:
         raise ValueError("Performance-profile preview is shorter than one second")
     notes = [

@@ -89,12 +89,18 @@ def test_unknown_ample_riffer_subtype_fails_closed(riff_profile):
         validate(riff_profile)
 
 
-def test_slow_long_riff_preview_uses_complete_bars_with_bounded_duration(riff_profile):
-    riff_profile.update(tempo_bpm=30, numerator=4, denominator=4, bars=16)
+def test_riff_phrase_keeps_all_source_bars_even_above_preview_budget(riff_profile):
+    riff_profile.update(tempo_bpm=60, numerator=4, denominator=4, bars=10)
     phrase = trigger_phrase(riff_profile, sample_rate=44100, max_seconds=12)
-    assert phrase["preview_bars"] == 1
-    assert phrase["duration_samples"] == 8 * 44100
+    assert phrase["preview_bars"] == 10
+    assert phrase["duration_samples"] == 40 * 44100
     assert phrase["notes"][-1]["sample"] == phrase["duration_samples"] - 1
+
+
+def test_riff_phrase_over_hard_limit_fails_instead_of_truncating(riff_profile):
+    riff_profile.update(tempo_bpm=30, numerator=4, denominator=4, bars=16)
+    with pytest.raises(ValueError, match="Complete source Riff exceeds the 120-second safety limit"):
+        trigger_phrase(riff_profile, sample_rate=44100)
 
 
 def test_too_fast_source_riff_is_not_silently_extended(riff_profile):
