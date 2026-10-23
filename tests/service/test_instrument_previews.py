@@ -404,6 +404,7 @@ def test_riff_profile_phrase_and_native_request_keep_trigger_and_transport(tmp_p
     import psutil
     monkeypatch.setattr(psutil, "Process", lambda _pid: SimpleNamespace(nice=lambda *_args: None,
                                                                           create_time=lambda: 0.0))
+    (tmp_path / "host.exe").write_bytes(b"fixture host")
     settings = SimpleNamespace(native_host=tmp_path / "host.exe", plugin_path=lambda value: value,
                                admitted_preset_host=tmp_path / "new-admitted-host.exe")
     output, metrics = render_preview(settings, entry, tmp_path / "preview", lambda: False)
@@ -488,6 +489,7 @@ def test_kontakt_midi_context_profile_dispatches_cc_to_preview_request(tmp_path,
     import psutil
     monkeypatch.setattr(psutil, "Process", lambda _pid: SimpleNamespace(nice=lambda *_args: None,
                                                                           create_time=lambda: 0.0))
+    (tmp_path / "host.exe").write_bytes(b"fixture host")
     settings = SimpleNamespace(native_host=tmp_path / "host.exe", plugin_path=lambda value: value)
     output, metrics = render_preview(settings, entry, tmp_path / "preview", lambda: False)
 

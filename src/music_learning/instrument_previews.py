@@ -19,6 +19,7 @@ from .instrument_preview_audio import (
 from .instruments import catalog, materialize, preset_spec, resource_path
 from .installed_libraries import verify_installed_library
 from .processes import OwnedProcess
+from .preview_loading import PreviewStorageBusy, loading_host, require_preview_space
 from .storage import digest
 
 
@@ -136,8 +137,14 @@ def preview_plugin(settings, entry, path):
 def render_preview(settings, entry, directory, cancelled):
     directory.mkdir(parents=True, exist_ok=True)
     validate_entry(settings, entry)
-    path = materialize(settings, entry, directory / "resources")
+    # Complete admitted state already contains the preset. Validated resources
+    # remain in the library; copying them here adds an unrelated import-space
+    # gate and the resulting preset_path would immediately be discarded.
+    path = (directory / "unused.vstpreset" if entry.get("native_admission") is not None
+            else materialize(settings, entry, directory / "resources"))
     musical_phrase = phrase_spec(entry)
+    require_preview_space(settings, directory,
+                          musical_phrase["duration_samples"] + musical_phrase["tail_samples"])
     notes = musical_phrase["notes"]
     spec, admitted = preview_plugin(settings, entry, path)
     raw = directory / "raw.wav"
@@ -162,9 +169,14 @@ def render_preview(settings, entry, directory, cancelled):
     req = directory / "request.json"
     response = directory / "response.json"
     req.write_text(encoded(request), encoding="utf-8")
+    actual_host = loading_host(settings, entry, preview_host(settings, entry), file_digest)
+    (directory / "renderer.json").write_text(encoded(dict(
+        host=str(actual_host), host_sha256=file_digest(actual_host),
+        cache_host_sha256=file_digest(preview_host(settings, entry)),
+    )), encoding="utf-8")
     with (directory / "stdout.log").open("wb") as stdout, (directory / "stderr.log").open("wb") as stderr:
         with OwnedProcess(
-            [str(preview_host(settings, entry)), str(req), str(response)], stdout=stdout, stderr=stderr
+            [str(actual_host), str(req), str(response)], stdout=stdout, stderr=stderr
         ) as owner:
             try:
                 import os
@@ -478,6 +490,13 @@ class InstrumentPreviews:
                         identifier,
                         generation,
                     ),
+                )
+        except PreviewStorageBusy as error:
+            self.storage_retry_at = time.monotonic() + 20
+            with self.db() as db:
+                db.execute(
+                    "update previews set status='queued',error=?,updated=? where id=? and generation=? and status='loading'",
+                    (str(error), time.time(), identifier, generation),
                 )
         except Exception as error:
             failed = True

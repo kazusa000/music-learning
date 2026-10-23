@@ -85,7 +85,10 @@ def test_render_checks_full_loaded_state_before_publishing_audio(tmp_path, monke
 
     monkeypatch.setattr(module, "OwnedProcess", Host)
     monkeypatch.setattr(module, "validate_entry", lambda *_args: None)
-    monkeypatch.setattr(module, "materialize", lambda *_args: tmp_path / "factory.vstpreset")
+    def forbidden_copy(*_args):
+        raise AssertionError("Complete admitted state must not copy discarded preset resources")
+
+    monkeypatch.setattr(module, "materialize", forbidden_copy)
     if mismatch:
         with pytest.raises(ValueError, match="complete admitted native state"):
             render_preview(settings, entry, tmp_path / "render", lambda: False)
