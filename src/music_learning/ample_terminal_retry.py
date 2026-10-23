@@ -261,6 +261,8 @@ def _active_process_summary(rows: list[dict]) -> str:
             "name": row.get("name"),
             "command": command[:1200],
         })
+        if isinstance(row.get("preparer_self_diagnostic"), dict):
+            safe_rows[-1]["preparer_self_diagnostic"] = row["preparer_self_diagnostic"]
     if len(rows) > len(safe_rows):
         safe_rows.append({"omitted_matching_processes": len(rows) - len(safe_rows)})
     return json.dumps(safe_rows, ensure_ascii=False, separators=(",", ":"))

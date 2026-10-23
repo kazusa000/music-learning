@@ -207,12 +207,19 @@ def test_terminal_profile_correction_fails_closed_on_live_process_or_status_mism
             active_process_scan=lambda _: [{
                 "pid": 123, "created": 1234.5, "name": "python.exe",
                 "command": "python.exe prepare.py --source-run source --token abc123",
+                "preparer_self_diagnostic": {
+                    "current_pid": 456, "observed_pid": 123, "pid_matches": False,
+                    "preparer_argv_matches": True, "source_argument_matches": True,
+                    "sys_argv0": None, "excluded_as_read_only_self": False,
+                },
             }],
         )
     assert '"pid":123' in str(caught.value)
     assert "prepare.py" in str(caught.value)
     assert "abc123" not in str(caught.value)
     assert "[REDACTED]" in str(caught.value)
+    assert '"current_pid":456' in str(caught.value)
+    assert '"preparer_argv_matches":true' in str(caught.value)
 
     status_path = run / "status.json"
     status = json.loads(status_path.read_bytes())
