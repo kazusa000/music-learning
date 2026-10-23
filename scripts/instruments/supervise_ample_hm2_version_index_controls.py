@@ -27,7 +27,7 @@ PRODUCT_ORDER = ("AGSC", "AGLP")
 CONTROL_CODE_PATHS = (
     "scripts/instruments/probe_ample_hm2_migration.py",
     "scripts/probe_staged_ample.py",
-    "scripts/instruments/native_host.py",
+    "scripts/native_host.py",
     "scripts/instruments/supervise_ample_failed_retry.py",
     "src/music_learning/ample_presets.py",
     "src/music_learning/vst3_state.py",
