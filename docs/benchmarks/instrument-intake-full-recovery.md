@@ -1,5 +1,13 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 11:56 UTC：完整状态试听专用宿主路由与V6候选
+
+`bf7cd00`新增通用可选设置`admitted_preset_host`。所有带`native_admission`协议的音源试听统一选择它，并将实际所用宿主SHA纳入缓存键；未配置时保持原合同，配置后文件缺失或发声/状态检查失败也不会退回旧host。普通Keyscape/Pianoteq条目仍使用原`native_host`，原缓存ID不变，避免一次新宿主修复触发1252份旧库重复预热。完整状态、全部参数、原生身份、削波和静音检查未放宽。75专项通过，后加普通Riff实际命令选择断言后相关39项通过，Ruff通过；这里的命令/音频测试使用E夹具，不冒充真实VST3结果。
+
+V5固定0175146完整service802通过/3跳过（218.68秒，`runtime/test-reports/20261023-114726-3c881d88`）；包含上述宿主路由的最新V6为`bf7cd0017b7d4f95400719dff51e58b8a2b81b19`，描述符`runtime/application-release.intake-preview-20261023-v6.local.json`，显式冻结pyproject完整service808通过/3跳过/0失败（245.48秒，`runtime/test-reports/20261023-115133-6f234d4e`）。V6临时夹具4080文件/4329目录/1自有联接自动清，0错误；只读发布验证通过，尚未激活，正式仍0b79f96，3b9d/f056/aa81及固定14项不变。新离线host在独立目录构建；旧A/B失败与v1零attempt记录保留，只有真实新host对照通过后才考虑配置和发布。
+
+此时full-h为CSS6过/1败、Solo5过/6败、Factory13过/961待测，即24通过/7失败/961待测。QA04已有1次在读取catalog前因H压力正常defer，0实际发声结果，不能继续按旧0attempt或新1attempt称验收。原队列继续，常规修复和入库Goal仍ACTIVE。
+
 ## 2026-10-23 11:44 UTC：Factory续队、真实宿主拒绝与监督收尾修复
 
 `full-h`仍为原固定plan，wrapper47740/worker46344按实际命令和creation time核实。全部992项队列已建立：CSS6通过/1源加载超时，CSS Solo5通过/6失败，Factory1通过/973待测，共12通过/7失败/973待测；Kontakt仍0正式入库。五项Classic Legato首开精确静音与另两项来源转换超时分开保留；f3acdc6新增显式重叠音符演奏profile，82相关回归通过，但尚未实际证明能修复这五项，不修改运行中的原批或提前重标通过。后续仅在原批终态/profile租约释放后进行共同原因控制和独立失败项重试。

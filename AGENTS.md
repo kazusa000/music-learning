@@ -1,5 +1,7 @@
 # 项目开发约定
 
+音源试听候选V6（2026-10-23 11:56 UTC）：默认仍0b79f96，新bf7cd00/V6完整冻结service808过/3跳过、245.48秒，runtime/test-reports/20261023-115133-6f234d4e，临时夹具自动清0错，只读发布验证通过未激活。新增可选admitted_preset_host只供native_admission条目，缓存键和实际命令用同一host；旧Keyscape/Pianoteq的1252缓存ID保持，不全库重跑。完整状态/发声检查不放宽，实际新host A/B继续。full-h24过/7败/961待测；QA04一次catalog前IO defer，无实际发声结果。Goal ACTIVE；固定14/正式工程和f056不动，详见instrument-intake-full-recovery顶部。
+
 音源导入继续推进（2026-10-23 11:44 UTC）：Goal ACTIVE，full-h已进入Factory，CSS6过/1源超时、Solo5过/6失败、Factory1过/973待测，合计12过/7败/973待测，Kontakt仍0正式入库，原批不改。LP2的Gotten/80s完整乐句终态0过/2精确静音；原监督误将PID复用前启动的tail/OneDrive认作子树，共享出生时间归属修复8e96fa9/e25ba5b及20回归通过，独立assessment确认原报告/队列和无关进程均未动。旧host真实preset/full-state A/B均被stereo/sidechain门控拒绝，隔离新host共享修复继续，不提前激活V4或称发声通过。标题附加后的预热handoff只接受经SHA/原身份/候选绑定验证的presentation_title，其余字段逐项相同，36回归过，未应用H标题。新Retry06/HM2持久入口每次核实实际PID/ctime/命令；忙盘等待，不重复开批。正式九表/head/E12pin仍相同，H两pin未繁忙重读。详见instrument-intake-full-recovery顶部。
 
 音源导入固定候选（2026-10-23）：Goal继续ACTIVE，默认后端仍0b79f96。新候选7b621fe/V4冻结完整service791过/3跳过（211.14s，runtime/test-reports/20261023-110828-a2fdd23c），夹具自动清0错，发布只读验证通过未激活，保留3b9d/f056/aa81。新增共享presentation_title仅显示投影，原身份/default/音频不改，真实H元数据尚未应用。实际设备QA04入口runtime/instrument-intake-engine-qa.local.json，启动时45312/24420，须每次核验真实身份；c4aac99修未知音域/完整候选比对，41专项过，E预检6普通+4完整profile，QA03零attempt安全止后报告保留；未实际发声不称通过。0b79下79款当前试听指纹71failed/8queued，旧3ready为旧指纹，全局历史counts不可当当前就绪数。full-h已实开验证，11:21的CSS队列4pass/1原超时/1运行/1待测，尚0Kontakt入库；LP2/A-B继续门控，不重开第二批。详见instrument-intake-full-recovery顶部。
