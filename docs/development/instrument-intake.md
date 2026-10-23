@@ -22,4 +22,4 @@
 
 试听是独立阶段，只有实际缓存 ready 才算准备完成。当前失败音色暂不分析或重试；后续是否恢复由用户安排。
 
-来源键位查询与 VST3 状态恢复有不同语义，详见[Kontakt 来源查询](../architecture/kontakt-source-keymap.md)。当前任务细节保留在[恢复记录](../benchmarks/instrument-intake-full-recovery.md)，固定文件及过程边界见根目录 [AGENTS.md](../../AGENTS.md)。
+来源键位查询与 VST3 状态恢复有不同语义，详见[Kontakt 来源查询](../architecture/kontakt-source-keymap.md)。当前任务细节与过程边界保留在[恢复记录](../benchmarks/instrument-intake-full-recovery.md)，具体固定文件以对应任务 plan/pins 为准。
