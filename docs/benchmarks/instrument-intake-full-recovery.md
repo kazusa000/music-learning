@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 11:44 UTC：Factory续队、真实宿主拒绝与监督收尾修复
+
+`full-h`仍为原固定plan，wrapper47740/worker46344按实际命令和creation time核实。全部992项队列已建立：CSS6通过/1源加载超时，CSS Solo5通过/6失败，Factory1通过/973待测，共12通过/7失败/973待测；Kontakt仍0正式入库。五项Classic Legato首开精确静音与另两项来源转换超时分开保留；f3acdc6新增显式重叠音符演奏profile，82相关回归通过，但尚未实际证明能修复这五项，不修改运行中的原批或提前重标通过。后续仅在原批终态/profile租约释放后进行共同原因控制和独立失败项重试。
+
+LP `phrase-duration-retest-02`两项完整乐句均已真实终态失败，首开WAV精确全零；Gotten(Fingerstyle)/80s Solo与Retry06的Sweet Child/Used to Love Her是不同ID，不混合统计。完整时长修复解决协议截短，但不足以证明全部静音根因；E原请求/预设/完整状态/参数和采样索引对照见`riff-silent-lineage-01/lineage-comparison.json`。原监督收尾另被Windows PID复用误导：两个无关程序早于新runner出生，旧PPID闭包仍将它们纳入观察子树。8e96fa9/e25ba5b在每条父子边核对出生顺序，并对已观察孤儿核对PID/ctime/命令；未知身份仍阻断，20回归及Ruff通过。独立`phrase-duration-retest-02/supervision-02-lineage-assessment/assessment.json`确认真实自有进程已退出，原队列/原checkpoint字节不改，无关tail/OneDrive进程未停止或改动；canonical locator现为`completed_with_failed_items`，旧locator另存原字节。
+
+旧固定host的实际同MIDI A/B已完整结束：factory-preset于11:24、admitted-full-state于11:38均返回`Expected stereo output and optional stereo sidechain`，三个来源/完整状态导入证明不能替代该实际调用结果。两次AGM InstDir SHA一致，原request/stderr/状态保留于`product-preview-full-state-ab-01/supervision-01`。新共享总线适配及诊断将在独立host构建验证，不覆盖固定14项或f056，不以关闭检查伪造通过。QA04仍为0attempt的等待器；V4未激活，完整791项通过只属于原固定候选。
+
+预热outbox新增一项实际合同修复：先发布音色、随后附加审查后的中英文来源标题时，原整条相等判断会拒绝合法的presentation_title。E内先复现失败，再仅允许该已验证字段附加；其来源SHA、原生身份和候选字段绑定必须通过，其他全部字段（包括完整状态和音频通过标记）仍逐项相同，原发布plan和幂等键不改。36项预热/标题专项及Ruff通过，原失败测试报告保留；未向H目录应用标题、未新调插件或正式渲染。
+
+恢复新入口包括`runtime/ample-final-bank-riff-retry-06-attempt-02-job.local.json`（原preparation失败保留，后续独立attempt修复）及`runtime/ample-hm2-version-index-controls.local.json`（新source-pinned控制，H忙和实际占用门控）。每次需查真实进程与checkpoint，不根据locator旧status称运行。完整当前只读记录`goal-progress-20261023-114419.json`确认正式九表/head与E12固定SHA同基线，H两pin未在压力期重读。Goal/本聊天自动跟进继续ACTIVE，不唤醒开发聊天、不访问NAS或tmp原素材。
+
 ## 2026-10-23 当前指纹、真实进程与剩余故障分类
 
 11:21 UTC新窗口中，full-h实际队列为CSS4passed/1原source超时/1running/1pending：2nd Violins、Basses、Cellos、Full Ensemble均通过，Lite Ensemble正在运行。新快照 `kf22/reports/full-h-progress-20261023T112106.json`保存原队列SHA及逐phase音频、身份、4145参数计数和完整状态摘要；992整批尚未完成、Kontakt仍0正式入库。前两款的NKI/NKM/原生身份和四份WAV/PCM SHA已独立对照，各自互异，未发现跨乐器复用声音或状态。下面早先waiting_storage记录只是当时快照；持续读取实际current、队列及PID，不根据旧storage_budget推断活动状态。

@@ -16,6 +16,23 @@ from .instrument_intake_publication import (
 )
 
 
+def _published_entry_matches(expected: Mapping, current: object) -> bool:
+    if current == expected:
+        return True
+    if not isinstance(current, Mapping) or "presentation_title" in expected:
+        return False
+    # The independent title publisher may attach reviewed display metadata
+    # after admission. Every other field, including audio/state evidence, must
+    # still be exactly the immutable publication entry.
+    if ("presentation_title" not in current
+            or {key: value for key, value in current.items() if key != "presentation_title"} != expected):
+        return False
+    from .instrument_presentation_amendments import validate_payload
+
+    validate_payload(current, current["presentation_title"])
+    return True
+
+
 def enqueue_published_previews(plan: Mapping, catalog_path: Path, checkpoint_path: Path,
                                prepare_preview: Callable, *, retry_errors=False) -> dict:
     plan = dict(plan)
@@ -42,7 +59,7 @@ def enqueue_published_previews(plan: Mapping, catalog_path: Path, checkpoint_pat
         catalog = json.loads(catalog_path.read_bytes())
         actual = {entry["id"]: entry for entry in catalog["presets"]}
         for entry in additions:
-            if actual.get(entry["id"]) != entry:
+            if not _published_entry_matches(entry, actual.get(entry["id"])):
                 raise ValueError("Preview source has not been published unchanged: " + entry["id"])
         if checkpoint.exists():
             state = json.loads(checkpoint.read_bytes())
