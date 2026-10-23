@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -174,7 +175,9 @@ def _audio_ready_phase(phase: str) -> dict:
     }
 
 
-def _install_real_fresh_gate_fixtures(tmp_path: Path, monkeypatch) -> tuple[dict, Path]:
+def _install_real_fresh_gate_fixtures(
+    tmp_path: Path, monkeypatch,
+) -> tuple[dict, Path, list]:
     """Install E-only low-level fixtures while keeping both gate builders real."""
     qa_dir = tmp_path / "qa"
     qa_output = qa_dir / "output"
@@ -234,18 +237,25 @@ def _install_real_fresh_gate_fixtures(tmp_path: Path, monkeypatch) -> tuple[dict
     monkeypatch.setattr(
         chain.block, "verify_final_manifest",
         lambda item, audit, root: {"manifest_file_sha256": "manifest-sha"})
-    samples = {"count": 0}
+    windows_samples = []
 
-    def fake_sample(drive: str) -> dict:
-        samples["count"] += 1
-        return {"drive": drive, "busy": False, "busy_percent": 1.0, "queue": 0,
-                "read_bytes_per_second": 0, "write_bytes_per_second": 0,
-                "sample_sequence": samples["count"]}
+    def fake_powershell(argv, **kwargs):
+        assert argv[0] == "powershell.exe"
+        windows_samples.append((argv, kwargs))
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"Name": "H:", "PercentIdleTime": 99,
+                               "PercentDiskTime": 1, "CurrentDiskQueueLength": 0,
+                               "DiskReadBytesPersec": 0, "DiskWriteBytesPersec": 0}),
+            stderr="",
+        )
 
-    monkeypatch.setattr(chain, "sample_drive", fake_sample)
+    # Keep instrument_probe_budget.sample_drive, assess, and loading_budget
+    # real; replace only the Windows counter process at its leaf.
+    monkeypatch.setattr(chain.subprocess, "run", fake_powershell)
     monkeypatch.setattr(chain.time, "sleep", lambda _: None)
     monkeypatch.setattr(chain, "_write_state", lambda *args, **kwargs: None)
-    return source_plan, state_path
+    return source_plan, state_path, windows_samples
 
 
 def _run_fake_midi_probe(tmp_path: Path, monkeypatch, *, report: dict,
@@ -442,7 +452,8 @@ def test_each_riff_request_uses_a_fresh_terminal_and_h_gate(
     runner = FakeRiffRunner()
     monkeypatch.setattr(chain, "_prepare_riff_attempt",
                         lambda plan: (stage_plan, stage_plan_path, runner))
-    _, qa_state_path = _install_real_fresh_gate_fixtures(tmp_path, monkeypatch)
+    _, qa_state_path, windows_samples = _install_real_fresh_gate_fixtures(
+        tmp_path, monkeypatch)
     midi_path = _write_json(tmp_path / "midi" / "progress.json", {
         "status": "completed_diagnostic",
         "all_phases_strict_audio_positive": False,
@@ -486,10 +497,10 @@ def test_each_riff_request_uses_a_fresh_terminal_and_h_gate(
                for _, gate in gate_stages)
     all_samples = [gate["h_idle_samples"] for _, gate in gate_stages]
     assert all(len(samples) == 3 for samples in all_samples)
-    sequences = [[sample["sample_sequence"] for sample in samples]
-                 for samples in all_samples]
-    assert len({tuple(sequence) for sequence in sequences}) == 6
+    assert len(windows_samples) == 36  # two fresh 3-sample budgets per gate
     assert all(sample["observed_at_utc"] for samples in all_samples for sample in samples)
+    assert all(sample["busy"] is False and sample["busy_percent"] == 1.0
+               and sample["queue"] == 0 for samples in all_samples for sample in samples)
     assert all(gate["h_gate"]["budget"]["allowed"] is True
                for _, gate in gate_stages)
     assert all(gate["qa07"]["terminal_outcome_accepted_as_diagnostic_gate"] is True
