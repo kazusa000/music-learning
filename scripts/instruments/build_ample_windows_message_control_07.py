@@ -417,7 +417,7 @@ def prepare_plan(plan_03: dict, core_manifest_path: Path, extra_manifest_path: P
 def main() -> None:
     global EVIDENCE, OUT, OUTPUT_ROOT
     parser = argparse.ArgumentParser()
-    parser.add_argument("--attempt", choices=("initial", "rebuild-01", "rebuild-02"), default="initial")
+    parser.add_argument("--attempt", choices=("initial", "rebuild-01", "rebuild-02", "rebuild-03"), default="initial")
     args = parser.parse_args()
     if args.attempt == "rebuild-01":
         EVIDENCE = INTAKE / "windows-message-control-07-rebuild-01"
@@ -427,6 +427,10 @@ def main() -> None:
         EVIDENCE = INTAKE / "windows-message-control-07-rebuild-02"
         OUT = ROOT / "runtime/build/ample-windows-message-07-rebuild-02"
         OUTPUT_ROOT = ROOT / "data/maintenance/instrument-intake/q/wm07-rebuild-02"
+    elif args.attempt == "rebuild-03":
+        EVIDENCE = INTAKE / "windows-message-control-07-rebuild-03"
+        OUT = ROOT / "runtime/build/ample-windows-message-07-rebuild-03"
+        OUTPUT_ROOT = ROOT / "data/maintenance/instrument-intake/q/wm07-rebuild-03"
     if OUT.exists() or EVIDENCE.exists() or OUTPUT_ROOT.exists():
         raise SystemExit(f"Refusing to overwrite an existing task root: {OUT}, {EVIDENCE}, {OUTPUT_ROOT}")
 
