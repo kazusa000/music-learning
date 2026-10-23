@@ -30,6 +30,7 @@ from supervise_ample_failed_retry import (  # noqa: E402
     process_inventory,
     queue_identity,
     supervisor_lock,
+    verified_observed_survivors,
     validate_retry_state,
 )
 
@@ -196,16 +197,53 @@ def _prerequisite_busy(plan: dict, rows: list[dict], locator: dict, checkpoint: 
         if _live_record(record, rows_by_pid):
             busy.append(rows_by_pid[int(record["pid"])])
 
-    supervision = checkpoint.get("supervision") or {}
+    # The retry supervisor stores these fields at the checkpoint root. Accept
+    # the earlier nested wrapper too, but never skip an observed tree merely
+    # because the schema is not wrapped.
+    supervision = checkpoint.get("supervision")
+    if not isinstance(supervision, dict):
+        supervision = checkpoint
     for record in (supervision.get("supervisor"), supervision.get("active_runner")):
         if isinstance(record, dict) and _live_record(record, rows_by_pid):
             busy.append(rows_by_pid[int(record["pid"])])
-    for record in (supervision.get("observed_tree") or {}).values():
-        if isinstance(record, dict) and _live_record(record, rows_by_pid):
-            busy.append(rows_by_pid[int(record["pid"])])
+    observed_tree = supervision.get("observed_tree") or {}
+    proven_prior_aliases: set[int] = set()
+    if observed_tree:
+        active_runner = supervision.get("active_runner")
+        if not isinstance(active_runner, dict):
+            raise FinalBankRetryError("LP2 checkpoint has an observed tree without its runner birth identity")
+        try:
+            busy.extend(verified_observed_survivors(active_runner, observed_tree, rows))
+        except SupervisorError as error:
+            raise FinalBankRetryError(f"LP2 observed process tree cannot be verified: {error}") from error
+        # Also remove an exact, proven pre-run PID alias from broad path and
+        # host scans below. This does not excuse any unknown host: only a live
+        # PID whose birth and command still equal the stale checkpoint record
+        # and whose birth predates this runner is excluded.
+        try:
+            runner_birth = active_runner["created_ticks"]
+            if type(runner_birth) is not int or runner_birth <= 0:
+                raise ValueError("invalid runner birth")
+            for key, record in observed_tree.items():
+                if not isinstance(record, dict) or str(record.get("pid")) != str(key):
+                    raise ValueError("malformed observed process identity")
+                born = record.get("created_ticks")
+                if type(born) is not int or born <= 0:
+                    raise ValueError("missing observed process birth")
+                if born >= runner_birth:
+                    continue
+                live = rows_by_pid.get(int(record["pid"]))
+                if (live is not None and live.get("created_ticks") == born
+                        and live.get("command_line") == record.get("command_line")):
+                    proven_prior_aliases.add(int(record["pid"]))
+        except (KeyError, TypeError, ValueError, OverflowError) as error:
+            raise FinalBankRetryError(
+                "LP2 observed process identities cannot prove runner-relative birth order"
+            ) from error
 
-    busy.extend(_matching_run_rows(rows, prerequisite_run, os.getpid()))
-    busy.extend(_other_aglp_processes(rows, prerequisite_run))
+    eligible_rows = [row for row in rows if row.get("pid") not in proven_prior_aliases]
+    busy.extend(_matching_run_rows(eligible_rows, prerequisite_run, os.getpid()))
+    busy.extend(_other_aglp_processes(eligible_rows, prerequisite_run))
     unique = {row["pid"]: row for row in busy}
     return [unique[pid] for pid in sorted(unique)]
 
@@ -357,7 +395,12 @@ def run(plan_path: Path, locator_path: Path, *, inventory_fn=process_inventory,
         raise FinalBankRetryError("Final-bank retry plan is not in the expected prepared state")
     if plan.get("max_total_wait_seconds") != MAX_TOTAL_SECONDS:
         raise FinalBankRetryError("Retry06 plan must retain the fixed 24-hour total wait budget")
-    checkpoint_path = (INTAKE / "20261023-ample-shared-fix/final-bank-riff-retry-06-supervision/control.json")
+    default_checkpoint = INTAKE / "20261023-ample-shared-fix/final-bank-riff-retry-06-supervision/control.json"
+    checkpoint_path = Path(plan.get("supervision_checkpoint_path", default_checkpoint)).resolve()
+    try:
+        checkpoint_path.relative_to(INTAKE.resolve(strict=True))
+    except ValueError as error:
+        raise FinalBankRetryError("Retry supervisor checkpoint must remain in E: instrument-intake") from error
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     locator_path.parent.mkdir(parents=True, exist_ok=True)
     rows = inventory_fn()

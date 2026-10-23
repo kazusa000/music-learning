@@ -58,6 +58,10 @@ Ample 三个最终 bank 的完整新资源审计均 audited：AGLP363、AGM136�
 
 用户明确纠正此前暂停判断，要求设立 goal、全部剩余入库前持续推进、常规 bug 自主修复且不逐项询问。本聊天 goal 已 active，原 keyscape 跟进恢复 ACTIVE，目标仍仅为音源导入聊天；旧暂停文字已撤销，历史暂停记录只留作经过。MODO 仍沿用用户暂缓范围，AGMPk 缺失如实保留，不伪造资源或通过结果，也不因此停掉其余工作。
 
+最新Ample Riff复查（2026-10-23）：`phrase-duration-retest-02` 最终为0通过/2失败，确切为 Gotten(Fingerstyle) `8256c94444ba252a98278476` 与 80s Solo `85c1f3d98a2a580ba7f13ccf`；两项最终安装库首开WAV精确全零，原retry3 staging库首开与独立重开均非零。E-only报告 `20261023-ample-shared-fix/riff-silent-lineage-01/lineage-comparison.json` 已直接比较请求、全状态、2,298参数、VST3身份、预设字节和五组采样索引。每对的完整乐句/事件完全等价（唯一任务标签`revision_id`和run-local预设路径除外），但最终bank root/manifest变化且native调用耗时更长；无插件sample-ready时间证据，因此根因仍未确证，不能按当前材料把静音项重标通过。精确这两款和 retry06 的 Sweet Child/Used to Love Her 是不同队列，不混项。
+
+retry06的首个outer attempt在probe队列创建前因只读preparer自身`--source-run`出现在命令行而匹配到源run扫描，已以精确当前PID/预期preparer可执行路径/匹配source路径规则修复，且保留其他实时supervisor阻断与回归。LP2原checkpoint的PID复用已由共享birth-order helper修正；仅排除被当前命令、PID、creation time证明早于runner的旧别名，真实child和未知身份仍阻断。旧attempt、locator、checkpoint、报告不覆盖；下一次使用独立attempt/locator/checkpoint，并保留三点H存储gate和全套发声/状态/恢复门槛。
+
 恢复时按各轮队列的最新同 ID 结果合并，Ample 113 项为81通过/31失败/1缺采样，尚未发布。新增共享资源审计 `f7daee7` 复用稳定文件签名、完整 SHA、分块 IO 预算与断点续审机制，不信任旧样本哈希；从原始准备日志核对全部 ASCF/DBConfig 覆盖与硬链接/独立副本关系，产出产品 bank 相对的内容寻址 installed manifest。8项新回归及9项已有资源审计回归全部通过，Ruff通过，测试夹具由统一入口清理。
 
 不可变资源审计已启动于 `20261023-ample-shared-fix/fresh-resource-audit-01`，定位 `runtime/ample-resource-audit-job.local.json`，plan SHA `46262d918af7afcc1bf917c183bf43a96166eca32c20552b0e325a9a1da9d601`。启动包装 PID35592，实际 Python43428/ctime1792743769.618822（每次必须重核命令和 creation_time）；H忙分块暂缓，不改旧报告/清单/采样。产品结果写入该run的 `{AGM,AGLP,AGSC}-result.json`。实际发声适配与严格入库证据桥接跨来源独立推进，不把这份资源审计当成音频通过。

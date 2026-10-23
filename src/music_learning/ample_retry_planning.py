@@ -12,7 +12,9 @@ from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
+import sys
 from typing import Callable, Iterable
 
 
@@ -107,14 +109,48 @@ def find_active_ample_processes(run_dirs: Iterable[Path]) -> list[dict]:
         import psutil
     except ImportError as error:  # pragma: no cover - machine dependency guard
         raise RetryPlanningError("psutil is required to prove all original Ample run trees are idle") from error
-    roots = [str(Path(path).resolve()).casefold() for path in run_dirs]
+    resolved_roots = [Path(path).resolve() for path in run_dirs]
+    roots = [str(path).casefold() for path in resolved_roots]
+    # The queue-preparation CLI is explicitly passed --source-run so it can
+    # read and pin the immutable source evidence. Its own command line therefore
+    # contains the source path, but it is not a probe/host that can mutate or
+    # hold that run. Exclude only this exact, current CLI process; all other
+    # processes that reference a source run still fail closed.
+    expected_preparer = (Path(__file__).resolve().parents[2]
+                         / "scripts/instruments/prepare_ample_terminal_profile_retry.py").resolve()
+    try:
+        is_preparer_self = Path(sys.argv[0]).resolve() == expected_preparer
+    except (OSError, RuntimeError):
+        is_preparer_self = False
+
+    def is_read_only_preparer_self(pid: object, argv: list[str]) -> bool:
+        if not is_preparer_self or pid != os.getpid():
+            return False
+        for index, argument in enumerate(argv):
+            source_argument = None
+            if argument == "--source-run" and index + 1 < len(argv):
+                source_argument = argv[index + 1]
+            elif argument.startswith("--source-run="):
+                source_argument = argument.partition("=")[2]
+            if source_argument:
+                try:
+                    if str(Path(source_argument).resolve()).casefold() in roots:
+                        return True
+                except (OSError, RuntimeError):
+                    return False
+        return False
+
     active = []
     for process in psutil.process_iter(["pid", "name", "cmdline", "create_time"]):
         try:
-            command = " ".join(process.info.get("cmdline") or [])
+            argv = process.info.get("cmdline") or []
+            pid = process.info.get("pid")
+            command = " ".join(argv)
+            if is_read_only_preparer_self(pid, argv):
+                continue
             folded = command.casefold()
             if any(root in folded for root in roots):
-                active.append({"pid": process.info.get("pid"),
+                active.append({"pid": pid,
                                "created": process.info.get("create_time"),
                                "name": process.info.get("name"), "command": command})
         except psutil.NoSuchProcess:

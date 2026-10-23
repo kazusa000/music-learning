@@ -3,12 +3,15 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
+from music_learning import ample_retry_planning
 from music_learning.ample_retry_planning import (
     RetryPlanningError,
     build_failure_retry_plan,
+    find_active_ample_processes,
 )
 
 
@@ -57,6 +60,11 @@ def _identity_sha(instrument: str, ids: list[str]) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True,
                      separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+class _Process:
+    def __init__(self, pid: int, command: list[str], name: str = "python.exe"):
+        self.info = {"pid": pid, "name": name, "cmdline": command, "create_time": 1.0}
 
 
 @pytest.fixture
@@ -160,6 +168,44 @@ def test_plan_refuses_any_live_original_run_tree(complete_chain):
         build_failure_retry_plan(plan_path, output, repository_root=root,
                                  active_process_scan=lambda _: [{"pid": 1234}])
     assert not output.exists()
+
+
+def test_preparer_does_not_block_on_its_own_read_only_source_argument(tmp_path, monkeypatch):
+    import psutil
+
+    run = (tmp_path / "source-retry").resolve()
+    run.mkdir()
+    preparer = (Path(ample_retry_planning.__file__).resolve().parents[2]
+                / "scripts/instruments/prepare_ample_terminal_profile_retry.py").resolve()
+    own_pid = 123456
+    monkeypatch.setattr(sys, "argv", [str(preparer), "--source-run", str(run),
+                                       "--output-dir", str(tmp_path / "new-retry")])
+    monkeypatch.setattr(ample_retry_planning.os, "getpid", lambda: own_pid)
+    own = _Process(own_pid, ["python.exe", str(preparer), "--source-run", str(run),
+                             "--output-dir", str(tmp_path / "new-retry")])
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs: iter([own]))
+
+    assert find_active_ample_processes([run]) == []
+
+
+def test_preparer_still_blocks_on_a_distinct_live_retry_process(tmp_path, monkeypatch):
+    import psutil
+
+    run = (tmp_path / "source-retry").resolve()
+    run.mkdir()
+    preparer = (Path(ample_retry_planning.__file__).resolve().parents[2]
+                / "scripts/instruments/prepare_ample_terminal_profile_retry.py").resolve()
+    own_pid = 123456
+    worker_pid = 123457
+    monkeypatch.setattr(sys, "argv", [str(preparer), "--source-run", str(run)])
+    monkeypatch.setattr(ample_retry_planning.os, "getpid", lambda: own_pid)
+    own = _Process(own_pid, ["python.exe", str(preparer), "--source-run", str(run)])
+    worker = _Process(worker_pid, ["python.exe", "scripts/instruments/supervise_ample_failed_retry.py",
+                                   "--run-dir", str(run)])
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs: iter([own, worker]))
+
+    active = find_active_ample_processes([run])
+    assert [row["pid"] for row in active] == [worker_pid]
 
 
 def test_plan_refuses_incomplete_chain_receipts(complete_chain):

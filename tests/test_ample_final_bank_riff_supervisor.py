@@ -146,6 +146,86 @@ def test_prerequisite_gate_requires_queue_pin_and_process_tree_release(tmp_path)
         _prerequisite_busy(plan, [], locator, checkpoint)
 
 
+def test_prerequisite_gate_filters_only_observed_pid_aliases_born_before_runner(tmp_path):
+    run = tmp_path / "phrase-retry"
+    run.mkdir()
+    queue = _queue("AGLP")
+    queue_path = run / "queue.json"
+    queue_path.write_text(json.dumps(queue), encoding="utf-8")
+    queue_sha = queue_identity(queue)
+    checkpoint_path = run / "supervision.json"
+    checkpoint = {
+        "run_dir": str(run.resolve()),
+        "queue_identity_sha256": queue_sha,
+        "pin_manifest_sha256": "a" * 64,
+        "host_sha256": "b" * 64,
+        # The production checkpoint schema stores these at the root.
+        "active_runner": {"pid": 10, "created_ticks": 1000,
+                          "command_line": "runner --run-dir phrase-retry"},
+        "observed_tree": {
+            "20": {"pid": 20, "created_ticks": 500,
+                   "command_line": "/silentConfig"},
+        },
+    }
+    checkpoint_path.write_text(json.dumps(checkpoint), encoding="utf-8")
+    plan = {
+        "prerequisite_run_dir": str(run.resolve()),
+        "prerequisite_pin_manifest_sha256": "a" * 64,
+        "prerequisite_host_sha256": "b" * 64,
+        "prerequisite_queue_identity_sha256": queue_sha,
+    }
+    locator = {
+        "run_dir": str(run.resolve()),
+        "queue_path": str(queue_path.resolve()),
+        "pinned_manifest_sha256": "a" * 64,
+        "native_host_sha256": "b" * 64,
+    }
+    old_pid_reuse = {"pid": 20, "ppid": 10, "created_ticks": 500,
+                     "name": "instrument_probe_host.exe", "command_line": "/silentConfig",
+                     "executable_path": "E:\\old\\instrument_probe_host.exe"}
+
+    assert _prerequisite_busy(plan, [old_pid_reuse], locator, checkpoint) == []
+
+    checkpoint["observed_tree"]["21"] = {
+        "pid": 21, "created_ticks": 1100, "command_line": "host.exe --probe"
+    }
+    live_child = {"pid": 21, "ppid": 10, "created_ticks": 1100,
+                  "name": "instrument_probe_host.exe", "command_line": "host.exe --probe",
+                  "executable_path": ""}
+    assert _prerequisite_busy(plan, [old_pid_reuse, live_child], locator, checkpoint) == [live_child]
+
+
+def test_prerequisite_gate_fails_closed_when_observed_tree_has_no_runner_identity(tmp_path):
+    run = tmp_path / "phrase-retry"
+    run.mkdir()
+    queue = _queue("AGLP")
+    queue_path = run / "queue.json"
+    queue_path.write_text(json.dumps(queue), encoding="utf-8")
+    queue_sha = queue_identity(queue)
+    checkpoint = {
+        "run_dir": str(run.resolve()),
+        "queue_identity_sha256": queue_sha,
+        "pin_manifest_sha256": "a" * 64,
+        "host_sha256": "b" * 64,
+        "observed_tree": {"20": {"pid": 20, "created_ticks": 500,
+                                   "command_line": "/silentConfig"}},
+    }
+    plan = {
+        "prerequisite_run_dir": str(run.resolve()),
+        "prerequisite_pin_manifest_sha256": "a" * 64,
+        "prerequisite_host_sha256": "b" * 64,
+        "prerequisite_queue_identity_sha256": queue_sha,
+    }
+    locator = {
+        "run_dir": str(run.resolve()),
+        "queue_path": str(queue_path.resolve()),
+        "pinned_manifest_sha256": "a" * 64,
+        "native_host_sha256": "b" * 64,
+    }
+    with pytest.raises(FinalBankRetryError, match="without its runner birth identity"):
+        _prerequisite_busy(plan, [], locator, checkpoint)
+
+
 def test_config_snapshot_requires_exact_final_bank(tmp_path):
     bank = tmp_path / "Sound Library" / "AGLP"
     bank.mkdir(parents=True)

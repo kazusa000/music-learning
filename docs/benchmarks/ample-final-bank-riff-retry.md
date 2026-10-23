@@ -1,5 +1,45 @@
 # Ample final-bank Riffer retry
 
+## Current recovery state (2026-10-23)
+
+The terminal result from `phrase-duration-retest-02` is **0 passed / 2 failed**:
+`8256c94444ba252a98278476` (Gotten(Fingerstyle)) and
+`85c1f3d98a2a580ba7f13ccf` (80s Solo) rendered exact-zero first WAVs against
+the installed AGLP bank. Their original retry3 staging-bank first and reopen
+WAVs were nonzero. The E-only paired receipt is
+`data/maintenance/instrument-intake/20261023-ample-shared-fix/riff-silent-lineage-01/lineage-comparison.json`
+(SHA-256 `1467b8664eb7ac712a12c8f5c70e7abd03359b22c3900a538a2af93e8d044945`).
+It directly compares the immutable native requests and WAVs: for each pair,
+the full phrase/events, tempo/meter, block size, gain, factory preset bytes,
+captured full state, all 2,298 parameter readbacks, plugin identity and all five
+sample-family index contents match. The only semantic request-field difference
+is `revision_id`, a job label; the preset path is the expected run-local copy.
+The installed bank root/manifest changed, and the final-bank native call took
+longer. No sample-ready timestamp is present, so bank/resource resolution and
+an asynchronous readiness race remain hypotheses, not established causes.
+Both strict failures remain failures until a controlled final-bank probe has
+complete first/reopen evidence.
+
+Retry06 is a **separate two-ID queue** for Sweet Child O Mine
+(`d59c0b8032032c95ab193f55`) and Used to Love Her
+(`dd3e3fb7a4ac5a4e88d4c4b7`); it must not be confused with the two LP2
+duration-retest failures above. Its first outer attempt terminated at
+`blocked_preparation_failed` before creating a probe queue: the read-only
+preparer's own `--source-run` argument matched the source-run process scan.
+The shared scan now excludes only the current exact preparer PID when its
+executable is the expected preparer and its `--source-run` resolves to the
+scanned source. Separate tests prove a distinct live supervisor still blocks.
+
+The old LP2 checkpoint also contained two stale observed descendants whose
+recorded creation times predate the runner: `tail.exe` PID 45464 and
+`/silentConfig` PID 27344. They were not stopped. Shared process-birth lineage
+validation now discards only exact, live PID/creation-time/command matches
+that predate that runner; true observed children and unknown identities still
+block. The E-only closure is
+`phrase-duration-retest-02/supervision-02-lineage-assessment/assessment.json`.
+Retry06 recovery uses an independent attempt plan, locator and checkpoint so
+the old failed locator/checkpoint and all original reports remain intact.
+
 2026-10-23. This note tracks the two remaining AGLP Riffer items that may be
 rechecked against the final installed bank. It distinguishes a changed sample
 bank from changed musical input, and keeps the older failed evidence intact.
