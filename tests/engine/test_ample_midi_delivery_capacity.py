@@ -135,7 +135,7 @@ def test_build_contract_does_not_allow_a_different_analyzer_or_base_bundle():
         capacity.validate_capacity_contract(trace, wrong)
 
 
-def test_component_layout_wire_fixture_requires_both_reader_offsets_and_identity():
+def component_layout_wire_fixture() -> dict:
     fixture = {
         "schema_version": 1,
         "identity": {
@@ -159,12 +159,39 @@ def test_component_layout_wire_fixture_requires_both_reader_offsets_and_identity
             "component_pointer_reads": reads,
             "component_bytes_read": reads * 8,
         })
+    return fixture
+
+
+def test_component_layout_wire_fixture_requires_both_reader_offsets_and_identity():
+    fixture = component_layout_wire_fixture()
     assert capacity.validate_component_layout_fixture(fixture) == {
         "case_count": 2, "offsets": [0, 0x18], "ready": True}
 
     fixture["identity"]["module_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="pinned AGLP module"):
         capacity.validate_component_layout_fixture(fixture)
+
+
+def test_build_report_loads_reader_fixture_from_its_nested_report_section(tmp_path, monkeypatch):
+    monkeypatch.setattr(capacity, "BUILD_ROOT", tmp_path)
+    report = {
+        "trace_contract": capacity_contract(),
+        "component_layout_reader": {
+            "wire_fixture_source_sha256": capacity.LAYOUT_WIRE_FIXTURE_SHA256,
+            "wire_fixture_output": component_layout_wire_fixture(),
+        },
+        "capacity_adapter_sha256": capacity.sha256_file(CAPACITY_PATH),
+        "raw_capture_helper_sha256": capacity.RAW_CAPTURE_SHA256,
+        "diagnostic_only": True,
+        "status": "built_and_unit_tested",
+        "base_bundle_sha256": capacity.BASE_BUNDLE_SHA256,
+    }
+    report_path = tmp_path / "diagnostic-build.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    contract, report_sha = capacity.load_build08_contract()
+    assert contract == capacity_contract()
+    assert len(report_sha) == 64
 
 
 def test_raw_capture_is_durable_before_new_capacity_validation_rejects():

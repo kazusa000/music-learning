@@ -9,11 +9,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-BUILD_ROOT = ROOT / "runtime/build/ample-midi-delivery-08-r2"
+BUILD_ROOT = ROOT / "runtime/build/ample-midi-delivery-08-r3"
 ANALYZER_PATH = ROOT / "scripts/probes/engine/ample_midi_delivery.py"
 ANALYZER_SHA256 = "3570c61f62607ce1041e4b1fb4729552491257e4f16f198b5f856721ee869179"
 RAW_CAPTURE_PATH = ROOT / "scripts/instruments/capture_ample_midi_delivery_raw.py"
 RAW_CAPTURE_SHA256 = "e835b53daf1b3d1ad0482dc2f26da84ccf21fe47db5a7ef236e8bfe79519c782"
+LAYOUT_WIRE_FIXTURE_SHA256 = "7ad23f506ba96de738e76cef40341cde0dda72ca18b629e9d275bcdb52a1917d"
 BASE_BUNDLE_SHA256 = "f0563ad22e55a09049379daea6b6a61e74a8d54c22e4fea56d68e92166fbad6d"
 MIDI_RECORD_CAPACITY = 512
 AUDIO_BLOCK_CAPACITY = 4096
@@ -142,10 +143,18 @@ def load_build08_contract() -> tuple[dict, str]:
         "ample_readiness_capacity": READINESS_RECORD_CAPACITY,
         "records": [], "audio_blocks": [], "ample_readiness": [],
     }, contract)
+    reader_report = report.get("component_layout_reader")
+    if not isinstance(reader_report, dict):
+        raise ValueError("build08 report omitted the dual-layout reader evidence")
     fixture_summary = validate_component_layout_fixture(
-        report.get("component_layout_reader_fixture", {}))
+        reader_report.get("wire_fixture_output", {}))
     if fixture_summary.get("ready") is not True:
         raise ValueError("The component-layout reader fixture was not verified")
+    if (reader_report.get("wire_fixture_source_sha256") != LAYOUT_WIRE_FIXTURE_SHA256
+            or report.get("capacity_adapter_sha256")
+            != sha256_file(Path(__file__).resolve())
+            or report.get("raw_capture_helper_sha256") != RAW_CAPTURE_SHA256):
+        raise ValueError("build08 adapter or C++ fixture source identity changed")
     if report.get("diagnostic_only") is not True or report.get("status") != "built_and_unit_tested":
         raise ValueError("build08 report is not a completed diagnostic-only build")
     if report.get("base_bundle_sha256") != BASE_BUNDLE_SHA256:
