@@ -129,4 +129,3 @@ def test_config_baseline_rejects_transient_or_repointed_inst_dir(tmp_path):
     )
     with pytest.raises(ab.PreflightBlocked, match="not at the pinned baseline"):
         ab._verify_config_baseline(plan)
-
