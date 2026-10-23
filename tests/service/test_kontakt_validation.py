@@ -645,7 +645,8 @@ def test_fullrunner_treats_publication_pending_preview_handoff_as_a_successful_t
     assert "published_and_previews_dispatched" in SUCCESS_STATUSES
 
 
-def test_prepare_job_pins_each_inventory_and_freezes_only_nki_nkm_source_paths(monkeypatch, tmp_path):
+@pytest.mark.parametrize("with_override", [False, True])
+def test_prepare_job_pins_each_inventory_and_freezes_only_nki_nkm_source_paths(monkeypatch, tmp_path, with_override):
     repo = tmp_path / "fake-repo"
     allowed = repo / "data/maintenance/instrument-intake"
     prep = allowed / "resource-prep"
@@ -658,6 +659,14 @@ def test_prepare_job_pins_each_inventory_and_freezes_only_nki_nkm_source_paths(m
         paths.extend([f"{library_id}/not-an-instrument.wav", f"{library_id}/ignored.txt"])
         (inventory / f"{library_id}.json").write_text(json.dumps({"presets": paths}), encoding="utf-8")
         expected[library_id] = paths[:count]
+
+    override = allowed / "reviewed-inventory-revision/kontakt-factory.json"
+    original_factory = (inventory / "kontakt-factory.json").read_bytes()
+    if with_override:
+        override.parent.mkdir()
+        revised = json.loads(original_factory)
+        revised["revision_evidence"] = "fixture metadata revision; original retained"
+        override.write_text(json.dumps(revised), encoding="utf-8")
 
     probe = repo / "runtime/build/instrument-probe/kontakt-reader-b/ml_kontakt_probe.exe"
     probe.parent.mkdir(parents=True)
@@ -694,7 +703,8 @@ def test_prepare_job_pins_each_inventory_and_freezes_only_nki_nkm_source_paths(m
     monkeypatch.setattr(kontakt_catalog_metadata, "build_kontakt_catalog_metadata", lambda _paths: [None] * 992)
 
     run = allowed / "fixture-job"
-    result = prepare_job.prepare(run, prep)
+    result = prepare_job.prepare(run, prep, inventory_overrides=(
+        {"kontakt-factory": override} if with_override else None))
     plan = json.loads(Path(result["plan"]).read_bytes())
     pins = json.loads(Path(plan["pins_path"]).read_bytes())["files"]
 
@@ -703,9 +713,15 @@ def test_prepare_job_pins_each_inventory_and_freezes_only_nki_nkm_source_paths(m
     assert plan["libraries"]["css"]["expected_source_paths"] == expected["css"]
     assert plan["libraries"]["css-solo"]["expected_source_paths"] == expected["css-solo"]
     for library_id in expected:
-        inventory_copy = run / "code/data/maintenance/instrument-intake/20261021-batch-v2/inventory" / f"{library_id}.json"
+        source = override if with_override and library_id == "kontakt-factory" else inventory / f"{library_id}.json"
+        inventory_copy = run / "code" / source.relative_to(repo)
         assert str(inventory_copy) in pins
         assert pins[str(inventory_copy)] == real_sha(inventory_copy)
+        assert plan["libraries"][library_id]["inventory_path"] == str(inventory_copy)
+        assert plan["libraries"][library_id]["inventory_sha256"] == real_sha(inventory_copy)
+    assert (inventory / "kontakt-factory.json").read_bytes() == original_factory
+    if with_override:
+        assert plan["libraries"]["kontakt-factory"]["inventory_sha256"] != real_sha(inventory / "kontakt-factory.json")
     assert sum(len(paths) for paths in (row["expected_source_paths"] for row in plan["libraries"].values())) == 992
 
 
@@ -719,3 +735,23 @@ def test_prepare_job_requires_explicit_publication_before_preview_handoff(monkey
     with pytest.raises(ValueError, match="only be handed off"):
         prepare_job.prepare(run, prep, preview_handoff=True, publish=False)
     assert not run.exists()
+
+
+@pytest.mark.parametrize("case", ["outside", "wrong_filename", "unknown_library"])
+def test_inventory_override_rejects_unowned_or_misidentified_inputs(monkeypatch, tmp_path, case):
+    repo = tmp_path / "repo"
+    allowed = repo / "data/maintenance/instrument-intake"
+    allowed.mkdir(parents=True)
+    monkeypatch.setattr(prepare_job, "ROOT", repo)
+    if case == "outside":
+        path = tmp_path / "kontakt-factory.json"
+        key = "kontakt-factory"
+    elif case == "wrong_filename":
+        path = allowed / "css.json"
+        key = "kontakt-factory"
+    else:
+        path = allowed / "other.json"
+        key = "other"
+    path.write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="override"):
+        prepare_job.inventory_inputs({key: path})

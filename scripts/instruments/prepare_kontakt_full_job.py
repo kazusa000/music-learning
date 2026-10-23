@@ -23,7 +23,33 @@ def sha(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handoff=False, preparation_progress=None):
+def inventory_inputs(overrides=None):
+    """Select explicit, immutable maintenance inputs without rewriting originals."""
+    from music_learning.kontakt_import import _resolve_root, _resolve_under
+
+    allowed = _resolve_root(ROOT / "data/maintenance/instrument-intake")
+    base = ROOT / "data/maintenance/instrument-intake/20261021-batch-v2/inventory"
+    selected = {key: base / (key + ".json") for key in ("kontakt-factory", "css", "css-solo")}
+    if overrides is not None:
+        if not isinstance(overrides, dict) or set(overrides) - selected.keys():
+            raise ValueError("Unsupported Kontakt inventory override")
+        for key, value in overrides.items():
+            path = Path(value)
+            if not path.is_absolute():
+                path = ROOT / path
+            try:
+                relative = path.relative_to(allowed).as_posix()
+            except ValueError as error:
+                raise ValueError("Inventory overrides must remain under intake maintenance") from error
+            path = _resolve_under(allowed, relative, must_exist=True)
+            if not path.is_file() or path.name != key + ".json":
+                raise ValueError("Inventory override must retain its library filename")
+            selected[key] = path
+    return selected
+
+
+def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handoff=False,
+            preparation_progress=None, inventory_overrides=None):
     run = run.resolve()
     allowed = ROOT / "data/maintenance/instrument-intake"
     if run == allowed or not run.is_relative_to(allowed) or run.exists():
@@ -45,17 +71,17 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
     if sha(empty) != "c1e8123fc5f0387abebe841a9c7b1d51d81cd128f3e9b50307c843691dea8155":
         raise ValueError("Independent empty Multi changed")
     assignment = ROOT / "config/instruments/kontakt-catalog-assignments.json"
-    inventory = ROOT / "data/maintenance/instrument-intake/20261021-batch-v2/inventory"
+    inventories = inventory_inputs(inventory_overrides)
     # Validate all 992 reviewed assignments before creating any background job.
     from music_learning.kontakt_catalog_metadata import build_kontakt_catalog_metadata
-    records = build_kontakt_catalog_metadata([inventory / (key + ".json") for key in ("kontakt-factory", "css", "css-solo")])
+    records = build_kontakt_catalog_metadata(list(inventories.values()))
     if len(records) != 992:
         raise ValueError("Kontakt full job must cover the complete 992-source inventory")
     run.mkdir(parents=True, exist_ok=False)
     code = run / "code"
     sources = sorted((ROOT / "src/music_learning").rglob("*.py"))
     sources += [ROOT / "scripts/native_host.py", ROOT / "scripts/instruments/run_kontakt_full_intake.py", assignment]
-    sources += [inventory / (key + ".json") for key in ("kontakt-factory", "css", "css-solo")]
+    sources += list(inventories.values())
     pins = {}
     for source in sources:
         target = code / source.relative_to(ROOT)
@@ -72,6 +98,7 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
     pins[str(probe.parent / "build.json")] = sha(probe.parent / "build.json")
     pins_path = run / "pins.json"
     atomic_write_json(pins_path, dict(schema_version=1, files=pins))
+    frozen_inventories = {key: code / path.relative_to(ROOT) for key, path in inventories.items()}
     protected = json.loads((ROOT / "data/maintenance/instrument-intake/20261022-resume/before.json").read_bytes())["pins"]
     app = json.loads((ROOT / "runtime/app.local.json").read_bytes())
     plan = dict(schema_version=1, repo_root=str(ROOT), run_root=str(run), code_root=str(code),
@@ -79,8 +106,9 @@ def prepare(run: Path, prep: Path, *, start=False, publish=False, preview_handof
                 resource_root=r"H:\music\Sound Library", runtime_result=str(prep / "runtime-result.json"),
                 protected_files=list(protected),
                 libraries={key: dict(result=str(prep / (key + "-result.json")), expected_source_paths=[
-                    path for path in json.loads((inventory / (key + ".json")).read_bytes())["presets"]
-                    if Path(path).suffix.casefold() in {".nki", ".nkm"}], inventory_sha256=sha(inventory / (key + ".json")))
+                    path for path in json.loads(frozen_inventories[key].read_bytes())["presets"]
+                    if Path(path).suffix.casefold() in {".nki", ".nkm"}],
+                    inventory_path=str(frozen_inventories[key]), inventory_sha256=sha(frozen_inventories[key]))
                     for key in ("css", "css-solo", "kontakt-factory")},
                 publish=publish, preview_handoff=preview_handoff, max_seconds=24 * 3600,
                 service_url=f"http://{app['host']}:{app['port']}",
@@ -113,7 +141,15 @@ if __name__ == "__main__":
     parser.add_argument("--publish", action="store_true")
     parser.add_argument("--preview-handoff", action="store_true")
     parser.add_argument("--preparation-progress", type=Path)
+    parser.add_argument("--inventory-override", action="append", default=[], metavar="LIBRARY=PATH")
     args = parser.parse_args()
+    overrides = {}
+    for argument in args.inventory_override:
+        key, separator, value = argument.partition("=")
+        if not separator or not value or key in overrides:
+            parser.error("Inventory overrides must be unique LIBRARY=PATH arguments")
+        overrides[key] = Path(value)
     print(json.dumps(prepare(args.run, args.prep, start=args.start, publish=args.publish,
                              preview_handoff=args.preview_handoff,
-                             preparation_progress=args.preparation_progress), ensure_ascii=False))
+                             preparation_progress=args.preparation_progress,
+                             inventory_overrides=overrides), ensure_ascii=False))
