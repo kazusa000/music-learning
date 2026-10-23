@@ -238,6 +238,7 @@ def _check_start_gates(full_run: Path, retry_run: Path, evidence_path: Path) -> 
         profile_evidence=evidence["profile_evidence"],
         storage_observations=evidence["storage_observations"],
         full_run_root=full_run,
+        script_path=full_run / "code/src/music_learning/kontakt_failed_only_retry.py",
     )
     return {"status": "gates_passed_no_launch", "retry_run": str(retry_run), "started": False}
 
@@ -524,7 +525,8 @@ def _start_execution(full_run: Path, retry_run: Path, execution_run: Path, evide
         live_kontakt_processes=evidence["live_kontakt_processes"],
         profile_evidence=evidence["profile_evidence"],
         storage_observations=evidence["storage_observations"],
-        full_run_root=full_run.parent.parent.parent.parent.parent,
+        full_run_root=full_run,
+        script_path=full_run / "code/src/music_learning/kontakt_failed_only_retry.py",
     )
 
     gate_path = execution_run / "failed-only" / "start-gate-evidence.json"

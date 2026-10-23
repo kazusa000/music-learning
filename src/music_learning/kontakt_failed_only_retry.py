@@ -894,6 +894,7 @@ def verify_retry_start_gates(
     profile_evidence: Mapping,
     storage_observations: Sequence[Mapping],
     full_run_root: Path | None = None,
+    script_path: str | Path = __file__,
 ) -> None:
     """Fail closed unless a prepared retry still has a terminal/quiescent source.
 
@@ -910,7 +911,8 @@ def verify_retry_start_gates(
         raise ValueError("A Kontakt runtime/probe process still owns the profile lane")
     retry_run = _resolve_root(Path(retry_plan.get("retry_run", "")))
     source_run = _resolve_root(Path(retry_plan.get("source_run", "")))
-    if (source_run != _selected_full_h_run(full_run_root) or retry_run.parent != source_run.parent
+    if (source_run != _selected_full_h_run(full_run_root, script_path=script_path)
+            or retry_run.parent != source_run.parent
             or retry_run == source_run):
         raise ValueError("Kontakt retry run/source paths are outside the fixed maintenance roots")
     stored_plan, stored_plan_sha = _read_json(retry_run, "plan.json")

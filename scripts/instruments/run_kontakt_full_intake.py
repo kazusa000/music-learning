@@ -150,7 +150,8 @@ def _failed_only_selection(plan, run, pins, plan_sha256):
         live_kontakt_processes=gate["live_kontakt_processes"],
         profile_evidence=gate["profile_evidence"],
         storage_observations=gate["storage_observations"],
-        full_run_root=Path(plan["repo_root"]),
+        full_run_root=Path(config["source_run"]),
+        script_path=Path(plan["code_root"]) / "src/music_learning/kontakt_failed_only_retry.py",
     )
     resume_map_path = _resolve_under(run, "source-resume-map.json", must_exist=True)
     resume_map = load(resume_map_path)

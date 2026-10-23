@@ -286,6 +286,80 @@ def _callbacks():
     return calls, verify_conversion, verify_passed
 
 
+def _start_gate_fixture(root: Path):
+    """Create a tiny checkout/full-h tree for the real start-gate verifier."""
+    checkout = root / "repo"
+    full_run = checkout / "data/maintenance/instrument-intake/kf22/full-h"
+    retry_run = full_run.parent / "full-h-failed-only"
+    execution_run = full_run.parent / "full-h-retry-execution"
+    code_root = full_run / "code"
+    for directory in (checkout / "src/music_learning", code_root / "src/music_learning"):
+        directory.mkdir(parents=True, exist_ok=True)
+    script_path = code_root / "src/music_learning/kontakt_failed_only_retry.py"
+    script_path.write_text("# frozen test source path\n", encoding="utf-8")
+    full_run.mkdir(parents=True, exist_ok=True)
+
+    _write_json(full_run / "plan.json", {"fixture": "terminal full-h"})
+    _write_json(full_run / "launch.json", {"pid": 1101, "creation_time": 100.25})
+    _write_json(full_run / "progress.json", {
+        "status": "validation_finished_pending_publication", "current": None,
+        "pid": 1102, "creation_time": 101.5,
+    })
+    _write_json(full_run / "pins.json", {"files": {}})
+    snapshot = {
+        "plan_sha256": _sha(full_run / "plan.json"),
+        "launch_sha256": _sha(full_run / "launch.json"),
+        "progress_sha256": _sha(full_run / "progress.json"),
+        "pins_sha256": _sha(full_run / "pins.json"),
+        "source_artifact_pins": {},
+    }
+    retry_run.mkdir(parents=True)
+    coverage_sha = "a" * 64
+    retry_plan = {
+        "status": "prepared_waiting_for_start_gates",
+        "source_run": str(full_run), "retry_run": str(retry_run),
+        "launch_gates": {"publish": False},
+        "source_snapshot": snapshot,
+        "source_job_identity": {
+            "wrapper_pid": 1101, "wrapper_creation_time": 100.25,
+            "worker_pid": 1102, "worker_creation_time": 101.5,
+        },
+        "source_coverage": {"sha256": coverage_sha},
+        "retry_selection": {"items": [], "ids": []},
+    }
+    retry_queue = {"items": [], "count": 0, "source_coverage_sha256": coverage_sha}
+    retry_plan_sha = hashlib.sha256(_write_json(retry_run / "plan.json", retry_plan)).hexdigest()
+    retry_queue_sha = hashlib.sha256(_write_json(retry_run / "retry-queue.json", retry_queue)).hexdigest()
+    # The verifier's sidecars contain the raw canonical file digest as ASCII.
+    (retry_run / "plan.sha256").write_text(retry_plan_sha + "\n", encoding="ascii")
+    (retry_run / "retry-queue.sha256").write_text(retry_queue_sha + "\n", encoding="ascii")
+
+    now = datetime.now(timezone.utc)
+    evidence = {
+        "live_source_processes": [], "live_kontakt_processes": [],
+        "profile_evidence": {
+            "restored": True, "journal_count": 0,
+            "before_sha256": "c" * 64, "after_sha256": "c" * 64,
+            "before_stat": {"path": "profile", "size": 14, "mtime_ns": 20, "ctime_ns": 30},
+            "after_stat": {"path": "profile", "size": 14, "mtime_ns": 20, "ctime_ns": 30},
+        },
+        "storage_observations": [
+            {"drive": "H:", "allowed": True, "busy": False, "busy_percent": 2.0, "queue": 0.0,
+             "observed_at_utc": (now - timedelta(seconds=2 - index)).isoformat()}
+            for index in range(3)
+        ],
+    }
+    return checkout, full_run, retry_run, execution_run, script_path, retry_plan, retry_queue, evidence
+
+
+def _load_script_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_terminal_retry_proves_992_and_queues_only_exact_failures(terminal_full_h, monkeypatch):
     monkeypatch.setattr(retry, "FULL_H_RUN", terminal_full_h["root"])
     calls, verify_conversion, verify_passed = _callbacks()
@@ -635,6 +709,128 @@ def test_nested_full_h_code_markers_do_not_become_checkout_root(tmp_path):
     (checkout / "src/music_learning").mkdir(parents=True)
 
     assert retry.default_full_h_run(nested_script, environ={}) == full_h
+
+
+def test_real_start_gate_verifier_accepts_full_h_root_not_repository_root(tmp_path):
+    checkout, full_run, retry_run, _, script_path, retry_plan, _, evidence = _start_gate_fixture(tmp_path)
+
+    retry.verify_retry_start_gates(
+        retry_plan,
+        live_source_processes=evidence["live_source_processes"],
+        live_kontakt_processes=evidence["live_kontakt_processes"],
+        profile_evidence=evidence["profile_evidence"],
+        storage_observations=evidence["storage_observations"],
+        full_run_root=full_run,
+        script_path=script_path,
+    )
+    assert full_run != checkout
+    with pytest.raises(ValueError, match="fixed full-h run"):
+        retry.verify_retry_start_gates(
+            retry_plan,
+            live_source_processes=evidence["live_source_processes"],
+            live_kontakt_processes=evidence["live_kontakt_processes"],
+            profile_evidence=evidence["profile_evidence"],
+            storage_observations=evidence["storage_observations"],
+            full_run_root=checkout,
+            script_path=script_path,
+        )
+
+
+def test_prepare_start_execution_passes_full_h_to_real_start_gate_verifier(tmp_path, monkeypatch):
+    checkout, full_run, retry_run, execution_run, script_path, retry_plan, retry_queue, evidence = (
+        _start_gate_fixture(tmp_path)
+    )
+    cli_path = Path(__file__).resolve().parents[2] / "scripts/instruments/prepare_kontakt_failed_only_retry.py"
+    cli = _load_script_module(cli_path, "kontakt_failed_only_start_execution_integration")
+    monkeypatch.setattr(cli, "FULL_H_RUN", full_run)
+    monkeypatch.setattr(cli, "INTAKE_ROOT", checkout / "data/maintenance/instrument-intake")
+    # The loader supplies the real verifier implementation; only frozen-module
+    # loading is substituted so this E fixture exercises the production gate.
+    monkeypatch.setattr(cli, "_load_pinned_callback_modules", lambda _root: (retry, None, None, {}))
+
+    execution_run.mkdir(parents=True)
+    copied = execution_run / "failed-only"
+    copied.mkdir()
+    retry_plan_raw = _write_json(copied / "retry-plan.json", retry_plan)
+    retry_queue_raw = _write_json(copied / "retry-queue.json", retry_queue)
+    config = {
+        "source_run": str(full_run), "retry_plan_origin": str(retry_run),
+        "retry_plan_path": "failed-only/retry-plan.json",
+        "retry_plan_sha256": hashlib.sha256(retry_plan_raw).hexdigest(),
+        "retry_queue_path": "failed-only/retry-queue.json",
+        "retry_queue_sha256": hashlib.sha256(retry_queue_raw).hexdigest(),
+        "selected_ids": [], "selected_count": 0,
+    }
+    pins_path = execution_run / "pins.json"
+    _write_json(pins_path, {"files": {}})
+    plan_path = execution_run / "plan.json"
+    plan_raw = _write_json(plan_path, {
+        "run_root": str(execution_run), "publish": False, "preview_handoff": False,
+        "pins_sha256": _sha(pins_path), "failed_only_execution": config,
+    })
+    _write_json(execution_run / "launch.json", {
+        "status": "prepared_failed_only", "plan_sha256": hashlib.sha256(plan_raw).hexdigest(),
+    })
+    _write_json(execution_run / "source-resume-map.json", {"items": {}})
+    evidence_path = checkout / "data/maintenance/instrument-intake/start-gate.json"
+    _write_json(evidence_path, evidence)
+
+    class FakeProcess:
+        pid = __import__("os").getpid()
+
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+    result = cli._start_execution(full_run, retry_run, execution_run, evidence_path)
+    assert result["status"] == "started"
+    assert result["publish"] is False and result["preview_handoff"] is False
+    assert script_path.is_file()
+
+
+def test_frozen_runner_start_gate_uses_retry_source_full_h_path(tmp_path, monkeypatch):
+    checkout, full_run, retry_run, execution_run, script_path, retry_plan, retry_queue, evidence = (
+        _start_gate_fixture(tmp_path)
+    )
+    runner_path = Path(__file__).resolve().parents[2] / "scripts/instruments/run_kontakt_full_intake.py"
+    runner = _load_script_module(runner_path, "kontakt_failed_only_source_root_integration")
+    # Selection validity has its own full-992 coverage tests. Keep this test's
+    # focus on the production runner passing the real source root into gates.
+    monkeypatch.setattr(retry, "validate_failed_only_selection", lambda _plan, _queue: [])
+    execution_run.mkdir()
+    relative_plan, relative_queue = "failed-only/retry-plan.json", "failed-only/retry-queue.json"
+    gate_rel = "failed-only/start-gate.json"
+    copied = execution_run / "failed-only"
+    copied.mkdir()
+    retry_plan_raw = _write_json(copied / "retry-plan.json", retry_plan)
+    retry_queue_raw = _write_json(copied / "retry-queue.json", retry_queue)
+    gate_raw = _write_json(copied / "start-gate.json", evidence)
+    selection_sha = hashlib.sha256(b"[]").hexdigest()
+    plan_sha = "f" * 64
+    _write_json(execution_run / "source-resume-map.json", {
+        "kind": "kontakt-failed-only-source-resume-map",
+        "destination_run": str(execution_run), "destination_plan_sha256": plan_sha,
+        "source_run": str(full_run), "retry_selection_sha256": selection_sha,
+        "selected_ids": [], "items": {f"row-{index}": {} for index in range(992)},
+    })
+    config = {
+        "schema_version": 1, "source_run": str(full_run), "retry_plan_origin": str(retry_run),
+        "retry_plan_path": relative_plan, "retry_plan_sha256": hashlib.sha256(retry_plan_raw).hexdigest(),
+        "retry_queue_path": relative_queue, "retry_queue_sha256": hashlib.sha256(retry_queue_raw).hexdigest(),
+        "selected_ids": [], "selected_count": 0, "selection_sha256": selection_sha,
+        "start_gate_evidence_path": gate_rel, "start_gate_evidence_sha256": hashlib.sha256(gate_raw).hexdigest(),
+    }
+    plan = {"repo_root": str(checkout), "code_root": str(full_run / "code"),
+            "publish": False, "preview_handoff": False,
+            "failed_only_execution": config}
+    pins = {"files": {
+        str(execution_run / relative_plan): hashlib.sha256(retry_plan_raw).hexdigest(),
+        str(execution_run / relative_queue): hashlib.sha256(retry_queue_raw).hexdigest(),
+        str(execution_run / gate_rel): hashlib.sha256(gate_raw).hexdigest(),
+    }}
+
+    assert runner._failed_only_selection(plan, execution_run, pins, plan_sha) == {
+        "selected": {}, "resume_items": {f"row-{index}": {} for index in range(992)},
+        "selection_sha256": selection_sha,
+    }
+    assert full_run != checkout and script_path.is_file()
 
 
 def test_explicit_full_run_root_rejects_another_workspace(tmp_path):
