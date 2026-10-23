@@ -54,8 +54,17 @@ specific process that triggered the refusal cannot be reconstructed. This is
 not evidence that the preparer matched itself or that the source run changed.
 The common guard now records bounded process identity evidence, redacting
 credential-shaped command arguments, and a regression checks both the blocking
-identity and redaction. The failed attempt02 locator, plan, checkpoint and log
-remain unchanged; a distinct attempt is required to recover.
+identity and redaction. A new independent attempt03 reproduced the guard with
+exact evidence: PID 49956 (`python.exe`, creation time 1792755836.7075658)
+was the preparer command itself, with the exact `--source-run` path and both
+selected IDs. The command snapshot named
+`prepare_ample_terminal_profile_retry.py`, but the guard's self-detection also
+required `sys.argv[0]` to name that script; this Windows launch did not preserve
+that assumption. The fix now requires the current OS PID, the exact expected
+preparer path in that PID's OS command arguments, and an exact `--source-run`
+match before excluding it. It does not exclude any other PID, and a separate
+live retry process still blocks. The failed attempt02/03 plans, locators,
+checkpoints and logs remain unchanged; recovery uses a distinct attempt04.
 
 2026-10-23. This note tracks the two remaining AGLP Riffer items that may be
 rechecked against the final installed bank. It distinguishes a changed sample

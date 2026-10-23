@@ -178,8 +178,9 @@ def test_preparer_does_not_block_on_its_own_read_only_source_argument(tmp_path, 
     preparer = (Path(ample_retry_planning.__file__).resolve().parents[2]
                 / "scripts/instruments/prepare_ample_terminal_profile_retry.py").resolve()
     own_pid = 123456
-    monkeypatch.setattr(sys, "argv", [str(preparer), "--source-run", str(run),
-                                       "--output-dir", str(tmp_path / "new-retry")])
+    # The Python launcher may not preserve the script path as sys.argv[0];
+    # the OS process snapshot still identifies the exact preparer command.
+    monkeypatch.setattr(sys, "argv", ["python.exe", "-c", "launcher-wrapper"])
     monkeypatch.setattr(ample_retry_planning.os, "getpid", lambda: own_pid)
     own = _Process(own_pid, ["python.exe", str(preparer), "--source-run", str(run),
                              "--output-dir", str(tmp_path / "new-retry")])

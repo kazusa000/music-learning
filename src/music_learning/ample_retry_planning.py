@@ -14,7 +14,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import sys
 from typing import Callable, Iterable
 
 
@@ -118,13 +117,23 @@ def find_active_ample_processes(run_dirs: Iterable[Path]) -> list[dict]:
     # processes that reference a source run still fail closed.
     expected_preparer = (Path(__file__).resolve().parents[2]
                          / "scripts/instruments/prepare_ample_terminal_profile_retry.py").resolve()
-    try:
-        is_preparer_self = Path(sys.argv[0]).resolve() == expected_preparer
-    except (OSError, RuntimeError):
-        is_preparer_self = False
-
     def is_read_only_preparer_self(pid: object, argv: list[str]) -> bool:
-        if not is_preparer_self or pid != os.getpid():
+        # Prefer the OS process snapshot's argument vector to sys.argv[0]. A
+        # Windows launcher can normalize or replace sys.argv[0] while the
+        # actual process command still names this exact read-only preparer.
+        # PID equality alone is insufficient: both executable identity and
+        # the explicit source-run binding must match before self is excluded.
+        if pid != os.getpid():
+            return False
+        exact_preparer_argv = False
+        for argument in argv:
+            try:
+                if Path(argument).resolve() == expected_preparer:
+                    exact_preparer_argv = True
+                    break
+            except (OSError, RuntimeError):
+                continue
+        if not exact_preparer_argv:
             return False
         for index, argument in enumerate(argv):
             source_argument = None
