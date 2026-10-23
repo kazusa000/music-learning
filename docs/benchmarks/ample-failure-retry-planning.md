@@ -37,3 +37,9 @@ AGM 当前批次的最后已知快照为 33 项中 14 通过、15 失败、2 待
 HM2 参数诊断在独立目录 `data/maintenance/instrument-intake/20261023-ample-shared-fix/hm2-phase-agsc`。原始 AGSC 工厂 XML 的 472 个参数与宿主当前状态 473 个参数相比，只有 `Pedal-HM2-Dist` 与 `Pedal-HM2-Level` 两个值不一致；在该独立探针中，`setPreset` 后读回已经为 0，`prepareToPlay` 后仍为 0，等待并再次加载同一完整 preset 后也仍为 0。因此“prepare 后异步重置”没有得到证据支持。`ample_presets.prepare` 现在在 factory 参数仍由源状态决定的前提下，从当前插件状态按参数名复用 native 参数 `Index`；静态新 `.vstpreset` 已包含全部 472 个索引且保留 HM2 源值，但这是共享 state-serialization 修复候选，尚未用真实首次/重开发声和完整参数回读验收，不应标成已修好。独立证据目录为 `data/maintenance/instrument-intake/20261023-ample-shared-fix/state-serialization-indexed-v1`。4 条 HM2/参数失败还不能通过。
 
 回归命令经 `scripts/maintenance/run-tests.ps1` 运行：本轮 Ample mapping、retry queue、参数准备、路径隔离、原计划/runner以及通用 performance-profile/publication专项共 71 项通过，Ruff 与 `git diff --check` 通过。**本轮未运行 VST3 扫描、采样加载或真实声音重试**：H 盘预算先后实测 busy 100%/队列14、busy 88%/队列1，故等待空闲窗口；这不是音源验证失败。已构建并 pin 独立 probe host `d922eb9e89ba745f757aecf2b849c3d085a32f43456edfeae81a6bffa8587a0b`，准备了 45 项 failed-only retry queue，当前状态 `prepared`，未启动。队列顺序先放 4 个共享参数读回失败，以便第一轮通过 `--max-items 1` 控制验证共享 state adapter；如果首个共享控制不通过，不盲目消耗其余采样加载。后续仍须在每项启动前通过 H 盘 budget gate，继续使用同一 source-pinned queue；身份、完整参数、首次与重开发声条件不变，原报告和 67 个原通过条目不能被覆盖。
+
+## 2026-10-23 首个共享重试的适配器回归
+
+H 盘预算随后通过三次观察（忙碌率 15%/15%/4%，队列 0/1/0），因此只启动新 retry run 的第一项 `AGLP Rock-Cm-120`，并由 runner 在项目开始前再次执行 H 盘门控。该项没有进入实际发声验证：runner 生成给 probe 的 manifest 时漏传了队列中的 `factory_sha256`，probe 因缺少工厂状态身份哈希而按严格规则拒绝 Riffer profile。该诊断不是静音、样本或参数验证结果，也没有产生首次/重开音频证据；run `failed-only-profiled-retry-1` 中该项的失败记录保留。
+
+共享 runner 现在通过纯函数 `_probe_manifest_item` 把准确的 `factory_sha256` 与 profile/evidence 一并传入 manifest，并在哈希缺失或格式错误时于 probe 启动前拒绝。两项回归分别验证哈希被传递和缺哈希被拒绝；Ample 定向测试 26 项及 Ruff 通过。不要编辑该 run 的队列/原 attempt 来改写失败；修复需 pin 入新的独立 retry run，再从原始 45 个失败身份开始验证。实际首次/重开发声、完整参数读回和通过项发布仍未证实。

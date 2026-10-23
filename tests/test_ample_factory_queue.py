@@ -134,6 +134,40 @@ def test_empty_non_deferred_report_remains_a_missing_result(tmp_path):
     assert queue_module._read_probe_report(probe) is None
 
 
+def test_probe_manifest_forwards_exact_factory_sha_with_event_profile():
+    source_sha = "a" * 64
+    item = {
+        "instrument": "AGLP",
+        "library": "H:/library",
+        "config": "C:/config/AGLP_inst.xml",
+        "plugin": "C:/plugin/AGLP.vst3",
+        "factory_xml": "C:/factory/Rock-Cm-120.aglpstate",
+        "factory_sha256": source_sha,
+        "event_profile": {"kind": "riff_toggle", "factory_riff_sha256": source_sha},
+        "event_profile_evidence": {"factory_source_sha256": source_sha},
+    }
+
+    manifest_item = queue_module._probe_manifest_item(item)
+
+    assert manifest_item["factory_sha256"] == source_sha
+    assert manifest_item["event_profile"] == item["event_profile"]
+    assert manifest_item["event_profile_evidence"] == item["event_profile_evidence"]
+
+
+def test_probe_manifest_rejects_event_profile_without_factory_sha():
+    item = {
+        "instrument": "AGLP",
+        "library": "H:/library",
+        "config": "C:/config/AGLP_inst.xml",
+        "plugin": "C:/plugin/AGLP.vst3",
+        "factory_xml": "C:/factory/Rock-Cm-120.aglpstate",
+        "event_profile": {"kind": "riff_toggle"},
+    }
+
+    with pytest.raises(ValueError, match="requires factory_sha256"):
+        queue_module._probe_manifest_item(item)
+
+
 def test_runtime_pin_copies_fixed_validator_and_rejects_mutation(tmp_path):
     host = tmp_path / "fixed-host.exe"
     host.write_bytes(b"fixed native host")

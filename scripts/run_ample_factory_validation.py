@@ -320,18 +320,26 @@ def _process_telemetry(pid: int) -> dict:
     return dict(root_pid=pid, active=bool(snapshots), processes=snapshots, sampled_at=now())
 
 
+def _probe_manifest_item(item: dict) -> dict:
+    manifest_item = dict(instrument=item["instrument"], library=item["library"],
+                         config=item["config"], plugin=item["plugin"],
+                         factory_xml=item["factory_xml"])
+    if item.get("event_profile") is not None:
+        factory_sha256 = item.get("factory_sha256")
+        if not isinstance(factory_sha256, str) or len(factory_sha256) != 64:
+            raise ValueError("A source-pinned event profile requires factory_sha256 in the queue item")
+        manifest_item["factory_sha256"] = factory_sha256
+        manifest_item["event_profile"] = item["event_profile"]
+        manifest_item["event_profile_evidence"] = item.get("event_profile_evidence")
+    return manifest_item
+
+
 def _attempt(item: dict, output: Path, *, python: Path, native_host: Path,
              scan_timeout: float, operation_timeout: float, diagnostics_root: Path,
              heartbeat=None) -> dict:
     output.mkdir(parents=True)
     manifest = output / "manifest.json"
-    manifest_item = dict(instrument=item["instrument"], library=item["library"],
-                         config=item["config"], plugin=item["plugin"],
-                         factory_xml=item["factory_xml"])
-    if item.get("event_profile") is not None:
-        manifest_item["event_profile"] = item["event_profile"]
-        manifest_item["event_profile_evidence"] = item.get("event_profile_evidence")
-    atomic_json(manifest, [manifest_item])
+    atomic_json(manifest, [_probe_manifest_item(item)])
     log_path = output / "runner.log"
     probe_script = PINNED_ROOT / "scripts/probe_staged_ample.py"
     command = [str(python), str(probe_script),
