@@ -52,6 +52,7 @@ def main() -> None:
         "source_queue_sha256": queue["source_queue_sha256"],
         "source_status_sha256": queue["source_status_sha256"],
         "source_report_sha256": queue["source_report_sha256"],
+        "source_report_present": queue["source_report_present"],
         "source_pin_manifest_sha256": queue["source_pin_manifest_sha256"],
         "pinned_root": str(pinned_root),
         "pin_manifest_sha256": sha256(pinned_root / "pin.json"),

@@ -122,6 +122,7 @@ def test_terminal_profile_correction_selects_failures_and_changed_profile_contro
     )
 
     assert queue["requested"] == 3
+    assert queue["source_report_present"] is True
     assert {item["name"] for item in queue["items"]} == {
         "failed-strummer", "failed-riff", "passed-strummer",
     }
@@ -137,6 +138,19 @@ def test_terminal_profile_correction_selects_failures_and_changed_profile_contro
                for item in queue["items"])
     assert (run / "queue.json").read_bytes() == originals["queue"]
     assert (run / "status.json").read_bytes() == originals["status"]
+
+
+def test_terminal_profile_correction_uses_attempt_receipts_when_summary_report_is_absent(tmp_path):
+    run, _ = _terminal_run(tmp_path)
+    (run / "report.json").unlink()
+
+    queue, _ = build_terminal_profile_correction_queue(
+        run, repository_root=tmp_path / "checkout", active_process_scan=lambda _: [],
+    )
+
+    assert queue["source_report_present"] is False
+    assert queue["source_report_sha256"] is None
+    assert all(item["retry_batch_origin"]["attempts_sha256"] for item in queue["items"])
 
 
 def test_terminal_profile_correction_fails_closed_on_live_process_or_status_mismatch(tmp_path):

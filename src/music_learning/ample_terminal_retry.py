@@ -106,10 +106,11 @@ def build_terminal_profile_correction_queue(
 ) -> tuple[dict, dict]:
     """Select terminal failures and changed-profile controls from a fixed run.
 
-    Every identity, factory file, source queue, status file, report and runtime
-    pin is rechecked. Failed HM2 value readbacks are explicitly deferred; other
-    failures remain eligible. Previously passed items are selected only when
-    current factory-derived profile/evidence differs from the recorded values.
+    Every identity, factory file, source queue, status file and runtime pin is
+    rechecked. If a summary report exists, its bytes are pinned too; otherwise
+    source item attempts remain the result record. Failed HM2 value readbacks
+    are explicitly deferred; other failures remain eligible. Previously passed
+    items are selected only when current source-derived profile/evidence differs.
     """
     root = Path(repository_root).resolve(strict=True)
     intake = (root / "data/maintenance/instrument-intake").resolve(strict=True)
@@ -239,6 +240,7 @@ def build_terminal_profile_correction_queue(
         "source_queue_sha256": queue_sha,
         "source_status_sha256": status_sha,
         "source_report_sha256": report_sha,
+        "source_report_present": report_sha is not None,
         "source_pin_manifest_sha256": pin_sha,
         "requested": len(selected),
         "counts": selected_counts,
