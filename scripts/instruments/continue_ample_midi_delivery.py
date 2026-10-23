@@ -27,9 +27,9 @@ from instruments import supervise_ample_root_cause_chain as chain  # noqa: E402
 
 INTAKE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
 ROOT_CHAIN = INTAKE / "root-cause-chain-03"
-DEFAULT_PLAN = ROOT_CHAIN / "continuation-06/plan.json"
-DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-06-job.local.json"
-DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-06"
+DEFAULT_PLAN = ROOT_CHAIN / "continuation-07/plan.json"
+DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-07-job.local.json"
+DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-07"
 V3_PLAN = ROOT_CHAIN / "plan.json"
 V3_CHECKPOINT = ROOT_CHAIN / "checkpoint.json"
 V3_LOCATOR = ROOT / "runtime/ample-root-cause-chain-v3-job.local.json"
@@ -124,6 +124,19 @@ def clone_output_arg(argv: list[str], old_output: str, new_output: str) -> list[
             item for i, item in enumerate(argv) if i != index]:
         raise ContinuationError("MIDI clone changed an argument other than --output")
     return cloned
+
+
+def _midi_child_command(retry: dict, descriptor_argv: list[str]) -> list[str]:
+    """Prefix the frozen descriptor argv with its interpreter exactly once."""
+    probe = str(MIDI_PROBE.resolve(strict=True))
+    if (retry.get("probe") != probe
+            or retry.get("probe_sha256") != EXPECTED_PROBE_SHA256
+            or not descriptor_argv or descriptor_argv[0] != probe):
+        raise ContinuationError("MIDI child argv does not begin with its pinned probe")
+    executable = retry.get("executable")
+    if not isinstance(executable, str) or not executable:
+        raise ContinuationError("MIDI child interpreter is missing from the pinned descriptor")
+    return [executable, *descriptor_argv]
 
 
 def _pins_from_midi_descriptor(descriptor: dict) -> dict[str, dict[str, str]]:
@@ -640,6 +653,10 @@ def verify_plan(plan_path: Path, *, verify_process_release: bool = False,
     descriptor, contract = _verify_midi_contract(v3_plan)
     if contract["pins"] != plan["midi_retry"]["source_pins"]:
         raise ContinuationError("MIDI source pin set changed")
+    if (plan["midi_retry"].get("executable") != descriptor["execution"].get("executable")
+            or plan["midi_retry"].get("probe") != descriptor["execution"]["argv"][0]
+            or plan["midi_retry"].get("probe_sha256") != EXPECTED_PROBE_SHA256):
+        raise ContinuationError("MIDI child executable/probe differs from the frozen descriptor")
     if plan["midi_retry"]["argv_template"] != descriptor["execution"]["argv"]:
         raise ContinuationError("Original MIDI argv template changed")
     for output, argv in zip(plan["midi_retry"]["output_paths"], plan["midi_retry"]["attempt_argvs"], strict=True):
@@ -998,12 +1015,10 @@ def _run_midi_attempts(plan: dict, plan_path: Path, checkpoint: Path,
                        locator: Path, identity: dict, state: dict,
                        deadline: float) -> dict:
     retry = plan["midi_retry"]
-    executable = retry["executable"]
-    probe = retry["probe"]
     run_root = Path(plan["execution_root"]) / "midi-attempts"
     run_root.mkdir(parents=True, exist_ok=False)
     attempts: list[dict] = []
-    for index, (output, argv_suffix) in enumerate(zip(
+    for index, (output, descriptor_argv) in enumerate(zip(
             retry["output_paths"], retry["attempt_argvs"], strict=True), start=1):
         if time.time() >= state["deadline_unix"] or time.monotonic() >= deadline:
             state.update(status="midi_retry_24h_deadline", retry_attempts=attempts)
@@ -1021,7 +1036,7 @@ def _run_midi_attempts(plan: dict, plan_path: Path, checkpoint: Path,
                                  deadline=deadline)
         gate_path = attempt_dir / "fresh-gate.json"
         _write_midi_attempt_gate(gate, gate_path, plan, str(output_path), index, sha(plan_path))
-        command = [executable, probe, *argv_suffix]
+        command = _midi_child_command(retry, descriptor_argv)
         execution = {
             "schema_version": 1, "status": "launching",
             "attempt": index, "output": str(output_path),

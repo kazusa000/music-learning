@@ -53,6 +53,31 @@ def test_midi_gate_rejects_missing_config_snapshot_hash(tmp_path: Path) -> None:
             gate, tmp_path / "gate.json", {}, "E:/tmp/md08", 1, "d" * 64)
 
 
+def test_child_command_preserves_real_descriptor_argv_without_duplicate_probe() -> None:
+    descriptor = continuation.load_json(continuation.MIDI_DESCRIPTOR,
+                                        "pinned MIDI descriptor")
+    execution = descriptor["execution"]
+    descriptor_argv = execution["argv"]
+    assert descriptor_argv[0] == str(continuation.MIDI_PROBE.resolve(strict=True))
+    output = str((continuation.ROOT / "data/maintenance/instrument-intake/q/md08-test").resolve())
+    old_output = str(Path(execution["output"]).resolve(strict=False))
+    cloned_argv = continuation.clone_output_arg(descriptor_argv, old_output, output)
+    retry = {
+        "executable": execution["executable"],
+        "probe": descriptor_argv[0],
+        "probe_sha256": continuation.EXPECTED_PROBE_SHA256,
+    }
+
+    command = continuation._midi_child_command(retry, cloned_argv)
+
+    assert command == [execution["executable"], *cloned_argv]
+    assert command.count(str(continuation.MIDI_PROBE.resolve(strict=True))) == 1
+    assert command[1:] == cloned_argv
+    forged = ["E:/unrelated/probe.py", *cloned_argv[1:]]
+    with pytest.raises(continuation.ContinuationError, match="does not begin with its pinned probe"):
+        continuation._midi_child_command(retry, forged)
+
+
 def test_current_cadence_release_plan_is_exact_control03_pin() -> None:
     assert continuation.PUMP_CADENCE_PLAN.name == "prepared-plan.json"
     assert continuation.PUMP_CADENCE_PLAN.parent.name == "pump-cadence-control-03"
@@ -104,10 +129,13 @@ def test_nested_midi_timeout_is_preserved_without_starting_another_attempt(
                for index in (1, 2)]
     plan_path = _write_json(tmp_path / "plan.json", {"schema_version": 1})
     plan = {"execution_root": str(tmp_path / "exec"), "midi_retry": {
-        "executable": "C:/Python/python.exe", "probe": "midi_probe.py",
+        "executable": "C:/Python/python.exe",
+        "probe": str(continuation.MIDI_PROBE.resolve(strict=True)),
         "output_paths": outputs,
-        "attempt_argvs": [["--output", value] for value in outputs],
-        "descriptor_sha256": "d" * 64, "probe_sha256": "e" * 64,
+        "attempt_argvs": [[str(continuation.MIDI_PROBE.resolve(strict=True)),
+                           "--output", value] for value in outputs],
+        "descriptor_sha256": "d" * 64,
+        "probe_sha256": continuation.EXPECTED_PROBE_SHA256,
     }, "source_v3": {"plan_sha256": "f" * 64}}
     gate = {"qa07": {}, "formal_idle": {"allowed": True},
             "h_idle_samples": [{"drive": "H:", "busy": False}] * 3,
