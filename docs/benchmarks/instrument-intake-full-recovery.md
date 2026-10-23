@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 13:44 UTC：固定PCM边界、对象映射纠正和失败续跑准备
+
+对67款普通源的first/reopen共134份原WAV重新逐字节SHA校验并求最后非零帧：123份为32767、9份65535，另外2份AGM为4409。LP/SC/M均出现固定边界，132/134恰为32768倍数前一帧。`source-pcm-cutoff-audit-01/report.json`记录每份音频及产品分布；这是固定活动边界的直接证据，不能继续只解释为自然释音，但尚不能据此确认流式采样、缓存或时间计数哪一个是根因。未运行新音频、访问H或更改原阈值。
+
+`block-alignment-control-01/execution-04`已真正首开：相同原三音、原宿主SHA`3d044b3b...`、最终bank、仅block从512改441，进程退出0、实际WAV精确全零、三起音窗全零。独立reopen仍在H门控，监督5276（13:20:31 UTC）身份健康；不能拿首开代重开，也不能凭历史512阳性与当前441阴性直接归因为offset。下一步是当前同环境512对照，之后再安排触发保持、note48实际worker输入/逐块输出和loader观察。`e0a8b03`监督器6专项通过；启动器两次早期身份错误均发生在H/host调用前，原失败保留，修正依据实际venv/base-image观测而非放宽命令归属。
+
+原LP构造器汇编纠正了只读readiness阻塞的一个分析错误：四个不同地址都显示同名`Aglp3AudioProcessor::vftable`，此前误选的`0x1851f8770`其实写入processor+0x378，其RTTI偏移与+0x210并无矛盾。正确主表为`0x1851f90d0`，+0x210次接口表为`0x1851f8a90`。路径必须先从已核验IComponent wrapper的+0x38读取指针，核验次表，再减0x210并核验主表。`aglp-loading-readiness-rea-01/component-primary-mapping-correction-01.json`绑定原snapshot SHA、constructor query/evidence及八条精确LEA/MOV；独立reader和夹具随后按该路径修正。实际回读尚未进行，不能宣称已经观察到Success或解决静音。本轮新REA查询未取得新结论，已关闭会话并实查open=false；以上纠正完全来自保留的原汇编。
+
+`324e1ae`增加一次性Kontakt terminal-only计划/核门CLI，15项E夹具回归通过。它复用固定full-h的转换/音频/完整状态回调，正确区分语义指纹和原文件SHA；冻结runner按精确文件导入，不误用工作树同名模块，嵌套code路径不再误判工作区。实际失败重试未启动，共享执行桥继续开发；原992队列仍固定不动。13:44实查full-h为145通过/7失败/840未完成，Kontakt正式入库0。`catalog-projection-preflight-01`对992份元数据完整覆盖，归163型号且无冲突；当时144个通过候选满足当前型号/变体/中文加英文和品牌原文投影合同。这是E数据预检，不能冒充实际API、试听或正式发布。
+
+`protection-after-qa07-e-only.json`保存正式九表/head和E内12固定文件与前基线逐项相同，H两pin未在繁忙期重读。总持久入口已同步真实控制、队列和52项未续试听，Goal始终ACTIVE。开发任务的StyleLibrary文件保留，不混入本任务Git提交。
+
 ## 2026-10-23 13:18 UTC：QA07真实发声失败，独立控制继续
 
 `data/maintenance/instrument-intake/q/07/supervision.json`于13:11:02 UTC终态failed。前三次attempt只有H磁盘压力defer；attempt004实际使用V8提交`297929076`、固定源清单和f056原生bundle，首次LP私有轨已经进入设备播放，plugin ready、desired_revision等于applied_revision、missed_blocks/underruns均0，但设备peak和轨道meter都是0。它不是先前合约或MAX_PATH基础设施失败，也不等于已定位静音原因。该次引擎23924、插件57004及监督428/24516均已实查退出，原attempt报告不改；canonical07 locator已从陈旧running_attempt同步为终态，旧字节及assessment保存在`instrument-release-engine-qa-07`。

@@ -1,5 +1,22 @@
 # Ample 加载就绪诊断
 
+## LP 4.0.0 对象映射修正（2026-10-23 后续）
+
+LP原构造器`0x1804e7290`的保留汇编明确区分四个同名虚表，不能只按符号字符串选择地址：
+
+| processor相对偏移 | 实际虚表 | LEA / MOV指令地址 |
+| --- | --- | --- |
+| +0x0 | 0x1851f90d0 | 0x1804e7507 / 0x1804e750e |
+| +0x210 | 0x1851f8a90 | 0x1804e7512 / 0x1804e7519 |
+| +0x370 | 0x1851f9140 | 0x1804e7521 / 0x1804e7528 |
+| +0x378 | 0x1851f8770 | 0x1804e7530 / 0x1804e7537 |
+
+此前拿最后一个表当作+0x210的AudioProcessor表，才产生了错误的210/378冲突。正确的被动路径为：核验精确LP模块和IComponent wrapper表 → 读取wrapper+0x38的AudioProcessor指针 → 核验实际次表为模块基址+0x51f8a90 → 减0x210 → 核验实际主表为模块基址+0x51f90d0。不能直接从wrapper减0x210。所有读取仍须在自有实例和可读内存预算内；不匹配时不读loader字段。
+
+纠正记录在`aglp-loading-readiness-rea-01/component-primary-mapping-correction-01.json`，SHA `ce12d5f658bb52c1238d6a8625e4907b6daf65dadad107b088a80e5e6a9e669d`，绑定原snapshot和constructor证据`ev_f25fa79957bdaa609e26d9687db119201dd572cd99dc1b908c068f73ce5cdd2d`。这只修正静态映射结论，实际loader值、就绪和发声仍需新独立运行确认。旧unsupported诊断与原分析文件保留。
+
+## AGM 3.1.0 原始静态观测
+
 2026-10-23 的分析只针对已安装的 AGM 3.1.0：`C:\Program Files\Common Files\VST3\AGM.vst3`，SHA-256 `9f8d18d346f00532015dac386227f8a8b8dca6e8312876f352c152b7b148962b`。本次使用 REA/Ghidra 静态分析，没有执行插件、加载样本或读写 H；原模块前后 SHA 相同，分析会话已关闭。它提供后续隔离诊断的观测点，不代表静音问题已修好，也不能套用 LP/SC 的不同版本内存布局。
 
 证据、分析快照和精简结论分别保存在 `data/maintenance/instrument-intake/20261023-ample-shared-fix/agm-loading-readiness-rea-01/{evidence-bundle.json,analysis-snapshot.json,findings.json}`；下列地址都是该固定模块的静态分析地址，运行时须按实测加载基址换算，且先验证实际接口和对象。
