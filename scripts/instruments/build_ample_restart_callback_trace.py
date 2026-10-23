@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "runtime/build/ample-pump-cadence-03/source"
 JUCE = ROOT / "runtime/third-party/JUCE"
 PLAN = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix/pump-cadence-control-03/prepared-plan.json"
-OUT = ROOT / "runtime/build/ample-restart-callback-trace-02"
-EVIDENCE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix/restart-callback-trace-02"
+OUT = ROOT / "runtime/build/ample-restart-callback-trace-03"
+EVIDENCE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix/restart-callback-trace-03"
 COMMON = Path("modules/juce_audio_processors_headless/format_types/juce_VST3Common.h")
 IMPL = Path("modules/juce_audio_processors_headless/format_types/juce_VST3PluginFormatImpl.h")
 TRACE_JUCE = Path("modules/juce_audio_processors_headless/format_types/MLVst3RestartCallbackTrace.h")
@@ -248,10 +248,9 @@ def patch_render(path: Path) -> dict:
 
 def patch_cmake(path: Path) -> dict:
     original = path.read_text(encoding="utf-8")
-    text = once(original, "ML_ENABLE_PUMP_CADENCE_DIAGNOSTICS=1",
-        "ML_ENABLE_VST3_RESTART_CALLBACK_TRACE=1\n        ML_ENABLE_PUMP_CADENCE_DIAGNOSTICS=1", "host definition")
+    text = once(original, "JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1",
+        "JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1\n    ML_ENABLE_VST3_RESTART_CALLBACK_TRACE=1", "module trace definition")
     text = once(text, "add_executable(ml_test_pump_cadence",
-        "target_compile_definitions(juce_audio_processors_headless PRIVATE ML_ENABLE_VST3_RESTART_CALLBACK_TRACE=1)\n"
         "add_executable(ml_test_vst3_restart_callback_trace native/tests/Vst3RestartCallbackTrace.cpp)\n"
         "add_test(NAME ample_vst3_restart_callback_trace_contract COMMAND ml_test_vst3_restart_callback_trace)\n"
         "add_executable(ml_test_pump_cadence", "unit target")
@@ -288,6 +287,26 @@ def main() -> int:
         raise SystemExit("Dual reader must be an existing E-workspace file") from e
     a.output_root.mkdir(parents=True)
     a.evidence_root.mkdir(parents=True)
+    report_path = a.evidence_root / "build-report.json"
+    diagnostic_sources = {
+        "builder_sha256": digest(Path(__file__).resolve()),
+        "trace_header_sha256": digest(ROOT / "native/instrument-probe/Vst3RestartCallbackTrace.h"),
+        "trace_test_sha256": digest(ROOT / "native/tests/Vst3RestartCallbackTrace.cpp"),
+    }
+
+    def save_progress(status: str, **extra: object) -> None:
+        report = {
+            "schema_version": 1, "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "status": status, "source_only": True, "inputs": actual,
+            "diagnostic_sources": diagnostic_sources,
+            "guard": {"shared_juce_before_sha256": shared_juce_before,
+                "shared_juce_modified": False, "host_launched": False,
+                "plugin_loaded": False, "formal_project_written": False},
+            **extra,
+        }
+        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    save_progress("copying_isolated_source")
     src = a.output_root / "source"
     shutil.copytree(SOURCE, src)
     juce = src / "runtime/third-party/JUCE"
@@ -301,12 +320,17 @@ def main() -> int:
                  src / "native/tests/Vst3RestartCallbackTrace.cpp")
     shutil.copy2(ROOT / "native/instrument-probe/Vst3RestartCallbackTrace.h", juce / TRACE_JUCE)
 
-    edits = {
-        "dual_layout_probe": patch_probe(src / "native/instrument-probe/AmpleProbe.h"),
-        "callback_request_apply": patch_common(juce / COMMON),
-        "render_trace": patch_render(src / "native/audio-host/Render.cpp"),
-        "cmake_trace": patch_cmake(src / "CMakeLists.txt"),
-    }
+    edits: dict[str, dict[str, str]] = {}
+    try:
+        edits["dual_layout_probe"] = patch_probe(src / "native/instrument-probe/AmpleProbe.h")
+        edits["callback_request_apply"] = patch_common(juce / COMMON)
+        edits["render_trace"] = patch_render(src / "native/audio-host/Render.cpp")
+        edits["cmake_trace"] = patch_cmake(src / "CMakeLists.txt")
+    except Exception as error:
+        save_progress("source_patch_failed", patch_hashes=edits,
+                      error=f"{type(error).__name__}: {error}")
+        raise
+    save_progress("isolated_source_patched", patch_hashes=edits)
     sys.path.insert(0, str(ROOT / "scripts"))
     from build_native import build_environment
     env = build_environment()
@@ -319,18 +343,28 @@ def main() -> int:
         f"-DCMAKE_MAKE_PROGRAM={ninja.as_posix()}", f"-DJUCE_ROOT={juce.as_posix()}"]
     config_code = logged(configure, env, a.output_root / "configure.log")
     if config_code:
+        save_progress("configure_failed", configure_exit_code=config_code,
+                      patch_hashes=edits, configure_log=str(a.output_root / "configure.log"))
         raise SystemExit(f"Configure failed ({config_code}); see configure.log")
     if digest(juce / IMPL) != PINS["impl"]:
+        save_progress("configure_source_drift", configure_exit_code=config_code,
+                      patch_hashes=edits, isolated_impl_sha256=digest(juce / IMPL))
         raise SystemExit("CMake prepatch copied JUCE impl changed unexpectedly")
     edits["callback_lifecycle"] = patch_impl(juce / IMPL)
+    save_progress("isolated_lifecycle_patched", patch_hashes=edits)
     build_code = logged([str(cmake), "--build", str(build), "--parallel", "4", "--target",
         "ml_pump_cadence_host_64", "ml_pump_cadence_host_32", "ml_test_vst3_restart_callback_trace"],
         env, a.output_root / "build.log")
     if build_code:
+        save_progress("build_failed", configure_exit_code=config_code, build_exit_code=build_code,
+                      patch_hashes=edits, build_log=str(a.output_root / "build.log"))
         raise SystemExit(f"Build failed ({build_code}); see build.log")
     test_code = logged([str(ctest), "--test-dir", str(build), "--output-on-failure",
         "-R", "^ample_vst3_restart_callback_trace_contract$"], env, a.output_root / "trace-test.log")
     if test_code:
+        save_progress("trace_test_failed", configure_exit_code=config_code, build_exit_code=build_code,
+                      trace_unit_exit_code=test_code, patch_hashes=edits,
+                      trace_test_log=str(a.output_root / "trace-test.log"))
         raise SystemExit(f"Trace contract test failed ({test_code}); see trace-test.log")
     shared_juce_after = {"common": digest(JUCE / COMMON), "impl": digest(JUCE / IMPL)}
     if shared_juce_after != shared_juce_before:
@@ -345,11 +379,7 @@ def main() -> int:
     report = {
         "schema_version": 1, "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "status": "built_not_executed", "source_only": True, "inputs": actual,
-        "diagnostic_sources": {
-            "builder_sha256": digest(Path(__file__).resolve()),
-            "trace_header_sha256": digest(ROOT / "native/instrument-probe/Vst3RestartCallbackTrace.h"),
-            "trace_test_sha256": digest(ROOT / "native/tests/Vst3RestartCallbackTrace.cpp"),
-        },
+        "diagnostic_sources": diagnostic_sources,
         "dual_reader_api": "ml::ample_layout_diagnostic::inspect_readiness(runtime, pin, read_memory)",
         "patch_hashes": edits,
         "build": {"configure_exit_code": config_code, "build_exit_code": build_code,
