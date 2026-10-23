@@ -26,9 +26,9 @@ from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parents[2]
 INTAKE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
-PREPARED = INTAKE / "pump-cadence-control-01/prepared-plan.json"
+PREPARED = INTAKE / "pump-cadence-control-03/prepared-plan.json"
 EXPECTED_PREPARED_SHA256 = (
-    "63155e71222bf315b96f69acda555cac91f2e22a570f70e8f445a5615d1ecd55"
+    "90746d9979be36ee3b282d7cacf1f90702777f5b6fdd12e71dbdb00453ff0d97"
 )
 CHAIN_PLAN = INTAKE / "root-cause-chain-03/plan.json"
 CHAIN_LOCATOR = ROOT / "runtime/ample-root-cause-chain-v3-job.local.json"
@@ -45,7 +45,7 @@ EXPECTED_CHAIN_TERMINAL_ASSESSMENT_SHA256 = (
     "d163006f8d5643eb143498dd175084e7b92cf5495c3e85df5195ee484da1f692"
 )
 EXECUTOR_LOCATOR = ROOT / "runtime/ample-pump-cadence-control-job.local.json"
-ATTEMPTS_ROOT = INTAKE / "pump-cadence-control-01/attempts"
+ATTEMPTS_ROOT = INTAKE / "pump-cadence-control-03/attempts"
 MAX_HOST_SECONDS = 300
 MAX_GATE_WAIT_SECONDS = 24 * 60 * 60
 POLL_SECONDS = 1
@@ -136,6 +136,15 @@ def _read_request(path: Path, label: str) -> dict:
     return request
 
 
+def _verify_render_manifest_binding(plan: dict, manifest: dict) -> None:
+    render_entry = manifest.get("files", {}).get("native/audio-host/Render.cpp")
+    if (not isinstance(render_entry, dict)
+            or plan.get("source_render_sha256") != render_entry.get("sha256")):
+        raise PumpCadenceError(
+            "Prepared plan Render.cpp SHA differs from its source-manifest entry"
+        )
+
+
 def verify_prepared_inputs(plan_path: Path = PREPARED) -> dict:
     """Validate immutable E-side pins only; never reads C:, H:, API, or native code."""
     plan_path = _e_path(plan_path, "prepared plan")
@@ -167,12 +176,7 @@ def verify_prepared_inputs(plan_path: Path = PREPARED) -> dict:
         if path.stat().st_size != expected.get("bytes") or sha(path) != expected.get("sha256"):
             raise PumpCadenceError(f"Source snapshot file changed: {relative}")
 
-    render_entry = manifest["files"].get("native/audio-host/Render.cpp")
-    if (not isinstance(render_entry, dict)
-            or plan.get("source_render_sha256") != render_entry.get("sha256")):
-        raise PumpCadenceError(
-            "Prepared plan Render.cpp SHA differs from its source-manifest entry"
-        )
+    _verify_render_manifest_binding(plan, manifest)
 
     builder = plan.get("builder_script", {})
     builder_path = _e_path(builder.get("path", ""), "E plan builder")

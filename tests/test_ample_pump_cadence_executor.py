@@ -39,15 +39,23 @@ def _verified_pins_for_control_test(_plan_path: Path = executor.PREPARED) -> dic
             "plan_sha256": executor.EXPECTED_PREPARED_SHA256}
 
 
-def test_frozen_plan_render_hash_must_match_its_source_manifest() -> None:
+def test_frozen_plan_render_hash_matches_manifest_and_mismatch_is_rejected() -> None:
     plan = executor.load_json(executor.PREPARED, "real prepared cadence plan")
     manifest_ref = plan["source_snapshot_manifest"]
     manifest = executor.load_json(Path(manifest_ref["path"]), "pinned source manifest")
     source_render = manifest["files"]["native/audio-host/Render.cpp"]["sha256"]
-    assert plan["source_render_sha256"] != source_render
+    assert plan["source_render_sha256"] == source_render
+    executor._verify_render_manifest_binding(plan, manifest)
+    mismatched = {**plan, "source_render_sha256": "0" * 64}
     with pytest.raises(executor.PumpCadenceError,
                        match="Render.cpp SHA differs from its source-manifest entry"):
-        executor.verify_prepared_inputs()
+        executor._verify_render_manifest_binding(mismatched, manifest)
+    report = executor.verify_prepared_inputs()
+    assert report["status"] == "static_inputs_verified"
+    assert report["case_keys"] == list(executor.CASE_ORDER)
+    assert report["native_calls"] == report["formal_api_calls"] == 0
+    assert report["h_drive_accessed"] is False
+    assert report["nas_access"] is False
 
 
 def test_pinned_terminal_defer_assessment_allows_only_a_released_cause_control() -> None:
@@ -97,25 +105,19 @@ def test_run_refuses_to_stage_or_gate_until_analyzer_sha_is_frozen(
     assert not (tmp_path / "runtime/job.local.json").exists()
 
 
-def test_analyzer_fails_closed_on_the_same_frozen_render_hash_mismatch(
-        tmp_path: Path) -> None:
+def test_analyzer_loads_real_plan_and_classifies_missing_attempt_artifacts() -> None:
     analyzer, digest = executor._analysis_contract()
     assert digest == "4e93842c6496cddfa71136d3d21ccecfbe021f31072cce975569d9baf2300fa2"
-    plan = executor.load_json(executor.PREPARED, "real prepared cadence plan")
-    artifacts = {
-        case: {
-            "request_path": Path(plan["request_variants"][case]["request"]),
-            "response_path": tmp_path / f"{case}-missing-response.json",
-            "wav_path": tmp_path / f"{case}-missing-output.wav",
-            "host_path": Path(plan["diagnostic_executables"][case.split("-", 1)[0]]["path"]),
-            "exit_code": None,
-        }
-        for case in executor.CASE_ORDER
-    }
-    with pytest.raises(ValueError, match="Render.cpp source binding changed"):
-        analyzer(plan_path=executor.PREPARED,
-                 case_artifacts=artifacts,
-                 expected_plan_sha256=executor.EXPECTED_PREPARED_SHA256)
+    report = analyzer(plan_path=executor.PREPARED,
+                      case_artifacts={},
+                      expected_plan_sha256=executor.EXPECTED_PREPARED_SHA256)
+    assert report["kind"] == "ample-pump-cadence-analysis"
+    assert report["status"] == "inconclusive_incomplete_or_silent_cases"
+    assert report["admission_decision"] is None
+    assert report["root_cause_proven"] is False
+    assert set(report["cases"]) == set(executor.CASE_ORDER)
+    assert all(report["cases"][case]["status"] == "inconclusive_missing_artifacts"
+               for case in executor.CASE_ORDER)
 
 
 def test_attempt_artifacts_fit_legacy_windows_path_limit() -> None:
