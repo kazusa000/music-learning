@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import tempfile
 import time
 
 import pytest
@@ -14,6 +15,12 @@ def _write_json(path: Path, value: dict) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value), encoding="utf-8")
     return path
+
+
+def _temporary_workspace_root() -> Path:
+    root = continuation.ROOT / "data/tmp/tests"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def test_midi_gate_uses_config_sha_from_actual_h_gate(tmp_path: Path) -> None:
@@ -274,6 +281,66 @@ def test_zero_audio_complete_midi_readiness_still_allows_diagnostic_suffix() -> 
                 "all_phases_strict_audio_positive": False}
 
     assert continuation.midi_ready_to_continue(progress) is True
+
+
+def test_prepare_to_run_accepts_only_real_prep_files_before_native_boundary(
+    monkeypatch,
+) -> None:
+    # Use the production prepare path and real E paths. Stop exactly where the
+    # MIDI/native stage would begin; this test never starts a host or reads H:.
+    class ReachedNativeBoundary(Exception):
+        pass
+
+    with tempfile.TemporaryDirectory(prefix="ample-continuation-",
+                                     dir=_temporary_workspace_root()) as temp:
+        test_root = Path(temp)
+        execution_root = test_root / "execution"
+        plan_path = execution_root / "plan.json"
+        locator_path = test_root / "locator.json"
+        arm_path = test_root / "root-arm.json"
+        plan = continuation.prepare_plan(
+            plan_path=plan_path, locator_path=locator_path,
+            execution_root=execution_root)
+        plan_sha = continuation.sha(plan_path)
+        _write_json(arm_path, {
+            "schema_version": 1, "status": "armed_by_root",
+            "plan_sha256": plan_sha, "pump_cadence_released": True,
+            "approved_at_utc": "fixture-only", "one_use_nonce": "a" * 32,
+        })
+
+        continuation._validate_pristine_execution_root(
+            execution_root, plan_path, plan, plan_sha)
+        assert {entry.name for entry in execution_root.iterdir()} == {
+            "plan.json", "preflight.json"}
+
+        identity = {"pid": 50001, "ppid": 1, "created_ticks": 123,
+                    "command_line": "fixture", "name": "python.exe"}
+        monkeypatch.setattr(continuation, "_current_identity", lambda *args: identity)
+        monkeypatch.setattr(continuation, "_write_runtime_state", lambda *args: None)
+        boundary_calls = []
+
+        def stop_before_native(*args, **kwargs):
+            boundary_calls.append((args, kwargs))
+            raise ReachedNativeBoundary
+
+        monkeypatch.setattr(continuation, "_run_midi_attempts", stop_before_native)
+        with pytest.raises(ReachedNativeBoundary):
+            continuation.run(plan_path, locator_path, arm_path, max_wait_seconds=60)
+        assert len(boundary_calls) == 1
+        assert not locator_path.exists()
+        assert not (execution_root / "checkpoint.json").exists()
+        assert not (execution_root / "report.json").exists()
+
+        # A prior checkpoint, report, or arbitrary leftover is never accepted
+        # as part of the prepare allowlist.
+        for unexpected_name in ("checkpoint.json", "report.json", "host-output.wav"):
+            unexpected = execution_root / unexpected_name
+            unexpected.write_bytes(b"prior-attempt")
+            with pytest.raises(continuation.ContinuationError,
+                               match="prior attempt data"):
+                continuation._validate_pristine_execution_root(
+                    execution_root, plan_path, plan, plan_sha)
+            unexpected.unlink()
 
 
 def test_riff_suffix_contains_only_six_unique_first_reopen_controls() -> None:

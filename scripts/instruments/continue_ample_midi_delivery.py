@@ -27,9 +27,9 @@ from instruments import supervise_ample_root_cause_chain as chain  # noqa: E402
 
 INTAKE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
 ROOT_CHAIN = INTAKE / "root-cause-chain-03"
-DEFAULT_PLAN = ROOT_CHAIN / "continuation-04/plan.json"
-DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-04-job.local.json"
-DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-04"
+DEFAULT_PLAN = ROOT_CHAIN / "continuation-05/plan.json"
+DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-05-job.local.json"
+DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-05"
 V3_PLAN = ROOT_CHAIN / "plan.json"
 V3_CHECKPOINT = ROOT_CHAIN / "checkpoint.json"
 V3_LOCATOR = ROOT / "runtime/ample-root-cause-chain-v3-job.local.json"
@@ -708,6 +708,44 @@ def _arm_is_valid(arm_path: Path, plan_sha: str) -> dict:
             "approved_at_utc": arm["approved_at_utc"]}
 
 
+def _validate_pristine_execution_root(execution_root: Path, plan_path: Path,
+                                      plan: dict, plan_sha: str) -> None:
+    """Allow only the immutable prepare outputs; reject every prior run artifact."""
+    execution_root = _inside_workspace(execution_root, "execution root", strict=True)
+    plan_path = _inside_workspace(plan_path, "continuation plan", strict=True)
+    if not execution_root.is_dir():
+        raise ContinuationError("Execution root is not a directory")
+    if Path(plan.get("execution_root", "")).resolve(strict=True) != execution_root:
+        raise ContinuationError("Plan execution root does not match the requested root")
+    if Path(plan.get("plan_path", "")).resolve(strict=True) != plan_path:
+        raise ContinuationError("Plan path does not match the pinned execution plan")
+    if sha(plan_path) != plan_sha:
+        raise ContinuationError("Pinned continuation plan changed before run")
+
+    preflight_path = execution_root / "preflight.json"
+    allowed_paths = {preflight_path.resolve(strict=True)}
+    if plan_path.parent == execution_root:
+        allowed_paths.add(plan_path)
+    entries = list(execution_root.iterdir())
+    for entry in entries:
+        is_junction = getattr(entry, "is_junction", lambda: False)()
+        if entry.is_symlink() or is_junction or not entry.is_file():
+            raise ContinuationError("Execution root contains an unexpected directory or reparse point")
+    if {entry.resolve(strict=True) for entry in entries} != allowed_paths:
+        raise ContinuationError("Execution root contains prior attempt data; preserve it")
+
+    preflight = load_json(preflight_path, "continuation preflight")
+    if (preflight.get("status") != "prepared_e_only_waiting_for_root_arm"
+            or Path(preflight.get("plan_path", "")).resolve(strict=True) != plan_path
+            or preflight.get("plan_sha256") != plan_sha
+            or preflight.get("host_started") is not False
+            or preflight.get("api_called") is not False
+            or preflight.get("h_accessed") is not False
+            or preflight.get("source_v3_terminal_verified") is not True
+            or preflight.get("v3_processes_released") is not True):
+        raise ContinuationError("Execution root preflight receipt is missing or does not match the pinned plan")
+
+
 def _gate_for_attempt(plan: dict, plan_path: Path, checkpoint: Path, locator: Path,
                       state: dict, identity: dict, *, stage: str, output: str,
                       deadline: float) -> dict:
@@ -1383,11 +1421,7 @@ def run(plan_path: Path, locator_path: Path, arm_path: Path,
     if checkpoint.exists() or report_path.exists() or locator_path.exists():
         raise ContinuationError("Continuation already has runtime state; do not overwrite or replay it")
     execution_root = _inside_workspace(Path(plan["execution_root"]), "execution root", strict=True)
-    if execution_root.exists() and any(execution_root.iterdir()):
-        # Only preflight.json created by --prepare may be present.
-        existing = {item.name for item in execution_root.iterdir()}
-        if existing != {"preflight.json"}:
-            raise ContinuationError("Execution root contains prior attempt data; preserve it")
+    _validate_pristine_execution_root(execution_root, plan_path, plan, plan_sha)
     identity = _current_identity(Path(__file__), plan_path, locator_path)
     deadline = time.monotonic() + max_wait_seconds
     state = {
