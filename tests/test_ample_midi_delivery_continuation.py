@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import sys
 import tempfile
 import time
 
@@ -248,6 +250,38 @@ def test_child_deadline_cleans_owned_job_and_returns_timeout_not_success(
     assert state["last_child_release"]["descendants_verified_gone"] is True
     saved = json.loads(checkpoint.read_text(encoding="utf-8"))
     assert saved["last_child_release"]["timed_out"] is True
+
+
+def test_current_supervisor_accepts_its_actual_uv_interpreter_cim_image(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    rows = chain.process_inventory()
+    own = chain._process_map(rows).get(os.getpid())
+    assert own is not None
+    actual_image = Path(own["executable_path"]).resolve()
+    allowed_images = {Path(sys.executable).resolve()}
+    for name in ("base_executable", "_base_executable"):
+        value = getattr(sys, name, None)
+        if value:
+            allowed_images.add(Path(value).resolve())
+    assert actual_image in allowed_images
+
+    script = Path(continuation.__file__).resolve()
+    plan_path = tmp_path / "plan.json"
+    locator_path = tmp_path / "locator.json"
+    actual_row = dict(own)
+    actual_row["command_line"] = f'"{script}" "{plan_path}" "{locator_path}"'
+    monkeypatch.setattr(chain, "process_inventory", lambda: [actual_row])
+
+    identity = continuation._current_identity(script, plan_path, locator_path)
+    assert identity["pid"] == os.getpid()
+    assert Path(identity["executable_path"]).resolve() == actual_image
+
+    wrong_image = dict(actual_row, executable_path=str(tmp_path / "unrelated-python.exe"))
+    monkeypatch.setattr(chain, "process_inventory", lambda: [wrong_image])
+    with pytest.raises(continuation.ContinuationError,
+                       match="supervisor executable identity changed"):
+        continuation._current_identity(script, plan_path, locator_path)
 
 
 def test_pump_cadence_hosts_are_shared_stage_conflicts(monkeypatch) -> None:

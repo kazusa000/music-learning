@@ -27,9 +27,9 @@ from instruments import supervise_ample_root_cause_chain as chain  # noqa: E402
 
 INTAKE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
 ROOT_CHAIN = INTAKE / "root-cause-chain-03"
-DEFAULT_PLAN = ROOT_CHAIN / "continuation-05/plan.json"
-DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-05-job.local.json"
-DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-05"
+DEFAULT_PLAN = ROOT_CHAIN / "continuation-06/plan.json"
+DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-06-job.local.json"
+DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-06"
 V3_PLAN = ROOT_CHAIN / "plan.json"
 V3_CHECKPOINT = ROOT_CHAIN / "checkpoint.json"
 V3_LOCATOR = ROOT / "runtime/ample-root-cause-chain-v3-job.local.json"
@@ -664,8 +664,13 @@ def _current_identity(script: Path, plan_path: Path, locator_path: Path) -> dict
     row = chain._process_map(rows).get(os.getpid())
     if row is None:
         raise ContinuationError("Cannot identify continuation supervisor by PID/creation time")
+    allowed_executables = {Path(sys.executable).resolve()}
+    for name in ("base_executable", "_base_executable"):
+        value = getattr(sys, name, None)
+        if value:
+            allowed_executables.add(Path(value).resolve())
     executable = Path(row.get("executable_path", "")).resolve()
-    if executable != Path(sys.executable).resolve():
+    if executable not in allowed_executables:
         raise ContinuationError("Continuation supervisor executable identity changed")
     command = str(row.get("command_line", "")).replace("/", "\\").casefold()
     for required in (script.resolve(), plan_path.resolve(), locator_path.resolve(strict=False)):
