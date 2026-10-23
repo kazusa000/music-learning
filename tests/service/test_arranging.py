@@ -353,6 +353,8 @@ def test_p4_receipt_hash_stays_compatible_for_new_empty_edit_permission(service,
     normalized.pop("session_id")
     normalized.pop("model")
     normalized.pop("edit_mode")
+    normalized.pop("reasoning_effort")
+    normalized.pop("fast_mode")
     request_hash = hashlib.sha256(
         canonical(
             dict(

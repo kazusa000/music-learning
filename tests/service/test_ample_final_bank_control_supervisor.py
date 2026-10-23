@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 import pytest
@@ -20,6 +21,18 @@ PLAN = Path(
     "data/maintenance/instrument-intake/20261023-ample-shared-fix/"
     "final-bank-load-control-admission-pipeline-01/plan.json"
 )
+
+
+@pytest.fixture(autouse=True)
+def fixed_evidence_root(monkeypatch):
+    # Frozen source trees do not contain mutable runtime evidence. The official
+    # test runner supplies its exact read-only workspace resource root.
+    resource_root = os.environ.get("MUSIC_LEARNING_TEST_RESOURCE_ROOT")
+    if resource_root:
+        import instruments.supervise_ample_final_bank_controls as controls
+
+        monkeypatch.setattr(controls, "INTAKE_ROOT",
+                            (Path(resource_root) / "data/maintenance/instrument-intake").resolve())
 
 
 def test_strict73_identity_is_resolved_from_selected_attempt_evidence_root():
