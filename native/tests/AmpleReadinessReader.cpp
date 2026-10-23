@@ -58,15 +58,17 @@ struct Fixture
     static constexpr std::uintptr_t module_base = 0x100000000;
     static constexpr std::uint32_t image_size = 0x06000000;
     static constexpr std::uintptr_t component = 0x20000000;
-    static constexpr std::uintptr_t primary = component - 0x1000;
+    static constexpr std::uintptr_t processor_subobject = component + 0x5000;
+    static constexpr std::uintptr_t primary = processor_subobject - 0x210;
     static constexpr std::uintptr_t status_chars = 0x30000000;
-    static constexpr std::uint32_t component_rva = 0x2000;
-    static constexpr std::uint32_t primary_rva = 0x3000;
+    static constexpr std::uint32_t component_rva = 0x051f71c0;
+    static constexpr std::uint32_t processor_subobject_rva = 0x051f8a90;
+    static constexpr std::uint32_t primary_rva = 0x051f90d0;
 
     SparseMemory memory;
     LayoutPin pin{
         "Ample Guitar LP", "test-version", "test-sha", component_rva,
-        0x210, 0x4000, true, 0x1000, primary_rva, 0x30, 0x40, 0x50};
+        0x38, 0x210, processor_subobject_rva, primary_rva, 0x30, 0x40, 0x50};
     RuntimeIdentity runtime{
         "Ample Guitar LP", "test-version", "test-sha", module_base,
         image_size, component};
@@ -74,6 +76,9 @@ struct Fixture
     Fixture()
     {
         memory.write(component, module_base + component_rva);
+        memory.write(component + pin.component_processor_pointer_offset,
+                     processor_subobject);
+        memory.write(processor_subobject, module_base + processor_subobject_rva);
         memory.write(primary, module_base + primary_rva);
         memory.write(primary + pin.loading_byte_offset, std::uint8_t{0});
         memory.write(primary + pin.loader_error_count_offset, std::int32_t{0});
@@ -91,7 +96,7 @@ int main()
 {
     {
         Fixture fixture;
-        fixture.pin.component_mapping_verified = false;
+        fixture.pin.processor_subobject_vtable_rva = 0;
         const auto result = fixture.inspect();
         check(result.error == Error::unsupported_component_mapping);
         check(result.component_vtable == Fixture::module_base + Fixture::component_rva);
@@ -129,6 +134,26 @@ int main()
         check(result.error == Error::ok && result.fields_read && result.ready);
         check(result.loading_byte == 0 && result.loader_error_count == 0);
         check(result.status == "Success");
+        check(result.processor_subobject == Fixture::processor_subobject);
+        check(result.processor_subobject_vtable
+              == Fixture::module_base + Fixture::processor_subobject_rva);
+        check(result.primary_processor == Fixture::primary);
+    }
+    {
+        Fixture fixture;
+        fixture.memory.write(Fixture::component + fixture.pin.component_processor_pointer_offset,
+                             std::uintptr_t{0x31000000});
+        const auto result = fixture.inspect();
+        check(result.error == Error::invalid_processor_subobject);
+        check(!result.fields_read && !result.ready);
+    }
+    {
+        Fixture fixture;
+        fixture.memory.write(Fixture::processor_subobject,
+                             Fixture::module_base + 0x051f8a91);
+        const auto result = fixture.inspect();
+        check(result.error == Error::processor_subobject_vtable_mismatch);
+        check(!result.fields_read && !result.ready);
     }
     {
         Fixture fixture;
@@ -170,6 +195,8 @@ int main()
                              std::int32_t{-1});
         const auto result = fixture.inspect();
         check(result.error == Error::invalid_error_count && !result.fields_read);
+        check(result.loading_byte_read && result.loader_error_count_read);
+        check(result.loader_error_count == -1 && !result.status_read);
     }
     {
         Fixture fixture;

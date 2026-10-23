@@ -150,6 +150,108 @@ public:
         value->setProperty("render_micros",(juce::int64)shared->renderMicros.load());
         value->setProperty("load_micros",(juce::int64)shared->loadMicros.load());
         value->setProperty("load_stage",(int)shared->loadStage.load());
+#if defined(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+        auto* midi = new juce::DynamicObject();
+        midi->setProperty("process_block_calls", (juce::int64)shared->midiDelivery.processBlockCalls.load(std::memory_order_acquire));
+        midi->setProperty("event_bearing_blocks", (juce::int64)shared->midiDelivery.eventBearingBlocks.load(std::memory_order_acquire));
+        midi->setProperty("events_submitted", (juce::int64)shared->midiDelivery.eventsSubmitted.load(std::memory_order_acquire));
+        midi->setProperty("records_dropped", (juce::int64)shared->midiDelivery.recordsDropped.load(std::memory_order_acquire));
+        midi->setProperty("audio_blocks_dropped", (juce::int64)shared->midiDelivery.audioBlocksDropped.load(std::memory_order_acquire));
+        juce::Array<juce::var> records;
+        const auto count = std::min<uint64_t>(shared->midiDelivery.recordsPublished.load(std::memory_order_acquire),
+                                               midiDeliveryRecordCapacity);
+        for (uint64_t i = 0; i < count; ++i) {
+            const auto& item = shared->midiDelivery.records[static_cast<size_t>(i)];
+            if (item.sequence.load(std::memory_order_acquire) != i + 1) continue;
+            auto* record = new juce::DynamicObject();
+            record->setProperty("process_block", (juce::int64)item.processBlock);
+            record->setProperty("source_start_sample", (juce::int64)item.sourceStartSample);
+            record->setProperty("block_samples", (int)item.blockSamples);
+            record->setProperty("sample_offset", (int)item.sampleOffset);
+            record->setProperty("plugin_index", (int)item.pluginIndex);
+            const char* type = item.messageType == 1 ? "note_on" : item.messageType == 2 ? "note_off"
+                : item.messageType == 3 ? "controller" : item.messageType == 4 ? "program_change"
+                : item.messageType == 5 ? "pitch_wheel" : "other";
+            record->setProperty("type", type);
+            record->setProperty("channel", (int)item.channel);
+            record->setProperty("data1", (int)item.data1);
+            record->setProperty("data2", (int)item.data2);
+            record->setProperty("velocity", item.velocity);
+            records.add(juce::var(record));
+        }
+        midi->setProperty("records", records);
+        juce::Array<juce::var> audioBlocks;
+        const auto audioCount = std::min<uint64_t>(shared->midiDelivery.audioBlocksPublished.load(std::memory_order_acquire),
+                                                    midiDeliveryRecordCapacity);
+        for (uint64_t i = 0; i < audioCount; ++i) {
+            const auto& item = shared->midiDelivery.audioBlocks[static_cast<size_t>(i)];
+            if (item.sequence.load(std::memory_order_acquire) != i + 1) continue;
+            auto* block = new juce::DynamicObject();
+            block->setProperty("process_block", (juce::int64)item.processBlock);
+            block->setProperty("source_start_sample", (juce::int64)item.sourceStartSample);
+            block->setProperty("block_samples", (int)item.blockSamples);
+            block->setProperty("plugin_index", (int)item.pluginIndex);
+            block->setProperty("nonzero_samples", (int)item.nonzeroSamples);
+            block->setProperty("nonfinite_samples", (int)item.nonfiniteSamples);
+            block->setProperty("first_nonzero_offset", (int)item.firstNonzeroOffset);
+            block->setProperty("last_nonzero_offset", (int)item.lastNonzeroOffset);
+            block->setProperty("peak", item.peak);
+            block->setProperty("rms", item.rms);
+            audioBlocks.add(juce::var(block));
+        }
+        midi->setProperty("audio_blocks", audioBlocks);
+        juce::Array<juce::var> readiness;
+        const auto readinessCount = std::min<uint64_t>(
+            shared->midiDelivery.ampleReadinessPublished.load(
+                std::memory_order_acquire), ampleReadinessRecordCapacity);
+        for (uint64_t i = 0; i < readinessCount; ++i) {
+            const auto& item = shared->midiDelivery.ampleReadiness[
+                static_cast<size_t>(i)];
+            if (item.sequence.load(std::memory_order_acquire) != i + 1)
+                continue;
+            auto* record = new juce::DynamicObject();
+            record->setProperty("source_sample", (juce::int64)item.sourceSample);
+            record->setProperty("plugin_index", (int)item.pluginIndex);
+            const char* phase = item.phase == 1 ? "after_state_restore"
+                : item.phase == 2 ? "before_first_process_block"
+                : item.phase == 3 ? "after_final_process_block" : "unknown";
+            record->setProperty("phase", phase);
+            record->setProperty("status", juce::String::fromUTF8(item.status));
+            record->setProperty("product", juce::String::fromUTF8(item.product));
+            record->setProperty("version", juce::String::fromUTF8(item.version));
+            record->setProperty("module_path", juce::String::fromUTF8(item.modulePath));
+            record->setProperty("module_sha256", juce::String::fromUTF8(item.moduleSha256));
+            record->setProperty("fields_read", item.fieldsRead != 0);
+            record->setProperty("ready", item.ready != 0);
+            record->setProperty("loading_byte_read", item.loadingByteRead != 0);
+            record->setProperty("loader_error_count_read",
+                item.loaderErrorCountRead != 0);
+            record->setProperty("status_read", item.statusRead != 0);
+            record->setProperty("loading_byte", item.loadingByteRead != 0
+                ? juce::var((int)item.loadingByte) : juce::var());
+            record->setProperty("loader_error_count",
+                item.loaderErrorCountRead != 0
+                    ? juce::var((int)item.loaderErrorCount) : juce::var());
+            record->setProperty("status_string", item.statusRead != 0
+                ? juce::var(juce::String::fromUTF8(item.statusString))
+                : juce::var());
+            record->setProperty("component_vtable", juce::String::toHexString(
+                static_cast<juce::int64>(item.componentVtable)));
+            record->setProperty("processor_subobject", juce::String::toHexString(
+                static_cast<juce::int64>(item.processorSubobject)));
+            record->setProperty("processor_subobject_vtable",
+                juce::String::toHexString(
+                    static_cast<juce::int64>(item.processorSubobjectVtable)));
+            record->setProperty("primary_processor", juce::String::toHexString(
+                static_cast<juce::int64>(item.primaryProcessor)));
+            readiness.add(juce::var(record));
+        }
+        midi->setProperty("ample_readiness", readiness);
+        midi->setProperty("ample_readiness_dropped", (juce::int64)
+            shared->midiDelivery.ampleReadinessDropped.load(
+                std::memory_order_acquire));
+        value->setProperty("midi_delivery", juce::var(midi));
+#endif
         value->setProperty("epoch",(juce::int64)epoch.load());value->setProperty("config_hash",config);
         if(failed||code==2)value->setProperty("error",code==2?juce::String::fromUTF8(shared->error):juce::String("Plugin worker exited"));
         return juce::var(value);

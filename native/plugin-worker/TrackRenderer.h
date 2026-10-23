@@ -1,5 +1,9 @@
 #pragma once
 #include "../include/MainOutputBus.h"
+#include "MidiDeliveryDiagnostics.h"
+#if defined(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+#include "AmpleReadinessDiagnostics.h"
+#endif
 
 namespace ml {
 struct NodeTimeline final : Timeline {
@@ -38,6 +42,11 @@ class TrackRenderer final : public AudioSource {
     std::vector<int64> graphExpected;
     double rate=44100;
     AudioBuffer<float> work, input;
+#if defined(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+    mlengine::PluginRing* diagnosticRing = nullptr;
+    std::vector<uint8_t> diagnosticFirstProcessCaptured;
+    std::vector<uint8_t> diagnosticFinalProcessCaptured;
+#endif
 
     void rebuildEvents() {
         events.clear(); eventIndices.assign(plugins.size(),0);
@@ -122,7 +131,29 @@ class TrackRenderer final : public AudioSource {
             if(sides&&index<sides->size()&&plugin.getTotalNumInputChannels()==4)
                 for(int ch=0;ch<2;++ch)work.copyFrom(ch+2,0,(*sides)[index],ch,externalOffset,count);
             AudioBuffer<float> block(work.getArrayOfWritePointers(),std::max({2,plugin.getTotalNumInputChannels(),plugin.getTotalNumOutputChannels()}),count);
-            plugin.processBlock(block,midi); preceding+=plugin.getLatencySamples();
+#if defined(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+            if(diagnosticRing && !diagnosticFirstProcessCaptured[index]) {
+                recordAmpleReadiness(diagnosticRing, plugin,
+                    static_cast<uint32_t>(index), source,
+                    AmpleReadinessPhase::beforeFirstProcessBlock);
+                diagnosticFirstProcessCaptured[index] = 1;
+            }
+            const auto diagnosticBlock = recordMidiDelivery(diagnosticRing, static_cast<uint32_t>(index), source,
+                                                             static_cast<uint32_t>(count), midi);
+#endif
+            plugin.processBlock(block,midi);
+#if defined(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+            recordProcessBlockAudio(diagnosticRing, diagnosticBlock, static_cast<uint32_t>(index), source, block);
+            const auto projectDuration = integer(project,"duration_samples",0);
+            if(diagnosticRing && !diagnosticFinalProcessCaptured[index]
+                && projectDuration > 0 && source + count >= projectDuration) {
+                recordAmpleReadiness(diagnosticRing, plugin,
+                    static_cast<uint32_t>(index), source + count,
+                    AmpleReadinessPhase::afterFinalProcessBlock);
+                diagnosticFinalProcessCaptured[index] = 1;
+            }
+#endif
+            preceding+=plugin.getLatencySamples();
         }
         if(graphMode)latency=preceding;
         else require(preceding==latency,"Worker plugin latency changed; reopen track");
@@ -130,6 +161,9 @@ class TrackRenderer final : public AudioSource {
 public:
     explicit TrackRenderer(const var& value, mlengine::PluginRing* diagnostics=nullptr,bool graph=false,
                            std::function<void(uint32_t)> loading={}) :graphMode(graph) {
+#if defined(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+        diagnosticRing = diagnostics;
+#endif
         formats.registerBasicFormats(); project=value; track=array(value,"tracks")[0];
         rate=number(project,"sample_rate",44100); quantum=(int)integer(project,"block_size",512);
         require(rate>=8000&&rate<=192000&&quantum>=16&&quantum<=8192,"Invalid worker clock");
@@ -162,6 +196,15 @@ public:
             channels=std::max(channels,plugin->getTotalNumOutputChannels());
             plugin->setNonRealtime(needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()));
             plugin->setPlayHead(timeline.get());plugin->setRateAndBufferSizeDetails(rate,quantum);plugin->prepareToPlay(rate,quantum);
+#if defined(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+            if(diagnosticRing) {
+                recordAmpleReadiness(diagnosticRing, *plugin,
+                    static_cast<uint32_t>(plugins.size()), 0,
+                    AmpleReadinessPhase::afterStateRestore);
+                diagnosticFirstProcessCaptured.push_back(0);
+                diagnosticFinalProcessCaptured.push_back(0);
+            }
+#endif
             if(diagnostics)diagnostics->loadStage.store(3);
             if(loading)loading(3);
             if(needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()))MessageManager::getInstance()->runDispatchLoopUntil(10000);

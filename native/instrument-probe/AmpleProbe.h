@@ -133,14 +133,23 @@ inline juce::var serialize(const ample_readiness::Snapshot& snapshot,
         {"status", juce::String(error_name(snapshot.error).data())},
         {"component_vtable", juce::String::toHexString(
             static_cast<juce::int64>(snapshot.component_vtable))},
+        {"processor_subobject", snapshot.processor_subobject == 0
+            ? juce::var() : juce::var(juce::String::toHexString(
+                static_cast<juce::int64>(snapshot.processor_subobject)))},
+        {"processor_subobject_vtable", snapshot.processor_subobject_vtable == 0
+            ? juce::var() : juce::var(juce::String::toHexString(
+                static_cast<juce::int64>(snapshot.processor_subobject_vtable)))},
         {"primary_processor", snapshot.primary_processor == 0
             ? juce::var() : juce::var(juce::String::toHexString(
                 static_cast<juce::int64>(snapshot.primary_processor)))},
-        {"loading_byte", snapshot.fields_read
+        {"loading_byte", snapshot.loading_byte_read
             ? juce::var(static_cast<int>(snapshot.loading_byte)) : juce::var()},
+        {"loading_byte_read", snapshot.loading_byte_read},
         {"status_string", status},
-        {"loader_error_count", snapshot.fields_read
+        {"status_read", snapshot.status_read},
+        {"loader_error_count", snapshot.loader_error_count_read
             ? juce::var(static_cast<int>(snapshot.loader_error_count)) : juce::var()},
+        {"loader_error_count_read", snapshot.loader_error_count_read},
         {"fields_read", snapshot.fields_read}, {"ready", snapshot.ready},
         {"process_memory_bytes_read", static_cast<int>(reader.bytesRead)},
         {"memory_budget_bytes", static_cast<int>(CheckedProcessReader::kMaximumBytes)},

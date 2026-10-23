@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 project(MusicLearningEngine VERSION 1.0 LANGUAGES C CXX)
+option(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS "Expose bounded MIDI-to-processBlock receipts in this private build" OFF)
 add_executable(ml_loading_budget_probe LoadBudgetProbe.cpp)
 set_target_properties(ml_loading_budget_probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 add_executable(ml_worker_snapshot WorkerSnapshot.cpp)
@@ -28,6 +29,9 @@ target_compile_definitions(ml_engine PRIVATE
 target_compile_options(ml_engine PRIVATE /utf-8 /EHsc /W4)
 target_link_libraries(ml_engine PRIVATE "${ML_RUNTIME_LIBRARY}"
     kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32 winmm avrt cfgmgr32 synchronization)
+if(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+    target_compile_definitions(ml_engine PRIVATE ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS=1)
+endif()
 set_target_properties(ml_engine PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 add_executable(ml_engine_loopback Loopback.cpp)
 target_compile_options(ml_engine_loopback PRIVATE /utf-8 /EHsc /W4)
@@ -42,14 +46,37 @@ add_executable(ml_plugin_worker "${CMAKE_CURRENT_SOURCE_DIR}/../plugin-worker/Ma
     "${JUCE_ROOT}/modules/juce_audio_formats/juce_audio_formats_flac_1.c"
     "${JUCE_ROOT}/modules/juce_audio_formats/juce_audio_formats_flac_2.c"
     "${JUCE_ROOT}/modules/juce_audio_formats/juce_audio_formats_ogg.c")
-target_include_directories(ml_plugin_worker PRIVATE "${JUCE_ROOT}/modules" "${ML_ROOT}/native/include")
+target_include_directories(ml_plugin_worker PRIVATE "${JUCE_ROOT}/modules"
+    "${ML_ROOT}/native/include" "${ML_ROOT}/native/audio-host")
 target_compile_definitions(ml_plugin_worker PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1
     JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_PLUGINHOST_VST3=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
     JUCE_USE_FLAC=1 JUCE_USE_OGGVORBIS=1 JUCE_USE_MP3AUDIOFORMAT=1 JUCE_USE_WINDOWS_MEDIA_FORMAT=0)
 target_compile_options(ml_plugin_worker PRIVATE /utf-8 /EHsc /W4)
 target_link_libraries(ml_plugin_worker PRIVATE "${ML_RUNTIME_LIBRARY}"
     kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32 avrt)
+if(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+    target_compile_definitions(ml_plugin_worker PRIVATE ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS=1)
+endif()
 set_target_properties(ml_plugin_worker PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+if(ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS)
+    add_executable(ml_test_midi_delivery "${ML_ROOT}/native/tests/MidiDeliveryDiagnostics.cpp")
+    target_include_directories(ml_test_midi_delivery PRIVATE "${JUCE_ROOT}/modules" "${ML_ROOT}/native/include" "${ML_ROOT}/native/plugin-worker")
+    target_compile_definitions(ml_test_midi_delivery PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1
+        JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
+        ML_ENABLE_MIDI_DELIVERY_DIAGNOSTICS=1)
+    target_compile_options(ml_test_midi_delivery PRIVATE /utf-8 /EHsc /W4)
+    target_link_libraries(ml_test_midi_delivery PRIVATE "${ML_RUNTIME_LIBRARY}"
+        kernel32 user32 gdi32 winspool shell32 ole32 oleaut32 uuid comdlg32 advapi32 winmm avrt synchronization)
+    set_target_properties(ml_test_midi_delivery PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    enable_testing()
+    add_test(NAME midi_delivery_records_processblock_input COMMAND ml_test_midi_delivery)
+
+    add_executable(ml_test_ample_readiness "${ML_ROOT}/native/tests/AmpleReadinessReader.cpp")
+    target_include_directories(ml_test_ample_readiness PRIVATE "${ML_ROOT}/native/instrument-probe")
+    target_compile_options(ml_test_ample_readiness PRIVATE /utf-8 /EHsc /W4)
+    set_target_properties(ml_test_ample_readiness PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    add_test(NAME ample_readiness_wrapper_subobject_mapping COMMAND ml_test_ample_readiness)
+endif()
 add_executable(ml_node_probe NodeProbe.cpp)
 target_include_directories(ml_node_probe PRIVATE "${JUCE_ROOT}/modules")
 target_compile_definitions(ml_node_probe PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1
