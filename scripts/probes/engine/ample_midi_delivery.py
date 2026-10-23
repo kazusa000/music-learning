@@ -21,6 +21,7 @@ INTAKE_ROOT = ROOT / "data" / "maintenance" / "instrument-intake"
 SOURCE_PRESET_ID = "ample-guitar-lp-4.0.0:41fc3d3f6ba5dcecb9a581f5"
 SOURCE_STATE_SHA256 = "4b2f8bb080b0468b3195ca84b9c227ce1d75240b2dd6c879168a6620ac940e45"
 SOURCE_POSITIVE_WAV_SHA256 = "c31b524c479d9c2e68abab6aea7a3cf30e6c353b5889e0620839a7e76e23962a"
+SOURCE_POSITIVE_REQUEST_SHA256 = "9da35a8fb8d42370337f5bec0d075b66e9301d7ea9cc9f0f3500fadc0287bb83"
 READINESS_MODULE_SHA256 = "4cd985483c2a7d8da15fb7959f8afb3e2d3c917635718262f1a2f6eab93e850e"
 SAMPLE_RATE = 44100
 PROJECT_SAMPLES = SAMPLE_RATE * 5
@@ -30,6 +31,11 @@ NOTE_END = 22050
 NOTE_VELOCITY = 0.35
 TRACE_CAPACITY = 512
 DIAGNOSTIC_ROOT = ROOT / "runtime/build/ample-midi-delivery-07"
+SOURCE_POSITIVE_EVIDENCE = ROOT / (
+    "data/maintenance/instrument-intake/20261021-all/ample/"
+    "lp-factory-fix-20261022-a/items/AGLP/"
+    "41fc3d3f6ba5dcecb9a581f5-Default/attempt-01/probe/AGLP/evidence/first"
+)
 
 ENGINE_PROBES = ROOT / "scripts/probes/engine"
 if str(ENGINE_PROBES) not in sys.path:
@@ -54,6 +60,35 @@ def diagnostic_note() -> dict:
 def expected_midi_velocity() -> float:
     """JUCE/VST3 MIDI 1.0 stores velocity on the 7-bit wire grid."""
     return round(NOTE_VELOCITY * 127) / 127.0
+
+
+def validate_source_positive_evidence(request_bytes: bytes, wav_bytes: bytes) -> dict:
+    """Tie the control note to the exact historical source-positive request and WAV."""
+    if intake.sha256_bytes(request_bytes) != SOURCE_POSITIVE_REQUEST_SHA256:
+        raise ValueError("Source-positive MIDI request evidence SHA changed")
+    if intake.sha256_bytes(wav_bytes) != SOURCE_POSITIVE_WAV_SHA256:
+        raise ValueError("Source-positive WAV evidence SHA changed")
+    request = json.loads(request_bytes)
+    project = request.get("project") if isinstance(request, dict) else None
+    if not isinstance(project, dict) or project.get("sample_rate") != SAMPLE_RATE:
+        raise ValueError("Source-positive request sample rate changed")
+    tracks = project.get("tracks")
+    notes = tracks[0].get("notes") if isinstance(tracks, list) and tracks else None
+    if not isinstance(notes, list) or not notes:
+        raise ValueError("Source-positive request omitted MIDI notes")
+    first = notes[0]
+    expected = {"sample": NOTE_START, "duration_samples": NOTE_END,
+                "note": NOTE_PITCH, "velocity": NOTE_VELOCITY, "channel": 1}
+    if not isinstance(first, dict) or any(first.get(key) != value
+                                          for key, value in expected.items()):
+        raise ValueError("Source-positive note48 timing or velocity changed")
+    return {
+        "request_sha256": SOURCE_POSITIVE_REQUEST_SHA256,
+        "wav_sha256": SOURCE_POSITIVE_WAV_SHA256,
+        "preset_id": SOURCE_PRESET_ID,
+        "native_state_sha256": SOURCE_STATE_SHA256,
+        "note": diagnostic_note(),
+    }
 
 
 def analyze_readiness_trace(midi_delivery: dict) -> dict:
@@ -311,6 +346,10 @@ def run_probe(args) -> int:
     output = intake.validate_intake_output(Path(args.output), ROOT)
     if output.exists():
         raise ValueError("--output must be a new, task-specific intake directory")
+    source_evidence = validate_source_positive_evidence(
+        (SOURCE_POSITIVE_EVIDENCE / "request.json").read_bytes(),
+        (SOURCE_POSITIVE_EVIDENCE / "probe.wav").read_bytes(),
+    )
     record, source = intake._load_source(ROOT, Path(args.release))
     intake.publication_plan_files(Path(args.publication_plan), ROOT)
     active = intake._read_json(ROOT / "runtime/application-release.local.json")
@@ -354,6 +393,7 @@ def run_probe(args) -> int:
             "sample_rate": SAMPLE_RATE,
             "project_duration_samples": PROJECT_SAMPLES,
             "first_reopen": [],
+            "positive_reference": source_evidence,
         },
     }
     intake._atomic_json(progress, report)

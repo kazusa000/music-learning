@@ -100,6 +100,19 @@ def test_source_control_pins_exact_identity_and_note48_event():
     }
 
 
+def test_control_note_is_tied_to_exact_historical_positive_request_and_wav():
+    request = (probe.SOURCE_POSITIVE_EVIDENCE / "request.json").read_bytes()
+    wav = (probe.SOURCE_POSITIVE_EVIDENCE / "probe.wav").read_bytes()
+    evidence = probe.validate_source_positive_evidence(request, wav)
+
+    assert evidence["request_sha256"] == probe.SOURCE_POSITIVE_REQUEST_SHA256
+    assert evidence["wav_sha256"] == probe.SOURCE_POSITIVE_WAV_SHA256
+    assert evidence["note"] == probe.diagnostic_note()
+
+    with pytest.raises(ValueError, match="request evidence SHA"):
+        probe.validate_source_positive_evidence(request + b" ", wav)
+
+
 def test_complete_trace_reports_plugin_audio_cutoff_sample_32767():
     result = probe.analyze_processblock_trace(complete_trace())
 
