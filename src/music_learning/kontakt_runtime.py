@@ -32,6 +32,7 @@ STATIC_VENDOR_RESOURCE_SUFFIXES = {
     ".wav", ".ogg", ".nki", ".nkm", ".nkl", ".nkx", ".nkr", ".ncw",
     ".png", ".jpg", ".jpeg", ".json", ".kscript", ".txt", ".xml", ".dat",
 }
+STATIC_PRESET_CONTAINER_SUFFIXES = {".nkx", ".nkr", ".wav"}
 PREPARATION_STATUS = "resources_prepared_pending_fresh_hash_and_plugin_validation"
 
 
@@ -193,6 +194,12 @@ def _hardlink_candidate(relative: str, size: int) -> bool:
         return suffix in STATIC_BINARY_SUFFIXES
     if folded.startswith(("kontakt 8/content/", "kontakt 8/templates/")):
         return size >= 1024 * 1024 and suffix in STATIC_VENDOR_RESOURCE_SUFFIXES
+    if folded.startswith("kontakt 8/presets/"):
+        # Preset-tree containers and convolution assets are immutable vendor
+        # data. Keep the rule rooted in the shipped Presets tree and a narrow
+        # set of known container/audio formats; never infer eligibility from
+        # an individual filename or from size alone.
+        return size >= 1024 * 1024 and suffix in STATIC_PRESET_CONTAINER_SUFFIXES
     return False
 
 

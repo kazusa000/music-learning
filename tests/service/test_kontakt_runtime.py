@@ -76,6 +76,34 @@ def test_runtime_clone_hardlinks_static_assets_and_copies_profile(tmp_path):
     assert report["formal_project_writes"] == 0
 
 
+@pytest.mark.parametrize("suffix", [".nkx", ".nkr", ".wav"])
+def test_runtime_clone_hardlinks_large_immutable_preset_tree_assets(tmp_path, suffix):
+    source = _source(tmp_path)
+    relative = Path("Kontakt 8/Presets/Effects/Convolution") / ("Vendor Container" + suffix)
+    source_file = source / relative
+    source_file.parent.mkdir(parents=True, exist_ok=True)
+    # A sparse fixture exercises the >64 MiB classification boundary without
+    # writing a large payload or reading it back during this hardlink test.
+    with source_file.open("wb") as stream:
+        stream.truncate(kontakt_runtime.MAX_INDEPENDENT_COPY_BYTES + 1)
+
+    root = tmp_path / "Sound Library"
+    root.mkdir()
+    destination = root / "Kontakt" / "Runtime"
+    report = prepare_runtime(source, destination, allowed_library_root=root,
+                             checkpoint_path=tmp_path / "maint" / "runtime.json")
+
+    assert report["status"] == "prepared", report["failures"]
+    relative_text = relative.as_posix()
+    entry = next(row for row in report["files"] if row["path"] == relative_text)
+    target = destination / relative
+    assert entry["bytes"] > kontakt_runtime.MAX_INDEPENDENT_COPY_BYTES
+    assert entry["profile"] is False
+    assert entry["transfer"] == "hardlink"
+    assert (source_file.stat().st_dev, source_file.stat().st_ino) == (
+        target.stat().st_dev, target.stat().st_ino)
+
+
 def test_runtime_checkpoint_resumes_only_matching_files_and_rejects_conflict(tmp_path):
     source = _source(tmp_path)
     root = tmp_path / "Sound Library"
