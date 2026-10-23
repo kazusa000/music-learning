@@ -1,0 +1,66 @@
+schema	kontakt-source-keymap-v2
+identity	source_nki_sha256	61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161
+identity	source_component_sha256	62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262
+identity	restored_state_sha256	63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363
+identity	plugin_sha256	64646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464
+identity	vst3_class_id	3031323334353637383961626364656630313233343536373839616263646566
+identity	restore_id	6d6f636b2d726573746f72652d3031
+identity	phase	66697273742d6c6f6164
+runtime	kontakt_version	unknown	6e6f20646f63756d656e7465642076657273696f6e2067657474657220696e206369746564207265616420415049
+context	instrument_count	known	n:1
+context	instrument_indices	known	t{n:1=n:0}
+context	selected_instrument_index	known	0
+instrument	name	known	s:4d6f636b2022696e737472756d656e7422205c2070617468
+instrument	midi_channel	known	n:0
+instrument	options	known	t{s:6b65795f72616e67655f66726f6d=n:0,s:6b65795f72616e67655f746f=n:127,s:6b65795f737769746368=n:36,s:76656c6f636974795f72616e67655f66726f6d=n:2}
+option	key_switch	known	n:36
+option	key_range_from	known	n:0
+option	key_range_to	known	n:127
+option	velocity_range_from	known	n:2
+option	velocity_range_to	omitted	z
+instrument	group_count	known	n:1
+enumeration	group_index_base	inferred	zero_based
+index_boundary	group	0	known	known
+index_boundary	group	1	unknown	unknown
+group_index	0
+group	name_0	known	s:4d61696e
+group	start_options_0	known	t{n:1=t{s:6b65795f6d6178=n:1,s:6b65795f6d696e=n:1,s:6d6f6465=s:6b6579}}
+instrument	zone_count	known	n:2
+enumeration	zone_index_base	inferred	zero_based
+index_boundary	zone	0	known	known
+index_boundary	zone	2	unknown	unknown
+zone_index	0
+zone_0	group	known	n:0
+zone_0	low_key	known	n:60
+zone_0	high_key	known	n:60
+zone_0	low_velocity	known	n:1
+zone_0	high_velocity	unsupported	6170695f6d656d6265725f756e617661696c61626c655f6f725f6e6f745f706c61696e5f66756e6374696f6e
+zone_0	root_key	known	n:60
+zone_0	geometry	known	t{s:686967685f6b6579=n:60,s:6c6f775f6b6579=n:60}
+zone_0	sample_presence	absent_nil	z
+zone_index	1
+zone_1	group	known	n:0
+zone_1	low_key	known	n:61
+zone_1	high_key	known	n:61
+zone_1	low_velocity	known	n:1
+zone_1	high_velocity	unsupported	6170695f6d656d6265725f756e617661696c61626c655f6f725f6e6f745f706c61696e5f66756e6374696f6e
+zone_1	root_key	unknown	2e2e2e735c746573745f6b6f6e74616b745f6b65796d61705f7265616c5f6c75615f6d305c7a65726f2d626173656420726571756573742e6c75613a36303a206d6f636b5f6765747465725f657863657074696f6e
+zone_1	geometry	known	t{s:686967685f6b6579=n:60,s:6c6f775f6b6579=n:60}
+zone_1	sample_presence	absent_empty	s:
+instrument	script_capacity	known	n:2
+enumeration	script_index_base	inferred	zero_based
+index_boundary	script	0	known	known
+index_boundary	script	2	unknown	unknown
+script	name_0	known	s:4d6f636b202273637269707422
+script	linked_0	known	b:0
+script	linked_file_0	known	z
+script	bypassed_0	known	b:0
+script	protected_0	known	b:0
+script_source	0	known	6f6e20696e69740a656e64206f6e
+script	name_1	known	s:
+script	linked_1	known	b:0
+script	linked_file_1	known	s:
+script	bypassed_1	known	b:0
+script	protected_1	known	b:0
+script_source	1	known	6f6e20696e69740a656e64206f6e
+summary	metadata_partial	metadata_unknown_count	3

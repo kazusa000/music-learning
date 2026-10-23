@@ -34,6 +34,28 @@ Schema `kontakt-source-keymap-v2` is UTF-8 TSV. Arbitrary strings are UTF-8 hex 
 
 The writer refuses to replace an existing output or `.tmp` file, publishes by rename, caps output at 32 MiB, and caps each captured script at 1 MiB. A consumer must require matching source/state identity across the two independent restores and inferred group/zone bases before interpreting zones as a source key map. If the API does not prove a base or source conditions remain opaque, use the separate all-128-key diagnostic; do not infer keys from preset labels or weaken the three-window validator.
 
+## Bounded Python consumer
+
+[`src/music_learning/kontakt_source_keymap.py`](../../src/music_learning/kontakt_source_keymap.py) provides `parse_file(path, expected_tags)` and `validate_restore_pair(first, reopen)`. The expected tag mapping must contain exactly `output_path`, `source_nki_sha256`, `source_component_sha256`, `restored_state_sha256`, `plugin_sha256`, `vst3_class_id`, `restore_id`, and `phase`. The parser compares the seven identity rows emitted in TSV with the expected values. Since `output_path` is not present in TSV, `parse_file` requires its exact text to match the caller's `output_path` tag; the caller must still verify the tag against the generated request and output receipt separately.
+
+The consumer caps input at 32 MiB, each line at 2 MiB plus 4 KiB, rows at 2,000,000, typed-value nesting at 16 levels, and nodes in each typed value at 200,000. It rejects duplicate fields, invalid/odd hex, inconsistent summary counts, malformed boundaries, and reversed known key or velocity ranges. It preserves raw statuses and payloads. `zones` is `None` when the zone base is unknown; otherwise it contains only known numeric key/velocity values, group association only when the group base is inferred, and explicit sample-presence state. Group start conditions and script conditions remain opaque; each projection reports `conditions_status=unknown`. No candidate MIDI notes or audio profile is produced.
+
+Example consumer call:
+
+```python
+from music_learning.kontakt_source_keymap import parse_file, validate_restore_pair
+
+first = parse_file(first_tsv, first_expected_tags)
+reopen = parse_file(reopen_tsv, reopen_expected_tags)
+pair = validate_restore_pair(first, reopen)
+if first.zones is None or reopen.zones is None:
+    raise ValueError("Kontakt did not prove the source zone index base")
+```
+
+The pair helper checks only caller-declared tags: matching source/component/restored-state/plugin/class values, the requested phase names, and distinct declared restore IDs and output paths. It sets `identity_attested_by_host=False`, `independent_host_restores_verified=False`, and `external_host_evidence_required=True`. It does not prove which source or state Kontakt actually loaded, that the request produced the file at the claimed output path, or that two independent host restores occurred. The caller still needs to join the parsed declarations to saved request bytes, source-before/after hashes, complete restored-state and parameter evidence, pinned host/plugin process receipts, and distinct restore identities before using this metadata beside strict first-load/reopen validation.
+
+The parser fixtures under `tests/service/fixtures/kontakt_source_keymap_v2_mock_*.tsv` are exact saved outputs from the Lua 5.4 contract mock, not Kontakt captures. The zero-based, one-based, and ambiguous-base fixture SHA-256 values are `65b5318a7b8d35fe11eaaa74893ab77f5e7ab17346bd8df024ffd4f116154427`, `69894ba39ef2ae7d950ac8c8105f4fb2fab97383eb2496cb8e3e224c3df96c27`, and `53ee40ca17b2d0ae900f0579571de029ea384022e100c10cfa2cc34b2f0ab031`.
+
 ## Contract validation provenance
 
 The checked-in contract test can execute against a local Lua runtime at `runtime/build/kontakt-lua-contract/bin/lua.exe`. That ignored build target was produced from Lua.org's official Lua 5.4.9 source archive ([download area](https://www.lua.org/ftp/), SHA-256 `2335b6c582a52654f94612bf10d2f4672805d05329aa6568b1d8cd9e5c6fb8e6`) using the repository-owned E-side MSVC toolchain. The executable checks Lua 5.4 syntax and exercises a mocked `Kontakt` userdata/API for known, unknown, unsupported, boundary, output-limit, quoting/path, and no-mutation behavior. It is contract evidence only; it does not show that any Kontakt version exposes these methods or returns the mock values.
