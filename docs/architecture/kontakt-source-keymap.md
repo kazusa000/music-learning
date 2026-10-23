@@ -17,10 +17,12 @@ The cited API pages do not provide a Kontakt build-version getter used here, so 
 Before execution, the external runner fills the eight `@@...@@` constants with Lua-string-safe quoting: output path, exact source NKI SHA-256, source IComponent SHA-256, complete restored-state SHA-256, plug-in SHA-256, VST3 class ID, unique restore ID, and phase (`first-load` or `reopen`). The query expects exactly one already-loaded instrument. The generated request must establish an isolated empty rack, load the exact source NKI through the existing approved Kontakt loader, then append this query with the tags filled. The established process form is:
 
 ```text
-<pinned-ml_kontakt_probe.exe> <new-unique-generated-request.lua>
+<pinned-Kontakt-8-standalone.exe> <new-unique-generated-request.lua>
 ```
 
-Run only after the source-access and storage gates pass. Keep each generated request and output under a new E-side evidence directory. Repeat in a second independent empty-rack restore with a different restore ID/output path and phase `reopen`. This query is not an audio pass and does not validate the candidate three-window MIDI profile. Actual first-load/reopen audio and full-state checks must still use the existing strict thresholds in both restores.
+The executable here is the prepared runtime's `Kontakt 8.exe`, using the same Lua argument protocol as `kontakt_runner.py`. `ml_kontakt_probe.exe` accepts native-host JSON requests; it does not execute this Lua. `kontakt_source_query.render_source_query` composes the query with the existing empty-rack source-loading sequence, checks the returned slot and source-receipt name, and refuses an existing output before changing the disposable rack. `source_query_command` builds the standalone command. Neither helper starts a process or accesses H.
+
+Run only after the source-access and storage gates pass and the original full batch has finished. Keep each generated request and output under a new E-side evidence directory. A second independent source query can use a distinct restore ID/output and phase `reopen`, but this is an NKI source reload, not a VST3-state restore. The state tags merely link to separate capture evidence. The caller must pin and recheck the source and executable, record the actual owned process and its completion, and parse the output after release. This query is not an audio pass and does not validate the candidate three-window MIDI profile. Actual first-load/reopen audio and full-state checks must still use the existing strict thresholds in both independent empty VST3 racks.
 
 ## Output schema
 

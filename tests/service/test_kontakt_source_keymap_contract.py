@@ -66,7 +66,8 @@ def test_kontakt_keymap_doc_records_primary_api_provenance_and_invocation():
     assert "docs.native-instruments.com/ni-tech-manuals/kontakt-api-reference-manual/en/multi" in doc
     assert "docs.native-instruments.com/ni-tech-manuals/kontakt-api-reference-manual/en/group" in doc
     assert "docs.native-instruments.com/ni-tech-manuals/kontakt-api-reference-manual/en/zone" in doc
-    assert "ml_kontakt_probe.exe" in doc
+    assert "<pinned-Kontakt-8-standalone.exe> <new-unique-generated-request.lua>" in doc
+    assert "it does not execute this Lua" in doc
     assert "kontakt-source-keymap-v2" in doc
     assert "do not specify their bases" in doc
 
