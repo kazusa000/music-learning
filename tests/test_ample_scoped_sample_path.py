@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 import math
@@ -233,6 +234,135 @@ def test_riff_event_profile_requires_explicit_trigger_and_uses_factory_tempo(tmp
     assert project["tracks"][0]["notes"][0]["velocity"] > project["tracks"][0]["notes"][1]["velocity"]
     assert window["start_sample"] == 22050
     assert window["end_sample"] == 6 * 44100 - 11025
+
+
+def test_source_pinned_strummer_profile_builds_chord_and_sequence_events(tmp_path):
+    root = ET.Element("AEG_STATE", {"Name": "Strummer factory state"})
+    for name, value in {
+        "S-Strum Toggle": "1",
+        "S-Chord Mode": "1",
+        "S-SEQ Sync Tog": "1",
+        "S-SEQ Play Tog": "0",
+        "S-Chord Index": "2",
+        "S-Pattern Index": "4",
+    }.items():
+        ET.SubElement(root, "Parameter", {"Name": name, "Value": value})
+    chords = ET.SubElement(root, "Chords")
+    ET.SubElement(chords, "Chord", {"ID": "3", "Root": "D", "Type": "Min", "Pos": "2"})
+    pattern = ET.SubElement(root, "Pattern", {
+        "ID": "5", "Name": "Factory five", "BPM": "130",
+        "Time-Signature": "4/4", "Quantize": "1/16",
+    })
+    ET.SubElement(pattern, "Note", {"Note": "72", "Velocity": "96", "Begin": "1", "End": "16"})
+    factory = tmp_path / "strummer.aglpstate"
+    factory.write_bytes(ET.tostring(root, encoding="utf-8"))
+    digest = hashlib.sha256(factory.read_bytes()).hexdigest()
+    profile, mapping = ample.profile_from_factory(
+        factory, product="AGLP", expected_sha256=digest)
+
+    validated, validated_mapping = ample.validate_factory_event_profile({
+        "instrument": "AGLP", "factory_xml": str(factory), "factory_sha256": digest,
+        "event_profile": profile, "event_profile_evidence": mapping,
+    })
+    project, window = ample.performance_event_project(validated, 44100)
+
+    assert validated == profile
+    assert validated_mapping == mapping
+    assert [note["note"] for note in project["tracks"][0]["notes"]] == [74, 26, 56]
+    assert [note["sample"] for note in project["tracks"][0]["notes"]] == [0, 2, 4]
+    assert project["tracks"][0]["notes"][0]["velocity"] == pytest.approx(1 / 127)
+    assert project["tempo"] == [{"sample": 0, "bpm": 130.0}]
+    assert project["meter"] == [{"sample": 0, "numerator": 4, "denominator": 4}]
+    assert project["duration_samples"] == round(44100 * 60 / 130 * 4) + 4
+    assert window["end_sample"] == project["duration_samples"] - 11025
+    assert window["profile_sha256"] == ample.performance_profile_phrase(
+        profile, sample_rate=44100)["profile_sha256"]
+
+
+def test_first_and_reopen_probe_accept_source_pinned_strummer_events(tmp_path):
+    root = ET.Element("AEG_STATE", {"Name": "Strummer factory state"})
+    for name, value in {
+        "S-Strum Toggle": "1", "S-Chord Mode": "0", "S-SEQ Sync Tog": "1",
+        "S-SEQ Play Tog": "0", "S-Chord Index": "0", "S-Pattern Index": "0",
+    }.items():
+        ET.SubElement(root, "Parameter", {"Name": name, "Value": value})
+    chords = ET.SubElement(root, "Chords")
+    ET.SubElement(chords, "Chord", {"ID": "1", "Root": "C", "Type": "Maj", "Pos": "1"})
+    pattern = ET.SubElement(root, "Pattern", {
+        "ID": "1", "Name": "Factory one", "BPM": "120",
+        "Time-Signature": "4/4", "Quantize": "1/16",
+    })
+    ET.SubElement(pattern, "Note", {"Note": "72", "Velocity": "96", "Begin": "1", "End": "16"})
+    factory = tmp_path / "strummer.aglpstate"
+    factory.write_bytes(ET.tostring(root, encoding="utf-8"))
+    digest = hashlib.sha256(factory.read_bytes()).hexdigest()
+    profile, _ = ample.profile_from_factory(factory, product="AGLP", expected_sha256=digest)
+
+    class FakeHost:
+        def __init__(self, diagnostics):
+            self.diagnostics = diagnostics
+            self.diagnostics.mkdir(parents=True)
+            self.calls = []
+
+        def call(self, request, timeout):
+            self.calls.append(request)
+            call_dir = self.diagnostics / f"call-{len(self.calls)}"
+            call_dir.mkdir()
+            (call_dir / "request.json").write_text(json.dumps(request), encoding="utf-8")
+            project = request["project"]
+            plugin = dict(project["tracks"][0]["plugins"][0],
+                          name="Ample Guitar LP", parameters_readback=[{"id": "gain", "value": 0.5}],
+                          state_base64="eA==", state_sha256="x")
+            snapshot = json.loads(json.dumps(project))
+            snapshot["tracks"][0]["plugins"] = [plugin]
+            wav_path = Path(request["output_path"])
+            channels, sample_rate = 2, project["sample_rate"]
+            frames = project["duration_samples"] + project["tail_samples"]
+            fmt = struct.pack("<HHIIHH", 3, channels, sample_rate,
+                              sample_rate * channels * 4, channels * 4, 32)
+            audio = struct.pack("<ff", 0.1, 0.1) * frames
+            chunks = (b"fmt " + struct.pack("<I", len(fmt)) + fmt
+                      + b"data" + struct.pack("<I", len(audio)) + audio)
+            wav_path.write_bytes(b"RIFF" + struct.pack("<I", 4 + len(chunks)) + b"WAVE" + chunks)
+            (call_dir / "response.json").write_text(json.dumps({"snapshot": snapshot}), encoding="utf-8")
+            (call_dir / "execution.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+            return {"rms": 0.1, "peak": 0.2, "clipped_samples": 0, "snapshot": snapshot}
+
+    probe_dir = tmp_path / "strummer-probe"
+    host = FakeHost(probe_dir / "calls")
+    captured, metrics = ample.ample_native_probe(
+        host, {"id": "AGLP", "preset_path": "factory.vstpreset"}, probe_dir,
+        event_profile=profile,
+    )
+
+    assert len(host.calls) == 2
+    assert [[note["note"] for note in call["project"]["tracks"][0]["notes"]]
+            for call in host.calls] == [[24, 48], [24, 48]]
+    assert metrics["parameter_restore"] is True
+    assert metrics["event_profile"]["kind"] == "ample_strummer_sequence"
+    assert metrics["post_trigger_window"]["rms"] > 0
+    assert metrics["reopened_post_trigger_window"]["rms"] > 0
+    assert captured["parameters_readback"] == [{"id": "gain", "value": 0.5}]
+
+
+def test_source_pinned_event_profile_rejects_outdated_mapping_evidence(tmp_path):
+    factory = tmp_path / "strummer.aglpstate"
+    factory.write_text(
+        '<AEG_STATE Name="Source"><Riff Name="Riff" Type="Riff" '
+        'Tempo="60" Time-Signature="4/4" Measures="1"/>'
+        '</AEG_STATE>', encoding="utf-8")
+    digest = hashlib.sha256(factory.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match="source-pinned performance mapping"):
+        ample.validate_factory_event_profile({
+            "instrument": "AGM", "factory_xml": str(factory), "factory_sha256": digest,
+            "event_profile": {"schema_version": 1, "kind": "riff_toggle",
+                              "factory_riff_sha256": digest, "riff_name": "Riff",
+                              "riff_type": "Riff", "tempo_bpm": 60,
+                              "numerator": 4, "denominator": 4, "bars": 1,
+                              "trigger_note": 94, "trigger_velocity": 1,
+                              "stop_velocity": 1 / 127},
+            "event_profile_evidence": {"mapping_id": "old-untyped-riff-map"},
+        })
 
 
 def test_native_call_evidence_uses_short_intake_root_for_nested_retry_attempts(tmp_path):

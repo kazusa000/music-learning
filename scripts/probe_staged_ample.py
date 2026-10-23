@@ -25,7 +25,10 @@ from music_learning.ample_library import inspect_sample_directory  # noqa: E402
 from music_learning.ample_riffer_mapping import profile_from_factory  # noqa: E402
 from music_learning.ample_presets import prepare, verify_state  # noqa: E402
 from music_learning.instrument_probe_budget import loading_budget, timeout_outcome  # noqa: E402
-from music_learning.instrument_performance_profiles import validate as validate_performance_profile  # noqa: E402
+from music_learning.instrument_performance_profiles import (  # noqa: E402
+    trigger_phrase as performance_profile_phrase,
+    validate as validate_performance_profile,
+)
 from music_learning.vst3_state import LIMIT  # noqa: E402
 
 ROOT = workspace_root(__file__)
@@ -123,45 +126,57 @@ def factory_riff_event_profile(path, *, trigger_note, bars=1,
                 trigger_velocity=trigger_velocity, stop_velocity=stop_velocity)
 
 
-def riff_event_project(profile, sample_rate):
-    """Create a host-synced Riffer trigger probe without changing preset state."""
-    if profile.get("schema_version") != 1 or profile.get("kind") != "riff_toggle":
-        raise ValueError("Unsupported Ample event probe profile")
-    bpm = float(profile["tempo_bpm"])
-    numerator = int(profile["numerator"])
-    denominator = int(profile["denominator"])
-    bars = int(profile["bars"])
-    trigger_note = int(profile["trigger_note"])
-    trigger_velocity = float(profile["trigger_velocity"])
-    stop_velocity = float(profile["stop_velocity"])
-    if not (math.isfinite(bpm) and 1 <= bpm <= 1000
-            and 1 <= numerator <= 64 and 1 <= denominator <= 64
-            and denominator & (denominator - 1) == 0
-            and 1 <= bars <= 16 and 0 <= trigger_note <= 127
-            and 0 < trigger_velocity <= 1 and 0 < stop_velocity < trigger_velocity):
-        raise ValueError("Invalid Ample event probe profile values")
-    beats_per_bar = numerator * 4.0 / denominator
-    duration_samples = round(sample_rate * 60.0 / bpm * beats_per_bar * bars)
-    if duration_samples < sample_rate:
-        raise ValueError("Riffer probe must include at least one second of host playback")
-    notes = [
-        dict(sample=0, duration_samples=1, note=trigger_note,
-             velocity=trigger_velocity, channel=1),
-        dict(sample=duration_samples - 1, duration_samples=1, note=trigger_note,
-             velocity=stop_velocity, channel=1),
-    ]
+def performance_event_project(profile, sample_rate):
+    """Create the exact source-pinned Ample performance phrase in a host project."""
+    profile = validate_performance_profile(profile)
+    phrase = performance_profile_phrase(profile, sample_rate=sample_rate)
+    duration_samples = phrase["duration_samples"]
     analysis_start = min(sample_rate // 2, duration_samples // 4)
     analysis_end = duration_samples - sample_rate // 4
     if analysis_end <= analysis_start:
-        raise ValueError("Riffer probe has no post-trigger analysis window")
-    project = dict(revision_id="ample-riff-event-probe", sample_rate=sample_rate,
-                   block_size=512, duration_samples=duration_samples,
-                   tail_samples=sample_rate,
-                   tempo=[dict(sample=0, bpm=bpm)],
-                   meter=[dict(sample=0, numerator=numerator, denominator=denominator)],
-                   tracks=[dict(id="preset", gain_db=-12, plugins=[], notes=notes)])
+        raise ValueError("Ample performance profile has no post-trigger analysis window")
+    project = dict(
+        revision_id="ample-source-performance-probe",
+        sample_rate=sample_rate,
+        block_size=512,
+        duration_samples=duration_samples,
+        tail_samples=phrase["tail_samples"],
+        tempo=phrase["tempo"],
+        meter=phrase["meter"],
+        tracks=[dict(id="preset", gain_db=-12, plugins=[], notes=phrase["notes"])],
+    )
     return project, dict(start_sample=analysis_start, end_sample=analysis_end,
-                         sample_rate=sample_rate)
+                         sample_rate=sample_rate, phrase=phrase["phrase"],
+                         profile_sha256=phrase["profile_sha256"])
+
+
+def riff_event_project(profile, sample_rate):
+    """Compatibility wrapper for existing Riffer-only diagnostic callers."""
+    if profile.get("kind") != "riff_toggle":
+        raise ValueError("Expected an Ample Riffer toggle profile")
+    return performance_event_project(profile, sample_rate)
+
+
+def validate_factory_event_profile(item):
+    """Rebuild and compare either supported Ample profile from the pinned factory source."""
+    profile = item.get("event_profile")
+    if profile is None:
+        return None, None
+    if not isinstance(profile, dict):
+        raise ValueError("Ample event profile must be an object")
+    factory_sha256 = item.get("factory_sha256")
+    factory_xml = item.get("factory_xml")
+    instrument = item.get("instrument")
+    if not all(isinstance(value, str) and value for value in
+               (factory_sha256, factory_xml, instrument)):
+        raise ValueError("A source-pinned Ample event profile requires factory identity and path")
+    profile = validate_performance_profile(profile, expected_source_sha256=factory_sha256)
+    bars = profile["bars"] if profile["kind"] == "riff_toggle" else None
+    generated, mapping_evidence = profile_from_factory(
+        factory_xml, product=instrument, expected_sha256=factory_sha256, bars=bars)
+    if profile != generated or item.get("event_profile_evidence") != mapping_evidence:
+        raise ValueError("Ample event profile differs from the source-pinned performance mapping")
+    return profile, mapping_evidence
 
 
 def _wav_window_metrics(path, window):
@@ -260,7 +275,7 @@ def ample_native_probe(host, spec, directory, *, validate_state=None,
     rate = 44100
     window = None
     if event_profile:
-        project, window = riff_event_project(event_profile, rate)
+        project, window = performance_event_project(event_profile, rate)
         project["tracks"][0]["plugins"] = [spec]
     else:
         pitches = (48, 60, 72)
@@ -277,7 +292,7 @@ def ample_native_probe(host, spec, directory, *, validate_state=None,
     if window:
         first_window = _wav_window_metrics(evidence / "first" / "probe.wav", window)
         if first_window["rms"] < 1e-6 or first_window["peak"] <= 0:
-            raise ValueError("Factory Riffer produced no instrument audio after the trigger")
+            raise ValueError("Factory Ample performance profile produced no post-trigger audio")
     second = render("reopen", dict(schema_version=1, action="render", project=first["snapshot"]),
                     "restored-probe.wav")
     if second["rms"] < 1e-6:
@@ -286,7 +301,7 @@ def ample_native_probe(host, spec, directory, *, validate_state=None,
     if window:
         reopened_window = _wav_window_metrics(evidence / "reopen" / "restored-probe.wav", window)
         if reopened_window["rms"] < 1e-6 or reopened_window["peak"] <= 0:
-            raise ValueError("Restored factory Riffer produced no instrument audio after the trigger")
+            raise ValueError("Restored Ample performance profile produced no post-trigger audio")
     first_plugin, reopened_plugin = (first["snapshot"]["tracks"][0]["plugins"][0],
                                      second["snapshot"]["tracks"][0]["plugins"][0])
     if validate_state:
@@ -385,20 +400,7 @@ def main():
                         scope = "factory variant first/reopen audio, sample database and parameter readback; not library admission"
                     event_profile = item.get("event_profile")
                     if event_profile is not None:
-                        if not isinstance(event_profile, dict) or event_profile.get("kind") != "riff_toggle":
-                            raise ValueError("Ample probes require a validated Riffer event profile")
-                        factory_sha256 = item.get("factory_sha256")
-                        if not isinstance(factory_sha256, str):
-                            raise ValueError("A Riffer event profile requires the exact factory-state SHA-256")
-                        event_profile = validate_performance_profile(
-                            event_profile, expected_source_sha256=factory_sha256)
-                        generated_profile, mapping_evidence = profile_from_factory(
-                            item["factory_xml"], product=instrument,
-                            expected_sha256=factory_sha256,
-                            bars=event_profile["bars"])
-                        if (event_profile != generated_profile
-                                or item.get("event_profile_evidence") != mapping_evidence):
-                            raise ValueError("Riffer event profile differs from the official source-pinned mapping")
+                        event_profile, mapping_evidence = validate_factory_event_profile(item)
                     captured, metrics = ample_native_probe(host, spec, directory,
                                                            validate_state=validator,
                                                            event_profile=event_profile,
@@ -407,7 +409,10 @@ def main():
                     result.update(status="passed", metrics=metrics, scope=scope,
                                   evidence_index=str((directory / "evidence-index.json").relative_to(run)))
                     if event_profile:
-                        result["scope"] = "factory Riffer trigger with source tempo/meter and first/reopen post-trigger audio; not library admission"
+                        result["scope"] = (
+                            "source-pinned factory Riffer/Strummer performance with host tempo/meter "
+                            "and first/reopen post-trigger audio; not library admission"
+                        )
                         result["event_profile"] = event_profile
                         result["event_profile_evidence"] = mapping_evidence
             except (OSError, ValueError, NativeHostError) as error:
