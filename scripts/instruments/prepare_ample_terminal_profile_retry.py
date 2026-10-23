@@ -20,6 +20,10 @@ def main() -> None:
     parser.add_argument("--source-run", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--native-host", type=Path, required=True)
+    parser.add_argument(
+        "--failed-id", action="append", default=None,
+        help="Select an exact failed-only subset; repeat once per source item ID.",
+    )
     args = parser.parse_args()
 
     intake_root = (ROOT / "data/maintenance/instrument-intake").resolve()
@@ -35,7 +39,7 @@ def main() -> None:
         raise SystemExit("Native host must be a regular fixed executable")
 
     queue, status = build_terminal_profile_correction_queue(
-        args.source_run, repository_root=ROOT,
+        args.source_run, repository_root=ROOT, failed_item_ids=args.failed_id,
     )
     output.mkdir(parents=True, exist_ok=False)
     atomic_json(output / "queue.json", queue)
@@ -58,6 +62,7 @@ def main() -> None:
         "pin_manifest_sha256": sha256(pinned_root / "pin.json"),
         "host_sha256": pin.get("host_sha256"),
         "selection": queue["selection"],
+        "exact_failed_id_selection": args.failed_id,
         "automatic_retry": False,
         "formal_project_writes": 0,
         "catalog_writes": 0,

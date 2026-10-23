@@ -153,6 +153,49 @@ def test_terminal_profile_correction_uses_attempt_receipts_when_summary_report_i
     assert all(item["retry_batch_origin"]["attempts_sha256"] for item in queue["items"])
 
 
+def test_explicit_failed_selection_is_exact_and_can_revalidate_hm2_failures(tmp_path):
+    run, originals = _terminal_run(tmp_path)
+    selected_ids = [
+        hashlib.sha256(b"failed-hm2").hexdigest()[:24],
+        hashlib.sha256(b"failed-riff").hexdigest()[:24],
+    ]
+
+    queue, status = build_terminal_profile_correction_queue(
+        run, repository_root=tmp_path / "checkout", failed_item_ids=selected_ids,
+        active_process_scan=lambda _: [],
+    )
+
+    assert {item["id"] for item in queue["items"]} == set(selected_ids)
+    assert queue["selection"]["explicit_failed_item_ids"] == selected_ids
+    assert queue["selection"]["hm2_parameter_readback_failures_excluded"] == []
+    assert queue["selection"]["failed_items_selected"] == 2
+    assert status["requested"] == 2
+    assert (run / "queue.json").read_bytes() == originals["queue"]
+    assert (run / "status.json").read_bytes() == originals["status"]
+
+
+def test_explicit_failed_selection_rejects_nonfailure_and_unknown_ids(tmp_path):
+    run, _ = _terminal_run(tmp_path)
+    passed_id = hashlib.sha256(b"passed-riff").hexdigest()[:24]
+    unknown_id = "0" * 24
+
+    with pytest.raises(RetryPlanningError, match="not a terminal failure"):
+        build_terminal_profile_correction_queue(
+            run, repository_root=tmp_path / "checkout", failed_item_ids=[passed_id],
+            active_process_scan=lambda _: [],
+        )
+    with pytest.raises(RetryPlanningError, match="absent from the terminal source queue"):
+        build_terminal_profile_correction_queue(
+            run, repository_root=tmp_path / "checkout", failed_item_ids=[unknown_id],
+            active_process_scan=lambda _: [],
+        )
+    with pytest.raises(RetryPlanningError, match="unique non-empty IDs"):
+        build_terminal_profile_correction_queue(
+            run, repository_root=tmp_path / "checkout", failed_item_ids=[unknown_id, unknown_id],
+            active_process_scan=lambda _: [],
+        )
+
+
 def test_terminal_profile_correction_fails_closed_on_live_process_or_status_mismatch(tmp_path):
     run, _ = _terminal_run(tmp_path)
     with pytest.raises(RetryPlanningError, match="process still references"):

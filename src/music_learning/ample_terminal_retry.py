@@ -102,6 +102,7 @@ def build_terminal_profile_correction_queue(
     source_run_path: str | Path,
     *,
     repository_root: str | Path,
+    failed_item_ids: Iterable[str] | None = None,
     active_process_scan: Callable[[Iterable[Path]], list[dict]] = find_active_ample_processes,
 ) -> tuple[dict, dict]:
     """Select terminal failures and changed-profile controls from a fixed run.
@@ -112,6 +113,14 @@ def build_terminal_profile_correction_queue(
     are explicitly deferred; other failures remain eligible. Previously passed
     items are selected only when current source-derived profile/evidence differs.
     """
+    requested_ids = None if failed_item_ids is None else list(failed_item_ids)
+    if requested_ids is not None and (
+            not requested_ids
+            or any(not isinstance(item_id, str) or not item_id for item_id in requested_ids)
+            or len(requested_ids) != len(set(requested_ids))):
+        raise RetryPlanningError("Explicit failed-item selection must contain unique non-empty IDs")
+    requested_id_set = set(requested_ids or ())
+
     root = Path(repository_root).resolve(strict=True)
     intake = (root / "data/maintenance/instrument-intake").resolve(strict=True)
     run_dir = _within(Path(source_run_path), intake, "source run")
@@ -163,7 +172,9 @@ def build_terminal_profile_correction_queue(
     for original in items:
         state = original["status"]
         error = _item_error(original)
-        if state == "failed" and error and _HM2_MISMATCH.fullmatch(error):
+        explicitly_requested = requested_ids is not None and original["id"] in requested_id_set
+        if (state == "failed" and error and _HM2_MISMATCH.fullmatch(error)
+                and not explicitly_requested):
             excluded_hm2.append({
                 "instrument": original["instrument"], "id": original["id"],
                 "name": original["name"],
@@ -173,7 +184,14 @@ def build_terminal_profile_correction_queue(
                 "reason": "preserved pending shared HM2 state/readback diagnosis",
             })
             continue
-        if state not in {"failed", "passed"}:
+        if requested_ids is not None:
+            if not explicitly_requested:
+                continue
+            if state != "failed":
+                raise RetryPlanningError(
+                    f"Explicit retry item is not a terminal failure: {original['id']} ({state})"
+                )
+        elif state not in {"failed", "passed"}:
             continue
 
         factory_path = Path(original.get("factory_xml", ""))
@@ -230,6 +248,15 @@ def build_terminal_profile_correction_queue(
             item.pop(key, None)
         selected.append(item)
 
+    if requested_ids is not None:
+        selected_ids = {item["id"] for item in selected}
+        missing = [item_id for item_id in requested_ids if item_id not in selected_ids]
+        if missing:
+            raise RetryPlanningError(
+                "Explicit failed-item selection is absent from the terminal source queue: "
+                + ", ".join(missing)
+            )
+
     if not selected:
         raise RetryPlanningError("No failed items or changed-profile pass controls are eligible")
     selected_counts = dict(sorted(Counter(item["instrument"] for item in selected).items()))
@@ -247,6 +274,7 @@ def build_terminal_profile_correction_queue(
         "selection": {
             "failed_items_selected": selected_failed,
             "changed_profile_pass_controls_selected": changed_pass_controls,
+            "explicit_failed_item_ids": requested_ids,
             "hm2_parameter_readback_failures_excluded": excluded_hm2,
             "passed_items_unchanged_excluded": unchanged_pass_controls,
             "terminal_noneligible_items_excluded": sum(
