@@ -26,6 +26,7 @@ from music_learning.instrument_intake_publication import (
 )
 from music_learning.ample_publication import PRODUCTS, candidate_for_factory, identity_verifier
 from music_learning.vst3_state import ALPHABET, vst3_preset
+from music_learning.instrument_preview_audio import phrase_spec
 
 
 PLUGIN_BYTES = b"isolated external-intake plugin fixture"
@@ -42,15 +43,16 @@ def _identity(_candidate, plugin):
     return {"factory_name": name}
 
 
-def _write_wav(path):
+def _write_wav(path, frames=512):
     path.parent.mkdir(parents=True, exist_ok=True)
+    sample_values = (4096, -4096) * ((frames + 1) // 2)
     with wave.open(str(path), "wb") as stream:
         stream.setnchannels(2)
         stream.setsampwidth(2)
         stream.setframerate(44100)
         stream.writeframes(b"".join(
             struct.pack("<hh", sample, sample)
-            for sample in (4096, -4096) * 256
+            for sample in sample_values[:frames]
         ))
     return path
 
@@ -94,12 +96,26 @@ def _run_artifacts(root, phase, candidate, factory_name, state_builder, identity
     }
     if candidate.get("library_id") == PRODUCTS["AGSC"]["library_id"]:
         plugin["version"] = "4.0.1"
-    plugin["native_identity"] = identity_reader({}, plugin)
+    plugin["native_identity"] = identity_reader(candidate, plugin)
+    phrase = phrase_spec(candidate)
     request = phase_root / "request.json"
-    request.write_text(json.dumps({"project": {"tracks": [{"plugins": [{
-        "binary_sha256": PLUGIN_SHA,
-        "identifier": IDENTIFIER,
-    }]}]}}), encoding="utf-8")
+    request.write_text(json.dumps({"project": {
+        "sample_rate": 44100,
+        "duration_samples": phrase["duration_samples"],
+        "tail_samples": phrase["tail_samples"],
+        "tempo": phrase["tempo"],
+        "meter": phrase["meter"],
+        "tracks": [{
+            "notes": phrase["notes"],
+            "controllers": phrase["controllers"],
+            "plugins": [{
+                "path": candidate["plugin_path"],
+                "binary_sha256": PLUGIN_SHA,
+                "identifier": IDENTIFIER,
+                "vst3_class_id": CLASS_ID,
+            }],
+        }],
+    }}), encoding="utf-8")
     response = phase_root / "response.json"
     response.write_text(json.dumps({"ok": True, "result": {
         "rms": 4096 / 32768,
@@ -111,7 +127,8 @@ def _run_artifacts(root, phase, candidate, factory_name, state_builder, identity
     execution.write_text(json.dumps({"status": "completed", "exit_code": 0}), encoding="utf-8")
     state = phase_root / "captured-state.json"
     state.write_text(json.dumps(plugin), encoding="utf-8")
-    audio = _write_wav(phase_root / "probe.wav")
+    audio = _write_wav(phase_root / "probe.wav",
+                       phrase["duration_samples"] + phrase["tail_samples"])
     return {key: artifact_ref(path, root) for key, path in {
         "request": request,
         "response": response,
@@ -312,7 +329,15 @@ def _candidate(kind, library_root):
     ample_candidate["vst3_class_id"] = CLASS_ID
 
     def state_builder(_name):
-        return _ample_state(factory_xml)
+        loaded_state = ET.fromstring(factory_xml)
+        if not any(node.get("Name") == "R-Sync Host Playback Toggle"
+                   for node in loaded_state.findall("Parameter")):
+            # Ample SC persists this host-only control in the loaded component
+            # state even though individual factory presets omit it.
+            ET.SubElement(loaded_state, "Parameter", {
+                "Name": "R-Sync Host Playback Toggle", "Value": "0",
+            })
+        return _ample_state(ET.tostring(loaded_state, encoding="utf-8"))
 
     return ample_candidate, sample, state_builder, identity_verifier().verify
 
@@ -334,8 +359,6 @@ def _intake_fixture(tmp_path, settings, kind):
     assert set(normalized["resources"]) == {candidate["entrypoint"], "manifests/library.json"}
     assert sample.relative_to(library_root / candidate["bank_root"]).as_posix() not in normalized["resources"]
     if kind == "ample_strummer_sequence":
-        from music_learning.instrument_preview_audio import phrase_spec
-
         phrase = phrase_spec(normalized)
         profile = normalized["performance_profile"]
         chord_note_index = 0
