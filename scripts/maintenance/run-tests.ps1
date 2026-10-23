@@ -22,9 +22,13 @@ $code = 1
 $record = @{id=$id;temporary=$temporary;arguments=$PytestArgs;keep_requested=[bool]$KeepFixtures}
 $previousPythonPath = $env:PYTHONPATH
 $previousBytecode = $env:PYTHONDONTWRITEBYTECODE
+$previousTestResources = $env:MUSIC_LEARNING_TEST_RESOURCE_ROOT
 try {
     $env:PYTHONPATH = (Join-Path $workspace 'src')+';'+(Join-Path $workspace 'scripts')
     $env:PYTHONDONTWRITEBYTECODE = '1'
+    # Frozen source releases share installed test dependencies and read-only
+    # inventories, while all generated fixtures remain in the owned tmp root.
+    $env:MUSIC_LEARNING_TEST_RESOURCE_ROOT = $workspace
     $process = Start-Process -FilePath $python -ArgumentList (($parameters | ForEach-Object { Quote-Argument $_ }) -join ' ') -WorkingDirectory $workspace -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $reports ($id+'.log')) -RedirectStandardError (Join-Path $reports ($id+'.stderr.log'))
     $nativeHandle = $process.Handle
     $process.WaitForExit(); $process.Refresh(); $code=$process.ExitCode
@@ -32,6 +36,7 @@ try {
 } finally {
     $env:PYTHONPATH = $previousPythonPath
     $env:PYTHONDONTWRITEBYTECODE = $previousBytecode
+    $env:MUSIC_LEARNING_TEST_RESOURCE_ROOT = $previousTestResources
     $users = Get-CleanupPathUsers $temporary
     if ($KeepFixtures -or $users.Count) { $record.retained=$true; $record.active_pids=$users; Write-Warning "Temporary fixtures retained: $temporary" }
     else { $record.cleanup=Remove-OwnedCleanupTree $temporary (Join-Path $workspace 'data\tmp\tests') -RemoveCreatedLinks }

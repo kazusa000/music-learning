@@ -110,7 +110,7 @@ def test_readonly_discussion_can_discover_presets_with_pinned_track(service, pro
         async def request(self, method, params, **kwargs):
             if method == "turn/start":
                 names = {tool["name"] for tool in self.instructions["dynamicTools"]}
-                assert names == {"music_query", "production_query"}
+                assert names == {"music_query", "production_query", "notes_read", "notes_write"}
                 response = await self.handler(
                     {"tool": "production_query", "arguments": {"preset_search": ""}}
                 )

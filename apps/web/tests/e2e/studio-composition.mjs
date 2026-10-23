@@ -1,7 +1,12 @@
-import {chromium} from 'playwright';
 import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+// The source under test may be an immutable release without node_modules.
+// Resolve only the installed test dependency from the runner's resource root.
+const dependencyAnchor=process.env.MUSIC_LEARNING_TEST_RESOURCE_ROOT
+ ?path.join(process.env.MUSIC_LEARNING_TEST_RESOURCE_ROOT,'apps/web/package.json'):import.meta.url;
+const {chromium}=createRequire(dependencyAnchor)('playwright');
 const root=path.resolve(process.argv[2]),f=JSON.parse(await readFile(path.join(root,'fixture.json'),'utf8'));
 const base='http://127.0.0.1:'+f.port,report={checks:[],errors:[]},out=f.report;
 async function call(operation,args={},revision){const r=await fetch(base+'/v1/commands',{method:'POST',headers:{Authorization:'Bearer '+f.token,'Content-Type':'application/json'},body:JSON.stringify({operation,arguments:args,expected_revision:revision??null,idempotency_key:crypto.randomUUID().replaceAll('-','')})});const data=await r.json();assert(data.ok,JSON.stringify(data.error));return data.result;}

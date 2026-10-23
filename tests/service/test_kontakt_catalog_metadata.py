@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,8 @@ from music_learning.kontakt_catalog_metadata import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-INVENTORY_DIR = ROOT / "data/maintenance/instrument-intake/20261021-batch-v2/inventory"
+RESOURCE_ROOT = Path(os.environ.get("MUSIC_LEARNING_TEST_RESOURCE_ROOT", ROOT))
+INVENTORY_DIR = RESOURCE_ROOT / "data/maintenance/instrument-intake/20261021-batch-v2/inventory"
 INVENTORIES = [
     INVENTORY_DIR / "kontakt-factory.json",
     INVENTORY_DIR / "css.json",
