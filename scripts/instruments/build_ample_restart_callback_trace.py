@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "runtime/build/ample-pump-cadence-03/source"
 JUCE = ROOT / "runtime/third-party/JUCE"
 PLAN = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix/pump-cadence-control-03/prepared-plan.json"
-OUT = ROOT / "runtime/build/ample-restart-callback-trace-03"
-EVIDENCE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix/restart-callback-trace-03"
+OUT = ROOT / "runtime/build/ample-restart-callback-trace-04"
+EVIDENCE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix/restart-callback-trace-04"
 COMMON = Path("modules/juce_audio_processors_headless/format_types/juce_VST3Common.h")
 IMPL = Path("modules/juce_audio_processors_headless/format_types/juce_VST3PluginFormatImpl.h")
 TRACE_JUCE = Path("modules/juce_audio_processors_headless/format_types/MLVst3RestartCallbackTrace.h")
@@ -135,8 +135,8 @@ def patch_impl(path: Path) -> dict:
         ("        warnOnFailure (holder->component->setActive (true));\n"
          "        warnOnFailureIfImplemented (processor->setProcessing (true));\n\n"
          "        isActive = true;",
-         "        warnOnFailure (ml::vst3_restart_trace::call_set_active (holder->component, true));\n"
-         "        warnOnFailureIfImplemented (ml::vst3_restart_trace::call_set_processing (processor, true));\n\n"
+         "        warnOnFailure (ml::vst3_restart_trace::call_set_active (holder->component.get(), true));\n"
+         "        warnOnFailureIfImplemented (ml::vst3_restart_trace::call_set_processing (processor.get(), true));\n\n"
          "        isActive = true;\n"
          "        trace.record(ml::vst3_restart_trace::EventKind::processor_prepare_end, 0, ml::vst3_restart_trace::current_route(), estimatedSamplesPerBlock, newSampleRate);",
          "prepare end"),
@@ -159,19 +159,19 @@ def patch_impl(path: Path) -> dict:
          "            holder->component->setActive (false);\n\n"
          "            holder->component->setActive (true);\n"
          "            processor->setProcessing (true);",
-         "            ml::vst3_restart_trace::call_set_processing (processor, false);\n"
-         "            ml::vst3_restart_trace::call_set_active (holder->component, false);\n\n"
-         "            ml::vst3_restart_trace::call_set_active (holder->component, true);\n"
-         "            ml::vst3_restart_trace::call_set_processing (processor, true);", "reset toggles"),
+         "            ml::vst3_restart_trace::call_set_processing (processor.get(), false);\n"
+         "            ml::vst3_restart_trace::call_set_active (holder->component.get(), false);\n\n"
+         "            ml::vst3_restart_trace::call_set_active (holder->component.get(), true);\n"
+         "            ml::vst3_restart_trace::call_set_processing (processor.get(), true);", "reset toggles"),
         ("        }\n    }\n\n    //==============================================================================",
          "        }\n        trace.record(ml::vst3_restart_trace::EventKind::processor_reset_end, 0, ml::vst3_restart_trace::current_route());\n"
          "    }\n\n    //==============================================================================", "reset end"),
     ])
     text = once(text, "warnOnFailureIfImplemented (processor->setProcessing (false));",
-        "warnOnFailureIfImplemented (ml::vst3_restart_trace::call_set_processing (processor, false));",
+        "warnOnFailureIfImplemented (ml::vst3_restart_trace::call_set_processing (processor.get(), false));",
         "deactivate setProcessing")
     text = once(text, "warnOnFailure (holder->component->setActive (false));",
-        "warnOnFailure (ml::vst3_restart_trace::call_set_active (holder->component, false));",
+        "warnOnFailure (ml::vst3_restart_trace::call_set_active (holder->component.get(), false));",
         "deactivate setActive")
     path.write_text(text, encoding="utf-8", newline="\n")
     return {"before_sha256": hashlib.sha256(original.encode()).hexdigest(), "after_sha256": digest(path)}
