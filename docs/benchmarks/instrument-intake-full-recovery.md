@@ -1,5 +1,31 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 17:25 UTC：出厂默认两轮也复现同一截断
+
+Goal ACTIVE；`goal-progress-20261023-172523.json`再次逐PID/ctime/命令核对原full-h47740/46344，443通过/15失败/1运行/533待测，Kontakt正式0；正式九表/head和E12固定SHA相同。原批不改、不重复开批。
+
+factory02实际attempt `20261023T171824Z-14ef25c7f7`两次调用全部返回0并释放；24548/52180/50288均实核消失，无匹配本attempt的进程残留。独立`root-assessment-01.json` SHA `ebd4b2b4b2b71e14d03d31db0acf2399d078c66967f0727747dcacfb9517ba02`保存逐窗/状态/原MIDI/身份数据。两份出厂WAV逐字节相同，SHA170951fd…；48/60/72起音窗RMS为0.0237983/0/0，最后非零帧32767。每轮六条原MIDI与875次readiness均完整，loader全部ready，所有诊断drop为0。
+
+出厂A/B完整state和全部2298参数一致；与原source-preset对照有59参数值及state SHA不同，但同样只有首音到32767非零。因而仅移除/更换preset_path不能消除截断；这是有实际状态差异的负对照，不是全乐句通过或入库成功。原source/default两组报告与冻结07输入保持原件，不为补分析重跑音频。
+
+下一组09只准备有界只读消息队列对象身份观察：精确模块SHA/大小/RVA绑定、稳定双读header、最多32个对象、记录vtable及virtual+8回调归属；无效/不支持保持unknown，不写插件、不屏蔽或抑制合法消息、不绕过许可。先E夹具、隔离构建和原完整preflight，再由root独占实际Ample通道。Kontakt源键位查询并行补真实Lua语法及明确mock协议验证，仍不等同实际Kontakt getter通过。默认11f0、V9/新翻译未部署、52项试听仍须在真实修复验收后续回。
+
+## 2026-10-23 17:18 UTC：消息队列实测、初始派发负结果和出厂对照
+
+Goal ACTIVE。`goal-progress-20261023-171714.json`实核full-h47740/46344仍为原身份/命令，426通过/15失败/1运行/550待测，Kontakt正式0；正式九表/head/E12固定SHA相同。原992批不改。E内`kf22/reports/full-h-failure-cause-audit-20261023T1640Z`已分清12音频窗失败（五个Classic Legato全零、六个Factory全零、Flair-West仅48有声）和三超时（两源转换、一原生inspect），不把通用48/60/67模板视为真实键位图。
+
+`windows-message-control-07-rebuild-03`隔离编译/CTest通过后，用原冻结runner实际完成四项；全部宿主返回0/释放，64两轮最后非零仍32767、32两轮16383。观察器记录12/12/20/19条消息、所有drop0，第一派发窗含主程序和AGLP的0x31f/0x47b，AGLP WndProc固定RVA0x368df0。无WM_TIMER，lParam全0，故未触发私有对象候选读取；记录的是移出的消息与对应窗口过程地址，不能单靠WH_GETMESSAGE断言具体回调体已执行。`root-message-assessment-01.json`（SHA8e44c7e8…）保存每轮差异与所有真实PID释放。
+
+REA只读静态证据`windows-message-static-01/rea-functions.json`与完整`analysis-snapshot.json`保存ev_0b9d2f83…、ev_00279d50…：0x47b分支从模块全局RVA0x5414710取队列，函数0x180369110逐个调用队列对象vtable+8。PE RTTI独立映射保存AsyncUpdaterMessage/CallTimersMessage的vtable/回调RVA，但尚未观测实际排队对象身份，不据此断言哪一个对象造成静音。REA已保存快照并关闭，未改插件/JUCE。
+
+源码检查发现Ample在prepare/读回后没有通用的预MIDI消息处理；仅Keyscape有10秒处理，Ample第一次通用派发发生于64/32块后。独立`preprocess-dispatch-08`只新增一轮初始1ms派发，未新增状态快照、prepare或音频块，保留后续64/32派发及所有MIDI。原preparedplan缺template/builder绑定且lib manifest形状不兼容，被E预检拦下，未实开宿主；原件保留。`execution-inputs-01/compatible-plan.json`（SHA37bbb2be…）只补入原模板/冻结builder绑定和同31,458,250字节lib的标准manifest，完整原verifier与全部附加源检查通过。`d455b7e`五回归防源请求变化，`31b9abd`修未来builder并用真实冻结verifier过三回归，同时分离immutable build-core-report避免hash环。
+
+08实际attempt `20261023T165953Z-bbab559e2b`四次均正常退出/释放，但**四份完整WAV都精确零**，初始处理前后loader仍ready/Success/error0。原消息/逐块/状态数据保留；assessment SHA94a2fedc…保存负结果。不能说初始化flush已解决，不部署该行为，也不删消息泵制造通过。
+
+下一组`factory-default-control-01-rebuild-02`复用精确07宿主，只从原first request移除plugin.preset_path并改唯一输出路径，两个独立出厂默认实例；其余三音48/60/72、采样率/时长/循环派发不变，原source-preset结果保留为负对照。新runner的两轮证据归属经实际mocked loop回归修复，每轮gate/request/summary各自绑定，8相关过；旧01 preparedplan未运行且保留。当前plan SHA c25f1cc8…；17:18实核wrapper51232、coordinator24548、首host52180，入口`runtime/ample-factory-default-control-01-rebuild-02-job.local.json`。未完成前不称成功，不同时开另一Ample通道；这只是区分预设输入与插件运行时的诊断，不是完整source恢复或入库。
+
+`73410d9`新增`kontakt_source_keymap.lua`，使用NI公开getter查询源instrument options、group/zone键位/力度和script元数据；缺API/保护/不支持都保持unknown，身份tags只是外部runner声明，仍须精确源SHA/完整state/两次独立空机架证明。三静态合同过；E无Lua解释器，语法/实际运行未核验，未运行Kontakt；等原批全部终态后用于失败独立控制。默认11f0、V9/新翻译未激活、52项试听仍待真实修复验收后续回；MODO继续暂缓、AGMPk真实缺项不伪造。
+
 ## 2026-10-23 16:36 UTC：完整实时记录已取得，截断仍存在
 
 Goal ACTIVE。`goal-progress-20261023-163409.json`实核原full-h两进程47740/46344出生时间/命令相符，337通过/15失败/1运行/639待测；Kontakt正式0，正式九表/head/E12保护SHA仍相同。新增Factory失败在E内并行分析原报告，原992队列不改，仍须全部终态后才启动失败独立重试。
