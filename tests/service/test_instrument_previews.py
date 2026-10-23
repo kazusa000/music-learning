@@ -331,6 +331,7 @@ def test_riff_profile_phrase_and_native_request_keep_trigger_and_transport(tmp_p
 
     class FakeOwnedProcess:
         def __init__(self, command, *, stdout, stderr):
+            assert Path(command[0]) == tmp_path / "host.exe"
             self.command = command
             self.process = FakeProcess()
 
@@ -358,7 +359,8 @@ def test_riff_profile_phrase_and_native_request_keep_trigger_and_transport(tmp_p
     import psutil
     monkeypatch.setattr(psutil, "Process", lambda _pid: SimpleNamespace(nice=lambda *_args: None,
                                                                           create_time=lambda: 0.0))
-    settings = SimpleNamespace(native_host=tmp_path / "host.exe", plugin_path=lambda value: value)
+    settings = SimpleNamespace(native_host=tmp_path / "host.exe", plugin_path=lambda value: value,
+                               admitted_preset_host=tmp_path / "new-admitted-host.exe")
     output, metrics = render_preview(settings, entry, tmp_path / "preview", lambda: False)
 
     assert output.is_file() and metrics["duration"] == 1

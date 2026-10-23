@@ -47,10 +47,16 @@ def test_changed_admitted_bytes_cannot_fall_back_to_factory_preview(tmp_path):
 
 
 @pytest.mark.parametrize("mismatch", [None, "parameter", "extra_parameter", "identity"])
-def test_render_checks_full_loaded_state_before_publishing_audio(tmp_path, monkeypatch, mismatch):
+@pytest.mark.parametrize("separate_host", [False, True])
+def test_render_checks_full_loaded_state_before_publishing_audio(tmp_path, monkeypatch, mismatch, separate_host):
     import music_learning.instrument_previews as module
 
     settings, entry, native = admitted(tmp_path)
+    selected_host = settings.native_host
+    if separate_host:
+        settings.admitted_preset_host = tmp_path / "complete-state-host.exe"
+        settings.admitted_preset_host.write_bytes(b"independently built state host")
+        selected_host = settings.admitted_preset_host
     observed = deepcopy(native)
     if mismatch == "parameter":
         observed["parameters_readback"][0]["value"] = 0.25
@@ -62,6 +68,7 @@ def test_render_checks_full_loaded_state_before_publishing_audio(tmp_path, monke
 
     class Host:
         def __init__(self, command, **kwargs):
+            assert Path(command[0]) == selected_host
             self.command = command
             self.process = SimpleNamespace(pid=0, returncode=0, poll=lambda: 0)
 
@@ -88,3 +95,36 @@ def test_render_checks_full_loaded_state_before_publishing_audio(tmp_path, monke
         assert path.is_file() and metrics["rms"] > 0
     spec = requests[0]["project"]["tracks"][0]["plugins"][0]
     assert spec["state_base64"] == native["state_base64"] and "preset_path" not in spec
+
+
+def test_new_state_host_changes_only_admitted_cache_ids_and_never_falls_back(tmp_path):
+    settings, entry, _ = admitted(tmp_path)
+    legacy = {k: v for k, v in entry.items() if k != "native_admission"}
+    legacy_key = fingerprint(settings, legacy)
+    admitted_key = fingerprint(settings, entry)
+    settings.admitted_preset_host = tmp_path / "complete-state-host.exe"
+    settings.admitted_preset_host.write_bytes(b"independently built state host")
+    modern_key = fingerprint(settings, entry)
+    assert modern_key != admitted_key
+    assert fingerprint(settings, legacy) == legacy_key
+    settings.admitted_preset_host.write_bytes(b"another state host implementation")
+    assert fingerprint(settings, entry) != modern_key
+    assert fingerprint(settings, legacy) == legacy_key
+    settings.admitted_preset_host.unlink()
+    with pytest.raises(FileNotFoundError):
+        fingerprint(settings, entry)
+    assert fingerprint(settings, legacy) == legacy_key
+
+
+def test_optional_state_host_is_loaded_as_local_setting_without_changing_legacy_host(tmp_path):
+    from music_learning.settings import Settings
+
+    raw = dict(data_root=str(tmp_path / "app"), model_runtime=str(tmp_path / "model"),
+               instrument_library=str(tmp_path / "library"),
+               native_host=str(tmp_path / "legacy-host.exe"),
+               admitted_preset_host=str(tmp_path / "complete-state-host.exe"))
+    config = tmp_path / "app.local.json"
+    config.write_text(json.dumps(raw))
+    settings = Settings.load(config)
+    assert settings.native_host == Path(raw["native_host"])
+    assert settings.admitted_preset_host == Path(raw["admitted_preset_host"])

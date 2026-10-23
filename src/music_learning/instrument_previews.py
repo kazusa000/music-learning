@@ -47,6 +47,15 @@ def file_digest(path):
     return _digest(str(path.resolve()), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
 
 
+def preview_host(settings, entry):
+    """Route complete native admissions without invalidating legacy previews."""
+    if entry.get("native_admission") is not None:
+        configured = getattr(settings, "admitted_preset_host", None)
+        if configured is not None:
+            return configured
+    return settings.native_host
+
+
 def validate_entry(settings, entry):
     root = resource_path(settings.instrument_library, entry["bank_root"])
     for relative, meta in entry.get("runtime_dependencies", {}).items():
@@ -101,7 +110,7 @@ def fingerprint(settings, entry):
         encoded(
             dict(
                 policy=VERSION,
-                host=file_digest(settings.native_host),
+                host=file_digest(preview_host(settings, entry)),
                 preset=preset,
             )
         ).encode()
@@ -155,7 +164,7 @@ def render_preview(settings, entry, directory, cancelled):
     req.write_text(encoded(request), encoding="utf-8")
     with (directory / "stdout.log").open("wb") as stdout, (directory / "stderr.log").open("wb") as stderr:
         with OwnedProcess(
-            [str(settings.native_host), str(req), str(response)], stdout=stdout, stderr=stderr
+            [str(preview_host(settings, entry)), str(req), str(response)], stdout=stdout, stderr=stderr
         ) as owner:
             try:
                 import os
