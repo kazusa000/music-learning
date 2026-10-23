@@ -17,6 +17,7 @@ from music_learning.ample_admission_materialization import (  # noqa: E402
     prepare_publication_group, read_pinned_preflight, select_publication_groups,
 )
 from music_learning.ample_publication import identity_verifier, validator_pin  # noqa: E402
+from music_learning.ample_runtime_paths import install_bank_path  # noqa: E402
 from music_learning.external_preset_state import publish_state  # noqa: E402
 from music_learning.instrument_intake_publication import (  # noqa: E402
     _read_json_artifact, _state_plugin, candidate_fingerprint, publish_catalog_atomic, sha256_file,
@@ -27,12 +28,21 @@ from music_learning.kontakt_import import _resolve_root, _resolve_under  # noqa:
 
 def final_control_gate(checkpoint_path: Path, product: str):
     from instruments.supervise_ample_final_bank_controls import (
-        _audit_ready, _fixed_item, _strict_control_evidence, _validate_plan,
+        _audit_ready, _strict_control_evidence, _validate_plan,
     )
     checkpoint = json.loads(checkpoint_path.read_bytes())
+    if checkpoint.get("status") not in {"completed", "completed_with_control_failures"}:
+        raise ValueError("Final-bank controller must release all product configs before installation")
     inputs = checkpoint["fixed_inputs"]
     plan, plan_root = _validate_plan(Path(inputs["plan_path"]), inputs["plan_sha256"])
-    item = _fixed_item(next(item for item in plan["products"] if item["product"] == product), plan_root)
+    item = next(item for item in plan["products"] if item["product"] == product)
+    # Config restoration was required by the control. Its current value can
+    # legitimately be the installed bank after a previous successful batch.
+    # Revalidate immutable inputs without requiring the old transient config.
+    for path, digest in ((item["source_factory_xml"], item["source_factory_sha256"]),
+                         (item["plugin"], item["plugin_sha256"]), (item["host"], item["host_sha256"])):
+        if sha256_file(Path(path)) != digest:
+            raise ValueError("Pinned final-control source/plugin/host changed")
     result = checkpoint["products"][product]
     if result.get("status") != "passed" or result["attempt"].get("returncode") != 0:
         raise ValueError("Fresh final-bank first/reopen control is not passed for " + product)
@@ -47,7 +57,7 @@ def final_control_gate(checkpoint_path: Path, product: str):
     observed = _strict_control_evidence(plan, item, report.parent, binding)
     if observed != attempt["verified_evidence"]:
         raise ValueError("Fresh final-bank raw evidence differs from its recorded verification")
-    return observed
+    return observed, item
 
 
 def main():
@@ -71,10 +81,19 @@ def main():
     (root / "budget.json").write_text(json.dumps(budget, indent=2), encoding="utf-8")
     if not budget.get("allowed"):
         raise ValueError("H budget denied; no preset or catalog was written")
-    final_control_gate(args.final_controls, args.product)
+    control, control_item = final_control_gate(args.final_controls, args.product)
+    (root / "final-control-verification.json").write_text(json.dumps(control, indent=2), encoding="utf-8")
     report = read_pinned_preflight(args.preflight, args.preflight_sha256, maintenance)
     groups = [group for group in select_publication_groups(report) if group[0]["product"] == args.product]
     catalog = library / "catalog.json"
+    # Probes temporarily restored NOT FOUND / the original download path. New
+    # product instances must use the validated installed bank after admission.
+    # This changes only the existing plugin config, with a byte-exact E backup.
+    backup = root / "runtime-config-backup"
+    backup.mkdir()
+    mapping = install_bank_path(args.product, Path(control_item["config"]), resource_root=library,
+                                expected_config_sha256=control_item["config_sha256_before"], backup_dir=backup)
+    (root / "runtime-mapping.json").write_text(json.dumps(mapping, indent=2), encoding="utf-8")
     results = []
     for index, group in enumerate(groups):
         existing = {entry["id"]: entry for entry in json.loads(catalog.read_bytes())["presets"]}
