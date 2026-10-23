@@ -39,10 +39,13 @@ def main():
     # Keep actual product task paths short, with the report pointing to them.
     private_root = maintenance / "ac" / uuid.uuid4().hex[:12]
     private_root.mkdir(parents=True, exist_ok=False)
+    runtime = json.loads((ROOT / "runtime/app.local.json").read_bytes())
     settings = Settings(data_root=private_root, instrument_library=Path(r"H:\music\Sound Library"),
+                        plugin_roots=[Path(path) for path in runtime["plugin_roots"]],
                         instrument_preview_warm=False)
     results = []
     for index, entry in enumerate(plan["additions"]):
+        settings.plugin_path(entry["plugin_path"])
         directory = settings.path("tasks", f"intake-{index:04}", "check")
         directory.mkdir(parents=True)
         result = import_admitted(settings, {"id": f"intake-{index:04}", "kind": "instrument.capture",
@@ -61,7 +64,8 @@ def main():
         if hashlib.sha256(state.read_bytes()).hexdigest() != entry["state_sha256"] or list(directory.rglob("*.wav")):
             raise ValueError("Product check changed state or unexpectedly rendered audio")
         results.append({"preset_id": entry["id"], "state_sha256": entry["state_sha256"],
-                        "profile": entry.get("performance_profile", {}).get("kind"), "status": "passed"})
+                        "profile": entry.get("performance_profile", {}).get("kind"), "status": "passed",
+                        "configured_plugin_path_verified": True})
     report = {"status": "passed", "release_commit": record["commit"], "source_root": str(source),
               "plan_sha256": args.plan_sha256, "items": results, "formal_project_writes": 0,
               "native_or_model_calls": 0, "catalog_written": False, "private_data_root": str(private_root)}
