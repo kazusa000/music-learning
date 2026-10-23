@@ -89,6 +89,157 @@ def resume_evidence(item, library_run):
     return expected
 
 
+def _failed_only_selection(plan, run, pins, plan_sha256):
+    """Load and verify a pinned terminal selection for an explicit retry job."""
+    config = plan.get("failed_only_execution")
+    if config is None:
+        return None
+    if (not isinstance(config, dict) or plan.get("publish") is not False
+            or plan.get("preview_handoff") is not False
+            or config.get("source_run") != str(Path(plan.get("repo_root", "")) /
+                                                "data/maintenance/instrument-intake/kf22/full-h")):
+        raise ValueError("Failed-only runner must remain bound to full-h with publication disabled")
+    if config.get("schema_version") != 1:
+        raise ValueError("Unsupported Kontakt failed-only execution schema")
+
+    from music_learning.kontakt_import import _resolve_under
+    from music_learning.kontakt_failed_only_retry import validate_failed_only_selection
+
+    retry_plan_rel = config.get("retry_plan_path")
+    retry_queue_rel = config.get("retry_queue_path")
+    if (not isinstance(retry_plan_rel, str) or not isinstance(retry_queue_rel, str)
+            or Path(retry_plan_rel).is_absolute() or Path(retry_queue_rel).is_absolute()):
+        raise ValueError("Failed-only plan/queue paths must be relative to the new execution run")
+    retry_plan_path = _resolve_under(run, retry_plan_rel, must_exist=True)
+    retry_queue_path = _resolve_under(run, retry_queue_rel, must_exist=True)
+    if (digest(retry_plan_path) != config.get("retry_plan_sha256")
+            or digest(retry_queue_path) != config.get("retry_queue_sha256")
+            or str(retry_plan_path) not in pins.get("files", {})
+            or pins["files"][str(retry_plan_path)] != config.get("retry_plan_sha256")
+            or str(retry_queue_path) not in pins.get("files", {})
+            or pins["files"][str(retry_queue_path)] != config.get("retry_queue_sha256")):
+        raise ValueError("Failed-only plan/queue differs from its frozen execution pin")
+    retry_plan, retry_queue = load(retry_plan_path), load(retry_queue_path)
+    selected = validate_failed_only_selection(retry_plan, retry_queue)
+    ids = [row["id"] for row in selected]
+    selection_sha = hashlib.sha256(json.dumps(
+        selected, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")).hexdigest()
+    if (config.get("selected_ids") != ids or config.get("selected_count") != len(ids)
+            or config.get("selection_sha256") != selection_sha
+            or retry_plan.get("retry_run") != config.get("retry_plan_origin")
+            or retry_plan.get("source_run") != config.get("source_run")):
+        raise ValueError("Failed-only execution selection differs from the terminal retry plan")
+    gate_rel = config.get("start_gate_evidence_path")
+    gate_sha = config.get("start_gate_evidence_sha256")
+    if not isinstance(gate_rel, str) or not isinstance(gate_sha, str):
+        raise ValueError("Failed-only execution lacks a fresh, pinned start-gate receipt")
+    gate_path = _resolve_under(run, gate_rel, must_exist=True)
+    if (digest(gate_path) != gate_sha or str(gate_path) not in pins["files"]
+            or pins["files"][str(gate_path)] != gate_sha):
+        raise ValueError("Failed-only start-gate receipt differs from its frozen pin")
+    gate = load(gate_path)
+    from music_learning.kontakt_failed_only_retry import verify_retry_start_gates
+    required_gate_keys = {"live_source_processes", "live_kontakt_processes", "profile_evidence",
+                          "storage_observations"}
+    if set(gate) != required_gate_keys:
+        raise ValueError("Failed-only start-gate receipt has an unexpected shape")
+    verify_retry_start_gates(
+        retry_plan,
+        live_source_processes=gate["live_source_processes"],
+        live_kontakt_processes=gate["live_kontakt_processes"],
+        profile_evidence=gate["profile_evidence"],
+        storage_observations=gate["storage_observations"],
+        full_run_root=Path(plan["repo_root"]),
+    )
+    resume_map_path = _resolve_under(run, "source-resume-map.json", must_exist=True)
+    resume_map = load(resume_map_path)
+    resume_items = resume_map.get("items")
+    if (resume_map.get("kind") != "kontakt-failed-only-source-resume-map"
+            or resume_map.get("destination_run") != str(run)
+            or resume_map.get("destination_plan_sha256") != plan_sha256
+            or resume_map.get("source_run") != config.get("source_run")
+            or resume_map.get("retry_selection_sha256") != selection_sha
+            or resume_map.get("selected_ids") != ids
+            or not isinstance(resume_items, dict) or len(resume_items) != 992):
+        raise ValueError("Failed-only conversion resume map is not bound to this exact run/selection")
+    return {"selected": {row["id"]: row for row in selected},
+            "resume_items": resume_items, "selection_sha256": selection_sha}
+
+
+def _failed_only_work_items(library_id, conversion_queue, work, failed_only):
+    """Validate one full-coverage checkpoint and return only selected IDs.
+
+    This makes crash resume monotonic: terminal failed-only results are retained,
+    completed source conversions are bound to their original proof, and no
+    nonselected/passed/pending full-h item can drift into the native loop.
+    """
+    conversions, work_items = conversion_queue.get("items"), work.get("items")
+    selected = {preset_id: row for preset_id, row in failed_only["selected"].items()
+                if row.get("library_id") == library_id}
+    if not isinstance(conversions, list) or not isinstance(work_items, list):
+        raise ValueError("Failed-only full-coverage queue is malformed")
+    conversion_by_id = {row.get("id"): row for row in conversions if isinstance(row, dict)}
+    work_by_id = {row.get("id"): row for row in work_items if isinstance(row, dict)}
+    if (len(conversion_by_id) != len(conversions) or len(work_by_id) != len(work_items)
+            or set(conversion_by_id) != set(work_by_id)
+            or conversion_queue.get("library_id") != library_id or work.get("library_id") != library_id):
+        raise ValueError("Failed-only work queues do not exactly cover this fixed library")
+
+    resume_items = failed_only["resume_items"]
+    selected_rows = []
+    for preset_id, work_item in work_by_id.items():
+        conversion = conversion_by_id[preset_id]
+        resumed = resume_items.get(preset_id)
+        if not isinstance(resumed, dict) or resumed.get("source") != work_item.get("source"):
+            raise ValueError("Failed-only source-resume row differs from the fixed work source")
+        selected_failure = selected.get(preset_id)
+        reused = resumed.get("reused_conversion")
+        if selected_failure is None:
+            if (work_item.get("status") != "pending" or conversion.get("status") != "pending"
+                    or conversion.get("attempts") or reused is not None):
+                raise ValueError("Failed-only execution contains nonselected or passed work")
+            continue
+
+        stage = selected_failure.get("failed_stage")
+        status = work_item.get("status")
+        if status == "running":
+            raise ValueError("Interrupted failed-only validation requires owned-process review")
+        if stage == "native_validation":
+            proof = selected_failure.get("verified_source_conversion")
+            reused_proof = reused.get("verified_attempt") if isinstance(reused, dict) else None
+            if (conversion.get("status") != "converted_pending_validation"
+                    or not isinstance(proof, dict) or reused_proof != proof):
+                raise ValueError("Native-validation retry lacks its exact reverified source conversion")
+            if status not in {"pending", "passed", "failed"}:
+                raise ValueError("Native-validation retry has an unsupported checkpoint status")
+        elif stage == "source_conversion":
+            if reused is not None:
+                raise ValueError("Source-conversion retry unexpectedly reused an old conversion")
+            if status == "pending":
+                if conversion.get("status") != "pending" or conversion.get("attempts"):
+                    raise ValueError("Fresh source-conversion retry is not pending its single attempt")
+            elif status == "failed":
+                attempts = conversion.get("attempts")
+                if (conversion.get("status") != "failed" or not isinstance(attempts, list) or not attempts
+                        or attempts[-1].get("status") != "failed"):
+                    raise ValueError("Terminal source retry failure lacks its single failed attempt")
+            elif status == "passed":
+                attempts = conversion.get("attempts")
+                if (conversion.get("status") != "converted_pending_validation"
+                        or not isinstance(attempts, list) or not attempts
+                        or attempts[-1].get("status") != "converted_pending_validation"):
+                    raise ValueError("Completed source retry lacks its fresh conversion result")
+            else:
+                raise ValueError("Source-conversion retry has an unsupported checkpoint status")
+        else:
+            raise ValueError("Failed-only selection contains an unsupported failure stage")
+        selected_rows.append(work_item)
+    if {row["id"] for row in selected_rows} != set(selected):
+        raise ValueError("Failed-only library queue omits a selected retry ID")
+    return selected_rows
+
+
 def formal_snapshot(repo):
     tables = load(repo / "data/maintenance/native-engine/n1/before.json")["formal"]
     result = {}
@@ -153,6 +304,7 @@ def execute(plan_path, expected_plan_sha256):
         raise ValueError("Kontakt code/native pin manifest changed after plan creation")
     if str(Path(plan["probe"])) not in pins["files"] or str(Path(plan["empty_multi"])) not in pins["files"]:
         raise ValueError("Kontakt native host/empty Multi are absent from the frozen job pins")
+    failed_only = _failed_only_selection(plan, run, pins, expected_plan_sha256)
 
     def save(**updates):
         state.update(updates, updated_at_utc=datetime.now(timezone.utc).isoformat())
@@ -227,6 +379,7 @@ def execute(plan_path, expected_plan_sha256):
                 with scoped_default_multi(multi, profile_dir, approved_root=runtime_root, process_is_live=own_live):
                     yield
 
+            deferred_storage = False
             for library_id in plan["libraries"]:
                 audit = wait_result(plan["libraries"][library_id]["result"])
                 lib_run = run / library_id
@@ -268,7 +421,16 @@ def execute(plan_path, expected_plan_sha256):
                         dict(id=item["id"], source=item["source"], status="pending") for item in load(conversion_queue)["items"]])
                     atomic_write_json(work_path, work)
                 validate_coverage(records, load(conversion_queue), work)
-                for item in work["items"]:
+                current_conversion_queue = load(conversion_queue)
+                work_items = (_failed_only_work_items(library_id, current_conversion_queue, work, failed_only)
+                              if failed_only is not None else work["items"])
+                if failed_only is not None:
+                    for item in work_items:
+                        if item["status"] == "pending":
+                            conversion = next(row for row in current_conversion_queue["items"] if row["id"] == item["id"])
+                            if conversion["status"] == "converted_pending_validation":
+                                reverify_conversion(conversion, lib_run)
+                for item in work_items:
                     if item["status"] == "passed":
                         resume_evidence(item, lib_run)
                         reverify_conversion(next(row for row in load(conversion_queue)["items"] if row["id"] == item["id"]), lib_run)
@@ -287,22 +449,70 @@ def execute(plan_path, expected_plan_sha256):
                         )
                     check_pins()
                     item_root = lib_run / "i" / item["id"][-12:]
-                    item_root.mkdir(parents=True, exist_ok=False)
                     item["status"] = "running"
                     atomic_write_json(work_path, work)
                     save(status="validating", current=dict(library_id=library_id, preset_id=item["id"], source=item["source"]["path"]))
                     try:
                         conversion = next(row for row in load(conversion_queue)["items"] if row["id"] == item["id"])
                         if conversion["status"] == "pending":
-                            run_batch(conversion_queue, source_root, lib_run,
-                                      kontakt_executable=runtime_root / "Kontakt 8/x64/Kontakt 8.exe",
-                                      runtime_root=runtime_root, max_items=1, timeout_seconds=180,
-                                      budget_probe=lambda: dict(allowed=True, reason="supervisor_idle_gate"))
+                            if failed_only is None:
+                                run_batch(conversion_queue, source_root, lib_run,
+                                          kontakt_executable=runtime_root / "Kontakt 8/x64/Kontakt 8.exe",
+                                          runtime_root=runtime_root, max_items=1, timeout_seconds=180,
+                                          budget_probe=lambda: dict(allowed=True, reason="supervisor_idle_gate"))
+                            else:
+                                attempt_root = lib_run / "retry-attempts"
+                                attempt_root.mkdir(exist_ok=True)
+                                attempt_queue = attempt_root / (item["id"] + ".json")
+                                if attempt_queue.exists():
+                                    one_batch = load(attempt_queue)
+                                    if (one_batch.get("library_id") != library_id
+                                            or len(one_batch.get("items", [])) != 1
+                                            or one_batch["items"][0].get("id") != item["id"]
+                                            or one_batch["items"][0].get("source") != item["source"]):
+                                        raise ValueError("Existing failed-only source attempt is not this exact item")
+                                    if one_batch["items"][0].get("status") == "running":
+                                        raise ValueError("Interrupted failed-only conversion requires owned-process review")
+                                else:
+                                    full_batch = load(conversion_queue)
+                                    one_item = next(row for row in full_batch["items"] if row["id"] == item["id"])
+                                    one_batch = {**full_batch,
+                                                 "batch_id": "kontakt-retry-" + item["id"][-12:],
+                                                 "items": [dict(one_item)]}
+                                    write_batch(attempt_queue, one_batch)
+                                if one_batch["items"][0].get("status") == "pending":
+                                    conversion_run = run_batch(
+                                        attempt_queue, source_root, lib_run,
+                                        kontakt_executable=runtime_root / "Kontakt 8/x64/Kontakt 8.exe",
+                                        runtime_root=runtime_root, max_items=1, timeout_seconds=180,
+                                        budget_probe=lambda: dict(allowed=True, reason="supervisor_idle_gate"))
+                                    one_batch = load(attempt_queue)
+                                    if conversion_run.get("status") == "deferred_io":
+                                        if one_batch["items"][0].get("status") != "pending":
+                                            raise ValueError("Deferred source conversion unexpectedly changed its item")
+                                        item["status"] = "pending"
+                                        atomic_write_json(work_path, work)
+                                        save(status="waiting_storage", current=None,
+                                             storage_budget=conversion_run.get("storage_budget"))
+                                        deferred_storage = True
+                                        break
+                                source_row = one_batch["items"][0]
+                                full_batch = load(conversion_queue)
+                                for index, row in enumerate(full_batch["items"]):
+                                    if row["id"] == item["id"]:
+                                        full_batch["items"][index] = source_row
+                                        break
+                                else:
+                                    raise ValueError("Failed-only source attempt ID disappeared from the full queue")
+                                write_batch(conversion_queue, full_batch)
                             conversion = next(row for row in load(conversion_queue)["items"] if row["id"] == item["id"])
+                        if deferred_storage:
+                            break
                         if conversion["status"] != "converted_pending_validation":
                             raise ValueError("Source conversion failed: " + json.dumps(conversion.get("attempts", [])[-1:], ensure_ascii=False))
                         result = reverify_conversion(conversion, lib_run)
                         multi = lib_run / result["output"]["path"]
+                        item_root.mkdir(parents=True, exist_ok=False)
                         capture_root = item_root / "c"
                         source_state = capture_source(NativeHost(host_path, capture_root / "calls"),
                                                       plugin_spec(Path(runtime["plugin_path"]), item["id"],
@@ -311,14 +521,17 @@ def execute(plan_path, expected_plan_sha256):
                         from music_learning.instrument_intake_publication import _resolve_under_bank
 
                         bank = _resolve_under_bank(Path(plan["resource_root"]), "Kontakt", regular_file=False)
-                        entrypoint = "Presets/" + item["id"] + ".vstpreset"
+                        payload = preset_bytes(source_state)
+                        payload_sha = hashlib.sha256(payload).hexdigest()
+                        entrypoint = ("Presets/" + item["id"] + "-" + payload_sha + ".vstpreset"
+                                      if failed_only is not None else
+                                      "Presets/" + item["id"] + ".vstpreset")
                         preset = bank / entrypoint
                         preset.parent.mkdir(exist_ok=True)
                         _resolve_under_bank(bank, "Presets", regular_file=False)
-                        payload = preset_bytes(source_state)
                         if preset.exists():
                             if preset.read_bytes() != payload:
-                                raise ValueError("Existing preset differs from captured source; preserving it")
+                                raise ValueError("Content-addressed/existing preset differs from captured source; preserving it")
                         else:
                             with preset.open("xb") as stream:
                                 stream.write(payload)
@@ -348,6 +561,7 @@ def execute(plan_path, expected_plan_sha256):
                                     receipt=str(audio_root / "receipt.json"), evidence_root=str(audio_root),
                                     summary=validated["summary"])
                     except Exception as error:
+                        item_root.mkdir(parents=True, exist_ok=True)
                         atomic_write_json(item_root / "failure.json", dict(error=repr(error), preset_id=item["id"]))
                         item.update(status="failed", error=str(error), diagnostics=str(item_root))
                         if own_live():
@@ -357,6 +571,27 @@ def execute(plan_path, expected_plan_sha256):
                     save(current=None)
                 atomic_write_json(lib_run / "failures.json", dict(library_id=library_id, items=[
                     item for item in work["items"] if item["status"] == "failed"]))
+                if deferred_storage:
+                    state["libraries"][library_id] = dict(Counter(row["status"] for row in work["items"]))
+                    save(status="waiting_storage", current=None,
+                         storage_budget=state.get("storage_budget"))
+                    return
+            if failed_only is not None:
+                selected_ids = set(failed_only["selected"])
+                selected_statuses = []
+                for library_id in plan["libraries"]:
+                    selected_statuses.extend(
+                        row["status"] for row in load(run / library_id / "validation.json")["items"]
+                        if row["id"] in selected_ids
+                    )
+                if len(selected_statuses) != len(selected_ids) or any(
+                    status not in {"passed", "failed"} for status in selected_statuses
+                ):
+                    raise ValueError("Failed-only run reached an incomplete selection without a storage deferral")
+                save(status="failed_only_retry_finished", selected_count=len(selected_ids),
+                     selected_counts=dict(Counter(selected_statuses)), pending_unselected=992 - len(selected_ids),
+                     formal_project_written=False, catalog_written=False, preview_handoff=False)
+                return
             save(status="validation_finished_pending_publication")
             # Publication requires an explicit plan option. It never depends on
             # whether a failed preset happened to make another preset audible.

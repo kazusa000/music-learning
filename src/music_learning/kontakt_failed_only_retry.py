@@ -747,6 +747,145 @@ def prepare_failed_only_retry_plan(
             "plan_sha256": _sha_bytes((destination_run / "plan.json").read_bytes())}
 
 
+def validate_failed_only_selection(retry_plan: Mapping, retry_queue: Mapping) -> list[dict]:
+    """Validate the exact failed subset and its 992-source parent coverage.
+
+    This is shared by the E-only job builder, conversion seeder, and frozen full
+    runner. It deliberately accepts only the terminal plan artifact; a queue of
+    pending work is a different recovery mode and must not be relabelled failed.
+    """
+    if (retry_plan.get("kind") != "kontakt-terminal-failed-only-retry"
+            or retry_plan.get("status") != "prepared_waiting_for_start_gates"
+            or retry_plan.get("launch_gates", {}).get("publish") is not False
+            or retry_plan.get("automatic_retry") is not False):
+        raise ValueError("Kontakt execution requires a prepared, nonpublishing terminal failed-only plan")
+
+    coverage = retry_plan.get("source_coverage")
+    records = coverage.get("records") if isinstance(coverage, Mapping) else None
+    if (not isinstance(records, list) or coverage.get("expected_count") != EXPECTED_SOURCE_COUNT
+            or coverage.get("actual_count") != EXPECTED_SOURCE_COUNT or len(records) != EXPECTED_SOURCE_COUNT
+            or _sha_bytes(_canonical(records)) != coverage.get("sha256")):
+        raise ValueError("Failed-only plan does not bind the exact 992-source coverage")
+    source_by_id = {}
+    for row in records:
+        if (not isinstance(row, Mapping) or row.get("library_id") not in LIBRARIES
+                or not isinstance(row.get("id"), str) or not isinstance(row.get("source"), Mapping)):
+            raise ValueError("Failed-only source coverage record is malformed")
+        expected_id = preset_id_for_source(row["library_id"], row["source"].get("path", ""))
+        if row["id"] != expected_id or row["id"] in source_by_id:
+            raise ValueError("Failed-only source coverage has a duplicate or misbound ID")
+        source_by_id[row["id"]] = row
+
+    source_run = _resolve_root(Path(str(retry_plan.get("source_run", ""))))
+    snapshot = retry_plan.get("source_snapshot")
+    queue_pins = snapshot.get("library_queue_pins") if isinstance(snapshot, Mapping) else None
+    if not isinstance(queue_pins, Mapping):
+        raise ValueError("Failed-only plan has no frozen source validation/conversion queues")
+    actual_failures = {}
+    for library_id in LIBRARIES:
+        conversion, conversion_sha = _read_json(source_run, f"{library_id}/conversion.json")
+        validation, validation_sha = _read_json(source_run, f"{library_id}/validation.json")
+        failures, failures_sha = _read_json(source_run, f"{library_id}/failures.json")
+        for suffix, actual_sha in (("conversion.json", conversion_sha),
+                                   ("validation.json", validation_sha),
+                                   ("failures.json", failures_sha)):
+            if queue_pins.get(f"{library_id}/{suffix}") != actual_sha:
+                raise ValueError("Failed-only source queue differs from its terminal snapshot: " + library_id)
+        conversion_rows, validation_rows, report_rows = (
+            conversion.get("items"), validation.get("items"), failures.get("items"))
+        if (conversion.get("library_id") != library_id or validation.get("library_id") != library_id
+                or failures.get("library_id") != library_id
+                or not all(isinstance(rows, list) for rows in
+                           (conversion_rows, validation_rows, report_rows))):
+            raise ValueError("Failed-only source queue is malformed: " + library_id)
+        conversion_by_id = {row.get("id"): row for row in conversion_rows}
+        validation_by_id = {row.get("id"): row for row in validation_rows}
+        report_by_id = {row.get("id"): row for row in report_rows}
+        expected_ids = {row["id"] for row in source_by_id.values() if row["library_id"] == library_id}
+        if (len(conversion_by_id) != len(conversion_rows) or len(validation_by_id) != len(validation_rows)
+                or len(report_by_id) != len(report_rows) or set(conversion_by_id) != expected_ids
+                or set(validation_by_id) != expected_ids
+                or {key for key, row in validation_by_id.items() if row.get("status") == "failed"}
+                != set(report_by_id)):
+            raise ValueError("Failed-only source failure report/queues do not exactly cover the fixed library")
+        for preset_id, row in report_by_id.items():
+            work = validation_by_id[preset_id]
+            conversion_item = conversion_by_id[preset_id]
+            if (work.get("source") != source_by_id[preset_id]["source"]
+                    or conversion_item.get("source") != work.get("source")
+                    or work.get("error") != row.get("error")
+                    or row.get("source") != work.get("source")):
+                raise ValueError("Failed-only source error/source identity differs from frozen queues")
+            actual_failures[preset_id] = (library_id, conversion_item, work)
+
+    selection = retry_plan.get("retry_selection")
+    items = selection.get("items") if isinstance(selection, Mapping) else None
+    ids = selection.get("ids") if isinstance(selection, Mapping) else None
+    if (not isinstance(items, list) or not items or not isinstance(ids, list)
+            or any(not isinstance(value, str) for value in ids)
+            or selection.get("count") != len(items) or ids != [item.get("id") for item in items]
+            or len(set(ids)) != len(ids)):
+        raise ValueError("Failed-only retry selection is empty, duplicated, or malformed")
+    queue_items = retry_queue.get("items")
+    if (retry_queue.get("kind") != "kontakt-failed-only-retry-queue"
+            or retry_queue.get("source_run") != retry_plan.get("source_run")
+            or retry_queue.get("source_coverage_count") != EXPECTED_SOURCE_COUNT
+            or retry_queue.get("source_coverage_sha256") != coverage.get("sha256")
+            or retry_queue.get("count") != len(items) or queue_items != items):
+        raise ValueError("Failed-only queue differs from the immutable plan selection")
+
+    if set(ids) != set(actual_failures):
+        raise ValueError("Failed-only selection must equal the complete terminal failed set; pending/pass rows are excluded")
+
+    artifact_pins = snapshot.get("source_artifact_pins", {})
+    if not isinstance(artifact_pins, Mapping):
+        raise ValueError("Failed-only plan has no original failure artifact pins")
+    verified_conversions = {
+        (row.get("library_id"), row.get("id")): row.get("verified_conversion")
+        for row in retry_plan.get("verified_source_conversions", []) if isinstance(row, Mapping)
+    }
+
+    for item in items:
+        if (not isinstance(item, Mapping) or item.get("id") not in source_by_id
+                or item.get("source") != source_by_id[item["id"]]["source"]
+                or item.get("library_id") != source_by_id[item["id"]]["library_id"]):
+            raise ValueError("Failed-only item is not bound to the exact 992-source record")
+        stage = item.get("failed_stage")
+        conversion_status = item.get("original_conversion_status")
+        source_failure = actual_failures[item["id"]]
+        if (source_failure[0] != item["library_id"]
+                or source_failure[1].get("status") != conversion_status
+                or source_failure[2].get("status") != "failed"):
+            raise ValueError("Failed-only stage/status differs from the original terminal source row")
+        if stage == "source_conversion":
+            if (conversion_status != "failed" or item.get("verified_source_conversion") is not None
+                    or not source_failure[1].get("attempts")
+                    or source_failure[1]["attempts"][-1].get("status") != "failed"):
+                raise ValueError("Failed source conversion must receive one fresh attempt")
+            expected_reason = str(source_failure[1]["attempts"][-1].get("reason", "source conversion failed"))
+            pin_key = f"{item['library_id']}/source-failure/{item['id']}"
+        elif stage == "native_validation":
+            proof = item.get("verified_source_conversion")
+            if (conversion_status != "converted_pending_validation" or not isinstance(proof, Mapping)
+                    or proof.get("status") != "converted_pending_validation"
+                    or verified_conversions.get((item["library_id"], item["id"])) != dict(proof)):
+                raise ValueError("Native retry requires the original source conversion to be reverified")
+            expected_reason = str(source_failure[2].get("error", "native validation failed"))
+            pin_key = f"{item['library_id']}/validation-failure/{item['id']}"
+        else:
+            raise ValueError("Failed-only selection contains an unsupported failed stage")
+        expected_pin = artifact_pins.get(pin_key)
+        original_failure = item.get("original_failure")
+        if (item.get("original_reason") != expected_reason or not isinstance(expected_pin, Mapping)
+                or not isinstance(original_failure, Mapping)
+                # original_failure is library-root-relative; source_artifact_pins
+                # are source-run-root-relative. Bind both forms explicitly.
+                or expected_pin.get("path") != f"{item['library_id']}/{original_failure.get('path', '')}"
+                or any(original_failure.get(key) != expected_pin.get(key) for key in ("sha256", "bytes"))):
+            raise ValueError("Failed-only failure reason/artifact differs from the original pinned report")
+    return [dict(item) for item in items]
+
+
 def verify_retry_start_gates(
     retry_plan: Mapping,
     *,

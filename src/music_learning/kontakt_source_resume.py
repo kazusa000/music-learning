@@ -214,13 +214,25 @@ def _copy_file(source: Path, destination: Path, expected: dict, *, limit: int) -
         raise ValueError("Kontakt source evidence failed stable-copy verification")
 
 
-def seed_full_job(source_run: Path, destination_run: Path) -> dict:
+def seed_full_job(source_run: Path, destination_run: Path, *,
+                  failed_only_plan: dict | None = None, failed_only_queue: dict | None = None) -> dict:
     """Preseed an unstarted full run from complete, independently reverified conversions.
 
     Conversion items that did not complete in the source run remain pending.
     Validation results are never inherited, even if an old run shows passed.
+
+    The optional failed-only mode is intentionally separate: it requires the
+    terminal plan/queue pair produced by ``kontakt_failed_only_retry`` and
+    reuses conversions only for selected native-validation failures. All other
+    target conversion rows remain pending; terminal source-conversion failures
+    are eligible for one fresh attempt in the new run.
     """
     from instruments.run_kontakt_full_intake import validate_coverage
+    from .kontakt_failed_only_retry import (
+        TERMINAL_STATUSES as RETRY_TERMINAL_STATUSES,
+        _verify_source_artifact_pin,
+        validate_failed_only_selection,
+    )
 
     source_run = _resolve_root(Path(source_run))
     destination_run = _resolve_root(Path(destination_run))
@@ -231,7 +243,37 @@ def seed_full_job(source_run: Path, destination_run: Path) -> dict:
     source_plan_sha, destination_plan_sha = _sha(source_plan_path.read_bytes()), _sha(destination_plan_path.read_bytes())
     source_progress_path = source_run / "progress.json"
     source_progress = _read_json(source_progress_path)
-    if source_progress.get("current") is not None or source_progress.get("status") != "waiting_storage":
+    failed_only = failed_only_plan is not None or failed_only_queue is not None
+    selected_by_id = {}
+    selection_sha = None
+    if failed_only:
+        if not isinstance(failed_only_plan, dict) or not isinstance(failed_only_queue, dict):
+            raise ValueError("Failed-only seeding requires both immutable plan and queue objects")
+        selection_items = validate_failed_only_selection(failed_only_plan, failed_only_queue)
+        selected_by_id = {row["id"]: row for row in selection_items}
+        selection_sha = _sha(_canonical(selection_items))
+        source_snapshot = failed_only_plan.get("source_snapshot", {})
+        if (failed_only_plan.get("source_run") != str(source_run)
+                or source_progress.get("current") is not None
+                or source_progress.get("status") not in RETRY_TERMINAL_STATUSES
+                or source_plan_sha != source_snapshot.get("plan_sha256")
+                or _sha((source_run / "launch.json").read_bytes()) != source_snapshot.get("launch_sha256")
+                or _sha(source_progress_path.read_bytes()) != source_snapshot.get("progress_sha256")
+                or _sha((source_run / "pins.json").read_bytes()) != source_snapshot.get("pins_sha256")):
+            raise ValueError("Terminal failed-only source differs from its independently audited snapshot")
+        pins = source_snapshot.get("source_artifact_pins")
+        if not isinstance(pins, dict):
+            raise ValueError("Terminal failed-only source has no exact artifact pins")
+        for pin in pins.values():
+            _verify_source_artifact_pin(source_run, pin)
+        execution = destination_plan.get("failed_only_execution")
+        if (not isinstance(execution, dict) or execution.get("source_run") != str(source_run)
+                or execution.get("selected_ids") != [row["id"] for row in selection_items]
+                or execution.get("selection_sha256") != selection_sha):
+            raise ValueError("Destination full-job plan is not bound to this exact failed subset")
+    elif failed_only_plan is not None or failed_only_queue is not None:
+        raise ValueError("Failed-only plan/queue pairing is incomplete")
+    elif source_progress.get("current") is not None or source_progress.get("status") != "waiting_storage":
         raise ValueError("Source Kontakt run is not at a quiescent storage-wait boundary")
     if source_plan.get("run_root") != str(source_run) or destination_plan.get("run_root") != str(destination_run):
         raise ValueError("Kontakt source/destination plan paths do not match their run roots")
@@ -308,6 +350,24 @@ def seed_full_job(source_run: Path, destination_run: Path) -> dict:
                 "source_conversion_status": old_item.get("status") if old_item else "not_started",
                 "source_validation_status": old_validation_item.get("status") if old_validation_item else "not_started",
             }
+            selected_failure = selected_by_id.get(preset_id) if failed_only else None
+            if failed_only:
+                if selected_failure is None:
+                    # Preserve full inventory coverage in the execution job,
+                    # but do not transfer a pass or schedule unselected work.
+                    prepared_origins[preset_id] = origin
+                    summary["left_pending"].append(preset_id)
+                    continue
+                if (old_item is None or old_validation_item is None
+                        or old_validation_item.get("status") != "failed"
+                        or old_item.get("status") != selected_failure.get("original_conversion_status")):
+                    raise ValueError("Selected retry item no longer matches its original terminal failure stage")
+                if (selected_failure.get("failed_stage") == "source_conversion"
+                        and old_item.get("status") != "failed"):
+                    raise ValueError("Source-conversion retry is not backed by an original failed conversion")
+                if (selected_failure.get("failed_stage") == "native_validation"
+                        and old_item.get("status") != "converted_pending_validation"):
+                    raise ValueError("Native retry lacks the original completed source conversion")
             if old_item is None or old_item.get("status") != "converted_pending_validation":
                 if old_item is not None and old_item.get("status") not in {"pending", "failed"}:
                     raise ValueError("Full-g source conversion status is not safely resumable")
@@ -353,6 +413,9 @@ def seed_full_job(source_run: Path, destination_run: Path) -> dict:
             if (verified.get("status") != "converted_pending_validation" or verified != attempts[-1]
                     or verified.get("output", {}).get("path") != output_rel):
                 raise ValueError("Full-g conversion does not reverify against its raw receipt/execution/NKM")
+            if (failed_only and selected_failure.get("failed_stage") == "native_validation"
+                    and verified != selected_failure.get("verified_source_conversion")):
+                raise ValueError("Reverified conversion differs from the terminal failed-only proof")
             output_info = source_output.stat()
             if (not stat.S_ISREG(output_info.st_mode) or _is_reparse(source_output.lstat())
                     or output_info.st_size != verified["output"]["bytes"]):
@@ -410,14 +473,19 @@ def seed_full_job(source_run: Path, destination_run: Path) -> dict:
             write_batch(lib_stage / "conversion.json", details["batch"])
         resume_map = {
             "schema_version": 1,
+            "kind": "kontakt-failed-only-source-resume-map" if failed_only else "kontakt-source-resume-map",
             "seeder_source_sha256": _sha(Path(__file__).read_bytes()),
             "source_run": str(source_run),
             "source_plan_sha256": source_plan_sha,
             "source_progress_sha256": _sha(source_progress_path.read_bytes()),
             "destination_run": str(destination_run),
             "destination_plan_sha256": destination_plan_sha,
+            "retry_selection_sha256": selection_sha,
+            "selected_ids": [row["id"] for row in selected_by_id.values()] if failed_only else None,
             "created_at_unix": time.time(),
-            "reuse_policy": "completed Lua conversions only; native state/audio/identity validation always fresh",
+            "reuse_policy": ("selected native-failure conversions only; source failures get one new attempt; "
+                             "native state/audio/identity validation always fresh" if failed_only else
+                             "completed Lua conversions only; native state/audio/identity validation always fresh"),
             "libraries": {library_id: {"audit_path": data["audit_path"],
                                        "audit_sha256": data["audit_sha256"],
                                        "records_sha256": data["records_sha256"],
@@ -436,8 +504,10 @@ def seed_full_job(source_run: Path, destination_run: Path) -> dict:
         # Keep any failed stage in place as diagnosable evidence; never delete
         # partially written artifacts or change the source run.
         raise
-    return {"status": "seeded", "source_run": str(source_run), "destination_run": str(destination_run),
+    return {"status": "seeded_failed_only" if failed_only else "seeded",
+            "source_run": str(source_run), "destination_run": str(destination_run),
             "map_path": str(map_path), "libraries": {k: v["summary"] for k, v in staged.items()},
+            "selected_count": len(selected_by_id) if failed_only else None,
             "reused_count": len([row for row in prepared_origins.values() if "reused_conversion" in row]),
             "pending_count": len([row for row in prepared_origins.values() if "reused_conversion" not in row])}
 
