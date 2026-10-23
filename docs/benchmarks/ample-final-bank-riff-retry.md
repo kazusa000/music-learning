@@ -39,6 +39,16 @@ block. The E-only closure is
 `phrase-duration-retest-02/supervision-02-lineage-assessment/assessment.json`.
 Retry06 recovery uses an independent attempt plan, locator and checkpoint so
 the old failed locator/checkpoint and all original reports remain intact.
+At 11:39 UTC the recovery attempt was running under
+`runtime/ample-final-bank-riff-retry-06-attempt-02-job.local.json` (frozen plan
+SHA `ca8d79c38588267e5bb0b2001b1bd429584c06b942abc5f701254733e7cec70e`),
+with its own `failed-only-final-bank-riff-retry-06-attempt-02` run and
+`final-bank-riff-retry-06-supervision-attempt-02/control.json` checkpoint.
+The live outer supervisor was verified as PID 53912,
+creation ticks `639283523556278460`, command bound to that plan and locator;
+its observed state was `waiting_for_config_stability`, before queue creation,
+probe, or the H: storage gate. Recheck the live locator and process identity
+before reporting later progress.
 
 2026-10-23. This note tracks the two remaining AGLP Riffer items that may be
 rechecked against the final installed bank. It distinguishes a changed sample
