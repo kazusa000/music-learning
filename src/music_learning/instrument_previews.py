@@ -439,7 +439,13 @@ class InstrumentPreviews:
             return r["status"] != "loading" or r["generation"] != generation
 
         work = self.root / "work" / uuid.uuid4().hex
+        failed = False
         try:
+            work.mkdir(parents=True, exist_ok=True)
+            (work / "attempt.json").write_text(encoded(dict(
+                preview_id=identifier, preset_id=entry["id"], generation=generation,
+                started_at=time.time(),
+            )), encoding="utf-8")
             path, metrics = self.renderer(self.settings, entry, work, cancelled)
             if cancelled():
                 raise InterruptedError()
@@ -474,9 +480,11 @@ class InstrumentPreviews:
                     ),
                 )
         except Exception as error:
+            failed = True
             work.mkdir(parents=True, exist_ok=True)
             (work / "failure.json").write_text(
-                encoded(dict(error=str(error), type=type(error).__name__)), encoding="utf-8"
+                encoded(dict(error=str(error), type=type(error).__name__,
+                             preview_id=identifier, preset_id=entry["id"])), encoding="utf-8"
             )
             with self.db() as db:
                 db.execute(
@@ -486,7 +494,11 @@ class InstrumentPreviews:
         finally:
             # Only this newly generated attempt's files are eligible here.
             if work.is_dir() and work.resolve().is_relative_to(self.root.resolve()):
-                for name in ("raw.wav", "response.json", "preview.wav"):
+                # Keep the original native response on failures: its exact
+                # metrics/state distinguish silence from a threshold rejection.
+                # Raw audio and duplicate PCM still follow the bounded cleanup.
+                names = ("raw.wav", "preview.wav") if failed else ("raw.wav", "response.json", "preview.wav")
+                for name in names:
                     local = work / name
                     if not local.is_symlink():
                         local.unlink(missing_ok=True)

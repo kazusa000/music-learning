@@ -100,6 +100,51 @@ def test_failure_retry_and_cancel_fence_late_publication(service, previews):
     assert store.get(a["id"])["status"] == "ready"
 
 
+def test_failed_preview_retains_native_response_bound_to_exact_queue_attempt(previews):
+    store, entry = previews
+    queued = store.prepare(PrepareInstrumentPreview(preset_id=entry["id"]), "diagnostic-failure")
+    response = b'{"ok":true,"result":{"rms":0.0000001,"peak":0.0000002}}'
+
+    def rejected(_settings, _entry, directory, _cancelled):
+        (directory / "response.json").write_bytes(response)
+        (directory / "raw.wav").write_bytes(b"discard duplicate raw audio")
+        raise ValueError("Preview is silent")
+
+    store.renderer = rejected
+    assert store.process_next()
+    assert store.get(queued["id"])["status"] == "failed"
+    work = next((store.root / "work").iterdir())
+    assert (work / "response.json").read_bytes() == response
+    assert not (work / "raw.wav").exists()
+    attempt = json.loads((work / "attempt.json").read_bytes())
+    failure = json.loads((work / "failure.json").read_bytes())
+    assert attempt["preview_id"] == failure["preview_id"] == queued["id"]
+    assert attempt["preset_id"] == failure["preset_id"] == entry["id"]
+    assert type(attempt["generation"]) is int
+    assert failure["error"] == "Preview is silent"
+
+
+def test_successful_preview_still_cleans_native_response_and_raw_duplicate(previews):
+    store, entry = previews
+    queued = store.prepare(PrepareInstrumentPreview(preset_id=entry["id"]), "diagnostic-success")
+    original = store.renderer
+
+    def rendered(settings, current, directory, cancelled):
+        result = original(settings, current, directory, cancelled)
+        (directory / "response.json").write_text('{"ok":true}')
+        (directory / "raw.wav").write_bytes(b"discard duplicate raw audio")
+        return result
+
+    store.renderer = rendered
+    assert store.process_next()
+    assert store.get(queued["id"])["status"] == "ready"
+    work = next((store.root / "work").iterdir())
+    assert (work / "attempt.json").is_file()
+    assert not (work / "response.json").exists()
+    assert not (work / "raw.wav").exists()
+    assert not (work / "preview.wav").exists()
+
+
 def test_cache_identity_ignores_translation_but_changes_with_phrase_inputs(service, previews):
     store, entry = previews
     a = store.prepare(PrepareInstrumentPreview(preset_id=entry["id"]), "one")
