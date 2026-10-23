@@ -241,6 +241,31 @@ def _item_error(item: dict) -> str | None:
     return None
 
 
+def _active_process_summary(rows: list[dict]) -> str:
+    """Keep enough local evidence to diagnose a process-scan refusal safely."""
+    safe_rows = []
+    secret_arg = re.compile(
+        r"(?i)(--?(?:token|password|passwd|api[-_]?key|secret)(?:=|\s+))([^\s]+)"
+    )
+    for row in rows[:12]:
+        if not isinstance(row, dict):
+            safe_rows.append({"malformed_row": type(row).__name__})
+            continue
+        command = row.get("command", row.get("command_line", ""))
+        if not isinstance(command, str):
+            command = ""
+        command = secret_arg.sub(r"\1[REDACTED]", command)
+        safe_rows.append({
+            "pid": row.get("pid"),
+            "created": row.get("created", row.get("created_ticks")),
+            "name": row.get("name"),
+            "command": command[:1200],
+        })
+    if len(rows) > len(safe_rows):
+        safe_rows.append({"omitted_matching_processes": len(rows) - len(safe_rows)})
+    return json.dumps(safe_rows, ensure_ascii=False, separators=(",", ":"))
+
+
 def build_terminal_profile_correction_queue(
     source_run_path: str | Path,
     *,
@@ -283,8 +308,12 @@ def build_terminal_profile_correction_queue(
             or queue.get("requested") != len(items) or status.get("status") not in _TERMINAL_RUNS
             or status.get("requested") not in (None, len(items))):
         raise RetryPlanningError("Source run queue/status is not a complete terminal run")
-    if active_process_scan([run_dir]):
-        raise RetryPlanningError("An Ample process still references the source run")
+    active = active_process_scan([run_dir])
+    if active:
+        raise RetryPlanningError(
+            "An Ample process still references the source run; process evidence="
+            + _active_process_summary(active)
+        )
 
     identities = set()
     item_states = Counter()

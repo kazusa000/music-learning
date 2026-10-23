@@ -46,9 +46,16 @@ with its own `failed-only-final-bank-riff-retry-06-attempt-02` run and
 `final-bank-riff-retry-06-supervision-attempt-02/control.json` checkpoint.
 The live outer supervisor was verified as PID 53912,
 creation ticks `639283523556278460`, command bound to that plan and locator;
-its observed state was `waiting_for_config_stability`, before queue creation,
-probe, or the H: storage gate. Recheck the live locator and process identity
-before reporting later progress.
+it reached a stable AGLP config snapshot, then the read-only preparation child
+failed before creating a queue. The retained `prepare.log` identifies the
+guard `An Ample process still references the source run`, but that older
+generic error did not include the matching PID/creation time/command, so the
+specific process that triggered the refusal cannot be reconstructed. This is
+not evidence that the preparer matched itself or that the source run changed.
+The common guard now records bounded process identity evidence, redacting
+credential-shaped command arguments, and a regression checks both the blocking
+identity and redaction. The failed attempt02 locator, plan, checkpoint and log
+remain unchanged; a distinct attempt is required to recover.
 
 2026-10-23. This note tracks the two remaining AGLP Riffer items that may be
 rechecked against the final installed bank. It distinguishes a changed sample

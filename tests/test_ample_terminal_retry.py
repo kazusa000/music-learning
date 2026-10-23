@@ -201,11 +201,18 @@ def test_explicit_failed_selection_rejects_nonfailure_and_unknown_ids(tmp_path):
 
 def test_terminal_profile_correction_fails_closed_on_live_process_or_status_mismatch(tmp_path):
     run, _ = _terminal_run(tmp_path)
-    with pytest.raises(RetryPlanningError, match="process still references"):
+    with pytest.raises(RetryPlanningError, match="process still references") as caught:
         build_terminal_profile_correction_queue(
             run, repository_root=tmp_path / "checkout",
-            active_process_scan=lambda _: [{"pid": 123}],
+            active_process_scan=lambda _: [{
+                "pid": 123, "created": 1234.5, "name": "python.exe",
+                "command": "python.exe prepare.py --source-run source --token abc123",
+            }],
         )
+    assert '"pid":123' in str(caught.value)
+    assert "prepare.py" in str(caught.value)
+    assert "abc123" not in str(caught.value)
+    assert "[REDACTED]" in str(caught.value)
 
     status_path = run / "status.json"
     status = json.loads(status_path.read_bytes())
