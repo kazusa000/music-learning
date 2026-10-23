@@ -124,6 +124,19 @@ def test_shared_code_fingerprints_are_complete_and_detect_drift(tmp_path):
         supervisor._verify_code_fingerprints(expected, root=tmp_path)
 
 
+def test_active_ample_probe_waiter_is_a_launch_conflict():
+    waiter = {"pid": 4141, "name": "python.exe",
+              "command_line": "python scripts/instruments/run_ample_preview_state_ab.py",
+              "executable_path": "python.exe"}
+    own = {"pid": 5151, "name": "python.exe",
+           "command_line": "python supervise_ample_hm2_version_index_controls.py",
+           "executable_path": "python.exe"}
+
+    assert supervisor._active_product_conflicts(
+        [waiter, own], product="AGSC", plugin_path=Path("C:/VST3/AGSC.vst3"),
+        ignored_pids={own["pid"]}) == [waiter]
+
+
 def _encode_memory_block(raw: bytes) -> str:
     alphabet = ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
     accumulator = bits = 0

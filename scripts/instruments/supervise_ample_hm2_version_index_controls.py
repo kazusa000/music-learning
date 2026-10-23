@@ -37,6 +37,14 @@ PLUGIN_HOST_NAMES = {
     "instrument_probe_host.exe", "ml_audio_host.exe", "ml_track_host.exe",
     "ml_graph_runner.exe", "plugin-worker.exe",
 }
+EXCLUSIVE_PROBE_TOKENS = (
+    "probe_ample_hm2_migration.py", "probe_ample_seq_state_controls.py",
+    "probe_ample_strummer_offset_control.py", "run_ample_preview_state_ab.py",
+    "probe_staged_ample.py", "instrument_intake.py",
+    "supervise_ample_failed_retry.py", "supervise_ample_final_bank_controls.py",
+    "supervise_ample_final_bank_riff_retry.py", "supervise_ample_phrase_duration_retest.py",
+    "run_ample_factory_chain.py", "supervise_ample_hm2_version_index_controls.py",
+)
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -213,6 +221,9 @@ def _active_product_conflicts(rows: list[dict], *, product: str, plugin_path: Pa
         name = row.get("name", "").casefold()
         command = row.get("command_line", "")
         executable = row.get("executable_path", "")
+        if any(token in command.casefold() for token in EXCLUSIVE_PROBE_TOKENS):
+            conflicts.append(row)
+            continue
         is_known_host = name in PLUGIN_HOST_NAMES or any(
             host in command.casefold() for host in PLUGIN_HOST_NAMES)
         if is_known_host:
