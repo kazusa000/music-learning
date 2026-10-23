@@ -1,5 +1,7 @@
 # 项目开发约定
 
+音源导入固定候选（2026-10-23）：Goal继续ACTIVE，默认后端仍0b79f96。新候选7b621fe/V4冻结完整service791过/3跳过（211.14s，runtime/test-reports/20261023-110828-a2fdd23c），夹具自动清0错，发布只读验证通过未激活，保留3b9d/f056/aa81。新增共享presentation_title仅显示投影，原身份/default/音频不改，真实H元数据尚未应用。实际设备QA04入口runtime/instrument-intake-engine-qa.local.json，启动时45312/24420，须每次核验真实身份；c4aac99修未知音域/完整候选比对，41专项过，E预检6普通+4完整profile，QA03零attempt安全止后报告保留；未实际发声不称通过。0b79下79款当前试听指纹71failed/8queued，旧3ready为旧指纹，全局历史counts不可当当前就绪数。full-h已实开验证，11:21的CSS队列4pass/1原超时/1运行/1待测，尚0Kontakt入库；LP2/A-B继续门控，不重开第二批。详见instrument-intake-full-recovery顶部。
+
 音源导入后端更新（2026-10-23）：默认后端0b79f96已在正式引擎空闲、无活动jobs/对话时平滑切换；保留3b9d前端/f056原生/aa81桌面及AGLP/AGM/AGSC三个精确C盘插件注册。固定service回归732过/3跳过，正式九表+head/E内12pin前后相同，H两pin在忙盘窗口未重读，最近完整14pin核对见full-g-transition-01。Ample79款已严格追加入库（LP22/SC39/M18），不是113全部完成；原79试听3ready/76failed已归因并继续修复，不冒充产品音频通过。Kontakt新固定full-h从原始Lua证据复用11份转换、992款原生验证全重做，locator runtime/kontakt-full-job.local.json，不按旧g PID称运行。目标及本聊天专属跟进ACTIVE，MODO仍暂缓，其他活动固定任务不改。711af51完整admitted状态试听候选尚未默认部署，实际A/B和验收继续。详见instrument-intake-full-recovery文档顶部及product-preview-recovery-01。
 
 风格库发布收尾（2026-10-23）：默认27b9946已激活并重开18765，新API与前端SHA匹配，正式九表/head及native/desktop SHA相同；48108/50676/52468三项入库进程身份相同。风格／界面最终4专项通过，临时夹具清理0错；保护证据runtime/maintenance/style-library-20261023。工程案例和音色映射未接。

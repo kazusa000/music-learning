@@ -2,11 +2,17 @@
 
 ## 2026-10-23 当前指纹、真实进程与剩余故障分类
 
+11:21 UTC新窗口中，full-h实际队列为CSS4passed/1原source超时/1running/1pending：2nd Violins、Basses、Cellos、Full Ensemble均通过，Lite Ensemble正在运行。新快照 `kf22/reports/full-h-progress-20261023T112106.json`保存原队列SHA及逐phase音频、身份、4145参数计数和完整状态摘要；992整批尚未完成、Kontakt仍0正式入库。前两款的NKI/NKM/原生身份和四份WAV/PCM SHA已独立对照，各自互异，未发现跨乐器复用声音或状态。下面早先waiting_storage记录只是当时快照；持续读取实际current、队列及PID，不根据旧storage_budget推断活动状态。
+
+最新固定后端候选为7b621fe/V4，`runtime/application-release.intake-preview-20261023-v4.local.json`。显式使用冻结pyproject的完整service回归791通过/3跳过/0失败（211.14秒），记录 `runtime/test-reports/20261023-110828-a2fdd23c`；4035文件/4293目录/1自有联接的临时夹具自动清理，0错。只读发布验证通过，尚未激活，默认仍0b79f96；web3b9d/nativef056/desktopaa81不变。通用presentation_title已实现来源SHA/原生身份/原候选指纹与来源文件名绑定、中文加英文显示和独立CAS发布；原name/variant/default/完整状态不改。82专项及实际load_admitted夹具合同通过，真实H目录尚未附加该元数据，E审查赋值保存在 `presentation-title-plan-01/reviewed-assignments.json`。
+
+独立实际设备QA04已建立耐久监督，入口 `runtime/instrument-intake-engine-qa.local.json`，启动时wrapper45312/child24420，0次尝试，避开A/B和LP实际任务。c4aac99进一步修正未知key_range被当作不可弹的选择错误，明确范围仍严格检查；比对完整candidate_fingerprint及native_admission/state_sha256，只允许展示元数据附加，41专项通过。7份E计划已预检选出三个产品6普通款和4完整演奏profile（3产品Riff及Strummer）并构造全部乐句，尚非实际设备发声通过。QA03在零attempt/无宿主时核对自身PID/ctime/命令后安全结束，旧报告保留。2cd414c先前修正QA将规范JSON指纹误当文件SHA的问题，原计划内容未改；旧无效50004亦保留为failed_preflight。新进程每次仍须重核身份。
+
 Goal和本聊天跟进继续ACTIVE。新只读核对保存于 `20261023-ample-shared-fix/goal-progress-20261023-1111.json`：full-h47740及子46344、Riff retry02的31092及监督44504、A/B9452/22936、被动观察器26568及子6260均按实际命令和creation_time核实，不能将locator的started文字单独当作运行证据。full-h仍current=null/waiting_storage，没有新增Kontakt原生验证结果；正式engine停止/无session，正式九表+heads和E内12固定SHA与上次激活相同。H两项未在忙盘窗口重读，最近完整14项仍引用full-g-transition-01。未停止其他应用或其他聊天任务。
 
 试听统计必须按当前发布和指纹计算。`product-preview-recovery-01/current-fingerprint-status-20261023-1113.json`重放0b79f96的真实fingerprint函数，对79已入库项为71failed/8queued；此前3ready的Riff缓存属于旧phrase指纹，不能继续称为当前已就绪。全局1253ready/81failed/8queued包含历史行，不代表当前79款可试听。711af51完整状态候选尚未激活；激活后所有新native_admission项会使用新的共享状态策略指纹，原记录保留，不能将排队当完成。
 
-剩余故障进一步分离：5个LP来源的原attempt曾在进入probe前被output目录契约拒绝，后续队列也未有成功结果；它们与当前两款完整Riff重试不重复，正在独立排查并准备精确失败项恢复。SEQ/HM2/T-Track仍按共同原因处理；T-Track源嵌入外部GP5路径和实际参数注册证据见 `ample-ttrack-investigation.md`，未访问D盘或忽略参数。目录中的内部Name与来源标题有两处实质差异，已提交通用只读展示计划器23ee1f2；共享展示元数据消费/CAS工具继续开发，不改已验证身份或原default字段，不冒充已在产品修好。
+剩余故障进一步分离：5个LP来源的原attempt曾在进入probe前被output目录契约拒绝，110f4e0已修共享根校验；后续真实retry3/4中三项为HM2参数不符、两项为silent，不能全部改称路径故障。精确5项retry05仅prepared保留，不盲跑；三HM2并入共享原因，两silent只有最终H bank相对旧staging有可证环境差异，将另建2ID控制，不与当前完整Riff两项重复。SEQ/HM2/T-Track仍按共同原因处理；T-Track源嵌入外部GP5路径和实际参数注册证据见 `ample-ttrack-investigation.md`，未访问D盘或忽略参数。
 
 `runtime/instrument-intake-pause.local.json`沿用历史文件名，但当前status/auto_resume/goal均active；本轮将Kontakt主字段从历史full-e阻断状态纠正为full-h真实运行等待，原值留在recovery_history并另存E备份，避免后续只读到旧段再次误判暂停。
 
