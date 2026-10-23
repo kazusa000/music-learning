@@ -329,7 +329,7 @@ def prepare_plan(plan_03: dict, core_manifest_path: Path, extra_manifest_path: P
              "sha256": digest(BASE_JUCE_MANIFEST), "file_count": 5347,
              "role": "immutable_05_JUCE_fullhash"},
             {"path": str(extra_manifest_path.resolve()),
-             "sha256": digest(extra_manifest_path), "file_count": len(diagnostic_paths),
+             "sha256": digest(extra_manifest_path), "file_count": 3 + len(HELPER_PATHS),
              "role": "05_callback_and_cadence_helpers_plus_07_observer_sources"},
             {"path": str(runtime_manifest_path.resolve()),
              "sha256": digest(runtime_manifest_path), "file_count": 1,
