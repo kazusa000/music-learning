@@ -1,5 +1,19 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 15:58 UTC：排除restart猜测、真实loader状态和诊断环溢出
+
+Goal ACTIVE；`goal-progress-20261023-155803.json`实核full-h47740/46344仍为原出生时间/命令，279通过/8失败/1运行/704待测，Kontakt正式入库0。正式九表/head及E12保护SHA相同，H两pin不在活动原队列期间重读。未停改原队列、正式工程或正式引擎发布。
+
+`restart-callback-trace-05`隔离源码/两宿主已编译、CTest通过，未改共享JUCE。源码清单在编译后建立并复核，不能声称编译前已冻结该清单；所有输入在实际调用前重新核对。完整5366文件清单SHA7d1b83cc…、JUCE5347清单7017579c…、build report de8d382f…、64/32 host b2a333aa…/5d0f0c70…；root独立执行输入plan0fa7e2c9…、runner8fbf81c。root-launch-01因命令用了相对脚本路径被实际身份门拒绝，在H/API/native之前退出，原日志保留；02绝对路径启动wrapper41632/actual4856。
+
+实际attempt `20261023T155137Z-4816a2764b`四个host调用均返回0且释放，六个原MIDI事件完整。新双布局reader首次实际成功：整个render的loading=0、status=Success、error_count=0、fields_read/ready=true；第一次消息派发前后亦保持。四轮各22条回调记录、dropped="0"，只有渲染前两组flags4立即参数值更新与prepare、渲染结束release，**渲染过程中无VST3 restart/reset/reprepare回调**。64两轮仍在32767结束发声、32两轮仍在16383结束，因此“宿主restart回调把声音打断”在本轮已被排除，不能继续当既定根因或为此抑制合法回调。
+
+`restart-callback-state-audit-01/report.json`（SHA7f4d0a28…）另核2298条参数逐记录一致，reopen输入/输出完整state_base64逐字节相同、state SHA4b2f8bb0…；初次3.7→4.0迁移保留472原参数并新增R-Sync Host Playback Toggle=0，不是render时状态突变。`root-release-assessment-01.json`（SHA45d07d7b…）确认全部自有音频PID退出。原监督checkpoint在四项native均结束之后，因旧纯分析器硬编码16源文件而标failed_requires_diagnosis，原记录不重写。`postanalysis-compatibility-01`提供仅分析用16核心文件投影，同时保持完整5366/5347清单核验，原纯分析器据同四份录音完成严格源/状态/MIDI/逐块检查（analysis SHA2ad9f413…）；未重跑音频，也未放宽身份或发声条件。
+
+MIDI raw包装器0dbd9d8和归属修正1c17679已过4项回归。md09-01/02仅在before-catalog H压力defer，无native；md09-03实际启动私有engine/worker并在原validator前保存raw（SHAcddec81c…）。这次真实值是process_block_calls=1366，audio_blocks=512，audio_blocks_dropped=854，恰为1366−512；34条MIDI记录及3条readiness记录都无drop。故旧“overflow or unknown”错误已明确为**诊断采集容量不足**，不能据不完整前512块判断整段实际音频。所有本次PID/ctime均已核释放，配置与默认release SHA相同，见midi-delivery-counter-audit-02/attempt-03/terminal.json；04未启动。
+
+接下来的两个独立诊断分别是：08将audio trace容量独立扩为有界4096，MIDI仍512，producer/consumer/validator同一声明，继续要求drop=0与完整覆盖/事件/顺序/身份；以及06仅把离线processBlock交给持久专用DSP线程，加载/状态/prepare/readback留消息线程、原64/32派发时点不变。现离线和worker均在同一消息线程执行DSP，是需要单因素验证的共享线程合同线索，尚非已证根因。卡死时由现有owned-process期限终止隔离子进程，不detach/强杀单线程或在回调仍运行时释放buffer/plugin。先E夹具与隔离构建，实际Ample冷开仍唯一通道，原07/05/f056/固定14不改。V9和新翻译尚未部署，52项试听仍须在真实修复验收后续回，MODO不探测。
+
 ## 2026-10-23 15:38 UTC：派发边界因果对照与原始诊断缺口
 
 Goal仍为ACTIVE。`goal-progress-20261023-153751.json`逐PID/creation_time/命令核实full-h47740/46344健康：238通过/8失败/746待测，Kontakt正式入库0。新增Factory `Instruments/Beats/Flair/Flair - West.nki` 原失败为 `Performance-profile trigger window is silent`，不改原队列/报告，不提前启动失败批。正式九表/head、E12保护SHA相同；H两pin不在活动队列期间反复重读。
