@@ -20,7 +20,7 @@ from native_host import NativeHost, NativeHostError
 
 PINNED_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PINNED_ROOT / "src"))
-from music_learning.ample_paths import workspace_root  # noqa: E402
+from music_learning.ample_paths import intake_output_root, workspace_root  # noqa: E402
 from music_learning.ample_library import inspect_sample_directory  # noqa: E402
 from music_learning.ample_riffer_mapping import profile_from_factory  # noqa: E402
 from music_learning.ample_presets import prepare, verify_state  # noqa: E402
@@ -35,13 +35,7 @@ ROOT = workspace_root(__file__)
 
 
 def output_root(path):
-    path = Path(path).resolve()
-    maintenance = (ROOT / "data/maintenance/instrument-intake").resolve()
-    if not path.is_relative_to(maintenance) or path == maintenance:
-        raise ValueError("Output must be a new run below data/maintenance/instrument-intake")
-    if path.exists():
-        raise ValueError("Choose a new run; existing evidence is never overwritten")
-    return path
+    return intake_output_root(__file__, path)
 
 
 def native_calls_directory(run, requested=None):
