@@ -62,6 +62,32 @@ def test_terminal_assessment_hash_mismatch_fails_closed(
         executor._root_chain_snapshot(executor.process_inventory())
 
 
+def test_unpinned_analyzer_fails_closed_before_any_host_call() -> None:
+    assert executor.EXPECTED_ANALYZER_SHA256 is None
+    with pytest.raises(executor.PumpCadenceError, match="SHA is not frozen yet"):
+        executor._analysis_contract()
+
+
+def test_run_refuses_to_stage_or_gate_until_analyzer_sha_is_frozen(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    assert executor.EXPECTED_ANALYZER_SHA256 is None
+    monkeypatch.setattr(executor, "EXECUTOR_LOCATOR", tmp_path / "runtime/job.local.json")
+    monkeypatch.setattr(executor, "_current_own_identity", lambda *args: _identity())
+    monkeypatch.setattr(executor, "_verify_runtime_prerequisites", lambda *args: {
+        "allowed": True,
+        "root_chain": {"chain_status": "blocked_midi_delivery_stage"},
+        "execution04": {"report_sha256": "execution04-report-sha"},
+    })
+    with pytest.raises(executor.PumpCadenceError, match="analyzer SHA is frozen"):
+        executor.run_attempt(
+            inventory_fn=lambda: [],
+            h_gate_fn=lambda *args, **kwargs: pytest.fail("analyzer pin is required before H gate"),
+            host_call_fn=lambda *args, **kwargs: pytest.fail("analyzer pin is required before host"),
+        )
+    assert not (tmp_path / "attempts").exists()
+    assert not (tmp_path / "runtime/job.local.json").exists()
+
+
 def test_preflight_rejects_active_v3_before_formal_or_h_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(executor, "_root_chain_snapshot", lambda rows: {
         "status": "blocked_root_chain_not_terminal_or_released",
