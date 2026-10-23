@@ -1,5 +1,15 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 13:18 UTC：QA07真实发声失败，独立控制继续
+
+`data/maintenance/instrument-intake/q/07/supervision.json`于13:11:02 UTC终态failed。前三次attempt只有H磁盘压力defer；attempt004实际使用V8提交`297929076`、固定源清单和f056原生bundle，首次LP私有轨已经进入设备播放，plugin ready、desired_revision等于applied_revision、missed_blocks/underruns均0，但设备peak和轨道meter都是0。它不是先前合约或MAX_PATH基础设施失败，也不等于已定位静音原因。该次引擎23924、插件57004及监督428/24516均已实查退出，原attempt报告不改；canonical07 locator已从陈旧running_attempt同步为终态，旧字节及assessment保存在`instrument-release-engine-qa-07`。
+
+`block-alignment-control-01`只把相同三音请求的block_size从512改为441，使全部note-on/off落在块边界；`riff-trigger-timing-control-01`只改变原94触发键的保持时长。两个都是独立原因控制，不是入库验收，也不要求QA07成功后才运行；在各自进程/配置/固定bank与H空闲门控通过后自动推进，不再向用户索要常规许可。首个block监督启动在任何H/音频访问前发现Windows venv进程image为base executable，原失败保留，新监督修正精确身份校验并回归后换独立execution。不得把零调用启动错误归因插件。
+
+`a277df4`新增独立Ample只读readiness诊断与构建器，C++夹具、Python构建器3项和Ruff通过。它只绑定LP4精确模块SHA及已证IComponent vtable；由于processor主对象调整仍有静态证据矛盾，实际配置返回`unsupported_component_mapping`，不解引用未经证明的loader字段。不能把独立宿主编译成功称作加载就绪或音频修复。REA后续已证明94映射内部0x4e并保留力度，普通事件的偏移字段被累计保存；0x4e到R-Play consumer仍未证实，诊断不依赖臆造该结论。
+
+`goal-current-20261023T131817.json`按实际PID/creation_time/完整命令核对Kontakt full-h的47740/46344仍运行，队列为140通过/7失败/845未完成，Kontakt正式入库仍0。该数字仅为13:18快照。原批固定文件、报告和队列未修改。总持久入口`runtime/instrument-intake-pause.local.json`已同步真实QA07与当前批次，Goal ACTIVE；历史pause文件名不构成停止指令。52项让路试听仍列为必须续回，未伪称预热完成。宿主关闭请求已处理，不停止健康验证进程或其他应用。
+
 ## 2026-10-23 后续：先证明多音符演奏，再续试听预热
 
 V8新宿主的两个当前ready Riff实际WAV已在E复算：World on Fire的25个0.5秒窗、The Silence of Faling Flower的55窗都只有前2窗非零。报告`product-preview-new-host-window-review-01/report.json`保持当前音频SHA，不把预览ready说成完整乐句通过。进一步对79条目中67个无profile的原first/reopen收据、请求、状态与WAV逐项只读审计（`unprofiled-three-note-source-audit-01/report.json`）：原MIDI固定48/60/72于0/1/2秒，每音0.5秒；全部67项两轮的note72后0.5/1秒窗均没有能量，note60仅first3项/reopen6项的1秒窗有能量，没有任何条目证实三次独立起音。Autumn Leaves(Blues)两轮同一WAV SHA也仅首音48非零。因此原收据只证明原非静音门通过，不能把它扩展成完整音区/三音演奏验收。原结果不改；继续区分触发MIDI数字、NoteOff、非零block offset和样本加载就绪等共同原因，用独立单因素控制验证。
