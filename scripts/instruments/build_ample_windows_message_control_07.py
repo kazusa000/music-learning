@@ -31,6 +31,8 @@ CADENCE_SOURCE_MANIFEST_SHA256 = "5bd516cd42ae28d3d6df147971e777801097657d540169
 RENDER_REL = "native/audio-host/Render.cpp"
 
 PINS = {
+    "cadence_plan": "90746d9979be36ee3b282d7cacf1f90702777f5b6fdd12e71dbdb00453ff0d97",
+    "cadence_source_manifest": "5bd516cd42ae28d3d6df147971e777801097657d54016989a9be9eb807656c4a",
     "build_report": "de8d382f9f968768134001cb4dbfe8fe3795428e3b8d4fbd3d80f0bbbd78a21c",
     "source_manifest": "ce5c8e7f138128f9f723f61f9bd4f1cad44145ebb227944f61b1b689a3f8cf5f",
     "source_snapshot_manifest": "7d1b83cccf7b03333b75366de5a8ee0d568ab600ad4b1b4427057ef44849149d",
