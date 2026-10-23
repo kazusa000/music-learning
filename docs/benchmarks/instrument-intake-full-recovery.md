@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 15:38 UTC：派发边界因果对照与原始诊断缺口
+
+Goal仍为ACTIVE。`goal-progress-20261023-153751.json`逐PID/creation_time/命令核实full-h47740/46344健康：238通过/8失败/746待测，Kontakt正式入库0。新增Factory `Instruments/Beats/Flair/Flair - West.nki` 原失败为 `Performance-profile trigger window is silent`，不改原队列/报告，不提前启动失败批。正式九表/head、E12保护SHA相同；H两pin不在活动队列期间反复重读。
+
+`runtime/ample-pump-cadence-control-job.local.json`现在是真实终态`completed_diagnostic_only`，对应03 attempt `20261023T151748Z-1a77d1e26d`，46376/34684已退出。四次实际native调用均返回0、进程释放、全部六个原MIDI事件交付、完整状态/源身份绑定相同。64块派发的首开和独立重开最后非零帧均32767；32块派发两轮均16383，活动边界随派发频率移动16384采样。每轮第一次派发后下一块归零。这已是消息派发边界对照，不能继续只称相关性，也尚未证明具体restart flags或哪一生命周期回调造成静音。`analysis.json`与独立`root-assessment-01.json`保存逐块结果，未作入库成功。plan SHA90746d99…、source-manifest5bd516cd…、64/32 host e548ced4…/e94a292c…、executor b5300bca…冻结。
+
+旧control01 plan/source pin冲突、02复制阶段失败和原报告全部保留；最终instrumented Render SHA3970631c…不能误称为pre-instrumented版本。新03在configure前冻结最终源码、编译后复核，未改共享JUCE、旧宿主或f056。首轮readiness返回component_vtable_mismatch，不能当作加载完成；实际IComponent为wrapper主接口RVA0x51f7a00，而旧reader只接受+0x18次接口RVA0x51f71c0。`e2e655b`新增隔离双布局桥，主/次接口先规范化到同一wrapper，再沿原+0x38、processor+0x210双表及原严格字段reader读取。模块/版本/大小/地址绑定不减；CTest1/1过，尚未实际读到loader字段。下一独立候选把此reader与JUCE restart原始flags/同步异步/实际生命周期trace合并，保留相同64/32控制，先固定源码再独立编译；不得抑制回调或删消息派发来制造通过。
+
+`runtime/ample-midi-delivery-suffix-v1-continuation-07-job.local.json`已于15:33终态`midi_deferred_requires_diagnosis`，不再运行。md08-01只有before-catalog H压力defer；md08-02实际捕获2298参数并启动私有engine，但固定probe在`audio_blocks_dropped`严格检查处抛出`Diagnostic ring overflow or count is unknown`。该probe先validate后写raw，故原最终payload缺失；不能据此断言确有overflow或计数为零。E-only核实冻结engine有此字符串且build启用诊断宏，尚无stale/macro mismatch静态证据。`continuation-07/release-assessment-01.json`实核56164/38880及全部自有音频进程已退出。冻结07 probe/bundle/源pin不改；新增小型独立wrapper须在原validator之前保存raw并保留原异常，再通过相同门控安排新输出。Riff六组尚未开始，不重跑已完成441/512。
+
+默认仍11f0/4ade/f056/aa81；V9完整回归仅候选，中文语境修复也未部署。52项让路试听仍必须在共享音频修复与真实产品验收后续回。当前Ample79已发布条目不等于113款全部验收完成，旧整体非零收据不冒充完整乐句；缺失AGMPk单列，MODO继续暂缓。后续提交仅本任务文件，使用`git commit --only -- <paths>`，避免并行agent共享暂存区混入他人内容。
+
 ## 2026-10-23 15:00 UTC：原控制终态、真实512基线与中文语义修复
 
 Goal保持ACTIVE。`goal-progress-20261023-145959.json`实核full-h47740/46344的出生时间与原plan命令，156通过/7失败/829待测，正在推进；Kontakt正式入库仍0。正式九表/head及E12固定SHA同14:37基线；H两pin未在原队列活动时重读。
