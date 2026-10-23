@@ -17,3 +17,7 @@ TypeScript与前端构建通过。统一测试入口`tests/service/test_workspac
 界面证据：`runtime/test-reports/workspace-loading-ui-1792790104731678200/`。原生遥测在此短测中为确定性注入，没有重新加载真实音源，不作为实际音频或冷装载性能验收。未运行长测，未访问H音源库或NAS，正式工程和活动音源任务保持独立。
 
 发布候选及正式前后保护记录在`runtime/maintenance/workspace-loading-20261023/`。只有`runtime/application-release.local.json`代表当前实际运行版本；发布不能中断正在准备的音色试听。
+
+功能提交`a08df9c`；候选`c72d9f1`只把本任务11个文件叠加到当时实际发布`a469857`，保留正式后端、原生与桌面包。候选描述`runtime/application-release.workspace-loading-20261023.local.json`已完整校验，尚未激活：收尾时正式服务仍有1项音色试听加载、357项排队，停止服务会影响当前任务。没有创建定时任务或更改自动跟进。待试听收尾／明确维护窗口再按既有发布入口切换，不能称当前界面已更新。
+
+正式九表／head、9个原生与桌面文件SHA及Kontakt三项监督进程PID／出生时间／实际命令前后一致；程序正式指针未变。临时工程与浏览器数据已自动清理，保留发布包及小型报告。
