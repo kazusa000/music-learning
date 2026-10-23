@@ -55,8 +55,8 @@ def test_cadence_release_requires_exact_terminal_cases_and_released_receipts() -
     cases = {key: {"status": "host_terminal", "native_host_started": True,
                    "execution_status": "host_returned"}
              for key in continuation.PUMP_CADENCE_CASE_ORDER}
-    executions = {key: {"process_release": "released", "resume_safe": True,
-                        "timed_out": False}
+    executions = {key: {"process_release": "released", "native_host_started": True,
+                        "returncode": 0, "timed_out": False}
                   for key in continuation.PUMP_CADENCE_CASE_ORDER}
     locator = {
         "schema_version": 1, "status": "completed_diagnostic_only",

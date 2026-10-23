@@ -27,9 +27,9 @@ from instruments import supervise_ample_root_cause_chain as chain  # noqa: E402
 
 INTAKE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
 ROOT_CHAIN = INTAKE / "root-cause-chain-03"
-DEFAULT_PLAN = ROOT_CHAIN / "continuation-03/plan.json"
-DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-03-job.local.json"
-DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-03"
+DEFAULT_PLAN = ROOT_CHAIN / "continuation-04/plan.json"
+DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-04-job.local.json"
+DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-04"
 V3_PLAN = ROOT_CHAIN / "plan.json"
 V3_CHECKPOINT = ROOT_CHAIN / "checkpoint.json"
 V3_LOCATOR = ROOT / "runtime/ample-root-cause-chain-v3-job.local.json"
@@ -307,8 +307,9 @@ def pump_cadence_release_problem(locator: dict, checkpoint: dict,
         execution = executions.get(case)
         if (not isinstance(execution, dict)
                 or execution.get("process_release") != "released"
-                or execution.get("resume_safe") is not True
-                or execution.get("timed_out") is True):
+                or execution.get("native_host_started") is not True
+                or execution.get("returncode") != 0
+                or execution.get("timed_out") is not False):
             return f"pump-cadence case {case} lacks a released execution receipt"
     if (report.get("status") != "completed_diagnostic_only"
             or not report.get("finished_at_utc")):
