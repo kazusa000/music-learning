@@ -43,3 +43,11 @@ HM2 参数诊断在独立目录 `data/maintenance/instrument-intake/20261023-amp
 H 盘预算随后通过三次观察（忙碌率 15%/15%/4%，队列 0/1/0），因此只启动新 retry run 的第一项 `AGLP Rock-Cm-120`，并由 runner 在项目开始前再次执行 H 盘门控。该项没有进入实际发声验证：runner 生成给 probe 的 manifest 时漏传了队列中的 `factory_sha256`，probe 因缺少工厂状态身份哈希而按严格规则拒绝 Riffer profile。该诊断不是静音、样本或参数验证结果，也没有产生首次/重开音频证据；run `failed-only-profiled-retry-1` 中该项的失败记录保留。
 
 共享 runner 现在通过纯函数 `_probe_manifest_item` 把准确的 `factory_sha256` 与 profile/evidence 一并传入 manifest，并在哈希缺失或格式错误时于 probe 启动前拒绝。两项回归分别验证哈希被传递和缺哈希被拒绝；Ample 定向测试 26 项及 Ruff 通过。不要编辑该 run 的队列/原 attempt 来改写失败；修复需 pin 入新的独立 retry run，再从原始 45 个失败身份开始验证。实际首次/重开发声、完整参数读回和通过项发布仍未证实。
+
+## 2026-10-23 Strummer 共享演奏档案候选
+
+新的独立 profile 规则按工厂状态中的 `S-Strum Toggle` 分流：开启时从当前 `<Chords>` 和八个 `<Pattern>` 中读取 `S-Chord Index`、`S-Pattern Index`、所选和弦/序列、速度、拍号、量化和序列音符；整个工厂 XML SHA 与所选 pattern SHA 都纳入 profile。关闭时仍使用既有 Riffer A#6 profile。它按状态与厂商数据分流，不依赖预设名称。
+
+触发键依据 Ample 官方 [Strummer Panel Manual](https://www.amplesound.net/en/Guitar_Strummer.pdf)：C1–B2 选择 24 个和弦槽，C3/C#3/D#3/F#3/G#3/A#3/C#4/D#4 触发 SEQ1–8；D5 低力度切换到 Select Mode。代码按 MIDI A4=69 推导这些 MIDI 音符号。源状态为 Detect Mode 时，profile 先发低力度 D5，再选择工厂槽位和同步序列；Select Mode 直接选择槽位与序列。未映射的同步/播放状态、错误的工厂索引、Pattern、节奏网格或 SHA 均拒绝。
+
+此次规则在静态原厂 XML 上成功构造了 13 个 Strum-enabled 失败项 profile（含 Select/Detect 两种模式），并通过 63 项 Ample profile、失败队列、预览和 publication 定向回归，Ruff 与 diff 检查通过；提交 `fa2590b`。这些结果只证明源映射和事件计划，**还未证明插件实际响应、首次/重开声音或入库**。当前已 pin 的 `failed-only-riffer-retry-3` 不变，仍使用旧 Riffer profile；必须等它终态后，用新独立 pin 实测 Strummer 首次/重开发声，非静音、参数、身份和状态门槛保持不变。
