@@ -136,6 +136,13 @@ def run(args):
             record.update(status="host_terminal", execution_path=result["execution_path"])
             state["completed_case_order"].append(case)
             save("case_terminal")
+        analyzer, analyzer_sha = leaves._analysis_contract()
+        analysis = analyzer(plan_path=plan_path,
+            case_artifacts=leaves._build_case_artifacts(state),
+            expected_plan_sha256=args.plan_sha256)
+        leaves.atomic_json(output / "cadence-analysis.json", analysis)
+        state["cadence_analysis_sha256"] = leaves.sha(output / "cadence-analysis.json")
+        state["frozen_analyzer_sha256"] = analyzer_sha
         save("completed_diagnostic_only", finished_at_utc=leaves.now_utc())
         verify_extra_sources(leaves, plan)
         return 0
