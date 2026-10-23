@@ -34,13 +34,20 @@ def _storage_observations() -> list[dict]:
     ]
 
 
-def test_prepared_plan_and_all_four_request_variants_are_source_bound() -> None:
-    report = executor.verify_prepared_inputs()
-    assert report["status"] == "static_inputs_verified"
-    assert report["case_keys"] == list(executor.CASE_ORDER)
-    assert report["native_calls"] == report["formal_api_calls"] == 0
-    assert report["h_drive_accessed"] is False
-    assert report["nas_access"] is False
+def _verified_pins_for_control_test(_plan_path: Path = executor.PREPARED) -> dict:
+    return {"status": "static_inputs_verified", "case_keys": list(executor.CASE_ORDER),
+            "plan_sha256": executor.EXPECTED_PREPARED_SHA256}
+
+
+def test_frozen_plan_render_hash_must_match_its_source_manifest() -> None:
+    plan = executor.load_json(executor.PREPARED, "real prepared cadence plan")
+    manifest_ref = plan["source_snapshot_manifest"]
+    manifest = executor.load_json(Path(manifest_ref["path"]), "pinned source manifest")
+    source_render = manifest["files"]["native/audio-host/Render.cpp"]["sha256"]
+    assert plan["source_render_sha256"] != source_render
+    with pytest.raises(executor.PumpCadenceError,
+                       match="Render.cpp SHA differs from its source-manifest entry"):
+        executor.verify_prepared_inputs()
 
 
 def test_pinned_terminal_defer_assessment_allows_only_a_released_cause_control() -> None:
@@ -62,15 +69,17 @@ def test_terminal_assessment_hash_mismatch_fails_closed(
         executor._root_chain_snapshot(executor.process_inventory())
 
 
-def test_unpinned_analyzer_fails_closed_before_any_host_call() -> None:
-    assert executor.EXPECTED_ANALYZER_SHA256 is None
+def test_unpinned_analyzer_fails_closed_before_any_host_call(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(executor, "EXPECTED_ANALYZER_SHA256", None)
     with pytest.raises(executor.PumpCadenceError, match="SHA is not frozen yet"):
         executor._analysis_contract()
 
 
 def test_run_refuses_to_stage_or_gate_until_analyzer_sha_is_frozen(
         monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    assert executor.EXPECTED_ANALYZER_SHA256 is None
+    monkeypatch.setattr(executor, "EXPECTED_ANALYZER_SHA256", None)
+    monkeypatch.setattr(executor, "verify_prepared_inputs", _verified_pins_for_control_test)
     monkeypatch.setattr(executor, "EXECUTOR_LOCATOR", tmp_path / "runtime/job.local.json")
     monkeypatch.setattr(executor, "_current_own_identity", lambda *args: _identity())
     monkeypatch.setattr(executor, "_verify_runtime_prerequisites", lambda *args: {
@@ -88,7 +97,41 @@ def test_run_refuses_to_stage_or_gate_until_analyzer_sha_is_frozen(
     assert not (tmp_path / "runtime/job.local.json").exists()
 
 
+def test_analyzer_fails_closed_on_the_same_frozen_render_hash_mismatch(
+        tmp_path: Path) -> None:
+    analyzer, digest = executor._analysis_contract()
+    assert digest == "4e93842c6496cddfa71136d3d21ccecfbe021f31072cce975569d9baf2300fa2"
+    plan = executor.load_json(executor.PREPARED, "real prepared cadence plan")
+    artifacts = {
+        case: {
+            "request_path": Path(plan["request_variants"][case]["request"]),
+            "response_path": tmp_path / f"{case}-missing-response.json",
+            "wav_path": tmp_path / f"{case}-missing-output.wav",
+            "host_path": Path(plan["diagnostic_executables"][case.split("-", 1)[0]]["path"]),
+            "exit_code": None,
+        }
+        for case in executor.CASE_ORDER
+    }
+    with pytest.raises(ValueError, match="Render.cpp source binding changed"):
+        analyzer(plan_path=executor.PREPARED,
+                 case_artifacts=artifacts,
+                 expected_plan_sha256=executor.EXPECTED_PREPARED_SHA256)
+
+
+def test_attempt_artifacts_fit_legacy_windows_path_limit() -> None:
+    attempt_dir = executor._attempt_path("20261023T235959Z-aaaaaaaaaa")
+    artifacts = [attempt_dir / name for name in (
+        "checkpoint.json", "events.jsonl", "analysis.json", "report.json")]
+    for case in executor.CASE_ORDER:
+        case_dir = attempt_dir / case
+        artifacts.extend(case_dir / name for name in (
+            "request.json", "response.json", "output.wav", "launch.json",
+            "execution.json", "fresh-gate.json", "stdout.log", "stderr.log"))
+    assert max(len(str(path)) for path in artifacts) < 260
+
+
 def test_preflight_rejects_active_v3_before_formal_or_h_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(executor, "verify_prepared_inputs", _verified_pins_for_control_test)
     monkeypatch.setattr(executor, "_root_chain_snapshot", lambda rows: {
         "status": "blocked_root_chain_not_terminal_or_released",
         "chain_status": "waiting_for_execution04_terminal",
@@ -109,6 +152,7 @@ def test_preflight_rejects_active_v3_before_formal_or_h_gate(monkeypatch: pytest
 def test_run_refuses_active_v3_before_any_fresh_h_gate_or_host(
         monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(executor, "EXECUTOR_LOCATOR", tmp_path / "runtime/job.local.json")
+    monkeypatch.setattr(executor, "verify_prepared_inputs", _verified_pins_for_control_test)
     monkeypatch.setattr(executor, "_current_own_identity", lambda *args: _identity())
     monkeypatch.setattr(executor, "_verify_runtime_prerequisites", lambda *args: {
         "allowed": False,
@@ -236,6 +280,7 @@ def test_fresh_gate_uses_real_qa_and_manifest_builders_with_leaf_fakes(
 
 def test_timeout_resume_keeps_source_request_and_completed_case_immutable(
         monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(executor, "verify_prepared_inputs", _verified_pins_for_control_test)
     attempts_root = tmp_path / "attempts"
     locator_path = tmp_path / "runtime" / "ample-pump-cadence.local.json"
     monkeypatch.setattr(executor, "ATTEMPTS_ROOT", attempts_root)

@@ -59,7 +59,9 @@ CASE_ORDER = ("64-first", "64-reopen", "32-first", "32-reopen")
 # The source analysis module is being frozen by the shared loading work. An
 # actual host run is refused until its exact reviewed SHA is pinned here.
 ANALYZER_PATH = ROOT / "src/music_learning/ample_pump_diagnostics.py"
-EXPECTED_ANALYZER_SHA256: str | None = None
+EXPECTED_ANALYZER_SHA256 = (
+    "4e93842c6496cddfa71136d3d21ccecfbe021f31072cce975569d9baf2300fa2"
+)
 
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
@@ -164,6 +166,13 @@ def verify_prepared_inputs(plan_path: Path = PREPARED) -> dict:
         path = _e_path(source_root / relative, f"source snapshot {relative}")
         if path.stat().st_size != expected.get("bytes") or sha(path) != expected.get("sha256"):
             raise PumpCadenceError(f"Source snapshot file changed: {relative}")
+
+    render_entry = manifest["files"].get("native/audio-host/Render.cpp")
+    if (not isinstance(render_entry, dict)
+            or plan.get("source_render_sha256") != render_entry.get("sha256")):
+        raise PumpCadenceError(
+            "Prepared plan Render.cpp SHA differs from its source-manifest entry"
+        )
 
     builder = plan.get("builder_script", {})
     builder_path = _e_path(builder.get("path", ""), "E plan builder")
