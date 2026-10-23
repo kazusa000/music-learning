@@ -9,6 +9,7 @@ from copy import deepcopy
 import hashlib
 import json
 import ntpath
+import struct
 from pathlib import Path
 import re
 from types import SimpleNamespace
@@ -21,7 +22,7 @@ from .instrument_intake_publication import (
 from .kontakt_audio_probe import captured_state_roundtrip
 from .kontakt_import import atomic_write_json
 from .kontakt_native_identity import make_kontakt_native_verifier
-from .kontakt_performance import KontaktProbeProfile, validate_profile
+from .kontakt_performance import KontaktProbeProfile, profile_phrase, validate_profile
 from .vst3_state import state_components, vst3_preset
 
 CORE_SHA256 = "6e6abad7518574e4f4e5e20779860f7c789041df63b75e0f03c29a18d701aeab"
@@ -34,6 +35,8 @@ VERSION = "8.10.1"
 # includes native and MIDI-mapped parameters, not just the first 2,049 slots.
 PARAMETER_COUNT = 4145
 PARAMETER_IDS_SHA256 = "3408749d7ab9b092d7f46dde2b4af54419ace274593bf99d72f7aedbf136413a"
+CONTROLLER_PARAMETER_BASE = 1295056896
+CONTROLLER_PARAMETER_STRIDE = 256
 LIBRARIES = {"kontakt-factory": "Kontakt Factory Library 2", "css": "Cinematic Studio Strings",
              "css-solo": "Cinematic Studio Solo Strings"}
 
@@ -125,6 +128,47 @@ def _full_parameters(plugin):
     if len(parameters) != PARAMETER_COUNT or ids_sha != PARAMETER_IDS_SHA256:
         raise ValueError("Kontakt source requires the complete pinned 4145-parameter ID set")
     return parameters
+
+
+def _expected_audition_controller_values(profile):
+    """Map only the explicitly auditioned MIDI CCs to Kontakt's parameter IDs.
+
+    Kontakt exposes its 131 CCs on 16 channels as parameters after the first
+    2,049 native parameters.  The ID layout is part of the pinned 8.10.1
+    4,145-ID set: base + 256 * controller + zero-based channel.
+    """
+    phrase = profile_phrase(validate_profile(profile))
+    expected = {}
+    for event in phrase["controllers"]:
+        key = str(CONTROLLER_PARAMETER_BASE
+                  + CONTROLLER_PARAMETER_STRIDE * event["controller"]
+                  + event["channel"] - 1)
+        value = struct.unpack("<f", struct.pack("<f", event["value"] / 127.0))[0]
+        if key in expected and expected[key] != value:
+            raise ValueError("Kontakt audition sends conflicting values to one controller parameter")
+        expected[key] = value
+    return expected
+
+
+def _validate_audition_parameters(plugin, source_parameters, profile):
+    """Require every parameter to retain source state except sent MIDI CCs.
+
+    The audition phrase deliberately sends CCs (currently CC1/CC11).  Kontakt
+    reports those controller values as normalized host parameters after MIDI
+    processing; compare them to the exact float32-normalized values sent.
+    All other parameter values and the full canonical 4,145-ID set stay exact.
+    """
+    actual = _full_parameters(plugin)
+    if set(actual) != set(source_parameters):
+        raise ValueError("Kontakt source parameter IDs changed during audition processing")
+    controller_values = _expected_audition_controller_values(profile)
+    unknown = set(controller_values) - set(source_parameters)
+    if unknown:
+        raise ValueError("Kontakt audition controller is absent from the pinned parameter set")
+    for key, source_value in source_parameters.items():
+        expected = controller_values.get(key, source_value)
+        if actual[key] != expected:
+            raise ValueError("Kontakt source parameters changed outside the audition MIDI context")
 
 
 def capture_source(host, spec, output: Path, *, startup, expected_identity, timeout_seconds=180):
@@ -228,13 +272,13 @@ def validate_captured(host, candidate, source_state, output: Path, *, empty_star
                                     timeout_seconds=timeout_seconds)
     # Native identities are checked again after MIDI processing, not merely in
     # the pre-render snapshot used by the shared admission receipt.
+    profile = candidate["performance_profile"]
     for phase in ("first", "reopen"):
         response = json.loads((output / index[phase]["response"]["path"]).read_bytes())["result"]
         after = response["tracks"][0]["plugin_readback_after"][0]
         _exact_identity(after, candidate["expected_identity"], descriptor_identifier=descriptor_identifier,
                         expected_plugin_path=candidate["plugin_path"])
-        if _param_map(after) != candidate["expected_parameters"]:
-            raise ValueError("Kontakt source parameters changed during audition processing")
+        _validate_audition_parameters(after, candidate["expected_parameters"], profile)
     parser = verifier()
     receipt = dict(schema_version=1, preset_id=candidate["id"], candidate_sha256=candidate_fingerprint(candidate),
                    resource_manifest_sha256=resource_manifest_fingerprint(candidate),
