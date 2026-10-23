@@ -1,5 +1,7 @@
 # 项目开发约定
 
+风格库发布收尾（2026-10-23）：默认27b9946已激活并重开18765，新API与前端SHA匹配，正式九表/head及native/desktop SHA相同；48108/50676/52468三项入库进程身份相同。风格／界面最终4专项通过，临时夹具清理0错；保护证据runtime/maintenance/style-library-20261023。工程案例和音色映射未接。
+
 本地风格库（2026-10-23）：资源在resources/styles/catalog.json，1023风格／29分类／2641关系，保留事实索引／曲目／出处，本地编曲提示与21重点说明独立整理；无原站程序、文章、图片或音频。主页及工作台有风格库，懒加载、搜索／收藏／年代／关系图；工作台模态保持编辑器、抑制空格播放。styles.index/get/graph/query共用API/SDK/CLI，AI新增style_query只读工具；不接工程案例与音色映射。19短回归及4K／窄窗界面通过，外部请求和JS错0，临时测试自动清。保护记录runtime/maintenance/style-library-20261023，H/NAS/入库/固定包不动。详见docs/architecture/style-library.md与资源README。
 
 AI设置发布收尾（2026-10-23）：默认8edf924已激活并重开应用，18765新API/前端SHA匹配，九表/head和native/desktop SHA不变；保护记录runtime/maintenance/ai-controls-20261023。其他任务进程在窗口内退出如实记录，不按旧locator称运行，不停改音源验证。下述协议生成临时目录清理拒绝仍保留。
