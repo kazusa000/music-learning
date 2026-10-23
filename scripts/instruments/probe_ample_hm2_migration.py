@@ -146,6 +146,8 @@ def _source_item(queue_path: Path, item_id: str) -> tuple[dict, Path]:
     if len(found) != 1 or found[0].get("instrument") != "AGLP":
         raise ValueError("Expected exactly one AGLP source item")
     item = found[0]
+    if item.get("status") != "failed":
+        raise ValueError("HM2 controls may use only a preserved failed source item")
     source = Path(item["factory_xml"]).resolve(strict=True)
     source_raw = source.read_bytes()
     if _sha(source_raw) != item.get("factory_sha256"):
@@ -209,6 +211,9 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
     evidence = attempt / "probe/AGLP/evidence"
     captured_path = evidence / "first/captured-state.json"
     request_path = evidence / "first/request.json"
+    if (not captured_path.is_file() or captured_path.is_symlink()
+            or not request_path.is_file() or request_path.is_symlink()):
+        raise ValueError("Pinned original attempt lacks regular first-phase evidence")
     captured_raw = captured_path.read_bytes()
     captured = json.loads(captured_raw)["plugin"]
     request = json.loads(request_path.read_text(encoding="utf-8"))
@@ -299,9 +304,9 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
                         {"schema_version": 1, "action": "render", "project": scoped_project},
                         wav, timeout=300,
                     )
-                    after = config.read_bytes()
-                    if _sha(after) != original_config_sha:
-                        raise ValueError("AGLP InstDir XML was not restored after host call")
+                after = config.read_bytes()
+                if _sha(after) != original_config_sha:
+                    raise ValueError("AGLP InstDir XML was not restored after host call")
                 plugin_state = response["snapshot"]["tracks"][0]["plugins"][0]
                 phase_record = {
                     "metrics": {key: response.get(key) for key in
