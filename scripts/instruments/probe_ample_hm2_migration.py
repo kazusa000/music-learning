@@ -48,6 +48,14 @@ def _sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _sha_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def _write_json(path: Path, value: object) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -214,10 +222,14 @@ def _call_render(host: NativeHost, request: dict, output: Path, *, timeout: floa
 
 
 def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
-        output: Path, *, max_wait_seconds: float = MAX_WAIT_SECONDS) -> dict:
+        output: Path, *, max_wait_seconds: float = MAX_WAIT_SECONDS,
+        variant_names: tuple[str, ...] = VARIANTS) -> dict:
     output = _within_intake(output)
     if output.exists():
         raise ValueError("Diagnostic output already exists; choose a new attempt directory")
+    if (not variant_names or len(set(variant_names)) != len(variant_names)
+            or any(name not in VARIANTS for name in variant_names)):
+        raise ValueError("Requested HM2 version/index variants are invalid")
     item, source_path = _source_item(queue_path, item_id)
     source_raw = source_path.read_bytes()
     attempt = Path(item["attempts"][-1]["output"]).resolve(strict=True)
@@ -264,8 +276,8 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
                    "captured_state_path": str(captured_path),
                    "captured_state_file_sha256": _sha(captured_raw),
                    "captured_native_state_sha256": captured.get("state_sha256"),
-                   "plugin_path": str(plugin_path), "plugin_sha256": _sha(plugin_path),
-                   "host_path": str(host_path), "host_sha256": _sha(host_path),
+                   "plugin_path": str(plugin_path), "plugin_sha256": _sha_file(plugin_path),
+                   "host_path": str(host_path), "host_sha256": _sha_file(host_path),
                    "sample_library": str(library), "config": str(config)},
         "factory_state_edited": False, "formal_project_writes": 0,
         "catalog_writes": 0, "library_asset_writes": 0, "nas_access": False,
@@ -293,7 +305,7 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
     original_config_sha = _sha(config.read_bytes())
     started = time.monotonic()
     try:
-        for name in VARIANTS:
+        for name in variant_names:
             record = report["variants"][name]
             preset_path = Path(record["preset_path"])
             project_for_variant = json.loads(json.dumps(project))
@@ -377,9 +389,12 @@ def main() -> int:
     parser.add_argument("--library", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-wait-seconds", type=float, default=MAX_WAIT_SECONDS)
+    parser.add_argument("--variant", choices=VARIANTS, action="append",
+                        help="Run only this frozen version/index candidate; repeat to select several.")
     args = parser.parse_args()
     result = run(args.queue, args.item_id, args.host, args.library, args.output,
-                 max_wait_seconds=args.max_wait_seconds)
+                 max_wait_seconds=args.max_wait_seconds,
+                 variant_names=tuple(args.variant) if args.variant else VARIANTS)
     print(json.dumps({"status": result.get("status"), "report": result.get("report_path"),
                       "variants": {name: row.get("status") for name, row
                                    in result.get("variants", {}).items()}}, ensure_ascii=False))
