@@ -27,9 +27,9 @@ from instruments import supervise_ample_root_cause_chain as chain  # noqa: E402
 
 INTAKE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
 ROOT_CHAIN = INTAKE / "root-cause-chain-03"
-DEFAULT_PLAN = ROOT_CHAIN / "continuation-02/plan.json"
-DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-02-job.local.json"
-DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-02"
+DEFAULT_PLAN = ROOT_CHAIN / "continuation-03/plan.json"
+DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-03-job.local.json"
+DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-03"
 V3_PLAN = ROOT_CHAIN / "plan.json"
 V3_CHECKPOINT = ROOT_CHAIN / "checkpoint.json"
 V3_LOCATOR = ROOT / "runtime/ample-root-cause-chain-v3-job.local.json"
@@ -265,8 +265,10 @@ def pump_cadence_release_problem(locator: dict, checkpoint: dict,
         return "pump-cadence locator does not bind the reviewed prepared plan"
     if locator.get("native_call_active") is not False:
         return "pump-cadence locator still marks a native call active"
-    if not locator.get("attempt_id") or not locator.get("finished_at_utc"):
+    if not locator.get("attempt_id") or not locator.get("updated_at_utc"):
         return "pump-cadence locator lacks a terminal attempt identity/time"
+    if checkpoint.get("updated_at_utc") != locator.get("updated_at_utc"):
+        return "pump-cadence locator/checkpoint final update times differ"
     own_pid, own_ticks = locator.get("pid"), locator.get("created_ticks")
     if type(own_pid) is not int or type(own_ticks) is not int or own_ticks <= 0:
         return "pump-cadence supervisor PID/creation identity is incomplete"
@@ -361,7 +363,7 @@ def validate_pump_cadence_release(locator_path: Path = PUMP_CADENCE_LOCATOR,
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_sha256": sha(checkpoint_path),
         "report_path": str(report_path), "report_sha256": sha(report_path),
-        "finished_at_utc": locator["updated_at_utc"],
+        "finished_at_utc": checkpoint["finished_at_utc"],
         "supervisor_identity_released": True,
         "native_host_processes_released": True,
     }

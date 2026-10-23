@@ -62,7 +62,7 @@ def test_cadence_release_requires_exact_terminal_cases_and_released_receipts() -
         "schema_version": 1, "status": "completed_diagnostic_only",
         "prepared_plan_sha256": continuation.PUMP_CADENCE_PLAN_SHA256,
         "native_call_active": False, "attempt_id": attempt_id,
-        "finished_at_utc": "2026-10-23T00:00:00+00:00",
+        "updated_at_utc": "2026-10-23T00:00:00+00:00",
         "pid": 501, "created_ticks": 100,
         "active_native_process": {"process_release": "released",
                                    "resume_safe": True, "timed_out": False},
@@ -70,6 +70,7 @@ def test_cadence_release_requires_exact_terminal_cases_and_released_receipts() -
     checkpoint = {
         "status": "completed_diagnostic_only", "attempt_id": attempt_id,
         "prepared_plan_sha256": continuation.PUMP_CADENCE_PLAN_SHA256,
+        "updated_at_utc": "2026-10-23T00:00:00+00:00",
         "finished_at_utc": "2026-10-23T00:00:00+00:00",
         "native_call_active": False, "cases": cases,
         "completed_case_order": list(continuation.PUMP_CADENCE_CASE_ORDER),
