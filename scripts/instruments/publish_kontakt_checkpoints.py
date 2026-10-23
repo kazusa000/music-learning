@@ -45,6 +45,7 @@ def run(plan_path):
     from music_learning.external_preset_state import load_admitted
     from music_learning.kontakt_runner import _queue_lock
     from music_learning.sdk import Client
+    from music_learning.settings import Settings
     from types import SimpleNamespace
 
     def module(name, path):
@@ -120,6 +121,10 @@ def run(plan_path):
                     save()
                     continue
                 _atomic_json(batch / "prepared.json", prepared)
+                # Use the running application's registration, not a private
+                # validator configuration or a config file awaiting restart.
+                runtime = client.call("application.settings.get")["runtime"]
+                helper.validate_product_plugins(Settings(**runtime), prepared)
                 # Retry only a catalog CAS conflict, never repeat audio proof.
                 for attempt in range(3):
                     raw = (root / "catalog.json").read_bytes()

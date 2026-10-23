@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23：Kontakt 在产品中试听被插件路径注册拦截
+
+Band Electric Guitar 的“音源文件检查失败”原始错误为 `plugin path outside configured local allowlist`。音色已入库、完整状态可读取并不等于产品配置已经允许加载插件；此前产品查询验证漏掉了这一层。保留原失败记录，补充 `runtime/app.local.json` 中精确的 `H:\music\Sound Library\Kontakt\Runtime\Kontakt 8\x64\VST3\Kontakt 8 Portable.vst3` 路径，没有放宽到整个磁盘。
+
+在播放、试听、jobs 和对话任务均空闲时仅重启应用后端，保留默认11f0产品发布及桌面窗口。原验证42160与增量发布48160的ctime/argv前后相符，未重启；正式九表摘要前后相同。配置及保护记录在 `data/maintenance/instrument-intake/kf22/product-preview-registration-01`。
+
+实际API重试 `kontakt-cee30756ecdd71f87b4963f2` 后为ready，返回5秒/44100Hz PCM，音频GET为200，SHA `cfafee6b7c9ee5be18c29f09f5c65f459c9a03ef01ffd12b2962c524e53f851a`，peak0.4024、RMS0.06812。本次仅确认该产品试听能返回真实声音：原三音短句48的首半秒无声，60/67窗口非零，尾部静音；没有把此结果说成全音区、完整演奏或全库音频验收，不开展已暂缓的原批失败分析。
+
+同时发现产品默认后台warm会随catalog增加自动入队，违反当前不预热安排。已关闭 `instrument_preview_warm`，将506条未开始且priority<=0的Kontakt后台队列完整保存于 `deferred-background-previews.json` 后条件取消，未删音频或改现有ready/failed、手动请求；后续仅用户主动试听。恢复批量预热须等用户安排。
+
+共享publisher源码在catalog写入前读取实际运行产品的配置，并按唯一插件检查注册/存在性，避免仅检查元数据兼容就发布；活动02固定副本保持原样，本机注册已修复。12项短回归及Ruff通过。测试无音频重验，证据和旧失败保持原样。
+
 Kontakt增量入库（2026-10-23）：用户新增授权原批验证同时逐步入库通过项，覆盖旧“暂不发布”，失败分析/修复/重试与试听预热仍暂停。runtime/kontakt-publication-job.local.json为唯一入库入口，当前incremental-publication-02、wrapper48160/ctime1792782385.569955、worker4100/ctime1792782385.5862923；后续必须实核身份。原验证42160/13212和固定plan/host不改。共享checkpoint publisher复用本机可信validator完整summary，绑定candidate/receipt/validator/source哈希和两次实际state/参数/身份，只读两份state，不重读WAV、不启动宿主或重新验证音频；32项一批CAS追加catalog和Admissions完整状态，既有条目跳过，失败/running/pending不发布。采用当前部署11f0产品模块投影及实际load_admitted/API查询。01首批32已入库，产品搜索发现usage列表不兼容；原失败证据保留，统一usage列表转文本且发布前实跑产品filtered，精确修正自有32条仅usage，其余字段及原库条目不变，实际API型号/变体恢复。02继续其他项，19:06:53已192入库、deferred0，原验证536通过/15失败/441待测（瞬时快照）。11短回归/Ruff过。原始queue和正式工程不写，所有新资源仅用户H库；两任务轻量监督至原队列终态且通过项追加完成后汇报，失败留待安排。
 
 Kontakt续跑修复（2026-10-23）：用户明确要求消除重复核验，已在starting/current=null、无子进程且三队列无running的边界核对身份后停止旧49316/28632。共享runner跳过passed/failed，不读取终态项音频/状态/转换证据；pending原验证及独立发布检查不变。4项短回归通过。独立pending-only-resume-01/run_kontakt_full_intake.py只对原full-h脚本应用同一终态跳过补丁，原固定代码/plan/原结果不改；启动副本实际dispatch检查518通过+15失败跳过、459待测进入。新启动PID42160/ctime1792781863.7604077，后续以runtime/kontakt-full-job.local.json实核为准。原三validation SHA停止/启动前一致；目录含旧入口/进度、队列快照及runner-change.json。仅继续原待测项，失败不分析不重试，Ample/MODO仍暂停。

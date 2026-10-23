@@ -7,10 +7,28 @@ import pytest
 
 from music_learning.instrument_checkpoint_publication import (
     pending_publications, prepare_completed, publish_completed_batch, product_entry,
+    validate_product_plugins,
 )
 from music_learning.instrument_intake_publication import record_receipt, sha256_bytes
 from music_learning.external_preset_state import load_admitted
 from test_instrument_intake_publication import _setup, VALIDATOR_PIN, VERIFIER
+
+
+def test_product_registration_requires_exact_available_plugin(tmp_path):
+    from music_learning.settings import Settings
+
+    plugin = tmp_path / "plugin.vst3"
+    plugin.write_bytes(b"fixture")
+    sibling = tmp_path / "other.vst3"
+    sibling.write_bytes(b"fixture")
+    settings = Settings(data_root=tmp_path / "app", plugin_roots=[plugin])
+    item = {"entry": {"plugin_path": str(plugin)}}
+    assert validate_product_plugins(settings, [item, item]) == [plugin]
+    with pytest.raises(ValueError, match="allowlist"):
+        validate_product_plugins(settings, [{"entry": {"plugin_path": str(sibling)}}])
+    plugin.unlink()
+    with pytest.raises(ValueError, match="existing VST3"):
+        validate_product_plugins(settings, [item])
 
 
 def checkpoint(tmp_path):

@@ -135,3 +135,12 @@ def publish_completed_batch(resource_root, prepared, *, expected_catalog_sha256)
             _atomic_json(path, {**base, "presets": combined})
         return dict(published=len(additions), ids=[x["entry"]["id"] for x in additions],
                     catalog_count=len(combined), catalog_sha256=sha256_bytes(path.read_bytes()))
+
+def validate_product_plugins(settings, prepared):
+    """Check runtime registration once per plugin before publishing a batch.
+
+    Admission proof does not imply the running product can load that path.
+    This only checks registration/existence; it never opens a host or audio.
+    """
+    paths = {item["entry"]["plugin_path"] for item in prepared}
+    return [settings.plugin_path(path) for path in sorted(paths)]
