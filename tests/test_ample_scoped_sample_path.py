@@ -235,6 +235,18 @@ def test_riff_event_profile_requires_explicit_trigger_and_uses_factory_tempo(tmp
     assert window["end_sample"] == 6 * 44100 - 11025
 
 
+def test_native_call_evidence_uses_short_intake_root_for_nested_retry_attempts(tmp_path):
+    maintenance = ample.ROOT / "data/maintenance/instrument-intake"
+    nested = maintenance / ("retry-" + "x" * 80) / "items" / "AGLP" / ("preset-" + "y" * 80)
+    calls = ample.native_calls_directory(nested / "probe", maintenance / "retry-short" / "native-calls")
+    response = calls / ("a" * 32) / "response.json"
+
+    assert calls == (maintenance / "retry-short" / "native-calls").resolve()
+    assert len(str(response)) < 220
+    with pytest.raises(ValueError, match="below data/maintenance"):
+        ample.native_calls_directory(nested, tmp_path / "outside")
+
+
 @pytest.mark.parametrize("riff_xml", [
     '<AEG_STATE/>',
     '<AEG_STATE><Riff Tempo="60" Time-Signature="4/4"/><Riff Tempo="60" Time-Signature="4/4"/></AEG_STATE>',

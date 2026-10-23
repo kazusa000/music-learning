@@ -52,6 +52,8 @@ PIN_FILES = (
     "src/music_learning/vst3_state.py",
     "src/music_learning/ample_paths.py",
     "src/music_learning/instrument_performance_profiles.py",
+    "src/music_learning/ample_riffer_mapping.py",
+    "src/music_learning/ample_retry_queue.py",
     "scripts/prepare_ample_sc_followup.py",
 )
 
@@ -319,7 +321,8 @@ def _process_telemetry(pid: int) -> dict:
 
 
 def _attempt(item: dict, output: Path, *, python: Path, native_host: Path,
-             scan_timeout: float, operation_timeout: float, heartbeat=None) -> dict:
+             scan_timeout: float, operation_timeout: float, diagnostics_root: Path,
+             heartbeat=None) -> dict:
     output.mkdir(parents=True)
     manifest = output / "manifest.json"
     manifest_item = dict(instrument=item["instrument"], library=item["library"],
@@ -327,13 +330,15 @@ def _attempt(item: dict, output: Path, *, python: Path, native_host: Path,
                          factory_xml=item["factory_xml"])
     if item.get("event_profile") is not None:
         manifest_item["event_profile"] = item["event_profile"]
+        manifest_item["event_profile_evidence"] = item.get("event_profile_evidence")
     atomic_json(manifest, [manifest_item])
     log_path = output / "runner.log"
     probe_script = PINNED_ROOT / "scripts/probe_staged_ample.py"
     command = [str(python), str(probe_script),
                "--manifest", str(manifest), "--output", str(output / "probe"),
                "--native-host", str(native_host), "--scan-timeout", str(scan_timeout),
-               "--operation-timeout", str(operation_timeout)]
+               "--operation-timeout", str(operation_timeout),
+               "--native-calls-root", str(diagnostics_root)]
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(PINNED_ROOT / "src")
     environment["MUSIC_LEARNING_REPO_ROOT"] = str(ROOT)
@@ -562,6 +567,7 @@ def run_queue(run_dir: Path, python: Path, native_host: Path, *, scan_timeout: f
 
                 result = _attempt(item, output, python=python.resolve(), native_host=native_host.resolve(),
                                   scan_timeout=scan_timeout, operation_timeout=operation_timeout,
+                                  diagnostics_root=run_dir / "native-calls",
                                   heartbeat=heartbeat)
                 item["attempts"][-1].update(result)
                 probe = result.get("probe") or {}

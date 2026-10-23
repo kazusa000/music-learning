@@ -1,4 +1,4 @@
-"""Create a read-only, terminal-gated Ample failure retry manifest."""
+"""Materialize a source-pinned failed-only Ample retry queue; never run it here."""
 
 from __future__ import annotations
 
@@ -9,35 +9,58 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
-from music_learning.ample_retry_planning import (  # noqa: E402
-    RetryPlanningError,
-    build_failure_retry_plan,
-    write_retry_plan,
-)
+from music_learning.ample_retry_queue import build_profiled_failure_queue  # noqa: E402
+from run_ample_factory_validation import atomic_json, pin_runtime  # noqa: E402
 
 
-def main() -> int:
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--chain-plan", type=Path,
-                        default=ROOT / "runtime/ample-factory-chain.local.json")
-    parser.add_argument("--output", type=Path, required=True,
-                        help="A new directory below data/maintenance/instrument-intake")
+    parser.add_argument("--retry-plan", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--native-host", type=Path, required=True)
+    parser.add_argument("--python", type=Path, default=Path(sys.executable))
     args = parser.parse_args()
-    chain_plan = args.chain_plan if args.chain_plan.is_absolute() else ROOT / args.chain_plan
-    output = args.output if args.output.is_absolute() else ROOT / args.output
+
+    intake_root = (ROOT / "data/maintenance/instrument-intake").resolve()
+    output = args.output_dir.resolve()
     try:
-        plan = build_failure_retry_plan(chain_plan, output, repository_root=ROOT)
-        destination = write_retry_plan(plan, output, repository_root=ROOT)
-    except RetryPlanningError as error:
-        parser.exit(2, f"Blocked: {error}\n")
-    print(json.dumps({"plan": str(destination), "failed_count": plan["failed_count"],
-                      "failure_groups": plan["failure_groups"],
-                      "status": plan["status"],
-                      "retry_queue_materialized": plan["retry_queue_materialized"]},
-                     ensure_ascii=False, sort_keys=True))
-    return 0
+        output.relative_to(intake_root)
+    except ValueError as error:
+        raise SystemExit("Output must remain below data/maintenance/instrument-intake") from error
+    if output == intake_root or output.exists():
+        raise SystemExit("Output must be a new retry run below instrument-intake")
+    if args.native_host.is_symlink() or not args.native_host.is_file():
+        raise SystemExit("Native host must be an existing regular independent fixed executable")
+
+    queue, status = build_profiled_failure_queue(args.retry_plan, repository_root=ROOT)
+    output.mkdir(parents=True, exist_ok=False)
+    atomic_json(output / "queue.json", queue)
+    atomic_json(output / "status.json", status)
+    pin_root = pin_runtime(output, args.native_host.resolve())
+    pin = json.loads((pin_root / "pin.json").read_bytes())
+    record = {
+        "schema_version": 1,
+        "status": "prepared_profiled_failed_only_retry",
+        "run_dir": str(output),
+        "requested": queue["requested"],
+        "counts": queue["counts"],
+        "retry_plan": str(args.retry_plan.resolve()),
+        "retry_plan_sha256": queue["source_retry_plan_sha256"],
+        "source_queue_sha256": queue["original_source_queue_sha256"],
+        "pinned_root": str(pin_root),
+        "pin_sha256": pin.get("host_sha256"),
+        "profile_mapping_ids": sorted({
+            item["event_profile_evidence"]["mapping_id"] for item in queue["items"]
+        }),
+        "automatic_retry": False,
+        "formal_project_writes": 0,
+        "catalog_writes": 0,
+    }
+    atomic_json(output / "preparation.json", record)
+    print(json.dumps(record, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

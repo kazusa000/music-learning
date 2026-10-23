@@ -53,6 +53,23 @@ def prepare(plugin, factory_xml):
     factory = parse_xml(factory_xml)
     if factory.tag != current.tag or not factory.get("Name"):
         raise ValueError("Factory preset identity mismatch")
+    # Factory .agmstate/.aglpstate XML does not carry the native VST parameter
+    # indices written by the current plugin version. Preserve the plugin's
+    # name-to-index map when translating that vendor state into a VST3 preset;
+    # the factory values and their identities remain authoritative.
+    current_indices = {}
+    native_indices = set()
+    for node in current.findall("Parameter"):
+        name, index = node.get("Name"), node.get("Index")
+        if name and index is not None:
+            if (name in current_indices or not index.isdigit() or index in native_indices):
+                raise ValueError("Invalid or duplicate native Ample parameter index identity")
+            current_indices[name] = index
+            native_indices.add(index)
+    for node in factory.findall("Parameter"):
+        name = node.get("Name")
+        if name in current_indices:
+            node.set("Index", current_indices[name])
     xml = ET.tostring(factory, encoding="utf-8")
     component = raw[:offset] + b"VC2!" + struct.pack("<I", len(xml)) + xml + raw[end:]
     if offset:

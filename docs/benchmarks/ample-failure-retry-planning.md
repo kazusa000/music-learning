@@ -23,3 +23,17 @@ AGM 当前批次的最后已知快照为 33 项中 14 通过、15 失败、2 待
 通过仓库测试入口运行 `tests/test_ample_runtime_paths.py`、`tests/test_ample_retry_planning.py` 与 `tests/test_instrument_performance_profiles.py`：25 项通过。测试覆盖 pin 根回退、失败类别分组、终态门槛、进程门槛、输出路径隔离，以及四种 Riffer 类型的保真；没有调用音源模型或 VST3。
 
 下一步必须等原 LP/AGM/AGSC 批次全部终态，再运行 E-only 规划器。其结果仍需先补齐经实际验证的 Riffer 触发 profile、共享 HM2 参数恢复序列与 scan 崩溃修复证据，之后才建立新 pin 和独立失败队列。已通过项和原报告不重测、不覆盖；失败重试不得降低非静音、完整参数、插件/工厂身份、首次/重开音频要求。
+
+## 2026-10-23 原批终态与共享修复候选
+
+原 chain 已于 2026-10-23 02:14 UTC 进入 `completed`，三条固定队列合计 67 通过、45 失败、1 缺素材：AGLP 17/18、AGM 15/17/1 个 `AGMPk` 缺组、AGSC 35/10。45 个失败身份的原队列、报告、attempt 与通过项均保留在各自源目录。`Planet Caravan` 仍为 `blocked_missing_sample_group`；不替换 DBName、不借其他鼓组/吉他采样冒充。
+
+所有 45 个失败工厂状态都有唯一 `<Riff>`，现在可按官方 Riffer 控制语义生成 source-pinned profile：官方 [Guitar Riffer Panel Manual](https://www.amplesound.net/en/Riffer_Panel_Manual.pdf) 说明 A#6 为 Riff 播放开关，高 velocity 开启、低 velocity 关闭；代码以 MIDI 1.0 的 A4=69 推导 A#6=94，并使用 MIDI velocity 127/1 两端值。每个 profile 都绑定该预设完整 factory XML SHA、Riff 类型、节奏/拍号与小节数，映射来源/原拍号/量化也写入 evidence；未知产品、Riff 类型、拍号后缀及工厂 SHA 变化均拒绝。AGM 的 17 个 profile 原先因官方 `8/4Tri` 格式未被识别；新解析保留该原字符串与 `Tri` 三连音限定，同时将 `8/4` 作为宿主拍号。不能把该限定静默丢掉。profile 目前是生成结果，仍须新独立宿主完成首次/重开真实发声才能用于入库。
+
+新增 `ample_retry_queue.py` 会重新读取终态 checkpoint、三款产品队列和原始 113 项队列，要求所有源队列哈希/身份/状态计数不变，并验证 retry plan 恰好覆盖全部 45 个原始失败身份；只构造失败项的新队列，所有 67 个已通过身份均不重测。`prepare_ample_failure_retry.py` 将新队列、状态与固定 source/runtime pin 写到新的 intake run，不启动插件。
+
+共享 runner 另有两类已做代码级修复：每条尝试的原生调用记录改用较短的 run-level `native-calls` 根，避免深层路径下 JUCE 写 response JSON 失败；workspace resolver 纳入新的 pin 文件，让嵌套运行目录不会被误当仓库根。原报告中 4 条扫描/写回崩溃和 7 条 runner/output-root 失败仍保留，实际新宿主验证尚未进行。
+
+HM2 参数诊断在独立目录 `data/maintenance/instrument-intake/20261023-ample-shared-fix/hm2-phase-agsc`。原始 AGSC 工厂 XML 的 472 个参数与宿主当前状态 473 个参数相比，只有 `Pedal-HM2-Dist` 与 `Pedal-HM2-Level` 两个值不一致；在该独立探针中，`setPreset` 后读回已经为 0，`prepareToPlay` 后仍为 0，等待并再次加载同一完整 preset 后也仍为 0。因此“prepare 后异步重置”没有得到证据支持。`ample_presets.prepare` 现在在 factory 参数仍由源状态决定的前提下，从当前插件状态按参数名复用 native 参数 `Index`；静态新 `.vstpreset` 已包含全部 472 个索引且保留 HM2 源值，但这是共享 state-serialization 修复候选，尚未用真实首次/重开发声和完整参数回读验收，不应标成已修好。独立证据目录为 `data/maintenance/instrument-intake/20261023-ample-shared-fix/state-serialization-indexed-v1`。4 条 HM2/参数失败还不能通过。
+
+回归命令经 `scripts/maintenance/run-tests.ps1` 运行：本轮 Ample mapping、retry queue、参数准备、路径隔离、原计划/runner以及通用 performance-profile/publication专项共 71 项通过，Ruff 与 `git diff --check` 通过。**本轮未运行 VST3 扫描、采样加载或真实声音重试**：H 盘预算先后实测 busy 100%/队列14、busy 88%/队列1，故等待空闲窗口；这不是音源验证失败。已构建并 pin 独立 probe host `d922eb9e89ba745f757aecf2b849c3d085a32f43456edfeae81a6bffa8587a0b`，准备了 45 项 failed-only retry queue，当前状态 `prepared`，未启动。队列顺序先放 4 个共享参数读回失败，以便第一轮通过 `--max-items 1` 控制验证共享 state adapter；如果首个共享控制不通过，不盲目消耗其余采样加载。后续仍须在每项启动前通过 H 盘 budget gate，继续使用同一 source-pinned queue；身份、完整参数、首次与重开发声条件不变，原报告和 67 个原通过条目不能被覆盖。

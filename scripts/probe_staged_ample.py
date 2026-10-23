@@ -22,6 +22,7 @@ PINNED_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PINNED_ROOT / "src"))
 from music_learning.ample_paths import workspace_root  # noqa: E402
 from music_learning.ample_library import inspect_sample_directory  # noqa: E402
+from music_learning.ample_riffer_mapping import profile_from_factory  # noqa: E402
 from music_learning.ample_presets import prepare, verify_state  # noqa: E402
 from music_learning.instrument_probe_budget import loading_budget, timeout_outcome  # noqa: E402
 from music_learning.instrument_performance_profiles import validate as validate_performance_profile  # noqa: E402
@@ -38,6 +39,18 @@ def output_root(path):
     if path.exists():
         raise ValueError("Choose a new run; existing evidence is never overwritten")
     return path
+
+
+def native_calls_directory(run, requested=None):
+    """Choose short, intake-scoped native request paths for Windows temp files."""
+    candidate = Path(requested) if requested is not None else Path(run) / "calls"
+    candidate = candidate.resolve()
+    maintenance = (ROOT / "data/maintenance/instrument-intake").resolve()
+    if not candidate.is_relative_to(maintenance) or candidate == maintenance:
+        raise ValueError("Native call evidence must remain below data/maintenance/instrument-intake")
+    if candidate.exists() and (candidate.is_symlink() or not candidate.is_dir()):
+        raise ValueError("Native call evidence root must be a regular directory")
+    return candidate
 
 
 def sha(path):
@@ -326,6 +339,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--native-host", type=Path)
+    parser.add_argument("--native-calls-root", type=Path,
+                        help="Short run-level directory for native JSON/WAV call evidence")
     parser.add_argument("--scan-timeout", type=float, default=60)
     parser.add_argument("--operation-timeout", type=float, default=300)
     parser.add_argument("--resource-drive", default="H:")
@@ -353,7 +368,8 @@ def main():
             try:
                 with sample_path(config, item["library"], instrument) as path_result:
                     result["sample_path"] = path_result
-                    host = NativeHost(executable=args.native_host, diagnostics=directory / "calls")
+                    call_root = native_calls_directory(run, args.native_calls_root)
+                    host = NativeHost(executable=args.native_host, diagnostics=call_root)
                     spec = dict(id=instrument, path=item["plugin"])
                     scan = host.call(dict(schema_version=1, action="scan", plugin_path=item["plugin"]), timeout=args.scan_timeout)
                     plugin = scan["plugins"][0]
@@ -376,6 +392,13 @@ def main():
                             raise ValueError("A Riffer event profile requires the exact factory-state SHA-256")
                         event_profile = validate_performance_profile(
                             event_profile, expected_source_sha256=factory_sha256)
+                        generated_profile, mapping_evidence = profile_from_factory(
+                            item["factory_xml"], product=instrument,
+                            expected_sha256=factory_sha256,
+                            bars=event_profile["bars"])
+                        if (event_profile != generated_profile
+                                or item.get("event_profile_evidence") != mapping_evidence):
+                            raise ValueError("Riffer event profile differs from the official source-pinned mapping")
                     captured, metrics = ample_native_probe(host, spec, directory,
                                                            validate_state=validator,
                                                            event_profile=event_profile,
@@ -386,6 +409,7 @@ def main():
                     if event_profile:
                         result["scope"] = "factory Riffer trigger with source tempo/meter and first/reopen post-trigger audio; not library admission"
                         result["event_profile"] = event_profile
+                        result["event_profile_evidence"] = mapping_evidence
             except (OSError, ValueError, NativeHostError) as error:
                 result.update(status="failed", error=str(error))
                 if isinstance(error, NativeHostError):
