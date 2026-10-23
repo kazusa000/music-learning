@@ -363,7 +363,10 @@ def _readiness_signature(snapshot: Mapping[str, Any]) -> tuple[Any, ...]:
                       and inner.get("status_string") == "Success")
     if inner["ready"] != expected_ready:
         raise ValueError("readiness ready flag contradicts the raw fields")
-    return (snapshot.get("phase"), snapshot.get("status"), inner["loading_byte_read"],
+    # `phase` records where the observation was taken, not readiness state.
+    # The caller separately validates and preserves phase/order; including it
+    # here would make every before/after pair appear to have changed.
+    return (snapshot.get("status"), inner["loading_byte_read"],
             inner.get("loading_byte"), inner["loader_error_count_read"],
             inner.get("loader_error_count"), inner["status_read"],
             inner.get("status_string"), inner["fields_read"], inner["ready"])

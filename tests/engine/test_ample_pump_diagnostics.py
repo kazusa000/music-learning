@@ -64,24 +64,25 @@ def _request(output_path: Path, *, reopened: bool) -> dict[str, Any]:
     }
 
 
-def _readiness(phase: str, *, error_count: int = 0) -> dict[str, Any]:
-    ready = error_count == 0
-    fields_read = True
-    status = "ok" if error_count >= 0 else "invalid_error_count"
+def _readiness(phase: str, *, error_count: int = 0, loading_byte: int = 0,
+               status_string: str | None = None) -> dict[str, Any]:
+    if status_string is None:
+        status_string = ("Loading" if loading_byte else
+                         "Error" if error_count else "Success")
+    ready = loading_byte == 0 and error_count == 0 and status_string == "Success"
+    status = "ok"
     inner = {
-        "status": status, "loading_byte": 0, "loading_byte_read": True,
+        "status": status, "loading_byte": loading_byte, "loading_byte_read": True,
         "loader_error_count": error_count, "loader_error_count_read": True,
-        "status_string": "Success" if ready else None, "status_read": ready,
-        "fields_read": ready, "ready": ready,
+        "status_string": status_string, "status_read": True,
+        "fields_read": True, "ready": ready,
     }
-    if error_count < 0:
-        fields_read = False
     return {
         "schema_version": 1, "phase": phase,
         "method": "owned-component-read-only-layout-reader",
         "product": "Ample Guitar LP", "manufacturer": "Ample Sound", "version": "4.0.0",
         "module_path": PLUGIN_PATH, "module_sha256": MODULE_SHA,
-        "status": status, "fields_read": fields_read, "ready": ready,
+        "status": status, "fields_read": True, "ready": ready,
         "readiness": inner,
     }
 
@@ -314,9 +315,39 @@ def test_complete_four_case_pair_is_observation_only_and_binds_artifacts(tmp_pat
         assert trace["source_events_expected"] == trace["source_events_observed"] == 6
         assert trace["process_audio_summary"]["blocks_with_exact_nonzero_plugin_output"] > 0
         assert trace["readiness_observations"]
+        assert trace["readiness_change_at_dispatch"] == []
         assert case["source_binding"]["matches_source_binding"] is True
     assert result["phase_comparisons"]["first"]["mechanism_proven"] is False
     assert result["phase_comparisons"]["reopen"]["mechanism_proven"] is False
+
+
+@pytest.mark.parametrize(
+    ("changed_readiness", "expected_field"),
+    [
+        (_readiness("after_message_pump", loading_byte=1), "loading_byte"),
+        (_readiness("after_message_pump", error_count=1), "loader_error_count"),
+        (_readiness("after_message_pump", status_string="Reinitializing"), "status_string"),
+    ],
+)
+def test_readiness_change_uses_raw_state_not_observation_phase(
+        tmp_path: Path, changed_readiness: dict[str, Any], expected_field: str) -> None:
+    plan_path, plan_sha, artifacts = _fixture(tmp_path)
+    response_path = Path(artifacts["64-first"]["response_path"])
+    response = json.loads(response_path.read_text(encoding="utf-8"))
+    diagnostic = response["result"]["tracks"][0]["pump_cadence_diagnostic"]
+    diagnostic["dispatches"][0]["readiness_after"] = [changed_readiness]
+    _write_json(response_path, response)
+
+    result = analyze_pump_cadence_pair(plan_path=plan_path, case_artifacts=artifacts,
+                                       expected_plan_sha256=plan_sha)
+    trace = result["cases"]["64-first"]["trace"]
+    assert trace["readiness_change_at_dispatch"] == [1]
+    before, after = [
+        row["raw_fields"] for row in trace["readiness_observations"]
+        if row["completed_block"] == 64 and row["phase"] in {
+            "before_message_pump", "after_message_pump"}
+    ]
+    assert before[expected_field] != after[expected_field]
 
 
 def test_missing_actual_case_artifacts_are_per_case_inconclusive(tmp_path: Path) -> None:
