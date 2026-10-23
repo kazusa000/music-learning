@@ -353,12 +353,15 @@ def prepare_plan(plan_03: dict, core_manifest_path: Path, extra_manifest_path: P
             "hook": "WH_GETMESSAGE",
             "scope": "current GUI thread; HC_ACTION and PM_REMOVE only; current-process HWNDs plus thread-scoped null-HWND messages",
             "captured": ["MSG.message", "wParam", "lParam", "time", "hwnd",
-                         "WndProc address/module/RVA", "WM_TIMER callback lParam/module/RVA"],
+                         "WndProc address/module/RVA", "WM_TIMER callback lParam/module/RVA",
+                         "bounded 16-byte readable own-process WM_USER+ non-WM_TIMER lParam candidate and deferred first-word module/RVA"],
             "bounded_records": {"messages": 4096, "dispatch_windows": 1024},
-            "hook_allocates_or_writes": False,
+            "hook_allocates_or_file_io": False,
+            "hook_fixed_record_memory_writes": True,
+            "lparam_probe": "WM_USER+ other than WM_TIMER, with nonzero lParam only; current-process VirtualQuery plus ReadProcessMemory; full 16-byte committed readable single region required; failures/status retained; never dereference outside ReadProcessMemory",
             "serialization_and_module_resolution": "after each dispatch window and outside the hook",
-            "candidate_vtable_read": "omitted; MSG does not provide a typed plugin object pointer",
-            "fixture": "same-process hidden message-only window; no plugin load or audio host run",
+            "candidate_vtable_read": "first uintptr_t from the bounded readable candidate bytes; module/path/RVA resolved after hook dispatch",
+            "fixture": "same-process hidden message-only window with valid candidate payload, timer and null-HWND WM_TIMER; no plugin load or audio host run",
         },
         "prior_audio_result": {
             "control_05_actual_host_calls": 4,
@@ -414,12 +417,16 @@ def prepare_plan(plan_03: dict, core_manifest_path: Path, extra_manifest_path: P
 def main() -> None:
     global EVIDENCE, OUT, OUTPUT_ROOT
     parser = argparse.ArgumentParser()
-    parser.add_argument("--attempt", choices=("initial", "rebuild-01"), default="initial")
+    parser.add_argument("--attempt", choices=("initial", "rebuild-01", "rebuild-02"), default="initial")
     args = parser.parse_args()
     if args.attempt == "rebuild-01":
         EVIDENCE = INTAKE / "windows-message-control-07-rebuild-01"
         OUT = ROOT / "runtime/build/ample-windows-message-07-rebuild-01"
         OUTPUT_ROOT = ROOT / "data/maintenance/instrument-intake/q/wm07-rebuild-01"
+    elif args.attempt == "rebuild-02":
+        EVIDENCE = INTAKE / "windows-message-control-07-rebuild-02"
+        OUT = ROOT / "runtime/build/ample-windows-message-07-rebuild-02"
+        OUTPUT_ROOT = ROOT / "data/maintenance/instrument-intake/q/wm07-rebuild-02"
     if OUT.exists() or EVIDENCE.exists() or OUTPUT_ROOT.exists():
         raise SystemExit(f"Refusing to overwrite an existing task root: {OUT}, {EVIDENCE}, {OUTPUT_ROOT}")
 
@@ -492,9 +499,9 @@ def main() -> None:
         "extra_manifest_sha256": digest(extra_manifest_path),
         "linked_runtime_manifest_sha256": digest(runtime_manifest_path),
         "cmake_sha256": cmake_sha,
-        "hook_contract": "current-thread WH_GETMESSAGE/HC_ACTION/PM_REMOVE; own-process HWND only; bounded POD writes",
+        "hook_contract": "current-thread WH_GETMESSAGE/HC_ACTION/PM_REMOVE; own-process HWND plus explicitly thread-scoped null-HWND messages; bounded POD writes and guarded 16-byte private-message lParam probe",
         "serialization_timing": "after dispatch, outside hook callback",
-        "candidate_vtable_read": "omitted; no safely typed object pointer is supplied by MSG",
+        "candidate_vtable_read": "bounded first-word candidate from readable same-process WM_USER+ lParam; module resolution deferred until serialization",
         "host_launched": False, "plugin_loaded": False,
         "formal_project_written": False, "h_or_nas_accessed": False,
         "shared_juce_modified": False,

@@ -13,6 +13,8 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <stdexcept>
 
 namespace ml::diagnostic
@@ -125,6 +127,10 @@ public:
             const auto window_module = resolve_module(event.window_proc);
             const auto timer_module = event.message == WM_TIMER && event.timer_proc != 0
                 ? resolve_module(event.timer_proc) : ModuleLocation{};
+            std::uintptr_t candidate_vtable = 0;
+            if (event.lparam_probe_readable)
+                std::memcpy(&candidate_vtable, event.lparam_probe_bytes.data(), sizeof(candidate_vtable));
+            const auto candidate_vtable_module = resolve_module(candidate_vtable);
             event_rows.add(juce::var(new juce::DynamicObject()));
             auto* row = event_rows.getLast().getDynamicObject();
             row->setProperty("sequence", static_cast<juce::int64>(event.sequence));
@@ -156,6 +162,16 @@ public:
             row->setProperty("timer_callback_module_handle_hex", hex(timer_module.module_handle));
             row->setProperty("timer_callback_module_path", timer_module.path);
             row->setProperty("timer_callback_module_rva_hex", hex(timer_module.rva));
+            row->setProperty("lparam_probe_attempted", event.lparam_probe_attempted);
+            row->setProperty("lparam_probe_readable", event.lparam_probe_readable);
+            row->setProperty("lparam_probe_status", static_cast<int>(event.lparam_probe_status));
+            row->setProperty("lparam_probe_error", static_cast<int>(event.lparam_probe_error));
+            row->setProperty("lparam_probe_bytes_read", static_cast<int>(event.lparam_probe_bytes_read));
+            row->setProperty("lparam_probe_bytes_hex", bytes_hex(event.lparam_probe_bytes));
+            row->setProperty("lparam_probe_candidate_vtable_hex", hex(candidate_vtable));
+            row->setProperty("lparam_probe_candidate_vtable_module_resolved", candidate_vtable_module.resolved);
+            row->setProperty("lparam_probe_candidate_vtable_module_path", candidate_vtable_module.path);
+            row->setProperty("lparam_probe_candidate_vtable_module_rva_hex", hex(candidate_vtable_module.rva));
         }
 
         juce::Array<juce::var> dispatch_rows;
@@ -224,6 +240,12 @@ private:
         std::uint32_t window_process_id = 0;
         bool has_window = false;
         bool window_belongs_to_current_process = false;
+        bool lparam_probe_attempted = false;
+        bool lparam_probe_readable = false;
+        std::uint8_t lparam_probe_status = 0;
+        std::uint8_t lparam_probe_bytes_read = 0;
+        std::uint32_t lparam_probe_error = 0;
+        std::array<std::uint8_t, 16> lparam_probe_bytes{};
     };
 
     struct DispatchWindow
@@ -262,6 +284,79 @@ private:
             result[2 + i] = digits[(value >> shift) & 0xf];
         }
         return juce::String::fromUTF8(result.data(), static_cast<int>(result.size() - 1));
+    }
+
+    static juce::String bytes_hex(const std::array<std::uint8_t, 16>& bytes)
+    {
+        constexpr char digits[] = "0123456789abcdef";
+        std::array<char, 32 + 1> result{};
+        for (std::size_t i = 0; i < bytes.size(); ++i)
+        {
+            result[2 * i] = digits[(bytes[i] >> 4) & 0xf];
+            result[2 * i + 1] = digits[bytes[i] & 0xf];
+        }
+        return juce::String::fromUTF8(result.data(), static_cast<int>(result.size() - 1));
+    }
+
+    static void probe_lparam(const MSG& message, Event& event) noexcept
+    {
+        // WM_TIMER's lParam is already captured as a callback code address;
+        // don't reinterpret that address as a candidate object payload.
+        if (message.message < WM_USER || message.message == WM_TIMER || message.lParam == 0)
+            return;
+
+        event.lparam_probe_attempted = true;
+        constexpr std::size_t probe_size = 16;
+        const auto address = static_cast<std::uintptr_t>(message.lParam);
+        if (address > std::numeric_limits<std::uintptr_t>::max() - probe_size)
+        {
+            event.lparam_probe_status = 4;
+            return;
+        }
+
+        MEMORY_BASIC_INFORMATION memory{};
+        if (VirtualQuery(reinterpret_cast<const void*>(address), &memory, sizeof(memory)) == 0)
+        {
+            event.lparam_probe_status = 2;
+            event.lparam_probe_error = GetLastError();
+            return;
+        }
+
+        const auto region_begin = reinterpret_cast<std::uintptr_t>(memory.BaseAddress);
+        if (memory.RegionSize > std::numeric_limits<std::uintptr_t>::max() - region_begin
+            || address < region_begin || address + probe_size > region_begin + memory.RegionSize)
+        {
+            event.lparam_probe_status = 4;
+            return;
+        }
+        if (memory.State != MEM_COMMIT)
+        {
+            event.lparam_probe_status = 3;
+            return;
+        }
+
+        const auto protection = memory.Protect & 0xff;
+        const bool readable = protection == PAGE_READONLY || protection == PAGE_READWRITE
+                           || protection == PAGE_WRITECOPY || protection == PAGE_EXECUTE_READ
+                           || protection == PAGE_EXECUTE_READWRITE || protection == PAGE_EXECUTE_WRITECOPY;
+        if (!readable || (memory.Protect & PAGE_GUARD) != 0)
+        {
+            event.lparam_probe_status = 5;
+            return;
+        }
+
+        SIZE_T bytes_read = 0;
+        const auto success = ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address),
+                                               event.lparam_probe_bytes.data(), probe_size, &bytes_read);
+        event.lparam_probe_bytes_read = static_cast<std::uint8_t>(bytes_read > 255 ? 255 : bytes_read);
+        if (!success || bytes_read != probe_size)
+        {
+            event.lparam_probe_status = 6;
+            event.lparam_probe_error = GetLastError();
+            return;
+        }
+        event.lparam_probe_status = 1;
+        event.lparam_probe_readable = true;
     }
 
     static ModuleLocation resolve_module(std::uintptr_t address)
@@ -354,6 +449,7 @@ private:
             event.window_proc = static_cast<std::uintptr_t>(GetWindowLongPtrW(message.hwnd, GWLP_WNDPROC));
         if (message.message == WM_TIMER && message.lParam != 0)
             event.timer_proc = static_cast<std::uintptr_t>(message.lParam);
+        probe_lparam(message, event);
     }
 
     HHOOK hook_ = nullptr;
