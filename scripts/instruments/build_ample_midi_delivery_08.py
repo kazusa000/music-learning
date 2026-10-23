@@ -13,7 +13,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 BASE_BUILDER = ROOT / "scripts/instruments/build_ample_midi_delivery_diagnostic.py"
 BASE_BUILDER_SHA256 = "fdd40be511a2c41a7ef50612068240ad1338a9884324ff1e569d2e0879df191d"
-BUILD_ROOT = ROOT / "runtime/build/ample-midi-delivery-08"
+BUILD_ROOT = ROOT / "runtime/build/ample-midi-delivery-08-r2"
 ACTIVE_SOURCE = ROOT / "runtime/releases/11f0aa5b0796718a9ea0ef5117c85c363a6823da"
 ACTIVE_BUNDLE = ROOT / "runtime/engine-bundles/f0563ad22e55a09049379daea6b6a61e74a8d54c22e4fea56d68e92166fbad6d"
 ANALYZER = ROOT / "scripts/probes/engine/ample_midi_delivery.py"

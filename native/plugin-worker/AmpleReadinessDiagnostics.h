@@ -96,11 +96,11 @@ inline void recordAmpleReadiness(mlengine::PluginRing* shared,
                 record.normalizedComponentWrapper = readinessPointer(layout,
                     "normalized_wrapper");
                 record.componentNormalizedOffset = static_cast<uint64_t>(
-                    layout->getProperty("normalized_offset"));
+                    layout->getProperty("normalized_offset").toString().getIntValue());
                 record.componentPointerReads = static_cast<uint32_t>(
-                    layout->getProperty("pointer_reads"));
+                    layout->getProperty("pointer_reads").toString().getIntValue());
                 record.componentBytesRead = static_cast<uint32_t>(
-                    layout->getProperty("bytes_read"));
+                    layout->getProperty("bytes_read").toString().getIntValue());
             }
             const auto* snapshot = outer->getProperty("readiness").getDynamicObject();
             if (snapshot != nullptr) {

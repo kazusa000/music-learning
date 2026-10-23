@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-BUILD_ROOT = ROOT / "runtime/build/ample-midi-delivery-08"
+BUILD_ROOT = ROOT / "runtime/build/ample-midi-delivery-08-r2"
 ANALYZER_PATH = ROOT / "scripts/probes/engine/ample_midi_delivery.py"
 ANALYZER_SHA256 = "3570c61f62607ce1041e4b1fb4729552491257e4f16f198b5f856721ee869179"
 RAW_CAPTURE_PATH = ROOT / "scripts/instruments/capture_ample_midi_delivery_raw.py"
