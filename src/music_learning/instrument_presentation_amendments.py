@@ -1,32 +1,47 @@
-"""Read-only, CAS-bound display-title overlays for source-backed presets.
+"""CAS-bound, presentation-only catalog title amendments.
 
-The catalog's ``name``, ``variant_name`` and native expected identity remain
-the validated/imported identity.  This module lets a reviewed source filename
-provide a separate bilingual UI title without rewriting that identity or
-publishing an amendment itself.
+These amendments add a bilingual source title without changing the preset's
+musical identity, native state, or admission record. They are deliberately
+separate from the normal additions-only instrument publisher.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
-from pathlib import PurePosixPath
+import stat
+import tempfile
+from pathlib import Path, PurePosixPath
 from typing import Mapping
 
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_AMENDMENT_KEYS = {
-    "preset_id",
+_PAYLOAD_KEYS = {
     "source_relative",
-    "source_factory_sha256",
-    "source_title",
-    "source_title_zh",
-    "expected_entry_sha256",
-    "expected_identity_sha256",
+    "title",
+    "zh",
+    "source_sha256",
+    "identity_sha256",
+    "candidate_fingerprint",
+    "candidate_fields",
+    "evidence_sha256",
 }
-_ASSIGNMENT_KEYS = {
-    "preset_id", "source_relative", "source_factory_sha256", "source_title", "source_title_zh"
+_ASSIGNMENT_KEYS = {"preset_id", "source_relative", "zh"}
+_PLAN_KEYS = {
+    "schema_version",
+    "scope",
+    "evidence_sha256",
+    "base_catalog_sha256",
+    "base_preset_count",
+    "amendments",
+}
+_CLASSIFICATION_DERIVED_FIELDS = {
+    "instrument_ids",
+    "classification_basis",
+    "model_spec",
+    "model_basis",
 }
 
 
@@ -44,6 +59,12 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _digest(value: object, field: str) -> str:
+    if not isinstance(value, str) or not SHA256_RE.fullmatch(value):
+        raise ValueError(f"Presentation title needs a valid {field}")
+    return value
+
+
 def _safe_source_relative(value: object) -> str:
     if not isinstance(value, str) or not value or "\\" in value or ":" in value:
         raise ValueError("Source title needs a normalized relative POSIX path")
@@ -55,14 +76,14 @@ def _safe_source_relative(value: object) -> str:
     return value
 
 
-def _source_title(source_relative: str) -> str:
+def _title_from_source(source_relative: str) -> str:
     title = PurePosixPath(source_relative).stem
     if not title or title in {".", ".."}:
         raise ValueError("Source path has no displayable filename stem")
     return title
 
 
-def _validate_title_zh(value: object) -> str:
+def _validate_chinese(value: object) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("A reviewed Chinese source-title translation is required")
     value = value.strip()
@@ -91,24 +112,68 @@ def _catalog(raw: bytes) -> tuple[dict, dict[str, dict]]:
     return value, indexed
 
 
-def build_plan(catalog_bytes: bytes, assignments: list[Mapping], *,
-               evidence_sha256: str) -> dict:
-    """Create a non-writing presentation overlay plan from reviewed source records.
+def _is_reparse(path: Path) -> bool:
+    try:
+        if path.is_symlink():
+            return True
+        attributes = path.lstat().st_file_attributes
+    except (AttributeError, OSError):
+        return False
+    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
 
-    Each assignment is bound to the catalog's existing source factory digest;
-    its English title is derived from the recorded source-relative path rather
-    than accepted as an independent string.
+
+def _identity_sha256(entry: Mapping) -> str:
+    identity = entry.get("expected_identity")
+    if not isinstance(identity, dict) or not identity:
+        raise ValueError("Native expected identity is required for a title overlay")
+    return _sha256(_canonical(identity))
+
+
+def _candidate_fingerprint(entry: Mapping) -> str:
+    # Import lazily: instrument_intake_publication imports localization.
+    from .instrument_intake_publication import candidate_fingerprint
+
+    return candidate_fingerprint(entry)
+
+
+def _candidate_fields(entry: Mapping) -> list[str]:
+    from .instrument_intake_publication import FINGERPRINT_FIELDS
+
+    return [key for key in FINGERPRINT_FIELDS if key in entry]
+
+
+def _fingerprint_for_fields(entry: Mapping, fields: object) -> str:
+    from .instrument_intake_publication import FINGERPRINT_FIELDS, candidate_fingerprint
+
+    if not isinstance(fields, list) or not fields or any(not isinstance(key, str) for key in fields):
+        raise ValueError("Presentation title candidate field binding is malformed")
+    canonical_fields = [key for key in FINGERPRINT_FIELDS if key in fields]
+    if fields != canonical_fields:
+        raise ValueError("Presentation title candidate fields are not canonical")
+    if any(key not in entry for key in fields):
+        raise ValueError("Presentation title candidate fields are missing from the catalog entry")
+    new_fields = (set(entry) & set(FINGERPRINT_FIELDS)) - set(fields)
+    if not new_fields.issubset(_CLASSIFICATION_DERIVED_FIELDS):
+        raise ValueError("Presentation title candidate has new unbound identity fields")
+    return candidate_fingerprint({key: entry[key] for key in fields})
+
+
+def build_plan(catalog_bytes: bytes, assignments: list[Mapping], *, evidence_sha256: str) -> dict:
+    """Build an attachable title plan from reviewed source-path assignments.
+
+    ``zh`` is the reviewed Chinese display title. The English title is always
+    derived from the source basename so the path and display string cannot
+    silently disagree.
     """
-    if not SHA256_RE.fullmatch(evidence_sha256):
-        raise ValueError("Reviewed title evidence must be SHA-256 pinned")
+    evidence_sha256 = _digest(evidence_sha256, "evidence SHA-256")
+    if not assignments:
+        raise ValueError("Presentation plan needs at least one reviewed assignment")
     _, presets = _catalog(catalog_bytes)
     amendments = []
     seen: set[str] = set()
     for assignment in assignments:
-        if not isinstance(assignment, Mapping):
-            raise ValueError("Title assignment must be an object")
-        if set(assignment) != _ASSIGNMENT_KEYS:
-            raise ValueError("Title assignment contains unexpected fields")
+        if not isinstance(assignment, Mapping) or set(assignment) != _ASSIGNMENT_KEYS:
+            raise ValueError("Title assignment must contain only preset_id, source_relative, and zh")
         preset_id = assignment.get("preset_id")
         if not isinstance(preset_id, str) or not preset_id or preset_id in seen:
             raise ValueError("Title assignments need unique preset IDs")
@@ -116,28 +181,22 @@ def build_plan(catalog_bytes: bytes, assignments: list[Mapping], *,
         preset = presets.get(preset_id)
         if preset is None:
             raise ValueError("Title assignment refers to an unknown preset")
+        if "presentation_title" in preset:
+            raise ValueError("Catalog entry already has presentation-title metadata")
         source_relative = _safe_source_relative(assignment.get("source_relative"))
-        source_sha = assignment.get("source_factory_sha256")
-        if not isinstance(source_sha, str) or not SHA256_RE.fullmatch(source_sha):
-            raise ValueError("Source factory SHA-256 is required")
-        if preset.get("source_factory_sha256") != source_sha:
-            raise ValueError("Source title evidence does not match the catalog source digest")
-        expected_title = _source_title(source_relative)
-        if assignment.get("source_title") != expected_title:
-            raise ValueError("Source title must match the source filename")
-        title_zh = _validate_title_zh(assignment.get("source_title_zh"))
-        identity = preset.get("expected_identity")
-        if not isinstance(identity, dict) or not identity:
-            raise ValueError("Native expected identity is required for a title overlay")
-        amendments.append({
-            "preset_id": preset_id,
+        source_sha = _digest(preset.get("source_factory_sha256"), "source SHA-256")
+        zh = _validate_chinese(assignment.get("zh"))
+        payload = {
             "source_relative": source_relative,
-            "source_factory_sha256": source_sha,
-            "source_title": expected_title,
-            "source_title_zh": title_zh,
-            "expected_entry_sha256": _sha256(_canonical(preset)),
-            "expected_identity_sha256": _sha256(_canonical(identity)),
-        })
+            "title": _title_from_source(source_relative),
+            "zh": zh,
+            "source_sha256": source_sha,
+            "identity_sha256": _identity_sha256(preset),
+            "candidate_fingerprint": _candidate_fingerprint(preset),
+            "candidate_fields": _candidate_fields(preset),
+            "evidence_sha256": evidence_sha256,
+        }
+        amendments.append({"preset_id": preset_id, "presentation_title": payload})
     amendments.sort(key=lambda item: item["preset_id"])
     return {
         "schema_version": 1,
@@ -149,91 +208,151 @@ def build_plan(catalog_bytes: bytes, assignments: list[Mapping], *,
     }
 
 
+def validate_payload(entry: Mapping, payload: Mapping) -> dict:
+    """Validate an attached metadata object against the current catalog entry."""
+    if not isinstance(entry, Mapping) or not isinstance(payload, Mapping) or set(payload) != _PAYLOAD_KEYS:
+        raise ValueError("Presentation-title metadata has an unexpected shape")
+    source_relative = _safe_source_relative(payload.get("source_relative"))
+    title = _title_from_source(source_relative)
+    if payload.get("title") != title:
+        raise ValueError("Presentation title differs from the source basename")
+    zh = _validate_chinese(payload.get("zh"))
+    source_sha = _digest(payload.get("source_sha256"), "source SHA-256")
+    if source_sha != entry.get("source_factory_sha256"):
+        raise ValueError("Presentation title source SHA differs from the catalog entry")
+    if _digest(payload.get("identity_sha256"), "identity SHA-256") != _identity_sha256(entry):
+        raise ValueError("Presentation title native identity binding is stale")
+    expected_candidate = _fingerprint_for_fields(entry, payload.get("candidate_fields"))
+    if _digest(payload.get("candidate_fingerprint"), "candidate fingerprint") != expected_candidate:
+        raise ValueError("Presentation title candidate fingerprint is stale")
+    _digest(payload.get("evidence_sha256"), "evidence SHA-256")
+    return dict(payload, source_relative=source_relative, title=title, zh=zh)
+
+
 def validate_plan(catalog_bytes: bytes, plan: Mapping) -> dict[str, dict]:
-    """Validate a plan against the exact base and return immutable overlay rows."""
-    if not isinstance(plan, Mapping) or set(plan) != {
-        "schema_version", "scope", "evidence_sha256", "base_catalog_sha256",
-        "base_preset_count", "amendments",
-    }:
+    """Validate the immutable plan and return preset ID to attachable payload."""
+    if not isinstance(plan, Mapping) or set(plan) != _PLAN_KEYS:
         raise ValueError("Unexpected presentation plan fields")
     if plan.get("schema_version") != 1 or plan.get("scope") != "presentation-only":
         raise ValueError("Unsupported presentation amendment plan")
-    for key in ("evidence_sha256", "base_catalog_sha256"):
-        value = plan.get(key)
-        if not isinstance(value, str) or not SHA256_RE.fullmatch(value):
-            raise ValueError("Presentation plan is missing a valid " + key)
-    if _sha256(catalog_bytes) != plan["base_catalog_sha256"]:
+    evidence_sha = _digest(plan.get("evidence_sha256"), "evidence SHA-256")
+    if _sha256(catalog_bytes) != _digest(plan.get("base_catalog_sha256"), "base catalog SHA-256"):
         raise ValueError("Base catalog changed after presentation review")
-    catalog, presets = _catalog(catalog_bytes)
-    del catalog
+    _, presets = _catalog(catalog_bytes)
     if type(plan.get("base_preset_count")) is not int or plan["base_preset_count"] != len(presets):
         raise ValueError("Base catalog count changed after presentation review")
     rows = plan.get("amendments")
-    if not isinstance(rows, list):
+    if not isinstance(rows, list) or not rows:
         raise ValueError("Presentation amendments must be a list")
     result: dict[str, dict] = {}
     for row in rows:
-        if not isinstance(row, dict) or set(row) != _AMENDMENT_KEYS:
+        if not isinstance(row, dict) or set(row) != {"preset_id", "presentation_title"}:
             raise ValueError("Presentation amendment contains non-presentation fields")
         preset_id = row.get("preset_id")
         if not isinstance(preset_id, str) or preset_id in result:
             raise ValueError("Presentation plan has duplicate or invalid preset IDs")
         preset = presets.get(preset_id)
-        if preset is None:
-            raise ValueError("Presentation plan refers to an unknown preset")
-        if row.get("expected_entry_sha256") != _sha256(_canonical(preset)):
-            raise ValueError("Catalog entry changed after presentation review")
-        if row.get("source_factory_sha256") != preset.get("source_factory_sha256"):
-            raise ValueError("Presentation plan source digest no longer matches")
-        identity = preset.get("expected_identity")
-        if not isinstance(identity, dict) or row.get("expected_identity_sha256") != _sha256(_canonical(identity)):
-            raise ValueError("Native identity changed after presentation review")
-        relative = _safe_source_relative(row.get("source_relative"))
-        if row.get("source_title") != _source_title(relative):
-            raise ValueError("Presentation title differs from its source filename")
-        _validate_title_zh(row.get("source_title_zh"))
-        result[preset_id] = dict(row)
+        if preset is None or "presentation_title" in preset:
+            raise ValueError("Presentation plan refers to an unknown or amended preset")
+        payload = validate_payload(preset, row.get("presentation_title"))
+        if payload["evidence_sha256"] != evidence_sha:
+            raise ValueError("Presentation payload evidence differs from its plan")
+        result[preset_id] = payload
     return result
 
 
-def project_title(entry: Mapping, amendment: Mapping) -> dict:
-    """Return an in-memory bilingual UI projection; never edits catalog identity."""
-    if not isinstance(entry, Mapping) or not isinstance(amendment, Mapping):
-        raise ValueError("A catalog entry and validated title amendment are required")
-    if set(amendment) != _AMENDMENT_KEYS:
-        raise ValueError("Title projection accepts presentation fields only")
-    if entry.get("id") != amendment.get("preset_id"):
-        raise ValueError("Title amendment belongs to another preset")
-    if entry.get("source_factory_sha256") != amendment.get("source_factory_sha256"):
-        raise ValueError("Title amendment belongs to another source factory file")
-    identity = entry.get("expected_identity")
-    if not isinstance(identity, dict) or _sha256(_canonical(identity)) != amendment.get("expected_identity_sha256"):
-        raise ValueError("Native identity differs from the reviewed presentation plan")
-    if _sha256(_canonical(dict(entry))) != amendment.get("expected_entry_sha256"):
-        raise ValueError("Catalog entry differs from the reviewed presentation plan")
-    source_relative = _safe_source_relative(amendment.get("source_relative"))
-    source_title = _source_title(source_relative)
-    if source_title != amendment.get("source_title"):
-        raise ValueError("Source title differs from the source filename")
-    title_zh = _validate_title_zh(amendment.get("source_title_zh"))
+def apply_plan(catalog_bytes: bytes, plan: Mapping) -> bytes:
+    """Return a catalog with only the approved presentation field attached."""
+    amendments = validate_plan(catalog_bytes, plan)
+    catalog, presets = _catalog(catalog_bytes)
+    del presets
+    for entry in catalog["presets"]:
+        payload = amendments.get(entry["id"])
+        if payload is not None:
+            entry["presentation_title"] = payload
+    return json.dumps(catalog, ensure_ascii=False, allow_nan=False, indent=2).encode("utf-8")
 
-    from .instrument_taxonomy import classify
-    from .instrument_localization import bilingual, label
 
-    view = classify(dict(entry))
-    labels = entry.get("labels_zh")
-    if not isinstance(labels, Mapping):
-        labels = {}
-    model_zh = label(view["model"]["name"], labels.get("model"), "乐器型号")
-    variant_display = bilingual(title_zh, source_title)
+def publish_catalog_atomic(
+    catalog_path: Path,
+    plan: Mapping,
+    *,
+    expected_sha256: str,
+    allowed_library_root: Path,
+) -> dict:
+    """CAS-publish title metadata under the existing per-library catalog lock.
+
+    This function is intentionally explicit and is not called by intake or
+    preview code. Tests and maintenance tooling can target an isolated catalog;
+    callers must select the allowed sound-library root themselves.
+    """
+    catalog_path = Path(catalog_path)
+    try:
+        supplied_root = Path(allowed_library_root).absolute()
+        if _is_reparse(supplied_root):
+            raise ValueError("Selected instrument-library root cannot be a reparse point")
+        allowed_root = supplied_root.resolve(strict=True)
+    except OSError as error:
+        raise ValueError("Selected instrument-library root must already exist") from error
+    if _is_reparse(catalog_path):
+        raise ValueError("Catalog path cannot be a reparse point")
+    lexical_path = catalog_path.absolute()
+    try:
+        lexical_path.relative_to(allowed_root)
+    except ValueError as error:
+        raise ValueError("Catalog destination must be inside the selected instrument library") from error
+    current = lexical_path.parent
+    while current != allowed_root:
+        if _is_reparse(current):
+            raise ValueError("Catalog parent cannot be a reparse point")
+        if current.parent == current:
+            raise ValueError("Catalog destination must be inside the selected instrument library")
+        current = current.parent
+    try:
+        catalog_path.resolve(strict=True).relative_to(allowed_root)
+    except (OSError, ValueError) as error:
+        raise ValueError("Catalog destination must be inside the selected instrument library") from error
+    expected_sha256 = _digest(expected_sha256, "expected catalog SHA-256")
+    if plan.get("base_catalog_sha256") != expected_sha256:
+        raise ValueError("Presentation plan does not match the caller's catalog CAS token")
+
+    # Reuse exactly the same lock namespace as normal catalog publications.
+    from .instrument_intake_publication import _catalog_lock
+
+    with _catalog_lock(catalog_path):
+        original = catalog_path.read_bytes()
+        actual_sha = _sha256(original)
+        if actual_sha != expected_sha256:
+            raise ValueError("Instrument catalog changed; refusing stale presentation plan")
+        updated = apply_plan(original, plan)
+        parsed = json.loads(updated.decode("utf-8"))
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=catalog_path.name + ".", suffix=".pending", dir=catalog_path.parent
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(updated)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if catalog_path.is_symlink() or _sha256(catalog_path.read_bytes()) != expected_sha256:
+                raise ValueError("Instrument catalog changed during presentation publication")
+            os.replace(temporary, catalog_path)
+            try:
+                directory_fd = os.open(catalog_path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError:
+                # Windows does not support fsync on a directory handle.
+                pass
+        finally:
+            if temporary.exists():
+                temporary.unlink()
     return {
-        **view,
-        "display_name": model_zh + " · " + variant_display,
-        "display_variant_name": variant_display,
-        "presentation_title": {
-            "source_title": source_title,
-            "source_title_zh": title_zh,
-            "source_relative": source_relative,
-            "source_factory_sha256": amendment["source_factory_sha256"],
-        },
+        "previous_catalog_sha256": actual_sha,
+        "catalog_sha256": _sha256(updated),
+        "entry_count": len(parsed["presets"]),
+        "amended_ids": sorted(validate_plan(original, plan)),
     }

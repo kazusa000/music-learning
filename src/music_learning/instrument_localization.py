@@ -597,7 +597,7 @@ def translated_names(entry):
 def localized(entry):
     model = entry["model"]
     translated_model, translated_variant = translated_names(entry)
-    return {
+    result = {
         **entry,
         "display_name": bilingual(translated_model + " · " + translated_variant, entry["name"]),
         "display_variant_name": bilingual(translated_variant, entry["variant_name"]),
@@ -609,6 +609,16 @@ def localized(entry):
             "display_name": entry["source"]["library_name"],
         },
     }
+    if "presentation_title" in entry:
+        # Validate against the unmodified identity fields, then project only
+        # display strings. The overlay must never change taxonomy/model state.
+        from .instrument_presentation_amendments import validate_payload
+
+        reviewed = validate_payload(entry, entry["presentation_title"])
+        display_variant = bilingual(reviewed["zh"], reviewed["title"])
+        result["display_variant_name"] = display_variant
+        result["display_name"] = result["model"]["display_name"] + " · " + display_variant
+    return result
 
 
 def prepare_import(entry, overrides=None):
