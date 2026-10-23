@@ -23,11 +23,11 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 INTAKE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
-CHAIN = INTAKE / "root-cause-chain-01"
+CHAIN = INTAKE / "root-cause-chain-03"
 RUNTIME = ROOT / "runtime"
 PLAN_PATH = CHAIN / "plan.json"
 CHECKPOINT = CHAIN / "checkpoint.json"
-DEFAULT_LOCATOR = RUNTIME / "ample-root-cause-chain-job.local.json"
+DEFAULT_LOCATOR = RUNTIME / "ample-root-cause-chain-v3-job.local.json"
 MAX_WAIT_SECONDS = 24 * 60 * 60
 POLL_SECONDS = 15
 
@@ -55,7 +55,9 @@ from instruments import supervise_ample_block_alignment_control as block  # noqa
 from instruments.supervise_ample_failed_retry import (  # noqa: E402
     SupervisorError, process_inventory, supervisor_lock, verified_observed_survivors,
 )
-from music_learning.instrument_probe_budget import loading_budget  # noqa: E402
+from music_learning.instrument_probe_budget import (  # noqa: E402
+    loading_budget, sample_drive,
+)
 
 
 class ChainError(RuntimeError):
@@ -282,26 +284,40 @@ def _frozen_inputs() -> dict:
     }
 
 
-def prepare_plan() -> dict:
-    if PLAN_PATH.exists():
+def prepare_plan(plan_path: Path = PLAN_PATH,
+                 locator_path: Path = DEFAULT_LOCATOR,
+                 execution_root: Path | None = None) -> dict:
+    plan_path = _inside_e(plan_path, "root-cause chain plan", strict=False)
+    chain_root = plan_path.parent
+    checkpoint_path = chain_root / "checkpoint.json"
+    report_path = chain_root / "report.json"
+    execution_root = _inside_e(
+        execution_root or chain_root / "execution-01",
+        "root-cause chain execution root", strict=False)
+    locator_path = locator_path.resolve(strict=False)
+    if locator_path.parent != RUNTIME.resolve(strict=True):
+        raise ChainError("Use an E: runtime locator for the root-cause chain")
+    if plan_path.exists():
         raise ChainError("Root-cause chain plan already exists; preserve it and use a new attempt")
-    if CHECKPOINT.exists() or DEFAULT_LOCATOR.exists():
+    if checkpoint_path.exists() or report_path.exists() or locator_path.exists():
         raise ChainError("A chain runtime record already exists; refusing a second coordinator")
     inputs = _frozen_inputs()
-    run_root = CHAIN / "execution-01"
-    if run_root.exists():
+    if execution_root.exists():
         raise ChainError("Execution-01 already exists; do not overwrite previous work")
     # The planned command contains no AGLP or config claim, so the active
     # execution-04 conflict matcher will not misclassify this passive waiter.
     plan = {
         "schema_version": 1,
-        "chain_id": "ample-root-cause-chain-01",
+        "chain_id": "ample-root-cause-chain-03",
         "status": "prepared_passive_coordinator",
         "created_at_utc": now(),
         "purpose": "Serial diagnostic chain: existing 441 terminal -> source-identical 512 baseline -> note-48 engine delivery trace -> six Riff trigger-duration controls.",
         "stage_order": ["execution04_terminal", "execution05_512", "midi48_delivery", "riff_trigger_duration"],
         "inputs": inputs,
-        "execution_root": str(run_root),
+        "execution_root": str(execution_root),
+        "checkpoint_path": str(checkpoint_path),
+        "report_path": str(report_path),
+        "locator_path": str(locator_path),
         "script": str(Path(__file__).resolve()),
         "script_sha256": sha(Path(__file__)),
         "qa_locator": str(QA_LOCATOR),
@@ -313,18 +329,33 @@ def prepare_plan() -> dict:
         "resource_writes": 0,
         "nas_access": False,
         "h_tmp_access": False,
-        "scope": "All outputs are isolated under E:\\Intrest\\music-learning\\data\\maintenance\\instrument-intake\\20261023-ample-shared-fix\\root-cause-chain-01. H is read-only after a fresh 3-sample storage-idle gate; NAS and H:\\music\\tmp are never accessed.",
+        "scope": "All outputs are isolated under E:\\Intrest\\music-learning\\data\\maintenance\\instrument-intake\\20261023-ample-shared-fix\\root-cause-chain-03. H is read-only after a fresh 3-sample storage-idle gate; NAS and H:\\music\\tmp are never accessed.",
         "max_wait_seconds": MAX_WAIT_SECONDS,
         "poll_seconds": POLL_SECONDS,
     }
-    CHAIN.mkdir(parents=True, exist_ok=True)
-    atomic_json(PLAN_PATH, plan)
-    atomic_json(CHAIN / "preflight.json", {
+    chain_root.mkdir(parents=True, exist_ok=True)
+    atomic_json(plan_path, plan)
+    atomic_json(chain_root / "preflight.json", {
         "status": "prepared_passive_coordinator",
-        "plan_sha256": sha(PLAN_PATH),
+        "plan_sha256": sha(plan_path),
         "host_started": False, "render_started": False, "h_drive_accessed": False,
         "formal_project_writes": 0, "catalog_writes": 0, "resource_writes": 0,
         "nas_access": False, "h_tmp_access": False,
+    })
+    atomic_json(locator_path, {
+        "schema_version": 1,
+        "status": "prepared_no_process",
+        "pid": None,
+        "parent_pid": None,
+        "created_ticks": None,
+        "script": str(Path(__file__).resolve()),
+        "script_sha256": sha(Path(__file__)),
+        "plan": str(plan_path.resolve()),
+        "plan_sha256": sha(plan_path),
+        "checkpoint": str(checkpoint_path.resolve(strict=False)),
+        "execution_root": str(execution_root),
+        "formal_project_writes": 0, "catalog_writes": 0,
+        "resource_writes": 0, "nas_access": False, "h_tmp_access": False,
     })
     return plan
 
@@ -332,13 +363,15 @@ def prepare_plan() -> dict:
 def _write_state(checkpoint: Path, locator: Path, state: dict, own: dict) -> None:
     state["updated_at_utc"] = now()
     atomic_json(checkpoint, state)
+    plan_path = Path(state.get("plan_path", PLAN_PATH)).resolve()
     atomic_json(locator, {
         "schema_version": 1, "status": state.get("status"),
         "pid": own["pid"], "parent_pid": own["ppid"],
         "created_ticks": own["created_ticks"], "command_line": own["command_line"],
         "creation_time_utc": block._cim_ticks_to_iso(own["created_ticks"]),
         "script": str(Path(__file__).resolve()), "script_sha256": sha(Path(__file__)),
-        "plan": str(PLAN_PATH.resolve()), "plan_sha256": state["plan_sha256"],
+        "plan": str(plan_path),
+        "plan_sha256": state["plan_sha256"],
         "checkpoint": str(checkpoint.resolve()),
         "current_stage": state.get("current_stage"),
         "active_host": state.get("active_host"),
@@ -349,13 +382,16 @@ def _write_state(checkpoint: Path, locator: Path, state: dict, own: dict) -> Non
 
 
 def _execution04_snapshot(rows: list[dict], plan: dict) -> tuple[str, dict]:
-    if sha(EXECUTION04_PLAN) != plan["inputs"]["execution04"]["sha256"]:
+    execution04 = plan["inputs"]["execution04"]
+    execution04_plan = Path(execution04["plan"]).resolve(strict=True)
+    execution04_locator_path = Path(execution04["locator"]).resolve(strict=True)
+    if sha(execution04_plan) != execution04["sha256"]:
         raise ChainError("Execution-04 plan changed after the chain was frozen")
-    locator = load(EXECUTION04_LOCATOR, "execution-04 locator")
-    checkpoint_path = Path(plan["inputs"]["execution04"]["checkpoint"]).resolve(strict=True)
+    locator = load(execution04_locator_path, "execution-04 locator")
+    checkpoint_path = Path(execution04["checkpoint"]).resolve(strict=True)
     checkpoint = load(checkpoint_path, "execution-04 checkpoint")
     if (locator.get("plan_sha256") != plan["inputs"]["execution04"]["sha256"]
-            or Path(locator.get("plan", "")).resolve(strict=False) != EXECUTION04_PLAN.resolve()
+            or Path(locator.get("plan", "")).resolve(strict=False) != execution04_plan
             or Path(locator.get("checkpoint", "")).resolve(strict=False) != checkpoint_path):
         raise ChainError("Execution-04 locator does not point to the frozen plan/checkpoint")
     if checkpoint.get("plan_sha256") != plan["inputs"]["execution04"]["sha256"]:
@@ -364,39 +400,87 @@ def _execution04_snapshot(rows: list[dict], plan: dict) -> tuple[str, dict]:
     terminal_statuses = {"completed_diagnostic", "completed_diagnostic_with_failures"}
     details = {"status": status, "locator_status": locator.get("status"),
                "checkpoint_sha256": sha(checkpoint_path), "checkpoint_path": str(checkpoint_path),
-               "report_path": plan["inputs"]["execution04"]["report"]}
-    if status not in terminal_statuses or not checkpoint.get("finished_at_utc"):
+               "report_path": execution04["report"]}
+    by_pid = _process_map(rows)
+    live_processes = {}
+    owner_pid = locator.get("pid")
+    owner_row = by_pid.get(owner_pid) if type(owner_pid) is int else None
+    owner_identity_matches = False
+    if owner_row is not None:
+        owner_command = _normal_command(owner_row.get("command_line", ""))
+        plan_token = str(execution04_plan).casefold().replace("/", "\\")
+        owner_identity_matches = (
+            (locator.get("created_ticks") is None
+             or owner_row.get("created_ticks") == locator.get("created_ticks"))
+            and plan_token in owner_command
+        )
+        if owner_identity_matches:
+            live_processes[owner_pid] = owner_row
+        else:
+            details["owner_identity_conflict"] = {
+                "expected_pid": owner_pid,
+                "expected_created_ticks": locator.get("created_ticks"),
+                "observed": {key: owner_row.get(key) for key in
+                             ("pid", "ppid", "created_ticks", "name", "command_line")},
+            }
+    job_token = str(Path(execution04["checkpoint"]).parent).casefold().replace("/", "\\")
+    related = [row for row in rows
+               if job_token in _normal_command(row.get("command_line", ""))]
+    for row in related:
+        live_processes[row["pid"]] = row
+    details["live_execution04_processes"] = [
+        {key: row.get(key) for key in ("pid", "ppid", "created_ticks", "name", "command_line")}
+        for row in live_processes.values()]
+
+    finished = bool(checkpoint.get("finished_at_utc"))
+    is_known_abnormal_terminal = status in {
+        "wait_limit_reached", "blocked_runner_identity_unobserved",
+        "blocked_host_identity_not_observed", "blocked_unidentified_host_still_active",
+        "blocked_owned_host_did_not_exit", "blocked_host_descendant_still_active",
+        "blocked_interrupted_host_state", "blocked_preflight", "blocked_host_launch_failed",
+    }
+    if status not in terminal_statuses:
+        if finished or is_known_abnormal_terminal or not owner_identity_matches:
+            details.update(
+                diagnosis_required=True,
+                terminal_checkpoint=finished or is_known_abnormal_terminal,
+                physical_release_state=(
+                    "released" if checkpoint.get("active_host") is None
+                    and locator.get("active_host") is None and not live_processes
+                    else "release_not_verified"),
+                terminal_outcome_accepted_as_diagnostic_baseline=False,
+                diagnosis_reason=(checkpoint.get("reason") or
+                                  "Execution-04 ended or lost its supervisor before an accepted diagnostic terminal status"),
+            )
+            report_path = Path(execution04["report"]).resolve(strict=False)
+            if report_path.is_file():
+                details["available_report_sha256"] = sha(report_path)
+            return "execution04_diagnosis_required", details
         return "waiting_for_execution04_terminal", details
-    report_path = Path(plan["inputs"]["execution04"]["report"]).resolve(strict=True)
+
+    if not finished:
+        if not owner_identity_matches:
+            details.update(
+                diagnosis_required=True,
+                physical_release_state=(
+                    "released" if checkpoint.get("active_host") is None
+                    and locator.get("active_host") is None and not live_processes
+                    else "release_not_verified"),
+                terminal_outcome_accepted_as_diagnostic_baseline=False,
+                diagnosis_reason="Accepted-looking execution-04 status lacks a terminal timestamp and live supervisor",
+            )
+            return "execution04_diagnosis_required", details
+        return "waiting_for_execution04_terminal", details
+
+    report_path = Path(execution04["report"]).resolve(strict=True)
     report = load(report_path, "execution-04 final report")
-    if (report.get("status") != status or report.get("plan_sha256") != plan["inputs"]["execution04"]["sha256"]
+    if (report.get("status") != status or report.get("plan_sha256") != execution04["sha256"]
             or not report.get("finished_at_utc")):
         raise ChainError("Execution-04 final report does not agree with its terminal checkpoint")
     details["report_sha256"] = sha(report_path)
     if checkpoint.get("active_host") is not None or locator.get("active_host") is not None:
         return "waiting_for_execution04_host_release", details
-    by_pid = _process_map(rows)
-    exact_live = []
-    for role, pid in (("supervisor", locator.get("pid")),
-                      ("wrapper", locator.get("parent_pid"))):
-        if type(pid) is not int:
-            continue
-        row = by_pid.get(pid)
-        if row is None:
-            continue
-        command = _normal_command(row.get("command_line", ""))
-        references_run = (str(EXECUTION04_PLAN.parent).casefold().replace("/", "\\") in command
-                          or str(Path(plan["inputs"]["execution04"]["plan"])).casefold().replace("/", "\\") in command)
-        if role == "supervisor" and references_run:
-            exact_live.append({key: row.get(key) for key in
-                               ("pid", "ppid", "created_ticks", "name", "command_line")})
-    job_token = str(EXECUTION04_JOB).casefold().replace("/", "\\")
-    related = [row for row in rows
-               if job_token in _normal_command(row.get("command_line", ""))]
-    if exact_live or related:
-        details["live_execution04_processes"] = exact_live + [
-            {key: row.get(key) for key in ("pid", "ppid", "created_ticks", "name", "command_line")}
-            for row in related]
+    if live_processes:
         return "waiting_for_execution04_process_release", details
     conflicts = _stage_conflicts(rows, os.getpid(), "")
     if conflicts:
@@ -409,7 +493,8 @@ def _execution04_snapshot(rows: list[dict], plan: dict) -> tuple[str, dict]:
 def _wait_for_execution04(plan: dict, state: dict, checkpoint: Path, locator: Path,
                           own: dict, deadline: float, poll: int) -> dict | None:
     while time.monotonic() < deadline:
-        if sha(PLAN_PATH) != state["plan_sha256"] or sha(Path(__file__)) != plan["script_sha256"]:
+        if (sha(Path(state["plan_path"])) != state["plan_sha256"]
+                or sha(Path(__file__)) != plan["script_sha256"]):
             raise ChainError("Coordinator plan/script changed while waiting")
         rows = process_inventory()
         gate, detail = _execution04_snapshot(rows, plan)
@@ -418,6 +503,15 @@ def _wait_for_execution04(plan: dict, state: dict, checkpoint: Path, locator: Pa
         _write_state(checkpoint, locator, state, own)
         if gate == "execution04_terminal_and_released":
             return detail
+        if gate == "execution04_diagnosis_required":
+            state.update(
+                status="blocked_execution04_diagnosis_required",
+                reason="Execution-04 ended abnormally or lost its supervisor; diagnose its immutable evidence before follow-up controls",
+                diagnosis_required=True,
+                finished_at_utc=now(),
+            )
+            _write_state(checkpoint, locator, state, own)
+            return None
         time.sleep(min(poll, max(1, deadline - time.monotonic())))
     state.update(status="wait_limit_reached", finished_at_utc=now(),
                  reason="bounded wait for execution-04 terminal/release was exhausted")
@@ -433,12 +527,54 @@ def _formal_idle_or_wait() -> tuple[bool, dict]:
     return status.get("allowed") is True, status
 
 
+def _timestamped_h_sample(drive: str) -> dict:
+    """Attach a timestamp to the exact storage-counter observation."""
+    observation = sample_drive(drive)
+    return {**observation, "observed_at_utc": now()}
+
+
+def _fresh_h_budget(drive: str, **kwargs) -> dict:
+    """Run the shared storage policy with timestamped raw sampler results."""
+    kwargs.setdefault("pause", time.sleep)
+    return loading_budget(drive, sample=_timestamped_h_sample, **kwargs)
+
+
+def _validated_h_observations(budget: dict) -> list[dict]:
+    observations = budget.get("observations")
+    if not isinstance(observations, list) or len(observations) != 3:
+        raise ChainError("Shared storage gate did not return exactly three observations")
+    parsed = []
+    for item in observations:
+        if not isinstance(item, dict) or item.get("drive", "").upper() != "H:" \
+                or item.get("busy") is not False:
+            raise ChainError("Shared storage gate returned a busy or malformed H observation")
+        try:
+            observed_at = datetime.fromisoformat(
+                item["observed_at_utc"].replace("Z", "+00:00"))
+        except (KeyError, AttributeError, TypeError, ValueError) as error:
+            raise ChainError("H observation lacks a valid capture timestamp") from error
+        if observed_at.tzinfo is None:
+            raise ChainError("H observation timestamp lacks a timezone")
+        parsed.append(observed_at.astimezone(timezone.utc))
+    if parsed != sorted(parsed):
+        raise ChainError("H observation timestamps are not in sampling order")
+    return observations
+
+
 def _wait_stage_gate(plan: dict, state: dict, checkpoint: Path, locator: Path,
                      own: dict, deadline: float, poll: int,
                      *, stage: str, qa_output: str) -> dict | None:
     """Fresh process/formal/H/config/manifest gate before each low-level host."""
+    source_plan = load(EXECUTION04_PLAN, "execution-04 plan")
     while time.monotonic() < deadline:
         rows = process_inventory()
+        qa_status, qa_detail = block._qa_snapshot(source_plan, QA_LOCATOR, rows)
+        if qa_status != "qa07_terminal_and_released":
+            state.update(status=f"{stage}_waiting_for_qa07_release",
+                         qa07=qa_detail, last_checked_at_utc=now())
+            _write_state(checkpoint, locator, state, own)
+            time.sleep(poll)
+            continue
         conflicts = _stage_conflicts(rows, own["pid"], qa_output)
         if conflicts:
             state.update(status=f"{stage}_waiting_for_host_or_config_release",
@@ -454,7 +590,7 @@ def _wait_stage_gate(plan: dict, state: dict, checkpoint: Path, locator: Path,
             time.sleep(poll)
             continue
         try:
-            budget = loading_budget("H:", idle_samples=3)
+            budget = _fresh_h_budget("H:", idle_samples=3)
         except Exception as error:
             budget = {"allowed": False, "error": f"{type(error).__name__}: {error}"}
         if not isinstance(budget, dict) or budget.get("allowed") is not True:
@@ -464,20 +600,21 @@ def _wait_stage_gate(plan: dict, state: dict, checkpoint: Path, locator: Path,
             time.sleep(poll)
             continue
         # This reads the already audited final bank only after the H-idle gate.
-        source_plan = load(EXECUTION04_PLAN, "execution-04 plan")
-        gate = block._h_gate_and_manifest(source_plan)
+        gate = block._h_gate_and_manifest(source_plan, budget_fn=_fresh_h_budget)
         if gate.get("allowed") is not True:
             state.update(status=f"{stage}_waiting_for_H_idle",
                          last_H_gate=gate, last_checked_at_utc=now())
             _write_state(checkpoint, locator, state, own)
             time.sleep(poll)
             continue
+        h_idle_samples = _validated_h_observations(gate.get("budget", {}))
         rows = process_inventory()
+        qa_status, qa_detail = block._qa_snapshot(source_plan, QA_LOCATOR, rows)
         conflicts = _stage_conflicts(rows, own["pid"], qa_output)
         idle, formal = _formal_idle_or_wait()
-        if conflicts or not idle:
+        if (qa_status != "qa07_terminal_and_released" or conflicts or not idle):
             state.update(status=f"{stage}_waiting_for_final_preflight",
-                         competing_processes=conflicts, formal_idle=formal,
+                         qa07=qa_detail, competing_processes=conflicts, formal_idle=formal,
                          last_checked_at_utc=now())
             _write_state(checkpoint, locator, state, own)
             time.sleep(poll)
@@ -486,7 +623,8 @@ def _wait_stage_gate(plan: dict, state: dict, checkpoint: Path, locator: Path,
                      last_H_gate=gate, formal_idle=formal,
                      last_checked_at_utc=now())
         _write_state(checkpoint, locator, state, own)
-        return {"h_gate": gate, "formal_idle": formal,
+        return {"h_gate": gate, "h_idle_samples": h_idle_samples,
+                "qa07": qa_detail, "formal_idle": formal,
                 "process_inventory": len(rows)}
     return None
 
@@ -690,6 +828,41 @@ def _runtime_bundle_snapshot(desc: dict) -> dict:
     }
 
 
+def _native_host_start_evidence(report: dict, report_sha256: str) -> dict:
+    """Separate Python-runner dispatch from evidence of an actual native host."""
+    explicit = report.get("actual_native_host_started")
+    calls = report.get("native_host_calls")
+    worker_pids = report.get("worker_pids")
+    evidence = {
+        "progress_sha256": report_sha256,
+        "progress_status": report.get("status"),
+        "explicit_actual_native_host_started": explicit if type(explicit) is bool else None,
+        "native_host_calls_count": len(calls) if isinstance(calls, list) else None,
+        "worker_pids": worker_pids if isinstance(worker_pids, list) else None,
+    }
+    if type(explicit) is bool:
+        if isinstance(calls, list) and bool(calls) != explicit:
+            evidence.update(actual_native_host_started=None,
+                            conclusion="contradictory_nested_host_evidence")
+        else:
+            evidence.update(actual_native_host_started=explicit,
+                            conclusion="explicit_nested_progress_receipt")
+        return evidence
+    if isinstance(calls, list) and calls:
+        evidence.update(actual_native_host_started=True,
+                        conclusion="nested_native_host_calls_present")
+        return evidence
+    if isinstance(worker_pids, list) and worker_pids:
+        evidence.update(actual_native_host_started=True,
+                        conclusion="nested_native_worker_pids_present")
+        return evidence
+    # An empty/missing nested field is not proof that a host was never launched;
+    # preserve uncertainty rather than treating the runner PID as native work.
+    evidence.update(actual_native_host_started=None,
+                    conclusion="nested_progress_does_not_prove_native_host_start")
+    return evidence
+
+
 def _run_midi_delivery(plan: dict, state: dict, checkpoint: Path, locator: Path,
                        own: dict, deadline: float, poll: int) -> dict:
     desc, descriptor_snapshot = _verify_midi_descriptor(plan)
@@ -740,13 +913,15 @@ def _run_midi_delivery(plan: dict, state: dict, checkpoint: Path, locator: Path,
         raise ChainError("MIDI stage exceeded the bounded 24-hour H/formal-idle wait")
     if output.exists():
         raise ChainError("MIDI output appeared before the coordinator launch; refusing overwrite")
-    stage = {"schema_version": 1, "status": "launching",
+    stage = {"schema_version": 2, "status": "launching",
              "descriptor_sha256": plan["inputs"]["midi48"]["sha256"],
              "command": argv, "started_at_utc": now(),
              "descriptor_snapshot_at_prepare": descriptor_snapshot,
              "descriptor_snapshot_at_launch": launch_snapshot,
              "h_budget": budget, "formal_idle": formal,
-             "host_started": True}
+             "runner_dispatched": False, "runner_pid": None,
+             "actual_native_host_started": None,
+             "native_host_evidence": None}
     atomic_json(run_dir / "execution.json", stage)
     state.update(status="midi48_running", current_stage="midi48_delivery",
                  midi48_execution={"pid": None, "started_at_utc": stage["started_at_utc"],
@@ -758,6 +933,9 @@ def _run_midi_delivery(plan: dict, state: dict, checkpoint: Path, locator: Path,
     with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
         process = subprocess.Popen(argv, cwd=ROOT, stdout=stdout, stderr=stderr,
                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        stage.update(runner_dispatched=True, runner_pid=process.pid,
+                     runner_dispatched_at_utc=now())
+        atomic_json(run_dir / "execution.json", stage)
         # Persist the operating-system PID immediately. Creation time and
         # command are filled from CIM as soon as the row becomes observable;
         # a restart can never mistake this stage for an unstarted attempt.
@@ -836,15 +1014,21 @@ def _run_midi_delivery(plan: dict, state: dict, checkpoint: Path, locator: Path,
         _write_state(checkpoint, locator, state, own)
         raise ChainError("MIDI diagnostic did not produce its pinned progress report")
     report = load(report_path, "MIDI diagnostic progress")
+    nested_host_evidence = _native_host_start_evidence(report, sha(report_path))
     stage.update(status="completed_process", runner=process_info,
                  owned_processes=observed, returncode=returncode,
                  output_progress=str(report_path), output_progress_sha256=sha(report_path),
+                 actual_native_host_started=nested_host_evidence["actual_native_host_started"],
+                 native_host_evidence=nested_host_evidence,
                  report_status=report.get("status"), finished_at_utc=now())
     atomic_json(run_dir / "execution.json", stage)
     state.pop("active_child", None)
     state["midi48_execution"].update(
         created_ticks=process_info["created_ticks"],
-        command_line=process_info.get("command_line"), returncode=returncode)
+        command_line=process_info.get("command_line"), returncode=returncode,
+        runner_dispatched=True, runner_pid=process.pid,
+        actual_native_host_started=nested_host_evidence["actual_native_host_started"],
+        native_host_evidence=nested_host_evidence)
     _write_state(checkpoint, locator, state, own)
     if returncode != 0 or report.get("status") != "completed_diagnostic":
         return {"path": str(report_path), "sha256": sha(report_path),
@@ -1019,9 +1203,9 @@ def _run_riff_controls(plan: dict, state: dict, checkpoint: Path, locator: Path,
                                      stage=f"riff_{case_id}_{phase}")
             # Each request gets a newly sampled, exact, auditable gate; the
             # imported runner repeats its storage gate before touching the host.
-            samples = gate["h_gate"]["budget"].get("samples")
+            samples = gate.get("h_idle_samples")
             if not isinstance(samples, list) or len(samples) != 3:
-                raise ChainError("Storage helper did not return three H-idle observations")
+                raise ChainError("Fresh chain gate lacks three timestamped H observations")
             gate_file = {
                 "plan_sha256": sha(stage_plan_path),
                 "qa07_terminal_and_released": True,
@@ -1051,7 +1235,7 @@ def _run_riff_controls(plan: dict, state: dict, checkpoint: Path, locator: Path,
             atomic_json(control_dir / "progress.json", {
                 "schema_version": 1, "status": "running",
                 "source_plan_sha256": EXPECTED_RIFF_PLAN_SHA,
-                "chain_plan_sha256": sha(PLAN_PATH),
+                "chain_plan_sha256": state["plan_sha256"],
                 "stage_plan_sha256": sha(stage_plan_path),
                 "completed_controls": results,
                 "diagnostic_only": True,
@@ -1100,23 +1284,36 @@ def run(plan_path: Path = PLAN_PATH, locator_path: Path = DEFAULT_LOCATOR,
         raise ChainError("Use the dedicated E: root-cause chain locator")
     plan_sha = sha(plan_path)
     plan = load(plan_path, "root-cause chain plan")
-    if plan.get("chain_id") != "ample-root-cause-chain-01":
+    if plan.get("chain_id") != "ample-root-cause-chain-03":
         raise ChainError("Unexpected chain plan identity")
+    chain_root = plan_path.parent.resolve(strict=True)
+    checkpoint_path = Path(plan.get("checkpoint_path", "")).resolve(strict=False)
+    report_path = Path(plan.get("report_path", "")).resolve(strict=False)
+    planned_locator = Path(plan.get("locator_path", "")).resolve(strict=False)
+    execution_root = _inside_e(Path(plan.get("execution_root", "")),
+                               "root-cause chain execution root", strict=False)
+    if (checkpoint_path != chain_root / "checkpoint.json"
+            or report_path != chain_root / "report.json"
+            or planned_locator != locator_path
+            or execution_root.parent != chain_root):
+        raise ChainError("Plan checkpoint/report/locator/execution paths must be its dedicated v3 siblings")
+    if plan.get("script") != str(Path(__file__).resolve()) \
+            or plan.get("script_sha256") != sha(Path(__file__)):
+        raise ChainError("Coordinator script differs from the frozen v3 plan")
     if not 1 <= poll_seconds <= 60 or not 60 <= max_wait_seconds <= MAX_WAIT_SECONDS:
         raise ChainError("Wait interval/budget outside the bounded supervisor limits")
     lock_path = locator_path.with_suffix(locator_path.suffix + ".lock")
     with supervisor_lock(lock_path):
         rows = process_inventory()
         own = _own_process(rows, plan_path, locator_path)
-        if sha(Path(__file__)) != plan.get("script_sha256"):
-            raise ChainError("Coordinator script differs from the frozen plan")
-        if CHECKPOINT.exists():
-            existing = load(CHECKPOINT, "root-cause chain checkpoint")
+        if checkpoint_path.exists():
+            existing = load(checkpoint_path, "root-cause chain checkpoint")
             if existing.get("plan_sha256") != plan_sha:
                 raise ChainError("Existing chain checkpoint belongs to another plan")
             if existing.get("status") in {
                     "completed_diagnostic_chain", "completed_diagnostic_chain_with_failures",
                     "blocked_loader_diagnosis", "blocked_interrupted_stage",
+                    "blocked_execution04_diagnosis_required",
                     "wait_limit_reached", "blocked_preflight", "blocked_stage_failure",
                     "blocked_active_prior_stage", "blocked_runner_identity_unobserved",
                     "blocked_owned_child_processes_remain", "failed_missing_midi_progress"}:
@@ -1132,7 +1329,7 @@ def run(plan_path: Path = PLAN_PATH, locator_path: Path = DEFAULT_LOCATOR,
                     existing.update(status="blocked_interrupted_stage",
                                     reason="A prior stage ended before a durable terminal receipt; preserve and diagnose")
                 existing["finished_at_utc"] = now()
-                _write_state(CHECKPOINT, locator_path, existing, own)
+                _write_state(checkpoint_path, locator_path, existing, own)
                 return existing
             raise ChainError("Nonterminal chain checkpoint requires forensic recovery; refusing replay")
         if sha(plan_path) != plan_sha:
@@ -1149,45 +1346,48 @@ def run(plan_path: Path = PLAN_PATH, locator_path: Path = DEFAULT_LOCATOR,
             "schema_version": 1, "status": "starting",
             "created_at_utc": now(), "started_at_utc": now(),
             "plan_path": str(plan_path), "plan_sha256": plan_sha,
+            "checkpoint_path": str(checkpoint_path),
+            "report_path": str(report_path),
+            "execution_root": str(execution_root),
             "own_process": own, "completed_stages": [],
             "formal_project_writes": 0, "catalog_writes": 0,
             "resource_writes": 0, "nas_access": False, "h_tmp_access": False,
         }
-        _write_state(CHECKPOINT, locator_path, state, own)
+        _write_state(checkpoint_path, locator_path, state, own)
         deadline = time.monotonic() + max_wait_seconds
-        terminal = _wait_for_execution04(plan, state, CHECKPOINT, locator_path,
+        terminal = _wait_for_execution04(plan, state, checkpoint_path, locator_path,
                                          own, deadline, poll_seconds)
         if terminal is None:
-            return load(CHECKPOINT, "root-cause chain checkpoint")
+            return load(checkpoint_path, "root-cause chain checkpoint")
         state["completed_stages"].append({"stage": "execution04_terminal",
                                            "evidence": terminal})
         state.update(status="execution04_terminal_and_released",
                      current_stage="execution05_512")
-        _write_state(CHECKPOINT, locator_path, state, own)
-        result512 = _run_512(plan, state, CHECKPOINT, locator_path, own,
+        _write_state(checkpoint_path, locator_path, state, own)
+        result512 = _run_512(plan, state, checkpoint_path, locator_path, own,
                              deadline, poll_seconds)
         state["completed_stages"].append({"stage": "execution05_512",
                                            "evidence": result512})
         state.update(status="execution05_512_terminal", current_stage="midi48_delivery")
-        _write_state(CHECKPOINT, locator_path, state, own)
-        midi = _run_midi_delivery(plan, state, CHECKPOINT, locator_path, own,
+        _write_state(checkpoint_path, locator_path, state, own)
+        midi = _run_midi_delivery(plan, state, checkpoint_path, locator_path, own,
                                   deadline, poll_seconds)
         state["completed_stages"].append({"stage": "midi48_delivery", "evidence": midi})
         if midi.get("blocked"):
             state.update(status="blocked_midi_delivery_stage",
                          reason="MIDI delivery attempt deferred/failed; original output preserved",
                          finished_at_utc=now())
-            _write_state(CHECKPOINT, locator_path, state, own)
+            _write_state(checkpoint_path, locator_path, state, own)
             return state
         if midi.get("requires_shared_loader_diagnosis"):
             state.update(status="blocked_loader_diagnosis",
                          reason="MIDI readiness or loader error needs a shared-rule diagnosis before Riff controls",
                          finished_at_utc=now())
-            _write_state(CHECKPOINT, locator_path, state, own)
+            _write_state(checkpoint_path, locator_path, state, own)
             return state
         state.update(status="midi48_terminal", current_stage="riff_trigger_duration")
-        _write_state(CHECKPOINT, locator_path, state, own)
-        riff = _run_riff_controls(plan, state, CHECKPOINT, locator_path, own,
+        _write_state(checkpoint_path, locator_path, state, own)
+        riff = _run_riff_controls(plan, state, checkpoint_path, locator_path, own,
                                   deadline, poll_seconds, midi)
         state["completed_stages"].append({"stage": "riff_trigger_duration",
                                            "evidence": riff})
@@ -1203,8 +1403,8 @@ def run(plan_path: Path = PLAN_PATH, locator_path: Path = DEFAULT_LOCATOR,
                          "strict_audio_and_identity_checks_unchanged": True,
                          "riff_consumer_semantics_resolved": False,
                      })
-        atomic_json(CHAIN / "report.json", state)
-        _write_state(CHECKPOINT, locator_path, state, own)
+        atomic_json(report_path, state)
+        _write_state(checkpoint_path, locator_path, state, own)
         return state
 
 
@@ -1214,14 +1414,18 @@ def main() -> int:
                         help="Write an E-only immutable stage-order plan; starts no host")
     parser.add_argument("--plan", type=Path, default=PLAN_PATH)
     parser.add_argument("--locator", type=Path, default=DEFAULT_LOCATOR)
+    parser.add_argument("--output-root", type=Path, default=None,
+                        help="Dedicated E: directory for checkpoint/report/execution outputs")
     parser.add_argument("--poll-seconds", type=int, default=POLL_SECONDS)
     parser.add_argument("--max-wait-seconds", type=int, default=MAX_WAIT_SECONDS)
     args = parser.parse_args()
     try:
         if args.prepare:
-            plan = prepare_plan()
-            print(json.dumps({"status": plan["status"], "plan": str(PLAN_PATH),
-                              "plan_sha256": sha(PLAN_PATH), "host_started": False},
+            plan = prepare_plan(args.plan, args.locator, args.output_root)
+            print(json.dumps({"status": plan["status"], "plan": str(args.plan),
+                              "plan_sha256": sha(args.plan),
+                              "checkpoint": plan["checkpoint_path"],
+                              "locator": plan["locator_path"], "host_started": False},
                              ensure_ascii=False), flush=True)
             return 0
         result = run(args.plan, args.locator, poll_seconds=args.poll_seconds,
@@ -1231,9 +1435,10 @@ def main() -> int:
                    "finished_at_utc": now(), "formal_project_writes": 0,
                    "catalog_writes": 0, "resource_writes": 0,
                    "nas_access": False, "h_tmp_access": False}
-        if not args.prepare and CHECKPOINT.is_file():
+        checkpoint_path = args.plan.resolve(strict=False).parent / "checkpoint.json"
+        if not args.prepare and checkpoint_path.is_file():
             try:
-                current = load(CHECKPOINT, "root-cause chain checkpoint after error")
+                current = load(checkpoint_path, "root-cause chain checkpoint after error")
                 locator = load(args.locator, "root-cause chain locator after error")
                 if (current.get("plan_sha256") == sha(args.plan)
                         and locator.get("plan_sha256") == current.get("plan_sha256")
@@ -1243,12 +1448,12 @@ def main() -> int:
                                             "message": str(error),
                                             "stage": current.get("current_stage")},
                                    finished_at_utc=now())
-                    atomic_json(CHECKPOINT, current)
+                    atomic_json(checkpoint_path, current)
                     locator.update(status="blocked_stage_failure",
                                    failure=current["failure"],
                                    updated_at_utc=current["finished_at_utc"])
                     atomic_json(args.locator, locator)
-                    failure["checkpoint"] = str(CHECKPOINT)
+                    failure["checkpoint"] = str(checkpoint_path)
                     failure["checkpoint_status"] = "blocked_stage_failure"
             except Exception as persist_error:
                 failure["persist_error"] = f"{type(persist_error).__name__}: {persist_error}"

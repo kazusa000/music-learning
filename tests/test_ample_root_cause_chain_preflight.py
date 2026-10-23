@@ -26,9 +26,9 @@ def _planned_coordinator_command() -> str:
         'E:\\Intrest\\music-learning\\scripts\\instruments\\'
         'supervise_ample_root_cause_chain.py '
         '--plan E:\\Intrest\\music-learning\\data\\maintenance\\'
-        'instrument-intake\\20261023-ample-shared-fix\\root-cause-chain-01\\'
+        'instrument-intake\\20261023-ample-shared-fix\\root-cause-chain-03\\'
         'plan.json --locator E:\\Intrest\\music-learning\\runtime\\'
-        'ample-root-cause-chain-job.local.json --poll-seconds 15 '
+        'ample-root-cause-chain-v3-job.local.json --poll-seconds 15 '
         '--max-wait-seconds 86400'
     )
 
