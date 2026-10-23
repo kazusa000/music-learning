@@ -150,15 +150,33 @@ def _within_intake(path: Path) -> Path:
 
 
 def _native_phase_paths(output: Path, variant: str, phase: str) -> tuple[Path, Path]:
-    """Create the owned diagnostics/audio parents required by a native phase."""
+    """Create short diagnostics and owned audio paths for a native phase.
+
+    NativeHost appends a UUID directory to ``diagnostics``. Keeping that root
+    beside the long attempt report can exceed the Windows MAX_PATH boundary
+    before the host starts, so diagnostics use a content-derived short path
+    elsewhere under the same instrument-intake maintenance root.
+    """
     output = _within_intake(output)
     if variant not in VARIANTS or phase not in {"first", "reopen"}:
         raise ValueError("Native phase paths require a known variant and capture phase")
-    diagnostics = output / "native-calls" / variant / phase
+    intake = (ROOT / "data/maintenance/instrument-intake").resolve(strict=True)
+    relative = output.relative_to(intake).as_posix().casefold().encode("utf-8")
+    run_key = hashlib.sha256(relative).hexdigest()[:16]
+    diagnostics = intake / "calls" / run_key / variant / phase
     wav = output / "audio" / variant / f"{phase}.wav"
     diagnostics.mkdir(parents=True, exist_ok=True)
     wav.parent.mkdir(parents=True, exist_ok=True)
     return diagnostics, wav
+
+
+def _call_native_phase(*, host_path: Path, output: Path, variant: str, phase: str,
+                       request: dict, timeout: float = 300) -> tuple[dict, Path, Path]:
+    """Run one real NativeHost phase through the shared bounded path contract."""
+    diagnostics, wav = _native_phase_paths(output, variant, phase)
+    response = NativeHost(executable=host_path, diagnostics=diagnostics).call(
+        {**request, "output_path": str(wav)}, timeout=timeout)
+    return response, wav, diagnostics
 
 
 def _final_bank_path(instrument: str) -> Path:
@@ -334,19 +352,18 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
                     _write_json(output / "report.json", report)
                     return report
                 scoped_project = project_for_variant if phase == "first" else phases["first"]["snapshot"]
-                diagnostics, wav = _native_phase_paths(output, name, phase)
                 with sample_path(config, library, instrument):
-                    response = _call_render(
-                        NativeHost(executable=host_path,
-                                   diagnostics=diagnostics),
-                        {"schema_version": 1, "action": "render", "project": scoped_project},
-                        wav, timeout=300,
+                    response, wav, diagnostics = _call_native_phase(
+                        host_path=host_path, output=output, variant=name, phase=phase,
+                        request={"schema_version": 1, "action": "render",
+                                 "project": scoped_project},
                     )
                 after = config.read_bytes()
                 if _sha(after) != original_config_sha:
                     raise ValueError(f"{instrument} InstDir XML was not restored after host call")
                 plugin_state = response["snapshot"]["tracks"][0]["plugins"][0]
                 phase_record = {
+                    "native_diagnostics_directory": str(diagnostics),
                     "metrics": {key: response.get(key) for key in
                                 ("rms", "peak", "clipped_samples", "frames", "sample_rate", "channels")},
                     "whole_wav": _wav_window_metrics(

@@ -11,6 +11,7 @@ import pytest
 
 from music_learning.ample_presets import component_xml, parameters
 from music_learning.preset_import import preset_state
+from scripts.instruments import probe_ample_hm2_migration as hm2_probe
 from scripts.instruments.probe_ample_hm2_migration import (
     PRODUCTS,
     VARIANTS,
@@ -126,14 +127,63 @@ def test_native_phase_paths_create_owned_diagnostics_and_audio_parents(tmp_path,
     intake = tmp_path / "data/maintenance/instrument-intake"
     intake.mkdir(parents=True)
     monkeypatch.setattr("scripts.instruments.probe_ample_hm2_migration.ROOT", tmp_path)
-    output = intake / "control/attempt/probe"
+    output = intake / ("p" * max(1, 190 - len(str(intake)) - len("/probe") - 1)) / "probe"
 
     diagnostics, wav = _native_phase_paths(output, VARIANTS[0], "first")
 
-    assert diagnostics == output / "native-calls" / VARIANTS[0] / "first"
+    assert diagnostics.is_relative_to(intake)
+    assert diagnostics != output / "native-calls" / VARIANTS[0] / "first"
+    assert len(str(diagnostics / ("0" * 32) / "response.json")) <= 259
+    assert len(str(output / "native-calls" / VARIANTS[0] / "first" / ("0" * 32))) > 259
     assert diagnostics.is_dir()
     assert wav == output / "audio" / VARIANTS[0] / "first.wav"
     assert wav.parent.is_dir()
+
+
+def test_nativehost_first_and_reopen_use_short_owned_paths_without_hardware(
+        tmp_path, monkeypatch):
+    intake = tmp_path / "data/maintenance/instrument-intake"
+    intake.mkdir(parents=True)
+    monkeypatch.setattr(hm2_probe, "ROOT", tmp_path)
+    output = intake / ("p" * max(1, 190 - len(str(intake)) - len("/probe") - 1)) / "probe"
+    fake_host = tmp_path / "fake-native-host.exe"
+    fake_host.write_bytes(b"fake executable sentinel")
+    calls = []
+
+    class FakeProcess:
+        pid = 12345
+        returncode = 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    def fake_popen(command, **kwargs):
+        request_path, response_path = Path(command[1]), Path(command[2])
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        calls.append({"directory": request_path.parent, "phase": request["phase"]})
+        response_path.write_text(json.dumps({
+            "schema_version": 1,
+            "ok": True,
+            "result": {"phase": request["phase"], "output_path": request["output_path"]},
+        }), encoding="utf-8")
+        return FakeProcess()
+
+    monkeypatch.setattr("scripts.native_host.subprocess.Popen", fake_popen)
+    phases = []
+    for phase in ("first", "reopen"):
+        result, wav, diagnostics = hm2_probe._call_native_phase(
+            host_path=fake_host, output=output, variant=VARIANTS[0], phase=phase,
+            request={"schema_version": 1, "action": "render", "phase": phase},
+            timeout=5,
+        )
+        phases.append(result["phase"])
+        assert result["output_path"] == str(wav)
+        assert diagnostics.is_relative_to(intake)
+        assert calls[-1]["directory"].parent == diagnostics
+        assert len(str(calls[-1]["directory"] / "response.json")) <= 259
+
+    assert phases == ["first", "reopen"]
+    assert [call["phase"] for call in calls] == ["first", "reopen"]
 
 
 @pytest.mark.parametrize(
