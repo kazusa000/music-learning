@@ -10,8 +10,9 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from music_learning.ample_identity import (
-    factory_identity, factory_parameters, identity_compatibility, native_factory_identity,
-    parameter_map_sha256,
+    _cpp_defaultfloat_precision6,
+    factory_identity, factory_parameters, identity_compatibility,
+    loaded_component_parameters, native_factory_identity, parameter_map_sha256,
 )
 from music_learning.ample_publication import (
     PRODUCTS, candidate_for_factory, identity_verifier, receipt_from_probe, variant_label,
@@ -62,9 +63,7 @@ def _candidate_identity(factory: bytes, plugin_name="Ample Guitar SC", plugin_ve
     expected = factory_identity(factory)
     source = factory_parameters(factory)
     compatibility = identity_compatibility(plugin_name, plugin_version)
-    loaded = dict(source)
-    for name, value in compatibility["native_only_defaults"].items():
-        loaded.setdefault(name, value)
+    loaded = loaded_component_parameters(source, compatibility, expected["root_tag"])
     return {
         "expected_identity": {
             **expected,
@@ -108,6 +107,131 @@ def test_native_identity_uses_exact_typed_source_values_and_float32_normalizatio
 
     assert native_factory_identity(candidate, plugin) == candidate["expected_identity"]
     assert candidate["expected_factory_parameters"]["Volume"] == 0.20000000298023224
+
+
+@pytest.mark.parametrize(("value", "wire"), [
+    (-11.99999904632568359375, "-12"),
+    (-24.0000019073486328125, "-24"),
+    (-8.99999904632568359375, "-9"),
+    (6.103515625e-05, "6.10352e-05"),
+    (-0.0, "-0"),
+    (0.0001, "0.0001"),
+    (0.00001, "1e-05"),
+    (999999.5, "1e+06"),
+    (1.234565, "1.23457"),
+    (1.2345645, "1.23456"),
+])
+def test_aag_state_component_wire_uses_defaultfloat_precision_six(value, wire):
+    assert _cpp_defaultfloat_precision6(value) == wire
+
+
+def test_aag_state_precision_six_is_pinned_only_to_ample_guitar_m_310():
+    m = identity_compatibility("Ample Guitar M", "3.1.0")
+    lp = identity_compatibility("Ample Guitar LP", "4.0.0")
+    sc = identity_compatibility("Ample Guitar SC", "4.0.1")
+    assert m["component_state_numeric_wire_format"] == {
+        "root_tag": "AAG_STATE", "attribute": "Value",
+        "format": "cpp-defaultfloat", "significant_digits": 6,
+    }
+    assert lp["component_state_numeric_wire_format"] is None
+    assert sc["component_state_numeric_wire_format"] is None
+
+
+def test_aag_state_factory_values_match_exact_six_digit_component_wire():
+    factory = (b'<AAG_STATE Name="Flower House - Strum AGM"><DBName Value="AGMFg"/>'
+               b'<Parameter Name="FX-Delay-Send" Value="-11.99999904632568359375"/>'
+               b'<Parameter Name="AMP-Type-Index" Value="Lead 800"/></AAG_STATE>')
+    candidate = _candidate_identity(factory, "Ample Guitar M", "3.1.0")
+    plugin = _captured_plugin(
+        root="AAG_STATE", name="Flower House - Strum AGM", database="AGMFg",
+        product_name="Ample Guitar M", product_version="3.1.0",
+        parameters=(
+            '<Parameter Name="FX-Delay-Send" Value="-12"/>'
+            '<Parameter Name="AMP-Type-Index" Value="Lead 800"/>'
+            '<Parameter Name="S-TempoMode" Value="0"/>'
+            '<Parameter Name="S-Disable Animation" Value="0"/>'
+            '<Parameter Name="S-Keyboard Skin" Value="1"/>'
+        ),
+    )
+
+    actual = native_factory_identity(candidate, plugin)
+
+    assert actual == candidate["expected_identity"]
+    assert candidate["expected_identity"]["factory_parameters_sha256"] == factory_identity(factory)["factory_parameters_sha256"]
+    assert candidate["expected_identity"]["loaded_parameters_sha256"] == parameter_map_sha256({
+        "FX-Delay-Send": -12.0, "AMP-Type-Index": "Lead 800",
+        "S-TempoMode": 0.0, "S-Disable Animation": 0.0,
+        "S-Keyboard Skin": 1.0,
+    })
+
+
+def test_aag_state_wire_canonicalization_keeps_unknown_and_native_default_checks_exact():
+    factory = (b'<AAG_STATE Name="Default"><DBName Value="AGMFg"/>'
+               b'<Parameter Name="FX-Delay-Send" Value="-11.99999904632568359375"/>'
+               b'<Parameter Name="S-Keyboard Skin" Value="0"/></AAG_STATE>')
+    candidate = _candidate_identity(factory, "Ample Guitar M", "3.1.0")
+    plugin = _captured_plugin(
+        root="AAG_STATE", name="Default", database="AGMFg",
+        product_name="Ample Guitar M", product_version="3.1.0",
+        parameters=(
+            '<Parameter Name="FX-Delay-Send" Value="-12"/>'
+            '<Parameter Name="S-Keyboard Skin" Value="1"/>'
+            '<Parameter Name="S-TempoMode" Value="0"/>'
+            '<Parameter Name="S-Disable Animation" Value="0"/>'
+        ),
+    )
+
+    with pytest.raises(ValueError, match="exact source/default state"):
+        native_factory_identity(candidate, plugin)
+
+
+def test_aag_state_wire_contract_rejects_wrong_component_root():
+    compatibility = identity_compatibility("Ample Guitar M", "3.1.0")
+    with pytest.raises(ValueError, match="wire format"):
+        loaded_component_parameters({"FX-Delay-Send": -11.999999046325684}, compatibility, "AEG_STATE")
+
+
+def test_aag_state_precision_six_preserves_negative_zero_wire_sign():
+    factory = (b'<AAG_STATE Name="Default"><DBName Value="AGMFg"/>'
+               b'<Parameter Name="Tune" Value="-0"/></AAG_STATE>')
+    candidate = _candidate_identity(factory, "Ample Guitar M", "3.1.0")
+    matching = _captured_plugin(
+        root="AAG_STATE", name="Default", database="AGMFg",
+        product_name="Ample Guitar M", product_version="3.1.0",
+        parameters=(
+            '<Parameter Name="Tune" Value="-0"/>'
+            '<Parameter Name="S-TempoMode" Value="0"/>'
+            '<Parameter Name="S-Disable Animation" Value="0"/>'
+            '<Parameter Name="S-Keyboard Skin" Value="1"/>'
+        ),
+    )
+    positive_zero = _captured_plugin(
+        root="AAG_STATE", name="Default", database="AGMFg",
+        product_name="Ample Guitar M", product_version="3.1.0",
+        parameters=(
+            '<Parameter Name="Tune" Value="0"/>'
+            '<Parameter Name="S-TempoMode" Value="0"/>'
+            '<Parameter Name="S-Disable Animation" Value="0"/>'
+            '<Parameter Name="S-Keyboard Skin" Value="1"/>'
+        ),
+    )
+
+    assert native_factory_identity(candidate, matching) == candidate["expected_identity"]
+    with pytest.raises(ValueError, match="exact source/default state"):
+        native_factory_identity(candidate, positive_zero)
+
+
+def test_other_ample_products_keep_exact_component_numeric_comparison():
+    factory = (b'<AEG_STATE Name="Autumn Leaves(Blues)"><DBName Value="AGSCNk"/>'
+               b'<Parameter Name="Volume" Value="-11.99999904632568359375"/></AEG_STATE>')
+    candidate = _candidate_identity(factory)
+    plugin = _captured_plugin(parameters=(
+        '<Parameter Name="Volume" Value="-12"/>'
+        '<Parameter Name="R-Sync Host Playback Toggle" Value="0"/>'
+        '<Parameter Name="Pedal-HM2-Dist" Value="10"/>'
+    ))
+    with pytest.raises(ValueError, match="exact source/default state"):
+        native_factory_identity(candidate, plugin)
 
 
 def test_native_identity_rejects_unrecognized_extra_parameters():
@@ -190,7 +314,7 @@ def test_factory_candidate_uses_explicit_product_model_bilingual_label_and_full_
     assert candidate["expected_identity"]["loaded_parameters_sha256"]
     assert candidate["expected_factory_parameters"] == {"Volume": 0.800000011920929,
                                                            "Pedal-HM2-Dist": 10.0}
-    assert candidate["factory_identity_compatibility"]["schema_version"] == 1
+    assert candidate["factory_identity_compatibility"]["schema_version"] == 2
     assert candidate["expected_parameters"] == {"7": 0.8}
     assert candidate["runtime_dependencies"] == {}
     assert candidate["source_factory_sha256"] == factory_hash

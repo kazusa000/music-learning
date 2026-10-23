@@ -9,7 +9,7 @@ from typing import Mapping
 
 from .ample_identity import (
     factory_identity, factory_parameters, identity_compatibility,
-    native_factory_identity, parameter_map_sha256, parse_factory_xml,
+    loaded_component_parameters, native_factory_identity, parameter_map_sha256, parse_factory_xml,
 )
 from .instrument_intake_publication import (
     SHA256_RE, IdentityVerifier, ValidatorPin, _candidate_for_catalog, _plugin_from_response,
@@ -245,9 +245,9 @@ def candidate_for_factory(item: Mapping, first_plugin: Mapping, *, bank_root: st
         if raw_profile is not None else None
     )
     identity_schema = identity_compatibility(plugin_name, product["version"])
-    loaded_parameters = dict(source_factory_parameters)
-    for parameter_name, default_value in identity_schema["native_only_defaults"].items():
-        loaded_parameters.setdefault(parameter_name, default_value)
+    loaded_parameters = loaded_component_parameters(
+        source_factory_parameters, identity_schema, expected["root_tag"]
+    )
     expected_identity = {
         **expected,
         "loaded_parameters_sha256": parameter_map_sha256(loaded_parameters),

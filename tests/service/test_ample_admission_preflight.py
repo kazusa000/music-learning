@@ -64,5 +64,9 @@ def test_retest_plan_keeps_first_reopen_and_exact_source_profile_provenance():
     assert retest["factory_source"]["expected_sha256"] == "factory-sha"
     assert retest["artifact_refs"]["reopen"]["probe"]["sha256"] == "reopen-sha"
     assert plan["source_queue_nonpasses"][0]["factory_id"] == "unverified"
-    assert plan["scope"]["comparison"] == "exact typed state and exact IEEE float32; no epsilon"
+    assert plan["scope"]["comparison"] == (
+        "exact typed state; host parameters and all non-AGM component fields remain exact; "
+        "Ample Guitar M 3.1.0 AAG_STATE numeric Value is serialized with shipped "
+        "defaultfloat precision 6 then compared as exact float32; no epsilon"
+    )
 

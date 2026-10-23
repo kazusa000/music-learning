@@ -42,6 +42,17 @@ NATIVE_ONLY_DEFAULTS = {
     },
 }
 
+# Ample Guitar M 3.1.0 writes component-state numeric attributes through
+# basic_ostream with the MSVC runtime's defaultfloat precision of six digits.
+# This applies only to the opaque AAG_STATE component XML; VST3 host
+# parameters, source XML, and other products remain exact.
+AAG_STATE_NUMERIC_WIRE_FORMAT = {
+    "root_tag": "AAG_STATE",
+    "attribute": "Value",
+    "format": "cpp-defaultfloat",
+    "significant_digits": 6,
+}
+
 
 def _decode_memory_block(text: str) -> bytes:
     count, separator, encoded = text.partition(".")
@@ -112,7 +123,7 @@ def _normalized_value(raw_value: str, name: str) -> float | str:
         raise ValueError("Ample factory parameter exceeds float32 range: " + name) from error
     if not math.isfinite(normalized):
         raise ValueError("Ample factory parameter exceeds float32 range: " + name)
-    return 0.0 if normalized == 0.0 else normalized
+    return normalized
 
 
 def _parameter_map(xml: ET.Element) -> dict[str, float | str]:
@@ -140,28 +151,96 @@ def identity_compatibility(plugin_name: str, plugin_version: str) -> dict:
     expected = NATIVE_ONLY_DEFAULTS.get((plugin_name, plugin_version))
     if expected is None:
         raise ValueError("Unsupported Ample native-identity compatibility schema")
-    return {"schema_version": 1, "native_only_defaults": dict(expected)}
+    wire_format = (
+        dict(AAG_STATE_NUMERIC_WIRE_FORMAT)
+        if (plugin_name, plugin_version) == ("Ample Guitar M", "3.1.0") else None
+    )
+    return {
+        "schema_version": 2,
+        "native_only_defaults": dict(expected),
+        "component_state_numeric_wire_format": wire_format,
+    }
+
+
+def _wire_normalized_source_parameters(source: dict[str, float | str],
+                                       compatibility: dict,
+                                       root_tag: str | None) -> dict[str, float | str]:
+    """Map source values to the exact numeric text emitted in component state.
+
+    The source map is still separately SHA-pinned at its original float32
+    values. Only the Ample Guitar M 3.1.0 AAG_STATE numeric Value attribute is
+    passed through the observed defaultfloat/precision-6 serializer before the
+    exact float32 comparison with captured component state.
+    """
+    wire_format = compatibility.get("component_state_numeric_wire_format")
+    if wire_format is None:
+        return dict(source)
+    if wire_format != AAG_STATE_NUMERIC_WIRE_FORMAT or root_tag != "AAG_STATE":
+        raise ValueError("Unsupported Ample component-state numeric wire format")
+    normalized = {}
+    for name, value in source.items():
+        if type(value) is float:
+            if not math.isfinite(value):
+                raise ValueError("Ample source parameter is not finite: " + str(name))
+            text = _cpp_defaultfloat_precision6(value)
+            normalized[name] = _normalized_value(text, str(name))
+        else:
+            normalized[name] = value
+    return normalized
+
+
+def _cpp_defaultfloat_precision6(value: float) -> str:
+    """Render one finite IEEE-754 float32 as C++ defaultfloat, precision six."""
+    if not math.isfinite(value):
+        raise ValueError("Ample component-state parameter is not finite")
+    try:
+        value32 = struct.unpack("<f", struct.pack("<f", value))[0]
+    except (OverflowError, struct.error) as error:
+        raise ValueError("Ample component-state parameter exceeds float32 range") from error
+    if not math.isfinite(value32):
+        raise ValueError("Ample component-state parameter exceeds float32 range")
+    return format(value32, ".6g")
+
+
+def _exact_typed_value_equal(left: float | str, right: float | str) -> bool:
+    if type(left) is float and type(right) is float:
+        return struct.pack("<f", left) == struct.pack("<f", right)
+    return type(left) is type(right) and left == right
+
+
+def loaded_component_parameters(source: dict[str, float | str], compatibility: dict,
+                                root_tag: str) -> dict[str, float | str]:
+    """Build the exact expected component-state map plus documented defaults."""
+    expected = _wire_normalized_source_parameters(source, compatibility, root_tag)
+    defaults = compatibility.get("native_only_defaults", {})
+    for name, value in defaults.items():
+        expected.setdefault(name, value)
+    return expected
 
 
 def parameter_state_differences(source: dict[str, float | str],
                                 native: dict[str, float | str],
-                                compatibility: dict) -> dict:
+                                compatibility: dict,
+                                *, root_tag: str | None = None) -> dict:
     """Describe exact typed-map differences without applying fuzzy tolerance."""
     defaults = compatibility.get("native_only_defaults", {})
-    expected = dict(source)
+    expected_source = _wire_normalized_source_parameters(source, compatibility, root_tag)
+    expected = dict(expected_source)
     for name, value in defaults.items():
         expected.setdefault(name, value)
     return {
         "missing_source_parameters": sorted(set(source) - set(native)),
         "changed_source_parameters": [
-            {"name": name, "source_value": source[name], "native_value": native[name]}
-            for name in sorted(set(source) & set(native)) if source[name] != native[name]
+            {"name": name, "source_value": source[name],
+             "expected_component_value": expected_source[name], "native_value": native[name]}
+            for name in sorted(set(source) & set(native))
+            if not _exact_typed_value_equal(expected_source[name], native[name])
         ],
         "missing_native_defaults": sorted((set(defaults) - set(source)) - set(native)),
         "changed_native_defaults": [
             {"name": name, "expected_value": defaults[name], "native_value": native[name]}
             for name in sorted((set(defaults) - set(source)) & set(native))
-            if defaults[name] != native[name]
+            if not _exact_typed_value_equal(defaults[name], native[name])
         ],
         "unexpected_native_parameters": sorted(set(native) - set(expected)),
     }
@@ -255,7 +334,9 @@ def native_factory_identity(candidate: dict, plugin: dict) -> dict:
     expected_compatibility = identity_compatibility(plugin.get("name"), plugin.get("version"))
     if compatibility != expected_compatibility:
         raise ValueError("Ample candidate identity compatibility schema differs from the product contract")
-    differences = parameter_state_differences(normalized_source, native_parameters, expected_compatibility)
+    differences = parameter_state_differences(
+        normalized_source, native_parameters, expected_compatibility, root_tag=xml.tag
+    )
     if any(differences.values()):
         details = ", ".join(
             key + "=" + "/".join(entry["name"] if isinstance(entry, dict) else entry

@@ -20,6 +20,7 @@ from .ample_identity import (
     factory_identity,
     factory_parameters,
     identity_compatibility,
+    loaded_component_parameters,
     parameter_map_sha256,
     parameter_state_differences,
 )
@@ -182,9 +183,9 @@ def _candidate_for_evidence(row: Mapping, first_plugin: Mapping,
     compatibility = identity_compatibility(plugin_name, plugin_version)
     if plugin_name != product["library_name"] or plugin_version != product["version"]:
         raise ValueError("First phase Ample plugin identity differs from product mapping")
-    loaded_parameters = dict(source_parameters)
-    for name, value in compatibility["native_only_defaults"].items():
-        loaded_parameters.setdefault(name, value)
+    loaded_parameters = loaded_component_parameters(
+        source_parameters, compatibility, expected["root_tag"]
+    )
     expected_identity = {
         **expected,
         "loaded_parameters_sha256": parameter_map_sha256(loaded_parameters),
@@ -213,7 +214,7 @@ def _phase_native_differences(candidate: Mapping, phase_state: Mapping) -> dict:
     compatibility = candidate["factory_identity_compatibility"]
     native_xml = _component_xml(plugin)
     native = _parameter_map(native_xml)
-    return parameter_state_differences(source, native, compatibility)
+    return parameter_state_differences(source, native, compatibility, root_tag=native_xml.tag)
 
 
 def _failure_code(message: str) -> str:
@@ -547,7 +548,11 @@ def build_retest_plan(report: Mapping) -> dict:
             "source_queue_nonpasses_are_publishable": False,
             "resource_audit_pending_requires_audio_rerender": False,
             "required_retest_phases": ["first", "reopen"],
-            "comparison": "exact typed state and exact IEEE float32; no epsilon",
+            "comparison": (
+                "exact typed state; host parameters and all non-AGM component fields remain exact; "
+                "Ample Guitar M 3.1.0 AAG_STATE numeric Value is serialized with shipped "
+                "defaultfloat precision 6 then compared as exact float32; no epsilon"
+            ),
         },
         "counts": {
             "evidence_retest_items": len(evidence_retests),
