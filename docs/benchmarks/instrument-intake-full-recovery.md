@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-24：按用户明确指示恢复资源中断
+
+用户在查到中断后明确要求“继续”。原验证在写factory的validation.json时因ENOSPC退出，最后891通过/17失败/84待完成；publisher04和试听跟随02在JSON解码时MemoryError退出。当前E空闲约9.87GiB、H约760GiB、可用物理内存约11.7GiB，恢复后仍约9.7GiB；没有清理或移动正式素材/试听缓存。此轮仅执行故障恢复，不启动失败重试。
+
+全部操作证据集中于 `runtime/maintenance/kontakt-resource-resume-20261024`。旧三个locator、progress、三份原validation队列已原样保存；原plan SHA、134固定输入、14保护文件实核通过。三队列无running，唯一pending项`kontakt-d18161f08909e56457bb04f4`目录为空，对精确绝对路径、归属、无链接、空内容核验后移入本次维护根保留，使原实现能够继续该未开始项；未改任何终态行、原冻结代码、计划、宿主或音频报告。
+
+验证wrapper27100/worker49360运行原pending-only-resume-02固定脚本和原full-h计划，新stdout/stderr独立保存。891通过和17失败直接跳过，实际已进入Metabali未完成项，没有重验原终态音频。publisher05为停止的04逐字固定副本（runner/helper/queue_io哈希不变），新输出目录继承891已发布进度、原批已存在ID直接跳过，旧MemoryError证据保留。wrapper30268/worker40588已健康等待新通过项。
+
+试听跟随03同样复用原02固定runner/helper和offered状态，唯一配置变化为新维护目录及publication_run指向本次publisher05，解决旧02发布目录无法自行completed的问题；不改DSP、缓存指纹、状态标准或失败策略。wrapper57144/worker61376已观察769ready、1loading、121queued（时间点快照），仅使用原产品worker继续渲染，未开第二个实际试听worker。
+
+三任务canonical入口已更新PID/ctime/argv和新日志目录，后续仍逐次实核。恢复前后正式九表/head相同；本轮未改产品发布或源码，故没有为重启重跑测试/音频验证。仍只继续原剩余队列、通过项入库和试听，Ample/MODO取消状态不变。
+
 ## 2026-10-23 21:36 UTC：发布进程的队列读取拒绝恢复
 
 03 publisher于21:23:54自然退出，traceback明确为读取原factory validation.json时`PermissionError(13)`，发生在本轮增量筛选前，760条已入库保留。验证62064及试听跟随17580仍正常，均未停止或修改。

@@ -4,6 +4,7 @@
 
 - 继续 Kontakt 原 full-h 未完成验证、通过项增量入库和已运行的试听跟随。原验证失败项暂不分析、修复或重试。
 - 唯一入口是 `runtime/kontakt-full-job.local.json`、`runtime/kontakt-publication-job.local.json`、`runtime/kontakt-preview-job.local.json`。每次核实 PID、creation_time、实际命令与轻量 progress；旧 started 字段不证明运行。
+- 2026-10-24用户明确恢复资源中断：当前验证wrapper27100沿用pending-only-resume-02固定实现/原plan；入库wrapper30268指向`runtime/maintenance/kontakt-resource-resume-20261024/incremental-publication-05`；试听wrapper57144指向同根`incremental-previews-03`。旧错误、入口、progress和三队列已保存；仅84个未完成项继续，891通过/17失败不重验。维护根保存保护快照与后续实核结果，勿按旧PID恢复重复批。
 - 健康任务不重启、不另开批次、不移动活动目录；通过/失败检查点直接跳过，不重读全部旧音频。仅为阻止当前任务推进的执行故障做最小恢复。
 - Ample 已退库，验证、排查与旧52项预热均取消；MODO后续导入取消，不探测，不按旧记录恢复。
 - 此音源跟进只属于聊天 `01a15b37-7167-78c0-9586-ecc83480fa09`，不得转交或唤醒开发聊天 `01a1592c-aa2b-77a3-89df-3022241ae091`。
@@ -14,7 +15,7 @@
 - `data/maintenance/instrument-intake/kf22` 的现有数据、来源证据、固定源码、宿主、计划、输入与原失败报告不搬动、不覆盖。共享规则可以改，新实现独立固定；不得修改活动冻结副本。
 - 真实音频、完整状态、参数/来源身份和两次独立空机架恢复标准不放宽。可信完成检查点绑定 candidate/receipt/validator/source，只读必要状态后增量发布，不重复验证音频。
 - catalog 使用共享目录锁、CAS与追加语义；旧条目不覆盖，failed/running/pending不入库。当前固定宿主和计划的134输入、14保护路径以原 full-h plan/pins 为准。
-- 试听跟随器的 publication_run 固定为旧02，收尾读取 canonical 实际 publisher 与试听 counts；不得因其仍报 warming 重启健康跟随器。终态后核验无音频子进程，才关闭仅入队跟随器。
+- 试听跟随器的 publication_run 以当前plan实查，新03已跟随本次publisher05；旧02引用过时，不能用旧目录判断当前完成。不得因仍报 warming 重启健康跟随器。终态后核验无音频子进程，才关闭仅入队跟随器。
 - Lua 来源/键位查询不是 VST3 状态恢复；identity tag 不是独立宿主证明。未运行的设计、mock、静态分析与真实发声分别记录。
 - 当前任务记录保持原路径：`docs/benchmarks/instrument-intake-full-recovery.md`；入库规则见 `docs/development/instrument-intake.md`。
 
