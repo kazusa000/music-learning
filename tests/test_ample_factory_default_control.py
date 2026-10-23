@@ -39,6 +39,16 @@ def test_derived_request_changes_only_preset_path_and_output_path(tmp_path):
     assert derived["project"]["tracks"][0]["notes"] == source["project"]["tracks"][0]["notes"]
 
 
+def test_source_preset_pin_matches_frozen_07_assessment():
+    module = _module()
+    assessment = json.loads((ROOT / (
+        "data/maintenance/instrument-intake/20261023-ample-shared-fix/"
+        "windows-message-control-07-rebuild-03/root-message-assessment-01.json"
+    )).read_text(encoding="utf-8"))
+    assert len(module.PRESET_SHA256) == 64
+    assert module.PRESET_SHA256 == assessment["source_identity"]["preset_file_sha256"]
+
+
 @pytest.mark.parametrize("mutation", ["velocity", "plugin_identity", "extra_delete", "state_add"])
 def test_request_contract_rejects_unexpected_mutations(tmp_path, mutation):
     module = _module()
