@@ -1,5 +1,13 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 02:59 旧副本策略兼容修复
+
+当前准备为 `transfer-compat-fix-01`（实际 supervisor41660/ctime1792717145.7087245），完整固定验证为 `kf22/full-e`（实际49692/ctime1792717161.6561122），仍从既有两个 canonical locator 定位。full-e计划SHA `8a09b5c5f243ebb2ddd7956ad0099ca1eabdfbeb4474fccfdf379e1720792167`，当前等待资源结果；未开始992项音频验证、未发布新Kontakt条目。进程身份须每次重新核对。
+
+前次 `vendor-assets-fix-01` 因新策略期望硬链接、既有资源实际为旧规则创建的独立副本而拒绝；full-d 已终态，正式表和14固定SHA均相同，旧报告/文件保留。共享修复 `1019603` 核对打开句柄及命名路径签名、大小和源/目标完整SHA，匹配时保留并记录实际 independent_copy，不强行改链接、不替换或改属性；profile 与源同 inode 仍拒绝。3份完整历史计划的 E 预检确认29条兼容迁移记录，无 journal 一致性违规。11回归通过/1权限跳过、Ruff通过，夹具由统一runner清理。新任务继续遵守H预算，不用放宽发声/状态/身份规则处理存储问题。
+
+Ample 已另建固定 `20261023-ample-shared-fix/failed-only-riffer-retry-3`，仅40个原失败ID，67个原通过不重复；4个HM2和1个T-Track参数不符独立保留，继续排查。02:59读回为1通过/1运行/38排队，尚非终态，不称入库。retry-1丢失factory SHA的适配失败及retry-2的真实参数不符均原位保留。本次只执行“音源导入”聊天已有跟进，未创建、转交或改变定时任务启停；不唤醒开发聊天。
+
 ## 2026-10-23 02:29 资源分类修复并续跑
 
 当前准备入口仍为 `runtime/kontakt-preparation-job.local.json`，已改用 `vendor-assets-fix-01`；当前固定完整验证为 `kf22/full-d`，入口 `runtime/kontakt-full-job.local.json`，实际 PID 6244/ctime 1792715354.8744364，计划 SHA `73aee0a1a952325bb80cc141bb0728d457a8083efce6182d98cb4ed6184bcf42`。应每次重核身份，PID 不是永久运行证明。full-d 仍等待准备审计结果，992 款音频验证尚未开始，未入库。自动跟进已纠正到“音源导入”聊天 `01a15b37-7167-78c0-9586-ecc83480fa09` 并保持 PAUSED，不得再唤醒“开发”聊天或擅自恢复定时任务。
