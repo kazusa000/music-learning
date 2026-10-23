@@ -501,7 +501,7 @@ def main() -> None:
         "cmake_sha256": cmake_sha,
         "hook_contract": "current-thread WH_GETMESSAGE/HC_ACTION/PM_REMOVE; own-process HWND plus explicitly thread-scoped null-HWND messages; bounded POD writes and guarded 16-byte private-message lParam probe",
         "serialization_timing": "after dispatch, outside hook callback",
-        "candidate_vtable_read": "bounded first-word candidate from readable same-process WM_USER+ lParam; module resolution deferred until serialization",
+        "candidate_vtable_read": "bounded first-word candidate from readable same-process WM_USER+ non-WM_TIMER lParam; module resolution deferred until serialization",
         "host_launched": False, "plugin_loaded": False,
         "formal_project_written": False, "h_or_nas_accessed": False,
         "shared_juce_modified": False,

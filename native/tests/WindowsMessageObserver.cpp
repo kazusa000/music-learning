@@ -95,13 +95,13 @@ int main()
         if (events != nullptr && events->size() == 4)
         {
             const auto& event = (*events)[0];
-            ok &= check(event.getProperty(juce::Identifier("message_id"), 0).toInt() == static_cast<int>(fixture_message),
+            ok &= check(static_cast<int>(event.getProperty(juce::Identifier("message_id"), 0)) == static_cast<int>(fixture_message),
                         "raw message id recorded");
             ok &= check(event.getProperty(juce::Identifier("wparam_hex"), {}).toString().endsWith("1234"),
                         "raw wParam recorded");
             ok &= check(event.getProperty(juce::Identifier("lparam_hex"), {}).toString().endsWith("5678"),
                         "raw lParam recorded");
-            ok &= check(event.getProperty(juce::Identifier("dispatch_id"), 0).toInt() == 1,
+            ok &= check(static_cast<int>(event.getProperty(juce::Identifier("dispatch_id"), 0)) == 1,
                         "message linked to dispatch window");
             ok &= check(event.getProperty(juce::Identifier("window_belongs_to_current_process"), false),
                         "only current-process window captured");
@@ -111,14 +111,14 @@ int main()
                         "window procedure module identity retained");
 
             const auto& payload_event = (*events)[1];
-            ok &= check(payload_event.getProperty(juce::Identifier("message_id"), 0).toInt()
+            ok &= check(static_cast<int>(payload_event.getProperty(juce::Identifier("message_id"), 0))
                             == static_cast<int>(fixture_payload_message),
                         "WM_APP candidate callback-object message captured");
             ok &= check(payload_event.getProperty(juce::Identifier("lparam_probe_attempted"), false),
                         "private-message lParam probe attempted");
             ok &= check(payload_event.getProperty(juce::Identifier("lparam_probe_readable"), false),
                         "bounded private-message lParam probe accepted committed readable memory");
-            ok &= check(payload_event.getProperty(juce::Identifier("lparam_probe_bytes_read"), 0).toInt() == 16,
+            ok &= check(static_cast<int>(payload_event.getProperty(juce::Identifier("lparam_probe_bytes_read"), 0)) == 16,
                         "bounded lParam probe reads exactly 16 bytes");
             ok &= check(payload_event.getProperty(juce::Identifier("lparam_probe_bytes_hex"), {}).toString()
                             .endsWith("0102030405060708"),
@@ -132,7 +132,7 @@ int main()
                         "candidate vtable module identity retained");
 
             const auto& timer_event = (*events)[2];
-            ok &= check(timer_event.getProperty(juce::Identifier("message_id"), 0).toInt() == static_cast<int>(timer_message),
+            ok &= check(static_cast<int>(timer_event.getProperty(juce::Identifier("message_id"), 0)) == static_cast<int>(timer_message),
                         "timer-shaped message id retained");
             ok &= check(!timer_event.getProperty(juce::Identifier("lparam_probe_attempted"), true),
                         "WM_TIMER callback address is not reinterpreted as an object payload");
@@ -163,16 +163,16 @@ int main()
         if (dispatches != nullptr && dispatches->size() == 1)
         {
             const auto& dispatch = (*dispatches)[0];
-            ok &= check(dispatch.getProperty(juce::Identifier("completed_blocks"), 0).toInt() == 64,
+            ok &= check(static_cast<int>(dispatch.getProperty(juce::Identifier("completed_blocks"), 0)) == 64,
                         "dispatch associated with completed render block");
-            ok &= check(dispatch.getProperty(juce::Identifier("source_sample_start"), 0).toInt() == 32768,
+            ok &= check(static_cast<int>(dispatch.getProperty(juce::Identifier("source_sample_start"), 0)) == 32768,
                         "dispatch sample start retained");
-            ok &= check(dispatch.getProperty(juce::Identifier("sample_count"), 0).toInt() == 512,
+            ok &= check(static_cast<int>(dispatch.getProperty(juce::Identifier("sample_count"), 0)) == 512,
                         "dispatch sample count retained");
-            ok &= check(dispatch.getProperty(juce::Identifier("event_begin_index"), 0).toInt() == 0
-                            && dispatch.getProperty(juce::Identifier("event_end_index_exclusive"), 0).toInt() == 4,
+            ok &= check(static_cast<int>(dispatch.getProperty(juce::Identifier("event_begin_index"), 0)) == 0
+                            && static_cast<int>(dispatch.getProperty(juce::Identifier("event_end_index_exclusive"), 0)) == 4,
                         "raw begin/end event indexes retained");
-            ok &= check(dispatch.getProperty(juce::Identifier("elapsed_microseconds"), 0).toInt() == 812,
+            ok &= check(static_cast<int>(dispatch.getProperty(juce::Identifier("elapsed_microseconds"), 0)) == 812,
                         "dispatch elapsed duration retained");
         }
 
@@ -180,13 +180,13 @@ int main()
                     "hook contract named");
         ok &= check(report.getProperty(juce::Identifier("queue_filter"), {}).toString() == "PM_REMOVE only",
                     "PM_REMOVE filter named");
-        ok &= check(report.getProperty(juce::Identifier("hook_thread_id"), 0).toInt() == static_cast<int>(GetCurrentThreadId()),
+        ok &= check(static_cast<int>(report.getProperty(juce::Identifier("hook_thread_id"), 0)) == static_cast<int>(GetCurrentThreadId()),
                     "hook remains scoped to current thread");
-        ok &= check(report.getProperty(juce::Identifier("process_id"), 0).toInt() == static_cast<int>(GetCurrentProcessId()),
+        ok &= check(static_cast<int>(report.getProperty(juce::Identifier("process_id"), 0)) == static_cast<int>(GetCurrentProcessId()),
                     "hook remains scoped to current process");
-        ok &= check(report.getProperty(juce::Identifier("events_dropped"), 1).toInt() == 0,
+        ok &= check(static_cast<int>(report.getProperty(juce::Identifier("events_dropped"), 1)) == 0,
                     "bounded recorder reports no overflow");
-        ok &= check(report.getProperty(juce::Identifier("thread_messages_without_window_recorded"), 0).toInt() == 1,
+        ok &= check(static_cast<int>(report.getProperty(juce::Identifier("thread_messages_without_window_recorded"), 0)) == 1,
                     "null-HWND thread message is counted and retained");
 
         for (std::size_t i = 0; i + 1 < ml::diagnostic::ScopedWindowsMessageObserver::dispatch_capacity; ++i)
@@ -197,7 +197,7 @@ int main()
         const auto overflow_token = observer.begin_dispatch(0, 2048, 2048 * 512, 512);
         observer.end_dispatch(overflow_token, 0);
         const auto after_capacity = observer.report();
-        ok &= check(after_capacity.getProperty(juce::Identifier("dispatch_windows_dropped"), 0).toInt() == 1,
+        ok &= check(static_cast<int>(after_capacity.getProperty(juce::Identifier("dispatch_windows_dropped"), 0)) == 1,
                     "dispatch capacity overflow is counted without breaking scope cleanup");
     }
 
