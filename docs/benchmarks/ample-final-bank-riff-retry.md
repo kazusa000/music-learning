@@ -300,3 +300,20 @@ exact plan/locator command and status `waiting_for_config_stability`. The plan
 pins the updated shared ancestry module and both supervisors; it still selects
 only the two fixed failed IDs, preserves the 24-hour bound, and delegates the
 three-sample H: budget gate unchanged.
+
+Attempt08 reached the unchanged idle gate and ran both fixed IDs. The outer
+supervisor and child exited naturally (child return code 0); the final queue is
+`completed` with 2 failed / 0 passed, each with one invocation. Both native
+responses and runner executions returned successfully, and each item's config
+was restored. Neither item passed the required non-silent audio check:
+`Sweet Child O Mine` rendered 732,490 frames at 44.1 kHz with peak/RMS/
+non-silent/clipped all zero; `Used to Love Her` rendered 1,289,276 frames with
+the same exact zero metrics. Their WAV SHA-256 values are respectively
+`71b47395b5d9297c90241241e478a9daaaeef85c35378b5865c4e7a12e968cd0` and
+`718c664e96db363e43361287749ecb35bf260a36e4c41624fb1a6e6039563f9b`.
+Formal-project writes and catalog writes remained zero. The first WAV is
+byte-identical to the same preset's earlier retry3 and retry4 silent outputs,
+despite the independent retry and final-bank path; this does not support a
+simple disk-timing explanation. The attempts and original failures remain
+unchanged. Further retry needs a source-backed shared event/readiness diagnosis;
+do not relabel either item or relax the audio threshold.
