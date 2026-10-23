@@ -198,3 +198,33 @@ The next execution is a separate attempt06 plan, run directory, checkpoint,
 and locator. It inherits the same frozen two failed IDs, source queue/status,
 audited AGLP bank/manifest, fixed host and strict first/reopen requirements.
 Attempt05's prepared queue and original retry3/retry4 reports remain unchanged.
+
+## Attempt06 durable recovery (2026-10-23)
+
+Attempt06 is frozen at
+`data/maintenance/instrument-intake/20261023-ample-shared-fix/failed-only-final-bank-riff-retry-06-attempt-06-plan.json`
+(SHA-256 `bd4aa59d76995e14679b6df14248ef0167face51a1b2bed7fd50172a86d6089b`).
+It supersedes only attempt05, whose preserved queue remains two `pending_staging`
+rows with `invocation_count=0` and child return code 1. Attempt06 uses a new
+run directory and checkpoint and still selects only the same two source-bound
+IDs; it does not repeat any completed item from the original or prior retry
+queues.
+
+The no-write process preflight is
+`final-bank-riff-retry-06-attempt-06-preflight/process-preflight.json`
+(SHA-256 `b5dfcbf7259f1ea843bc4c1665f04cf4179ed93c8fd3ac5e3ee2ca1c2fda1609`),
+with zero matching active processes and no queue/catalog/formal writes. Its
+corrected manifest is `manifest-corrected.json` (SHA-256
+`031af82a0356a8b824a1ede16159acbff79b51e1efdf3b6f8ff415907913566b`); the
+initial manifest is retained as invalid evidence because PowerShell's reserved
+`$Host` variable yielded a null host field. The plan pins the outer supervisor,
+child supervisor and shared ancestry module. The outer process rechecks all
+three hashes before preparation and immediately before child launch.
+
+The durable locator is
+`runtime/ample-final-bank-riff-retry-06-attempt-06-job.local.json`. Initial
+identity verification found supervisor PID 44864, creation ticks
+`639283542611493030`, with the command line bound to the frozen plan and
+locator; its parent launcher PID 33292 was alive and born earlier. Initial
+status is `waiting_for_config_stability`; no retry queue or probe has yet been
+started. It retains the 24-hour bound and existing three-sample H: storage gate.
