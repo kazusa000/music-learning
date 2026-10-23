@@ -88,6 +88,9 @@ def fingerprint(settings, entry):
         "expected_pianoteq",
     )
     preset = {k: entry.get(k) for k in fields}
+    if entry.get("native_admission") is not None:
+        preset["native_admission"] = entry["native_admission"]
+        preset["state_loader_policy"] = "complete-admitted-native-v1"
     # Keep legacy cache IDs stable, while ensuring a trigger profile cannot
     # reuse audio produced with ordinary piano-roll events or another trigger.
     if entry.get("performance_profile") is not None:
@@ -105,15 +108,29 @@ def fingerprint(settings, entry):
     ).hexdigest()
 
 
+def preview_plugin(settings, entry, path):
+    """Use the same complete admitted state as an actual instrument track."""
+    spec = dict(preset_spec(entry, path), id="instrument",
+                path=str(settings.plugin_path(entry["plugin_path"])))
+    if entry.get("native_admission") is None:
+        return spec, None
+    from .external_preset_state import load_admitted
+
+    native = load_admitted(settings, entry)
+    if native is None or entry["backend"] != "vst3-preset":
+        raise ValueError("Missing complete admitted VST3 state")
+    spec.pop("preset_path")
+    spec["state_base64"] = native["state_base64"]
+    return spec, native
+
+
 def render_preview(settings, entry, directory, cancelled):
     directory.mkdir(parents=True, exist_ok=True)
     validate_entry(settings, entry)
     path = materialize(settings, entry, directory / "resources")
     musical_phrase = phrase_spec(entry)
     notes = musical_phrase["notes"]
-    spec = dict(
-        preset_spec(entry, path), id="instrument", path=str(settings.plugin_path(entry["plugin_path"]))
-    )
+    spec, admitted = preview_plugin(settings, entry, path)
     raw = directory / "raw.wav"
     request = dict(
         schema_version=1,
@@ -176,6 +193,13 @@ def render_preview(settings, entry, directory, cancelled):
     plugin = result["result"]["snapshot"]["tracks"][0]["plugins"][0]
     if plugin["binary_sha256"] != entry["plugin_sha256"]:
         raise ValueError("Wrong preview plugin")
+    if admitted is not None:
+        from .instrument_intake_publication import _param_map
+
+        if (any(plugin.get(key) != admitted.get(key) for key in
+                ("identifier", "vst3_class_id", "version", "binary_sha256"))
+                or _param_map(plugin) != _param_map(admitted)):
+            raise ValueError("Preview differs from the complete admitted native state")
     if entry.get("expected_keyscape"):
         from .keyscape_presets import verify_state
 
