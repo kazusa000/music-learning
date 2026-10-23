@@ -113,7 +113,9 @@ def terminal_full_h(tmp_path_factory):
             if work_status == "passed":
                 candidate = item_root / "candidate.json"
                 evidence_root = item_root / "a"
-                candidate_raw = _write_json(candidate, {"fixture": "candidate", "id": preset_id})
+                candidate_data = {"fixture": "candidate", "id": preset_id}
+                _write_json(candidate, candidate_data)
+                candidate_sha = retry.candidate_fingerprint(candidate_data)
                 phase_records = {}
                 for phase in ("first", "reopen"):
                     records = {}
@@ -142,7 +144,7 @@ def terminal_full_h(tmp_path_factory):
                 receipt_record = {
                     "schema_version": 1,
                     "preset_id": preset_id,
-                    "candidate_sha256": hashlib.sha256(candidate_raw).hexdigest(),
+                    "candidate_sha256": candidate_sha,
                     "first": phase_records["first"],
                     "reopen": phase_records["reopen"],
                 }
@@ -217,11 +219,15 @@ def _callbacks():
     def verify_passed(library_id, item, conversion_proof, library_root):
         calls["passed"].append(item["id"])
         suffix = item["id"][-12:]
+        candidate_path = library_root / "i" / suffix / "candidate.json"
+        candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
         receipt = json.loads((library_root / "i" / suffix / "a" / "receipt.json").read_text(encoding="utf-8"))
         return {
             "status": "verified",
-            "candidate_sha256": _sha(library_root / "i" / suffix / "candidate.json"),
-            "receipt_sha256": _sha(library_root / "i" / suffix / "a" / "receipt.json"),
+            "candidate_sha256": retry.candidate_fingerprint(candidate),
+            "candidate_file_sha256": _sha(candidate_path),
+            "receipt_sha256": retry.json_fingerprint(receipt),
+            "receipt_file_sha256": _sha(library_root / "i" / suffix / "a" / "receipt.json"),
             "first_audio_sha256": receipt["first"]["probe"]["sha256"],
             "reopen_audio_sha256": receipt["reopen"]["probe"]["sha256"],
             "first_state_sha256": receipt["first"]["state"]["sha256"],
@@ -254,6 +260,12 @@ def test_terminal_retry_proves_992_and_queues_only_exact_failures(terminal_full_
     assert queue["count"] == len(expected_failed) == 991
     assert queue["items"] == plan["retry_selection"]["items"]
     assert plan["retained_passes"][0]["id"] == terminal_full_h["pass_id"]
+    retained = plan["retained_passes"][0]
+    assert retained["candidate"]["candidate_sha256"] != retained["candidate"]["candidate_file_sha256"]
+    assert retained["candidate"]["candidate_sha256"] == retained["reverification"]["candidate_sha256"]
+    assert retained["candidate"]["candidate_file_sha256"] == retained["candidate"]["sha256"]
+    assert retained["receipt"]["receipt_sha256"] == retained["reverification"]["receipt_sha256"]
+    assert retained["receipt"]["receipt_file_sha256"] == retained["receipt"]["sha256"]
     passed_pins = [pin for pin in plan["source_snapshot"]["source_artifact_pins"].values()
                    if pin.get("path", "").startswith("css/i/")]
     assert any(pin["path"].endswith("/first.wav") for pin in passed_pins)
@@ -313,10 +325,51 @@ def test_retry_planning_does_not_trust_passed_status_without_receipt_proof(termi
     monkeypatch.setattr(retry, "FULL_H_RUN", root)
     _, verify_conversion, _ = _callbacks()
     destination = root.parent / "full-h-rejected-unverified-pass"
-    with pytest.raises(ValueError, match="Passed receipt verification"):
+    with pytest.raises(ValueError, match="semantic fingerprints and raw file hashes"):
         retry.prepare_failed_only_retry_plan(
             root, destination, verify_conversion=verify_conversion,
             verify_passed=lambda *_: {"status": "verified"},
+        )
+    assert not destination.exists()
+
+
+def test_retry_rejects_receipt_that_uses_candidate_file_hash_as_fingerprint(terminal_full_h, monkeypatch):
+    root = terminal_full_h["root"]
+    monkeypatch.setattr(retry, "FULL_H_RUN", root)
+    preset_id = terminal_full_h["pass_id"]
+    evidence_root = root / "css" / "i" / preset_id[-12:] / "a"
+    receipt_path = evidence_root / "receipt.json"
+    original = receipt_path.read_bytes()
+    receipt = json.loads(original)
+    candidate_path = evidence_root.parent / "candidate.json"
+    receipt["candidate_sha256"] = _sha(candidate_path)
+    _write_json(receipt_path, receipt)
+    destination = root.parent / "full-h-rejected-raw-candidate-fingerprint"
+    try:
+        _, verify_conversion, verify_passed = _callbacks()
+        with pytest.raises(ValueError, match="semantic fingerprint"):
+            retry.prepare_failed_only_retry_plan(
+                root, destination, verify_conversion=verify_conversion, verify_passed=verify_passed,
+            )
+        assert not destination.exists()
+    finally:
+        receipt_path.write_bytes(original)
+
+
+def test_retry_rejects_raw_receipt_hash_as_semantic_receipt_fingerprint(terminal_full_h, monkeypatch):
+    root = terminal_full_h["root"]
+    monkeypatch.setattr(retry, "FULL_H_RUN", root)
+    _, verify_conversion, verify_passed = _callbacks()
+
+    def raw_receipt_hash_verifier(*args):
+        proof = verify_passed(*args)
+        proof["receipt_sha256"] = proof["receipt_file_sha256"]
+        return proof
+
+    destination = root.parent / "full-h-rejected-raw-receipt-fingerprint"
+    with pytest.raises(ValueError, match="semantic fingerprints and raw file hashes"):
+        retry.prepare_failed_only_retry_plan(
+            root, destination, verify_conversion=verify_conversion, verify_passed=raw_receipt_hash_verifier,
         )
     assert not destination.exists()
 

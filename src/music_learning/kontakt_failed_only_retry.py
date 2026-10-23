@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 import math
 
 from .kontakt_import import _resolve_root, _resolve_under, _validate_batch, preset_id_for_source
+from .instrument_intake_publication import candidate_fingerprint, json_fingerprint
 
 
 LIBRARIES = ("css", "css-solo", "kontakt-factory")
@@ -186,13 +187,28 @@ def _digest_hex(value: object, label: str) -> str:
 
 
 def _receipt_artifact_pins(library_root: Path, preset_id: str, candidate_ref: Mapping,
-                           receipt_ref: Mapping, proof: Mapping) -> list[dict]:
+                           receipt_ref: Mapping, proof: Mapping) -> tuple[str, list[dict]]:
     """Verify and pin every file the original two-phase receipt consumed."""
     evidence_root_rel = f"i/{preset_id[-12:]}/a"
+    candidate_path = candidate_ref.get("path")
+    if not isinstance(candidate_path, str):
+        raise ValueError("Passed Kontakt candidate file reference is malformed")
+    candidate, candidate_file_sha = _read_json(library_root, candidate_path)
+    if candidate.get("id") != preset_id or candidate_file_sha != candidate_ref.get("sha256"):
+        raise ValueError("Passed Kontakt candidate file differs from its pinned candidate")
+    candidate_sha = candidate_fingerprint(candidate)
     receipt, receipt_sha = _read_json(library_root, evidence_root_rel + "/receipt.json")
+    if receipt_sha != receipt_ref.get("sha256"):
+        raise ValueError("Passed Kontakt receipt file differs from its pinned receipt")
+    semantic_receipt_sha = json_fingerprint(receipt)
     if (receipt.get("preset_id") != preset_id
-            or receipt.get("candidate_sha256") != candidate_ref.get("sha256")):
-        raise ValueError("Passed Kontakt receipt is not bound to its candidate")
+            or receipt.get("candidate_sha256") != candidate_sha):
+        raise ValueError("Passed Kontakt receipt semantic fingerprint is not bound to its candidate")
+    if (proof.get("candidate_sha256") != candidate_sha
+            or proof.get("candidate_file_sha256") != candidate_file_sha
+            or proof.get("receipt_sha256") != semantic_receipt_sha
+            or proof.get("receipt_file_sha256") != receipt_sha):
+        raise ValueError("Passed Kontakt verifier did not distinguish semantic fingerprints and raw file hashes")
     evidence_index_rel = evidence_root_rel + "/evidence-index.json"
     evidence_index, evidence_index_sha = _read_json(library_root, evidence_index_rel)
     pins = []
@@ -240,7 +256,7 @@ def _receipt_artifact_pins(library_root: Path, preset_id: str, candidate_ref: Ma
         raise ValueError("Passed Kontakt receipt changed while being pinned")
     # Keep these in the return so callers can distinguish receipt metadata from
     # the independently verified candidate/receipt root files.
-    return pins
+    return candidate_sha, pins
 
 
 def _verify_source_artifact_pin(source_run: Path, pin: Mapping) -> None:
@@ -294,7 +310,10 @@ def prepare_failed_only_retry_plan(
     queue.  Completed source conversions and passed validation receipts are
     never trusted from their status flags: the required callbacks must prove
     their original execution/receipt and audio/state evidence before output is
-    created.  Failed rows alone enter ``retry-queue.json``.
+    created.  A passed verifier returns ``candidate_sha256`` and
+    ``receipt_sha256`` as semantic fingerprints, plus
+    ``candidate_file_sha256`` and ``receipt_file_sha256`` as raw JSON digests.
+    Failed rows alone enter ``retry-queue.json``.
     """
     if not callable(verify_conversion) or not callable(verify_passed):
         raise ValueError("Retry preparation requires independent conversion and receipt verifiers")
@@ -521,24 +540,31 @@ def prepare_failed_only_retry_plan(
                     verify_passed(library_id, work_item, conversion_proof or {}, library_root),
                     expected_status="verified", label="Passed source receipt",
                 )
-                if (proof.get("candidate_sha256") != candidate_ref["sha256"]
-                        or proof.get("receipt_sha256") != receipt_ref["sha256"]):
-                    raise ValueError("Passed receipt verification is not bound to the pinned candidate/receipt files")
+                semantic_candidate_sha, passed_evidence_pins = _receipt_artifact_pins(
+                    library_root, preset_id, candidate_ref, receipt_ref, proof,
+                )
                 for label in ("first_audio_sha256", "reopen_audio_sha256", "first_state_sha256", "reopen_state_sha256"):
                     _digest_hex(proof.get(label), "Passed Kontakt " + label)
                 source_file_pins[f"{library_id}/candidate/{preset_id}"] = {
-                    **candidate_ref, "path": f"{library_id}/{candidate_rel}"}
+                    **candidate_ref, "candidate_file_sha256": candidate_ref["sha256"],
+                    "candidate_sha256": semantic_candidate_sha,
+                    "path": f"{library_id}/{candidate_rel}"}
                 source_file_pins[f"{library_id}/receipt/{preset_id}"] = {
-                    **receipt_ref, "path": f"{library_id}/{receipt_rel}"}
-                for evidence_pin in _receipt_artifact_pins(
-                    library_root, preset_id, candidate_ref, receipt_ref, proof,
-                ):
+                    **receipt_ref, "receipt_file_sha256": receipt_ref["sha256"],
+                    "receipt_sha256": proof["receipt_sha256"],
+                    "path": f"{library_id}/{receipt_rel}"}
+                for evidence_pin in passed_evidence_pins:
                     evidence_path = evidence_pin.pop("source_path", evidence_pin["path"])
                     source_file_pins[
                         f"{library_id}/passed-evidence/{preset_id}/{evidence_pin['path']}"
                     ] = {**evidence_pin, "path": f"{library_id}/{evidence_path}"}
                 retained_passes.append({"library_id": library_id, "id": preset_id, "source": source,
-                                        "candidate": candidate_ref, "receipt": receipt_ref,
+                                        "candidate": {**candidate_ref,
+                                                      "candidate_file_sha256": candidate_ref["sha256"],
+                                                      "candidate_sha256": semantic_candidate_sha},
+                                        "receipt": {**receipt_ref,
+                                                    "receipt_file_sha256": receipt_ref["sha256"],
+                                                    "receipt_sha256": proof["receipt_sha256"]},
                                         "reverification": dict(proof)})
                 library_counts["passed"] += 1
                 continue
