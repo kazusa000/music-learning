@@ -1,5 +1,15 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 后续：先证明多音符演奏，再续试听预热
+
+V8新宿主的两个当前ready Riff实际WAV已在E复算：World on Fire的25个0.5秒窗、The Silence of Faling Flower的55窗都只有前2窗非零。报告`product-preview-new-host-window-review-01/report.json`保持当前音频SHA，不把预览ready说成完整乐句通过。进一步对79条目中67个无profile的原first/reopen收据、请求、状态与WAV逐项只读审计（`unprofiled-three-note-source-audit-01/report.json`）：原MIDI固定48/60/72于0/1/2秒，每音0.5秒；全部67项两轮的note72后0.5/1秒窗均没有能量，note60仅first3项/reopen6项的1秒窗有能量，没有任何条目证实三次独立起音。Autumn Leaves(Blues)两轮同一WAV SHA也仅首音48非零。因此原收据只证明原非静音门通过，不能把它扩展成完整音区/三音演奏验收。原结果不改；继续区分触发MIDI数字、NoteOff、非零block offset和样本加载就绪等共同原因，用独立单因素控制验证。
+
+新产品的5份`Preview is silent`失败目前只证明原阈值未过；旧finally已清理这些raw WAV/response，不能反推精确RMS或把它们都写成exact-zero。`7332324`新增所有未来试听尝试的preview_id/preset_id/generation绑定，并在失败时保留原始native response，成功仍清response，大体积重复录音照常清理。41项相关回归/Ruff通过；**这项代码还未发布，默认仍V8**，不宣称已为旧失败补回不存在的证据。
+
+为了让真实音轨QA05和共享故障对照取得音频窗口，本轮79当前缓存中尚未开始的52个queued项在单次SQLite条件事务里让路：只更新status=queued且generation相同的行，不改loading/ready/failed，不停止任何host或Kontakt验证。before/state及后续恢复入口在`preview-qa-yield-01`，locator为`runtime/instrument-preview-yield.local.json`。Goal始终ACTIVE；共享修复/实际验收完成后，必须通过`resume_previews.py`和产品API以新幂等键、当前指纹续完这52项，不能遗忘或重放旧发布回执。内部resume-ready证据由本目标控制器生成，不要求用户再次确认。QA05原waiter仍有效，attempt001只有磁盘门控defer，不是原生音频失败。
+
+用户关闭宿主后再次核对：MusicLearning/音频host/engine/worker等均已退出，无残留需要停止；API仍ready，Kontakt原监督保持。H仍繁忙时保留原进度等待，不把磁盘压力当全部音频问题的已证根因，不停止其他应用或固定验证任务。
+
 ## 2026-10-23 12:32 UTC：V8与实际新试听宿主已接入
 
 V7 `705664d`的完整冻结回归原结果为824通过/3跳过/1失败，唯一失败是PresetId命名空间规则未同步到生成的JSON Schema。`2979290`重新生成合约，`export_contracts --check`和前端typecheck通过；新V8固定提交`2979290760419fd68cd74207aeacc01b20bb7ddd`，完整service **827通过/3跳过/0失败，270.42秒**。报告`runtime/test-reports/20261023-122531-316f78ea`；6118文件/7345目录/1自有联接临时夹具自动清理，0错误。V7原失败保留。
