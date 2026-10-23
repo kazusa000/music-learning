@@ -1,5 +1,15 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 当前指纹、真实进程与剩余故障分类
+
+Goal和本聊天跟进继续ACTIVE。新只读核对保存于 `20261023-ample-shared-fix/goal-progress-20261023-1111.json`：full-h47740及子46344、Riff retry02的31092及监督44504、A/B9452/22936、被动观察器26568及子6260均按实际命令和creation_time核实，不能将locator的started文字单独当作运行证据。full-h仍current=null/waiting_storage，没有新增Kontakt原生验证结果；正式engine停止/无session，正式九表+heads和E内12固定SHA与上次激活相同。H两项未在忙盘窗口重读，最近完整14项仍引用full-g-transition-01。未停止其他应用或其他聊天任务。
+
+试听统计必须按当前发布和指纹计算。`product-preview-recovery-01/current-fingerprint-status-20261023-1113.json`重放0b79f96的真实fingerprint函数，对79已入库项为71failed/8queued；此前3ready的Riff缓存属于旧phrase指纹，不能继续称为当前已就绪。全局1253ready/81failed/8queued包含历史行，不代表当前79款可试听。711af51完整状态候选尚未激活；激活后所有新native_admission项会使用新的共享状态策略指纹，原记录保留，不能将排队当完成。
+
+剩余故障进一步分离：5个LP来源的原attempt曾在进入probe前被output目录契约拒绝，后续队列也未有成功结果；它们与当前两款完整Riff重试不重复，正在独立排查并准备精确失败项恢复。SEQ/HM2/T-Track仍按共同原因处理；T-Track源嵌入外部GP5路径和实际参数注册证据见 `ample-ttrack-investigation.md`，未访问D盘或忽略参数。目录中的内部Name与来源标题有两处实质差异，已提交通用只读展示计划器23ee1f2；共享展示元数据消费/CAS工具继续开发，不改已验证身份或原default字段，不冒充已在产品修好。
+
+`runtime/instrument-intake-pause.local.json`沿用历史文件名，但当前status/auto_resume/goal均active；本轮将Kontakt主字段从历史full-e阻断状态纠正为full-h真实运行等待，原值留在recovery_history并另存E备份，避免后续只读到旧段再次误判暂停。
+
 ## 2026-10-23 full-h续队与实际产品后端更新
 
 后续固定预览候选711af51完整service为738通过/3跳过/0失败（240.95秒，`runtime/test-reports/20261023-102950-18207491`），目前仍staged，默认0b79f96未变。真实旧host同MIDI的factory/full-state A/B已由 `runtime/ample-preview-state-ab-job.local.json` 持久监督，等待H三点idle、无实际插件宿主/同产品配置冲突及正式engine空闲后逐个运行；不能按两份请求准备成功称音频通过。启动时PID9452/shim22936，state在 `product-preview-full-state-ab-01/supervision-01/state.json`，每次须重核身份。Kontakt最终派生索引监督已提交8935bd6，入口见 `docs/benchmarks/kontakt-derived-index-postload.md`，h终态/所有Kontakt退出/队列完整前保持E-only。`CSS 2nd Violins`同源在旧e超时、g实际125.883秒完成；resources_ENG/lib_ENG日志也出现在成功项，不能把这些警告或180秒超时直接认定为坏样本。
