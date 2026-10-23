@@ -27,9 +27,9 @@ from instruments import supervise_ample_root_cause_chain as chain  # noqa: E402
 
 INTAKE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
 ROOT_CHAIN = INTAKE / "root-cause-chain-03"
-DEFAULT_PLAN = ROOT_CHAIN / "continuation-01/plan.json"
-DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-job.local.json"
-DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-01"
+DEFAULT_PLAN = ROOT_CHAIN / "continuation-02/plan.json"
+DEFAULT_LOCATOR = ROOT / "runtime/ample-midi-delivery-suffix-v1-continuation-02-job.local.json"
+DEFAULT_EXECUTION_ROOT = ROOT_CHAIN / "continuation-02"
 V3_PLAN = ROOT_CHAIN / "plan.json"
 V3_CHECKPOINT = ROOT_CHAIN / "checkpoint.json"
 V3_LOCATOR = ROOT / "runtime/ample-root-cause-chain-v3-job.local.json"
@@ -46,8 +46,8 @@ RIFF_EXECUTOR = INTAKE / "riff-trigger-timing-control-01/execute_control.py"
 RIFF_MAPPING = INTAKE / "aglp-loading-readiness-rea-01/riff-midi-consumer-followup-01.json"
 QA_LOCATOR = ROOT / "runtime/instrument-intake-engine-qa-07.local.json"
 PUMP_CADENCE_LOCATOR = ROOT / "runtime/ample-pump-cadence-control-job.local.json"
-PUMP_CADENCE_PLAN = INTAKE / "pump-cadence-control-01/prepared-plan.json"
-PUMP_CADENCE_PLAN_SHA256 = "63155e71222bf315b96f69acda555cac91f2e22a570f70e8f445a5615d1ecd55"
+PUMP_CADENCE_PLAN = INTAKE / "pump-cadence-control-03/prepared-plan.json"
+PUMP_CADENCE_PLAN_SHA256 = "90746d9979be36ee3b282d7cacf1f90702777f5b6fdd12e71dbdb00453ff0d97"
 PUMP_CADENCE_CASE_ORDER = ("64-first", "64-reopen", "32-first", "32-reopen")
 PUMP_CADENCE_HOST_NAMES = {
     "ml_pump_cadence_host_64.exe", "ml_pump_cadence_host_32.exe",
@@ -99,6 +99,9 @@ def write_json(path: Path, value: dict) -> None:
 
 
 def _inside_workspace(path: Path, label: str, *, strict: bool = True) -> Path:
+    path = Path(path)
+    if path.is_symlink():
+        raise ContinuationError(f"{label} is a reparse point")
     resolved = Path(path).resolve(strict=strict)
     if not resolved.is_relative_to(ROOT.resolve(strict=True)):
         raise ContinuationError(f"{label} escaped the E: workspace")
@@ -620,6 +623,14 @@ def verify_plan(plan_path: Path, *, verify_process_release: bool = False,
         path = _inside_workspace(Path(item.get("path", "")), f"pin {name}", strict=True)
         if sha(path) != item.get("sha256"):
             raise ContinuationError(f"Pinned source changed: {name}")
+    cadence_pin = plan.get("file_pins", {}).get("pump_cadence_prepared_plan", {})
+    if (Path(cadence_pin.get("path", "")).resolve(strict=True) != PUMP_CADENCE_PLAN.resolve(strict=True)
+            or cadence_pin.get("sha256") != PUMP_CADENCE_PLAN_SHA256):
+        raise ContinuationError("Continuation does not pin the current reviewed pump-cadence plan")
+    script_pin = plan.get("file_pins", {}).get("continuation_script", {})
+    if (Path(script_pin.get("path", "")).resolve(strict=True) != Path(__file__).resolve(strict=True)
+            or script_pin.get("sha256") != sha(Path(__file__))):
+        raise ContinuationError("Continuation plan does not pin this exact runner source")
     if sha(V3_PLAN) != EXPECTED_V3_PLAN_SHA256:
         raise ContinuationError("Frozen v3 plan changed")
     v3_plan = load_json(V3_PLAN, "v3 plan")

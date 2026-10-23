@@ -44,6 +44,48 @@ def test_midi_gate_rejects_missing_config_snapshot_hash(tmp_path: Path) -> None:
             gate, tmp_path / "gate.json", {}, "E:/tmp/md08", 1, "d" * 64)
 
 
+def test_current_cadence_release_plan_is_exact_control03_pin() -> None:
+    assert continuation.PUMP_CADENCE_PLAN.name == "prepared-plan.json"
+    assert continuation.PUMP_CADENCE_PLAN.parent.name == "pump-cadence-control-03"
+    assert continuation.sha(continuation.PUMP_CADENCE_PLAN) == continuation.PUMP_CADENCE_PLAN_SHA256
+
+
+def test_cadence_release_requires_exact_terminal_cases_and_released_receipts() -> None:
+    attempt_id = "fixture-attempt"
+    cases = {key: {"status": "host_terminal", "native_host_started": True,
+                   "execution_status": "host_returned"}
+             for key in continuation.PUMP_CADENCE_CASE_ORDER}
+    executions = {key: {"process_release": "released", "resume_safe": True,
+                        "timed_out": False}
+                  for key in continuation.PUMP_CADENCE_CASE_ORDER}
+    locator = {
+        "schema_version": 1, "status": "completed_diagnostic_only",
+        "prepared_plan_sha256": continuation.PUMP_CADENCE_PLAN_SHA256,
+        "native_call_active": False, "attempt_id": attempt_id,
+        "finished_at_utc": "2026-10-23T00:00:00+00:00",
+        "pid": 501, "created_ticks": 100,
+        "active_native_process": {"process_release": "released",
+                                   "resume_safe": True, "timed_out": False},
+    }
+    checkpoint = {
+        "status": "completed_diagnostic_only", "attempt_id": attempt_id,
+        "prepared_plan_sha256": continuation.PUMP_CADENCE_PLAN_SHA256,
+        "finished_at_utc": "2026-10-23T00:00:00+00:00",
+        "native_call_active": False, "cases": cases,
+        "completed_case_order": list(continuation.PUMP_CADENCE_CASE_ORDER),
+    }
+    report = {"status": "completed_diagnostic_only",
+              "finished_at_utc": "2026-10-23T00:00:00+00:00",
+              "attempt_id": attempt_id}
+
+    assert continuation.pump_cadence_release_problem(
+        locator, checkpoint, report, [], executions) is None
+
+    executions["32-first"]["timed_out"] = True
+    assert "lacks a released execution receipt" in continuation.pump_cadence_release_problem(
+        locator, checkpoint, report, [], executions)
+
+
 def test_nested_midi_timeout_is_preserved_without_starting_another_attempt(
     tmp_path: Path, monkeypatch,
 ) -> None:
