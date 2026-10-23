@@ -15,14 +15,34 @@ try{
  await page.goto(base+'/#token='+f.token);await page.getByRole('button',{name:'风格库',exact:false}).click();
  await page.getByRole('heading',{name:/风格库 STYLE ATLAS/}).waitFor();await page.locator('.style-card').first().waitFor();await page.locator('.style-dossier h2').waitFor();
  assert.equal((await call('styles.index')).total,1023);assert.equal(await page.locator('.style-dossier h2').innerText(),'城市流行');
- assert(await page.locator('.style-dossier').innerText().then(t=>t.includes('扩展和弦')&&t.includes('电钢琴')));
+ const city=await call('styles.get',{style_id:'asi03'});
+ assert.equal(await page.locator('.style-intro').innerText(),city.intro);
+ assert(city.intro.length>=45);
+ assert(await page.locator('.style-production-note').count()>=2);
+ assert(await page.locator('.style-note-evidence').count()>=2);
+ assert(!(await page.locator('.style-dossier').innerText()).includes('给主唱留出中频与乐句空隙'));
  await page.screenshot({path:path.join(f.report,'library-4k.png')});
- await page.getByLabel('搜索音乐风格',{exact:true}).fill('City Pop');await until(()=>page.locator('.style-card').count().then(n=>n===1),'English search failed');
+ await page.getByLabel('搜索音乐风格',{exact:true}).fill('City Pop');await until(()=>page.locator('.style-card').first().getAttribute('data-style').then(id=>id==='asi03'),'Exact English style match not ranked first');
+ assert.equal(await page.locator('.style-card[data-style="asi03"]').count(),1);
+ await page.getByLabel('搜索音乐风格',{exact:true}).fill('DX7');await page.locator('.style-card[data-style="asi03"]').waitFor();
+ await page.getByLabel('搜索音乐风格',{exact:true}).fill('City Pop');
  await page.getByRole('button',{name:'收藏风格',exact:true}).click();await page.getByRole('button',{name:/我的收藏/}).click();assert.equal(await page.locator('.style-card').count(),1);
  await page.reload();await page.getByRole('button',{name:'取消收藏风格',exact:true}).waitFor();await page.getByRole('button',{name:/我的收藏/}).click();assert.equal(await page.locator('.style-card').count(),1);
  await page.getByRole('button',{name:/全部风格/}).click();await page.getByLabel('搜索音乐风格',{exact:true}).fill('绝不可能的风格xyz');await page.getByRole('heading',{name:'没有找到匹配的风格'}).waitFor();await page.getByRole('button',{name:'查看全部风格',exact:true}).click();
  await page.getByLabel('风格年代',{exact:true}).selectOption('1970');await page.getByLabel('风格年代',{exact:true}).selectOption('all');
  report.checks.push('Offline full catalog, Chinese/English search, empty state, favorites and reload persistence');
+ // Compare a percussion-led tradition with an electronic style, so the page
+ // must render the selected dossier rather than a generic shared paragraph.
+ for(const id of ['woB02','ind01']){
+  await page.goto(base+'/?view=styles&style='+id+'#token='+f.token);
+  const item=await call('styles.get',{style_id:id});
+  await until(()=>page.locator('.style-intro').innerText().then(t=>t===item.intro),'Specific style introduction not displayed');
+  assert(await page.locator('.style-production-note').count()>=2);
+  assert.notEqual(item.intro,city.intro);
+  for(const notes of Object.values(item.sections))for(const note of notes)assert((await page.locator('.style-dossier').innerText()).includes(note.text));
+ }
+ report.checks.push('Source-specific City Pop, Bomba and Krautrock introductions and complete arranging notes');
+ await page.goto(base+'/?view=styles&style=asi03#token='+f.token);await page.locator('.style-card').first().waitFor();await page.locator('.style-dossier h2').waitFor();
  await page.getByRole('button',{name:'关系地图',exact:true}).click();await page.getByLabel('风格关系地图',{exact:true}).waitFor();await until(()=>page.locator('.style-map path').count().then(n=>n>2),'Relationship lines not loaded');
  const svg=page.getByLabel('风格关系地图',{exact:true}),before=await svg.getAttribute('viewBox');await page.getByRole('button',{name:'放大风格地图',exact:true}).click();assert.notEqual(await svg.getAttribute('viewBox'),before);
  await page.getByRole('button',{name:'层次',exact:true}).click();await page.screenshot({path:path.join(f.report,'map-4k.png')});

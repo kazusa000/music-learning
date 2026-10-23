@@ -6,9 +6,11 @@ import {WindowControls} from './WindowChrome';
 import './style-library.css';
 
 type Category={id:string;name:string};
-type Style={id:string;name:string;english:string;kind:string;year:number|null;family:string;aliases:string[];relatedFamilies:string[];yearDisplay:string|null;tags:string[]};
+type Style={id:string;name:string;english:string;kind:string;year:number|null;family:string;aliases:string[];relatedFamilies:string[];yearDisplay:string|null;tags:string[];search_text?:string};
 type Edge={source:string;target:string;kind:string};
-type Detail=Style&{intro?:string;tempo:string|null;sections:Record<string,Array<{label:string;text:string}>>;tracks:Array<{title:string;artist?:string;year?:number}>;source_url:string;sources:Array<{label:string;url:string}>;relations:Edge[];related_styles:Style[]};
+type StyleNote={label:string;text:string;basis?:string;source_ids?:string[]};
+type StyleSource={id?:string;label:string;url:string};
+type Detail=Style&{intro?:string;facts?:string[];provenance?:{source_url?:string;source_sha256?:string;retrieved_at?:string};tempo:string|null;sections:Record<string,StyleNote[]>;tracks:Array<{title:string;artist?:string;year?:number}>;source_url:string;sources:StyleSource[];relations:Edge[];related_styles:Style[]};
 type Index={categories:Category[];items:Style[];total:number;edge_count:number};
 type Graph={nodes:Style[];edges:Edge[]};
 const colors=['#c9ad81','#b5b794','#dcb580','#82a7cb','#d8ae7e','#baad8c','#a2b4a0','#d18e7b','#cda16e','#bd8592','#c48ca9','#aa91ba','#93a3bb','#8fafaa','#d6a58e','#b8ac77','#9eb790','#b493c2','#a493b7','#839eae','#b4a0c1','#bcab83','#83aeb2','#a6acc8','#be9a90','#98a9c9','#8faab9','#b8af80','#d4a78e'];
@@ -61,8 +63,8 @@ export default function StyleLibrary({onClose,overlay=false}:{onClose:()=>void;o
     const terms=query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     return genres.filter(s=>(category==='all'||s.family===category||s.relatedFamilies.includes(category))&&(!onlyFavorites||favorites.includes(s.id))&&
       (era==='all'||(era==='early'?s.year!==null&&s.year<1940:era==='unknown'?s.year===null:s.year!==null&&Math.floor(s.year/10)*10===+era))&&
-      terms.every(t=>[s.name,s.english,...s.aliases,...s.tags].join(' ').toLocaleLowerCase().includes(t))).sort((a,b)=>{
-        return (featured.indexOf(a.english)<0?99:featured.indexOf(a.english))-(featured.indexOf(b.english)<0?99:featured.indexOf(b.english))||a.name.localeCompare(b.name,'zh-CN');});
+      terms.every(t=>[s.name,s.english,...s.aliases,...s.tags,s.search_text??''].join(' ').toLocaleLowerCase().includes(t))).sort((a,b)=>{
+        const exact=query.trim().toLocaleLowerCase(),match=(s:Style)=>[s.name,s.english,...s.aliases].some(n=>n.toLocaleLowerCase()===exact)?0:1;return match(a)-match(b)||(featured.indexOf(a.english)<0?99:featured.indexOf(a.english))-(featured.indexOf(b.english)<0?99:featured.indexOf(b.english))||a.name.localeCompare(b.name,'zh-CN');});
   },[index,query,category,era,onlyFavorites,favorites]);
   function choose(id:string){setSelected(id);setMobileDetail(true);localStorage.setItem(selectedKey,id);if(!overlay)history.replaceState(null,'','/?view=styles&style='+encodeURIComponent(id));}
   function toggleFavorite(id:string){setFavorites(current=>{const next=current.includes(id)?current.filter(x=>x!==id):[...current,id];localStorage.setItem(favoriteKey,JSON.stringify(next));return next;});}
@@ -82,11 +84,11 @@ export default function StyleLibrary({onClose,overlay=false}:{onClose:()=>void;o
       <aside className="style-dossier" ref={detailScroll} aria-label="风格档案"><button className="style-mobile-back" onClick={()=>setMobileDetail(false)}><Icon name="back" size={14}/>返回风格列表</button>{detailError?<div className="style-empty"><p>{detailError}</p><button onClick={()=>choose('asi03')}>打开城市流行</button></div>:!detail?<div className="style-detail-loading">正在打开风格档案…</div>:<>
         <div className="style-dossier-cover"><Art color={accent} seed={categoryIndex+50}/><span>{categories.find(c=>c.id===detail.family)?.name}</span><button className="style-favorite" aria-label={favorites.includes(detail.id)?'取消收藏风格':'收藏风格'} aria-pressed={favorites.includes(detail.id)} onClick={()=>toggleFavorite(detail.id)}>{favorites.includes(detail.id)?'★':'☆'}</button><h2>{detail.name}</h2><p>{detail.english}</p></div><div className="style-dossier-content"><div className="style-facts"><div><small>形成时期</small><span>{detail.yearDisplay??'年代未定'}</span></div><div><small>速度倾向</small><span>{detail.tempo||'随作品变化'}</span></div></div>
         {!!detail.aliases?.length&&<div className="style-aliases">{detail.aliases.slice(0,5).map(a=><span key={a}>{a}</span>)}</div>}
-        {detail.intro&&<p className="style-intro">{detail.intro}</p>}
-        {Object.entries(sectionNames).map(([key,title])=>detail.sections[key]?.length>0&&<section className="style-note-section" key={key}><h3><span>{String(Object.keys(sectionNames).indexOf(key)+1).padStart(2,'0')}</span>{title}</h3>{detail.sections[key].map(note=><div className="style-production-note" key={note.label}>{note.label!=='编曲切入'&&<strong>{note.label}</strong>}<p>{note.text}</p></div>)}</section>)}
+        {(detail.intro||!!detail.facts?.length)&&<section className="style-profile"><span>风格画像</span>{detail.intro&&<p className="style-intro">{detail.intro}</p>}{!!detail.facts?.length&&<ul className="style-fact-list">{detail.facts.map((fact,i)=><li key={`${i}-${fact}`}>{fact}</li>)}</ul>}</section>}
+        {Object.entries(sectionNames).map(([key,title])=>detail.sections[key]?.length>0&&<section className="style-note-section" key={key}><h3>{title}</h3><div className="style-note-list">{detail.sections[key].map((note,i)=><article className="style-production-note" key={`${key}-${note.label}-${i}`}>{note.label&&note.label!=='编曲切入'&&<h4>{note.label}</h4>}<p>{note.text}</p>{note.basis&&<div className="style-note-evidence"><span>{note.basis}</span></div>}</article>)}</div></section>)}
         {!!detail.relations.length&&<section className="style-note-section"><h3><span>↗</span>来路与延伸</h3><div className="style-relations">{detail.relations.map((e,i)=>{const other=relatedById.get(e.source===detail.id?e.target:e.source);return other&&<button key={i} onClick={()=>choose(other.id)}><span>{e.target===detail.id?'←':'→'} {relationNames[e.kind]??e.kind}</span><strong>{other.name}</strong><small>{other.english}</small></button>;})}</div></section>}
         {!!detail.tracks.length&&<section className="style-note-section"><h3><span>♫</span>代表曲目</h3><div className="style-reference-tracks">{detail.tracks.map((t,i)=><a key={i} target="_blank" rel="noreferrer" href={'https://music.163.com/#/search/m/?s='+encodeURIComponent((t.artist?t.artist+' – ':'')+t.title)}><small>{String(i+1).padStart(2,'0')}</small><span>{t.artist&&t.artist+' – '}{t.title}{t.year&&<small>{t.year}</small>}</span><Icon name="arrow" size={13}/></a>)}</div></section>}
-        <details className="style-sources"><summary>资料出处</summary><a href={detail.source_url} target="_blank" rel="noreferrer">汪叔音乐风格地图 ↗</a>{detail.sources.map((s,i)=><a href={s.url} key={i} target="_blank" rel="noreferrer">{s.label} ↗</a>)}<p>分类与关联保留原始出处；编曲提示为本地整理。</p></details></div>
+        <details className="style-sources"><summary>资料来源</summary><a href={detail.source_url} target="_blank" rel="noreferrer">汪叔音乐风格地图 ↗</a>{detail.sources.map((s,i)=><a href={s.url} key={i} target="_blank" rel="noreferrer">{s.label} ↗</a>)}<p>参考资料整理 · 编曲建议独立编写</p></details></div>
       </>}</aside>
     </div>
   </section>;

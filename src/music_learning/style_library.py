@@ -11,15 +11,35 @@ def catalog():
     return json.loads((ROOT / "resources/styles/catalog.json").read_text(encoding="utf-8"))
 
 
-def summary(item):
+def searchable_text(item):
+    return " ".join(
+        [item.get("intro", ""), *item.get("facts", [])]
+        + [
+            value
+            for notes in item["sections"].values()
+            for note in notes
+            for value in (note["label"], note.get("basis", ""), note["text"])
+        ]
+    )
+
+
+def summary(item, *, searchable=False):
     fields = ("id", "name", "english", "kind", "year", "family", "aliases", "relatedFamilies", "yearDisplay")
-    return {k: item.get(k) for k in fields} | {
+    result = {k: item.get(k) for k in fields} | {
         "tags": list(
             dict.fromkeys(
-                n["label"] for notes in item["sections"].values() for n in notes if n["label"] != "编曲切入"
+                text
+                for text in [
+                    *(n.get("basis") or n["label"] for notes in item["sections"].values() for n in notes),
+                    *item.get("facts", []),
+                ]
+                if text and text != "编曲切入"
             )
         )
     }
+    if searchable:
+        result["search_text"] = searchable_text(item)
+    return result
 
 
 def get(ident):
@@ -44,7 +64,7 @@ def dispatch(op, args):
     if op == "styles.index":
         return {
             "categories": data["categories"],
-            "items": [summary(x) for x in data["items"]],
+            "items": [summary(x, searchable=True) for x in data["items"]],
             "total": sum(x["kind"] == "genre" for x in data["items"]),
             "source": data["source"],
             "retrieved_at": data["retrieved_at"],
@@ -94,7 +114,7 @@ def dispatch(op, args):
             continue
         compact = summary(item)
         text = " ".join(
-            [item["id"], item["name"], item["english"], *(item["aliases"] or []), *compact["tags"]]
+            [item["id"], item["name"], item["english"], *(item["aliases"] or []), *compact["tags"], searchable_text(item)]
         ).casefold()
         if all(part in text for part in parts):
             matches.append(compact)

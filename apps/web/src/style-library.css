@@ -13,3 +13,23 @@
 .style-intro{font-size:12px;line-height:2;color:#b8aaa0;padding:20px 0 2px}.style-search input{height:auto;box-shadow:none;border-radius:0}.style-map>svg{overscroll-behavior:contain}
 
 .style-library .style-search input:not([type=range]):not([type=checkbox]){border:0;padding:0;background:transparent;border-radius:0;font-size:11px;line-height:1.6}
+
+/* Readable editorial detail for style-specific source notes. */
+.style-profile{margin-top:18px;padding:15px 16px 14px;border:1px solid #d2a77b20;border-left:2px solid color-mix(in srgb,var(--style-accent) 72%,transparent);border-radius:7px;background:linear-gradient(135deg,#342a221c,#ffffff02)}
+.style-profile>span{display:block;color:var(--style-accent);font-size:8px;letter-spacing:1.1px}
+.style-intro{padding:8px 0 0;color:#d1c5b8;font-size:12px;line-height:1.9;letter-spacing:.05px}
+.style-fact-list{display:flex;flex-wrap:wrap;gap:6px;margin:11px 0 0;padding:0;list-style:none}
+.style-fact-list li{padding:4px 7px;border:1px solid #ffffff0b;border-radius:4px;background:#ffffff04;color:#a99c91;font-size:9px;line-height:1.5}
+.style-note-section{padding-top:22px;margin-top:20px;border-top:1px solid #ffffff0b}
+.style-note-section>h3{margin:0 0 14px;color:#d8c9ba;font-size:12px;letter-spacing:.1px}
+.style-note-list{display:grid;gap:0}
+.style-production-note{margin:0 0 13px 1px;padding:1px 0 14px 13px;border-left:1px solid #ffffff10;position:relative}
+.style-production-note:before{left:-3px;top:5px;background:var(--style-accent);opacity:.7;width:5px;height:5px}
+.style-production-note:last-child{margin-bottom:0;padding-bottom:2px;border-left-color:transparent}
+.style-production-note h4{margin:0 0 5px;color:var(--style-accent);font-size:9px;font-weight:500;letter-spacing:.3px}
+.style-production-note p{margin:0;color:#b4aaa1;font-size:11.5px;line-height:1.85}
+.style-note-evidence{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px}
+.style-note-evidence>span,.style-note-evidence>a{padding:3px 6px;border:1px solid #ffffff09;border-radius:4px;background:#ffffff03;color:#857c75;font-size:8px;line-height:1.5;text-decoration:none}
+.style-note-evidence>a:hover{color:#d9b68e;border-color:#d9b68e44}
+.style-sources p{margin-top:12px;color:#887f78}
+@media(max-width:1150px){.style-profile{padding:12px 13px}.style-intro{font-size:11.5px}.style-production-note p{font-size:11px}}

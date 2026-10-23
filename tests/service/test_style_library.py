@@ -22,6 +22,16 @@ def test_offline_catalog_complete_and_referentially_consistent(service):
     assert len(data["edges"]) == 2641
     assert all(e["source"] in ids and e["target"] in ids for e in data["edges"])
     assert all("description" not in x and "evolution" not in x for x in data["items"])
+    assert data["editorial_version"] == 2
+    for item in data["items"]:
+        assert item["intro"] and item["provenance"]["source_url"]
+        if item["kind"] == "genre":
+            assert sum(bool(notes) for notes in item["sections"].values()) >= 2
+            assert all(
+                note["basis"] and note["source_ids"]
+                for notes in item["sections"].values()
+                for note in notes
+            )
     assert not invoke(service, "projects.list")
 
 
@@ -32,14 +42,16 @@ def test_search_alias_category_tags_and_bounded_detail(service):
         s["id"] == "asi03" for s in invoke(service, "styles.query", dict(query="シティ・ポップ"))["items"]
     )
     assert invoke(service, "styles.query", dict(query="zzzzzzzzzz"))["total"] == 0
+    assert any(x["id"] == "asi03" for x in invoke(service, "styles.query", dict(query="DX7", limit=30))["items"])
+    assert all("search_text" not in x for x in found["items"])
     assert all(
         s["family"] == "jaz" or "jaz" in s["relatedFamilies"]
         for s in invoke(service, "styles.query", dict(category="jaz"))["items"]
     )
     detail = invoke(service, "styles.get", dict(style_id="asi03"))
     assert detail["tracks"] and detail["sources"] and detail["sections"]["rhythm"]
-    assert any(n["label"] == "电钢琴" for n in detail["sections"]["palette"])
-    assert any(n["label"] == "扩展和弦" for n in detail["sections"]["harmony"])
+    assert detail["intro"] and detail["provenance"]["source_sha256"]
+    assert detail["sections"] != invoke(service, "styles.get", dict(style_id="woB02"))["sections"]
     bounded = invoke(service, "styles.query", dict(action="detail", style_id="asi03", limit=2))
     assert len(bounded["tracks"]) == 2
     assert invoke(service, "styles.query", dict(action="related", style_id="asi03"))["relations"]
@@ -69,7 +81,7 @@ def test_assistant_can_read_style_and_music_separately(service):
             )
             assert value["success"], value
             detail = json.loads(value["contentItems"][0]["text"])
-            assert detail["sections"]["harmony"]
+            assert detail["intro"] and any(detail["sections"].values())
             await self.events.put(
                 {
                     "method": "item/agentMessage/delta",
