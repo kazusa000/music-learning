@@ -2367,6 +2367,9 @@
       "properties": {
         "preset_ids": {
           "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
             "type": "string"
           },
           "maxItems": 128,
@@ -2438,6 +2441,9 @@
         "preview_preset_id": {
           "anyOf": [
             {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
               "type": "string"
             },
             {
@@ -2542,6 +2548,7 @@
             {
               "maxLength": 200,
               "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
               "type": "string"
             },
             {
@@ -2646,6 +2653,9 @@
           "type": "string"
         },
         "preset_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
           "title": "Preset Id",
           "type": "string"
         },
@@ -4137,6 +4147,7 @@
         "preset_id": {
           "maxLength": 200,
           "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
           "title": "Preset Id",
           "type": "string"
         },
@@ -9492,6 +9503,9 @@
             "type": "string"
           },
           "preset_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
             "title": "Preset Id",
             "type": "string"
           },
@@ -9579,6 +9593,9 @@
             "type": "string"
           },
           "preset_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
             "title": "Preset Id",
             "type": "string"
           },
@@ -9666,6 +9683,9 @@
             "type": "string"
           },
           "preset_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
             "title": "Preset Id",
             "type": "string"
           },
