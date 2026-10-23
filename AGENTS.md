@@ -1,5 +1,7 @@
 # 项目开发约定
 
+最新滚动与画布修正（2026-10-23）：默认已发布1845a75，原生f056/桌面aa81不变。编排为唯一纵向滚动容器，LinkedTrackScroll同帧驱动左栏平移，取消双scrollTop追赶；两边滚轮统一推进，中键左栏转交中央。删除音符摘要/片段/原曲波形上的覆盖文字，保留左名与标尺。实际4K/窄窗短流程通过，左右快速正反/首尾218帧最大偏移0px；报告studio-ui-1792715550186988200，临时工程与profile自动清。runtime/maintenance/linked-scroll-20261023记录默认发布/保护；未动H/NAS、音源入库或重跑长测。详见composition-workspace文档末段。
+
 最新创作工作区（2026-10-23）：已发布bc53939源码／新前端，原生f056与桌面aa81包不变，18765正常启动。主页从零编曲／导入双入口；composition创建速度／拍号／小节网格＋空乐器轨，空时间轴原生静音时钟，保留编辑／音色／混音／版本A-B／导出，隐藏原曲。原分析侧栏替换为共享Markdown笔记，统一自动操作AI新增notes_read/notes_write，notes.list/save/delete/agent共用Service，note行持久化，无DB迁移；显式SDK只读兼容。音轨／编排共用行高滚动、Alt纵缩／轨高滑杆、左栏拖名称排序且可撤销重开；原曲往返旧滚动偏移和专注侧栏覆盖修复。44后端短回归＋最终4K/窄窗实际UI通过，真实E内MLFixture发声／边播调音量静音／笔记／拖轨／版本A-B，AI为provider链路测试，不冒充真模型或全库音质。测试临时工程/录音/profile自动清；未重跑整曲长测。runtime/maintenance/composition-20261023前后九表/head、12项E固定SHA、四native一致；H两pin未读、H/NAS本任务无访问。Kontakt supervisor26132/full276及Ample chain45856身份保持，子验证正常结束后链等待磁盘空闲，未停改入库任务。详见docs/architecture/composition-workspace.md；默认start.cmd已走新发布。
 
 最新清理收尾（2026-10-23）：用户授权整理清理，要求不影响正在入库、不跑长测。本轮40个精确目标删除15641文件/2285目录/0错，E窗口净增约1.896GiB；旧live会话/旧browser及历史UI profile/N7 tdead夹具/动态Fixture CMake中间文件已清，正式九表/head、发布/四native SHA及入库进程47956身份前后相同，健康正常，未重启服务。整个instrument-intake/data/t/N2固定run和原报告/模型/env/当前WebView2 profile/音色试听/正式素材/其他任务AD2 obj/pdb保留；H/NAS本轮无读写，DB压缩暂缓。计划/盘点/before/after/结果在runtime/maintenance/cleanup-20261023；根部debugger-fixture.log归到runtime/logs/development。新测试入口自动清理已用--version/无效选项及范围/junction边界短检查核对，无功能回归或长测。详见docs/development/test-cleanup.md。
