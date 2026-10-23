@@ -195,16 +195,75 @@ def process_inventory(*, timeout: float = 20.0) -> list[dict]:
     return normalized
 
 
+def _process_rows_by_pid(rows: list[dict]) -> dict[int, dict]:
+    indexed = {}
+    for row in rows:
+        pid = row.get("pid")
+        if type(pid) is not int or pid < 0:
+            raise SupervisorError("Process inventory has an invalid PID")
+        if pid in indexed:
+            raise SupervisorError("Process inventory has duplicate PID observations")
+        indexed[pid] = row
+    return indexed
+
+
+def _process_birth(record: dict) -> int:
+    born = record.get("created_ticks")
+    if type(born) is not int or born <= 0:
+        raise SupervisorError("Process identity lacks a valid creation time")
+    return born
+
+
 def _descendants(rows: list[dict], root_pid: int) -> set[int]:
-    found = {int(root_pid)}
+    # Windows keeps a process's original PPID after that parent exits. A later
+    # process can reuse the numeric parent PID, so PPID alone is not ancestry.
+    by_pid = _process_rows_by_pid(rows)
+    if root_pid not in by_pid:
+        return set()
+    _process_birth(by_pid[root_pid])
+    found = {root_pid}
     changed = True
     while changed:
         changed = False
         for row in rows:
-            if row["ppid"] in found and row["pid"] not in found:
+            parent = by_pid.get(row["ppid"])
+            if (row["ppid"] in found and row["pid"] not in found
+                    and _process_birth(row) >= _process_birth(parent)):
                 found.add(row["pid"])
                 changed = True
     return found
+
+
+def verified_observed_survivors(active_runner: dict, observed_tree: dict,
+                                rows: list[dict]) -> list[dict]:
+    """Retain exact live children, excluding only proven pre-run PID aliases.
+
+    Older checkpoints may contain processes falsely adopted by the former
+    PPID-only walker. A process born before this runner cannot belong to it.
+    Genuine orphaned children remain protected; unknown creation time or a
+    changed command on the same process is not treated as an exited child.
+    """
+    root_birth = _process_birth(active_runner)
+    if not isinstance(observed_tree, dict):
+        raise SupervisorError("Observed process tree is malformed")
+    by_pid = _process_rows_by_pid(rows)
+    survivors = []
+    for key, record in observed_tree.items():
+        if not isinstance(record, dict) or str(record.get("pid")) != str(key):
+            raise SupervisorError("Observed process identity is malformed")
+        born = _process_birth(record)
+        if born < root_birth:
+            continue
+        command = record.get("command_line")
+        if not isinstance(command, str) or not command:
+            raise SupervisorError("Observed process identity lacks its command")
+        live = by_pid.get(record["pid"])
+        if live is None or _process_birth(live) != born:
+            continue
+        if live.get("command_line") != command:
+            raise SupervisorError("Observed process command changed while identity stayed live")
+        survivors.append(live)
+    return survivors
 
 
 def _norm(value: str) -> str:
@@ -402,12 +461,7 @@ def _wait_existing_runner(rows_provider, run_dir: Path, state: dict, state_path:
             sleep(max(1.0, min(poll_seconds, 10.0)))
             continue
 
-        survivors = []
-        for record in state.get("observed_tree", {}).values():
-            live = by_pid.get(int(record["pid"]))
-            if (live and live["created_ticks"] == record["created_ticks"]
-                    and live["command_line"] == record["command_line"]):
-                survivors.append(live)
+        survivors = verified_observed_survivors(active, state.get("observed_tree", {}), rows)
         outsiders = [row for row in _matching_run_rows(rows, run_dir, os.getpid())
                      if row["pid"] not in {item["pid"] for item in survivors}]
         if outsiders:
@@ -613,14 +667,8 @@ def supervise(run_dir: Path, python: Path, native_host: Path, checkpoint_dir: Pa
 
             returncode = int(child.returncode)
             rows = inventory_fn()
-            by_pid = {row["pid"]: row for row in rows}
-            survivors = []
             observed_pids = {int(pid) for pid in state.get("observed_tree", {})}
-            for record in state.get("observed_tree", {}).values():
-                live = by_pid.get(int(record["pid"]))
-                if (live and live["created_ticks"] == record["created_ticks"]
-                        and live["command_line"] == record["command_line"]):
-                    survivors.append(live)
+            survivors = verified_observed_survivors(active, state.get("observed_tree", {}), rows)
             unexpected = [row for row in _matching_run_rows(rows, run_dir, current_pid)
                           if row["pid"] not in observed_pids]
             drain_started = time.monotonic()
@@ -630,13 +678,7 @@ def supervise(run_dir: Path, python: Path, native_host: Path, checkpoint_dir: Pa
                             surviving_processes=[_snapshot_process(row) for row in survivors])
                 sleep(max(1.0, min(poll_seconds, 5.0)))
                 rows = inventory_fn()
-                by_pid = {row["pid"]: row for row in rows}
-                survivors = []
-                for record in state.get("observed_tree", {}).values():
-                    live = by_pid.get(int(record["pid"]))
-                    if (live and live["created_ticks"] == record["created_ticks"]
-                            and live["command_line"] == record["command_line"]):
-                        survivors.append(live)
+                survivors = verified_observed_survivors(active, state.get("observed_tree", {}), rows)
                 unexpected = [row for row in _matching_run_rows(rows, run_dir, current_pid)
                               if row["pid"] not in observed_pids]
                 if time.monotonic() - drain_started > min(max_total_seconds, 300):
