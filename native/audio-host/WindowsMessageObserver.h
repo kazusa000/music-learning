@@ -14,8 +14,6 @@
 #include <atomic>
 #include <cstdint>
 #include <stdexcept>
-#include <string>
-#include <type_traits>
 
 namespace ml::diagnostic
 {
@@ -252,10 +250,10 @@ private:
     static constexpr std::uint32_t no_dispatch = 0;
     static inline thread_local ScopedWindowsMessageObserver* active_ = nullptr;
 
-    static std::string hex(std::uintptr_t value)
+    static juce::String hex(std::uintptr_t value)
     {
         constexpr char digits[] = "0123456789abcdef";
-        std::string result(2 + sizeof(value) * 2, '0');
+        std::array<char, 2 + sizeof(value) * 2 + 1> result{};
         result[0] = '0';
         result[1] = 'x';
         for (std::size_t i = 0; i < sizeof(value) * 2; ++i)
@@ -263,7 +261,7 @@ private:
             const auto shift = (sizeof(value) * 2 - i - 1) * 4;
             result[2 + i] = digits[(value >> shift) & 0xf];
         }
-        return result;
+        return juce::String::fromUTF8(result.data(), static_cast<int>(result.size() - 1));
     }
 
     static ModuleLocation resolve_module(std::uintptr_t address)

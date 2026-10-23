@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import argparse
 import hashlib
 import json
 import os
@@ -46,6 +47,14 @@ PINS = {
     "juce_common": "0b197c91f7af510659b2b97d9a1d92cdb5d72410602aa6f714078448c8b34e31",
     "juce_impl": "0728f6fe92e3c8bed958fba304fef4da1d904988bb696f9723015d5d742b11de",
 }
+HELPER_PATHS = [
+    "native/instrument-probe/Vst3RestartCallbackTrace.h",
+    "native/instrument-probe/PumpCadenceRuntime.h",
+    "native/instrument-probe/PumpCadenceDiagnostics.h",
+    "native/instrument-probe/AmpleProbe.h",
+    "native/instrument-probe/AmpleReadinessReader.h",
+    "native/instrument-probe/ample-component-layout-rea-02/AmpleComponentLayoutReader.h",
+]
 
 
 def digest(path: Path) -> str:
@@ -278,6 +287,11 @@ def prepare_core(source_root: Path, core_manifest: dict,
         shutil.copy2(source, target)
     render_before, render_after = overlay_render(BASE_SOURCE / RENDER_REL,
                                                   source_root / RENDER_REL)
+    for relative in HELPER_PATHS:
+        source = BASE_SOURCE / Path(relative)
+        target = source_root / Path(relative)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
     (source_root / "native/audio-host/WindowsMessageObserver.h").write_bytes(
         (ROOT / "native/audio-host/WindowsMessageObserver.h").read_bytes())
     test_target = source_root / "native/tests/WindowsMessageObserver.cpp"
@@ -315,8 +329,8 @@ def prepare_plan(plan_03: dict, core_manifest_path: Path, extra_manifest_path: P
              "sha256": digest(BASE_JUCE_MANIFEST), "file_count": 5347,
              "role": "immutable_05_JUCE_fullhash"},
             {"path": str(extra_manifest_path.resolve()),
-             "sha256": digest(extra_manifest_path), "file_count": 3,
-             "role": "07_observer_test_and_builder_sources"},
+             "sha256": digest(extra_manifest_path), "file_count": len(diagnostic_paths),
+             "role": "05_callback_and_cadence_helpers_plus_07_observer_sources"},
             {"path": str(runtime_manifest_path.resolve()),
              "sha256": digest(runtime_manifest_path), "file_count": 1,
              "role": "05_linked_runtime_library_artifact"},
@@ -328,7 +342,7 @@ def prepare_plan(plan_03: dict, core_manifest_path: Path, extra_manifest_path: P
             "prior_control_host_executions": 4,
         }],
         "source_manifest_policy": {
-            "snapshot_point": "16-file core and three diagnostic sources frozen before configure/build",
+            "snapshot_point": "16-file core and nine helper/observer sources frozen before configure/build",
             "frozen_analyzer_core_keys": "exact 16 keys from the pinned control-03 manifest",
             "compiled_05_dependency_tree": "all 5366 source and 5347 JUCE entries verified by path, bytes, and SHA before/after",
             "linked_runtime_library": "05 prebuilt ml_audio_runtime.lib SHA-verified before/after",
@@ -337,7 +351,7 @@ def prepare_plan(plan_03: dict, core_manifest_path: Path, extra_manifest_path: P
         },
         "windows_message_observer": {
             "hook": "WH_GETMESSAGE",
-            "scope": "current GUI thread; HC_ACTION and PM_REMOVE only; current-process HWND messages",
+            "scope": "current GUI thread; HC_ACTION and PM_REMOVE only; current-process HWNDs plus thread-scoped null-HWND messages",
             "captured": ["MSG.message", "wParam", "lParam", "time", "hwnd",
                          "WndProc address/module/RVA", "WM_TIMER callback lParam/module/RVA"],
             "bounded_records": {"messages": 4096, "dispatch_windows": 1024},
@@ -398,6 +412,14 @@ def prepare_plan(plan_03: dict, core_manifest_path: Path, extra_manifest_path: P
 
 
 def main() -> None:
+    global EVIDENCE, OUT, OUTPUT_ROOT
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--attempt", choices=("initial", "rebuild-01"), default="initial")
+    args = parser.parse_args()
+    if args.attempt == "rebuild-01":
+        EVIDENCE = INTAKE / "windows-message-control-07-rebuild-01"
+        OUT = ROOT / "runtime/build/ample-windows-message-07-rebuild-01"
+        OUTPUT_ROOT = ROOT / "data/maintenance/instrument-intake/q/wm07-rebuild-01"
     if OUT.exists() or EVIDENCE.exists() or OUTPUT_ROOT.exists():
         raise SystemExit(f"Refusing to overwrite an existing task root: {OUT}, {EVIDENCE}, {OUTPUT_ROOT}")
 
@@ -448,6 +470,7 @@ def main() -> None:
         "native/audio-host/WindowsMessageObserver.h",
         "native/tests/WindowsMessageObserver.cpp",
         "scripts/instruments/build_ample_windows_message_control_07.py",
+        *HELPER_PATHS,
     ]
     core_manifest_path = OUT / "source-snapshot-manifest.json"
     core_snapshot = snapshot_manifest(source_root, core_keys, "16-key compatible core")
