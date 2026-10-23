@@ -50,6 +50,14 @@ def sha256_file(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def json_fingerprint(value) -> str:
+    """Match the canonical content fingerprint used by instrument intake plans."""
+    canonical = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+    return sha256_bytes(canonical)
+
+
 def _contained(path: Path, parent: Path, label: str) -> Path:
     resolved = Path(path).resolve(strict=True)
     try:
@@ -169,9 +177,16 @@ def publication_plan_files(value: Path, repository: Path = ROOT) -> list[Path]:
         for group in result["groups"]:
             plan_path = _contained(Path(group["plan"]), intake, "publication plan")
             expected_sha = group.get("plan_sha256")
-            if not isinstance(expected_sha, str) or sha256_file(plan_path) != expected_sha:
-                raise ValueError("Published plan bytes changed: " + str(plan_path))
             plan = json.loads(plan_path.read_bytes())
+            if not isinstance(plan, dict):
+                raise ValueError("Published plan content is not an object: " + str(plan_path))
+            embedded_sha = plan.get("plan_sha256")
+            actual_sha = json_fingerprint({key: value for key, value in plan.items()
+                                           if key != "plan_sha256"})
+            if (not isinstance(expected_sha, str) or len(expected_sha) != 64
+                    or embedded_sha != expected_sha or actual_sha != expected_sha):
+                raise ValueError("Published plan content fingerprint does not match its immutable result: "
+                                 + str(plan_path))
             additions = plan.get("additions") if isinstance(plan, dict) else None
             if not isinstance(additions, list) or len(additions) != group["published"]:
                 raise ValueError("Published count differs from its immutable plan")

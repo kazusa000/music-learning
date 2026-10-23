@@ -41,8 +41,13 @@ def published_result(root: Path, product: str, variants: list[dict]) -> Path:
             "performance_profile": variant.get("performance_profile"),
         })
     plan = product_root / "publication-plan.json"
-    plan_bytes = json.dumps({"schema_version": 1, "additions": additions}, sort_keys=True).encode()
-    plan.write_bytes(plan_bytes)
+    plan_value = {"schema_version": 1, "additions": additions}
+    plan_sha256 = hashlib.sha256(json.dumps(
+        plan_value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+    plan_value["plan_sha256"] = plan_sha256
+    # Real plans are pinned by canonical JSON content, not pretty-printed file bytes.
+    plan.write_text(json.dumps(plan_value, ensure_ascii=False, indent=2), encoding="utf-8")
     result = {
         "status": "completed",
         "published": len(additions),
@@ -51,7 +56,7 @@ def published_result(root: Path, product: str, variants: list[dict]) -> Path:
             "application": "passed",
             "published": len(additions),
             "plan": str(plan),
-            "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(),
+            "plan_sha256": plan_sha256,
         }],
     }
     path = product_root / "result.json"
@@ -107,14 +112,39 @@ def test_publication_plan_hash_and_terminal_status_are_mandatory(tmp_path):
     data = json.loads(result.read_text())
     data["groups"][0]["plan_sha256"] = "0" * 64
     result.write_text(json.dumps(data), encoding="utf-8")
-    with pytest.raises(ValueError, match="plan bytes changed"):
+    with pytest.raises(ValueError, match="content fingerprint"):
         probe.publication_plan_files(intake, tmp_path)
 
-    data["groups"][0]["plan_sha256"] = hashlib.sha256(
-        Path(data["groups"][0]["plan"]).read_bytes()).hexdigest()
+    original_plan = json.loads(Path(data["groups"][0]["plan"]).read_bytes())
+    data["groups"][0]["plan_sha256"] = original_plan["plan_sha256"]
     data["status"] = "running"
     result.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match="terminal and completed"):
+        probe.publication_plan_files(result, tmp_path)
+
+
+def test_publication_plan_uses_canonical_fingerprint_and_rejects_tampering(tmp_path):
+    intake = tmp_path / "data/maintenance/instrument-intake"
+    intake.mkdir(parents=True)
+    result = published_result(intake, "product-a", [{"name": "one"}, {"name": "two"}])
+    plan_path = Path(json.loads(result.read_text())["groups"][0]["plan"])
+    plan = json.loads(plan_path.read_text())
+
+    # Whitespace and key order do not change the publisher's canonical content identity.
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=4), encoding="utf-8")
+    assert probe.publication_plan_files(result, tmp_path) == [plan_path.resolve()]
+
+    # A changed candidate with stale embedded/result fingerprints is rejected.
+    plan["additions"][0]["name"] = "tampered"
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    with pytest.raises(ValueError, match="content fingerprint"):
+        probe.publication_plan_files(result, tmp_path)
+
+    # A forged embedded digest is rejected even when the plan body is unchanged.
+    plan["additions"][0]["name"] = "one"
+    plan["plan_sha256"] = "0" * 64
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    with pytest.raises(ValueError, match="content fingerprint"):
         probe.publication_plan_files(result, tmp_path)
 
 
