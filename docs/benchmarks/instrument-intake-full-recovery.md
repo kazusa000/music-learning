@@ -2,6 +2,8 @@
 
 ## 2026-10-23 full-h续队与实际产品后端更新
 
+后续固定预览候选711af51完整service为738通过/3跳过/0失败（240.95秒，`runtime/test-reports/20261023-102950-18207491`），目前仍staged，默认0b79f96未变。真实旧host同MIDI的factory/full-state A/B已由 `runtime/ample-preview-state-ab-job.local.json` 持久监督，等待H三点idle、无实际插件宿主/同产品配置冲突及正式engine空闲后逐个运行；不能按两份请求准备成功称音频通过。启动时PID9452/shim22936，state在 `product-preview-full-state-ab-01/supervision-01/state.json`，每次须重核身份。Kontakt最终派生索引监督已提交8935bd6，入口见 `docs/benchmarks/kontakt-derived-index-postload.md`，h终态/所有Kontakt退出/队列完整前保持E-only。`CSS 2nd Violins`同源在旧e超时、g实际125.883秒完成；resources_ENG/lib_ENG日志也出现在成功项，不能把这些警告或180秒超时直接认定为坏样本。
+
 `full-g-transition-01` 已捕捉到无活动条目/插件且profile锁持有的安全窗口，仅停止已核验worker50676，wrapper52468自然退出。原g报告/失败不改；stop采集器在进程退出后误用psutil.returncode的异常单独记录，随后补录进程缺席/profile原字节与mtime/无journal/正式表及14pin一致。`full-h` 已从固定cd13f0b启动，plan SHA `fe099852116f8d05e1c385d60d364250ddc1b5de32577c14969dc786a0f1a0b5`、134源码/输入pin，publish/preview均false。11份完成的Lua转换经原始请求/回执/执行及NKM SHA重放后复制到新run（CSS5/Solo6），981份仍需转换；全部992份原生验证队列重新建立，不能把来源复用称作音频通过。locator现指向h，wrapper47740/worker46344只是启动时身份，须持续重核命令及creation_time。
 
 `0b79f96` 不可变产品后端完整service回归732通过/3跳过/0失败（259.16s，`runtime/test-reports/20261023-101908-b5991bdc`），先前cd13的5个旧夹具失败原日志保留；修的是冻结测试的证据根与新AI字段/工具合同，产品逻辑没有为了测试放宽。正式引擎无会话/播放、jobs及对话无活动后，经stop.request平滑退出并部署该后端，保留最新3b9d前端/f056原生/aa81桌面及三个Ample精确插件路径。`product-preview-recovery-01/activation-*.json` 与保护报告记录正式十项摘要（九表+heads）前后相同、E内12pin相同；H两pin未在繁忙窗口重读，上述g→h窗口的14项独立完整核对保留。
