@@ -1,5 +1,7 @@
 # 项目开发约定
 
+Kontakt增量入库（2026-10-23）：用户新增授权原批验证同时逐步入库通过项，覆盖旧“暂不发布”，失败分析/修复/重试与试听预热仍暂停。runtime/kontakt-publication-job.local.json为唯一入库入口，当前incremental-publication-02、wrapper48160/ctime1792782385.569955、worker4100/ctime1792782385.5862923；后续必须实核身份。原验证42160/13212和固定plan/host不改。共享checkpoint publisher复用本机可信validator完整summary，绑定candidate/receipt/validator/source哈希和两次实际state/参数/身份，只读两份state，不重读WAV、不启动宿主或重新验证音频；32项一批CAS追加catalog和Admissions完整状态，既有条目跳过，失败/running/pending不发布。采用当前部署11f0产品模块投影及实际load_admitted/API查询。01首批32已入库，产品搜索发现usage列表不兼容；原失败证据保留，统一usage列表转文本且发布前实跑产品filtered，精确修正自有32条仅usage，其余字段及原库条目不变，实际API型号/变体恢复。02继续其他项，19:06:53已192入库、deferred0，原验证536通过/15失败/441待测（瞬时快照）。11短回归/Ruff过。原始queue和正式工程不写，所有新资源仅用户H库；两任务轻量监督至原队列终态且通过项追加完成后汇报，失败留待安排。
+
 Kontakt续跑修复（2026-10-23）：用户明确要求消除重复核验，已在starting/current=null、无子进程且三队列无running的边界核对身份后停止旧49316/28632。共享runner跳过passed/failed，不读取终态项音频/状态/转换证据；pending原验证及独立发布检查不变。4项短回归通过。独立pending-only-resume-01/run_kontakt_full_intake.py只对原full-h脚本应用同一终态跳过补丁，原固定代码/plan/原结果不改；启动副本实际dispatch检查518通过+15失败跳过、459待测进入。新启动PID42160/ctime1792781863.7604077，后续以runtime/kontakt-full-job.local.json实核为准。原三validation SHA停止/启动前一致；目录含旧入口/进度、队列快照及runner-change.json。仅继续原待测项，失败不分析不重试，Ample/MODO仍暂停。
 
 用户最新收窄范围（2026-10-23）：先让 Kontakt 原 full-h 剩余队列全部跑完，失败项暂时不管。本条覆盖旧失败分析/修复/重试、源键位查询、发布及试听的自动推进指示。健康批次保持运行，仅轻量查进度，不额外全量重验已有结果，不重启触发重复恢复检查。失败保留并继续后续项；全部终态后一次汇报并暂停跟进等待安排。Ample/MODO继续暂停，正式工程及原报告不动。
