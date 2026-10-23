@@ -271,6 +271,26 @@ def test_resolve_plugin_descriptor_scans_exact_path_and_rejects_ambiguous_result
         validation.resolve_plugin_descriptor(Host([descriptor, descriptor]), path)
 
 
+def test_resolved_descriptor_can_be_revalidated_by_plugin_spec(tmp_path):
+    path = tmp_path / "Kontakt 8.vst3"
+    path.write_bytes(b"fixture plugin placeholder")
+
+    class Host:
+        def call(self, request, *, timeout):
+            assert request == {
+                "schema_version": 1,
+                "action": "scan",
+                "plugin_path": str(path.resolve()),
+            }
+            return {"plugins": [_descriptor(path)]}
+
+    resolved = validation.resolve_plugin_descriptor(Host(), path)
+    assert resolved["is_instrument"] is True
+
+    spec = validation.plugin_spec(path, "fixture", descriptor=resolved)
+    assert spec["descriptor"] == resolved
+
+
 def test_capture_source_rejects_hidden_preset_or_state_override_before_startup(tmp_path):
     plugin = _native_plugin()
     output = tmp_path / "capture"

@@ -78,6 +78,9 @@ def _validate_descriptor(plugin_path: Path, descriptor: dict) -> dict:
         "manufacturer": descriptor["manufacturer"],
         "format": descriptor["format"],
         "version": descriptor["version"],
+        # Keep every field consumed by the strict validator when callers pass
+        # this normalized descriptor back through plugin_spec().
+        "is_instrument": True,
         "unique_id": descriptor["unique_id"],
     }
 
