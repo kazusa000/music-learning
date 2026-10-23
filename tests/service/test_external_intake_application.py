@@ -7,6 +7,7 @@ import hashlib
 import json
 import struct
 import wave
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -153,7 +154,7 @@ def _profile(kind):
 
 
 def _candidate(kind, library_root):
-    is_ample = kind == "riff_toggle"
+    is_ample = kind in {"riff_toggle", "ample_strummer_sequence"}
     product = PRODUCTS["AGSC"] if is_ample else None
     library_id = product["library_id"] if is_ample else "kontakt-fixture"
     library_name = product["library_name"] if is_ample else "Kontakt Factory Fixture"
@@ -190,7 +191,7 @@ def _candidate(kind, library_root):
     manifest.write_bytes(manifest_raw)
     binary = library_root / "Fixture.vst3"
     binary.write_bytes(PLUGIN_BYTES)
-    profile = _profile(kind)
+    profile = _profile(kind) if kind != "ample_strummer_sequence" else None
     instrument_id = "acoustic-guitar" if is_ample else "acoustic-piano"
     generic_candidate = {
         "id": library_id + ":factory-preset",
@@ -236,17 +237,51 @@ def _candidate(kind, library_root):
     if not is_ample:
         return generic_candidate, sample, lambda name: f"factory={name}".encode("ascii"), _identity
 
-    factory_name = "Autumn Leaves(Blues)"
-    factory_xml = (
-        f'<AEG_STATE Name="{factory_name}" Category="Guitar">'
-        '<DBName Value="AGSCNk"/><Parameter Name="Volume" Value="0.8"/>'
-        '</AEG_STATE>'
-    ).encode("utf-8")
-    factory_path = bank / "source" / "Autumn Leaves(Blues).xml"
+    factory_name = "Autumn Leaves(Blues)" if kind == "riff_toggle" else "Em9(Strum)"
+    if kind == "riff_toggle":
+        factory_xml = (
+            f'<AEG_STATE Name="{factory_name}" Category="Guitar">'
+            '<DBName Value="AGSCNk"/><Parameter Name="Volume" Value="0.8"/>'
+            '</AEG_STATE>'
+        ).encode("utf-8")
+    else:
+        root = ET.Element("AEG_STATE", {"Name": factory_name, "Category": "Guitar"})
+        for name, value in {
+            "S-Strum Toggle": 1,
+            "S-Chord Mode": 1,
+            "S-SEQ Sync Tog": 1,
+            "S-SEQ Play Tog": 0,
+            "S-Chord Index": 4,
+            "S-Pattern Index": 2,
+        }.items():
+            ET.SubElement(root, "Parameter", {"Name": name, "Value": str(value)})
+        chords = ET.SubElement(root, "Chords")
+        for index in range(24):
+            ET.SubElement(chords, "Chord", {
+                "ID": str(index + 1), "Root": "C", "Type": "Maj", "Pos": str(index + 1),
+            })
+        for index in range(8):
+            pattern = ET.SubElement(root, "Pattern", {
+                "ID": str(index + 1), "Name": f"Factory{index + 1}",
+                "BPM": "120", "Time-Signature": "4/4", "Quantize": "1/16",
+            })
+            ET.SubElement(pattern, "Note", {
+                "Note": "72", "Velocity": "96", "Begin": "1", "End": "16",
+            })
+        ET.SubElement(root, "DBName", {"Value": "AGSCNk"})
+        factory_xml = ET.tostring(root, encoding="utf-8")
+    factory_path = bank / "source" / (factory_name + ".xml")
     factory_path.parent.mkdir(parents=True)
     factory_path.write_bytes(factory_xml)
     factory_sha = sha256_bytes(factory_xml)
-    profile["factory_riff_sha256"] = factory_sha
+    if kind == "riff_toggle":
+        profile["factory_riff_sha256"] = factory_sha
+    else:
+        from music_learning.ample_riffer_mapping import profile_from_factory
+
+        profile, _ = profile_from_factory(
+            factory_path, product="AGSC", expected_sha256=factory_sha
+        )
     ample_plugin = {
         "name": product["library_name"],
         "version": product["version"],
@@ -298,13 +333,30 @@ def _intake_fixture(tmp_path, settings, kind):
     assert normalized["performance_profile"] == candidate["performance_profile"]
     assert set(normalized["resources"]) == {candidate["entrypoint"], "manifests/library.json"}
     assert sample.relative_to(library_root / candidate["bank_root"]).as_posix() not in normalized["resources"]
+    if kind == "ample_strummer_sequence":
+        from music_learning.instrument_preview_audio import phrase_spec
+
+        phrase = phrase_spec(normalized)
+        profile = normalized["performance_profile"]
+        chord_note_index = 0
+        if profile["source_chord_mode"] == "detect":
+            assert phrase["notes"][0]["note"] == profile["chord_mode_switch_note"]
+            assert phrase["notes"][0]["velocity"] == profile["chord_mode_switch_velocity"]
+            chord_note_index = 1
+        assert phrase["notes"][chord_note_index]["note"] == profile["chord_trigger_note"]
+        assert phrase["notes"][chord_note_index + 1]["note"] == profile["sequence_trigger_note"]
+        assert phrase["tempo"] == [{"sample": 0, "bpm": profile["tempo_bpm"]}]
+        assert phrase["meter"] == [{
+            "sample": 0, "numerator": profile["numerator"], "denominator": profile["denominator"],
+        }]
+        assert profile["pattern_sha256"]
 
     evidence_root = tmp_path / ("evidence-" + kind)
     evidence_root.mkdir()
     name = candidate["expected_identity"].get("factory_name", candidate["name"])
-    if kind == "riff_toggle":
-        name = "Autumn Leaves(Blues)"
-    verifier = (identity_verifier() if kind == "riff_toggle" else IdentityVerifier(
+    if kind in {"riff_toggle", "ample_strummer_sequence"}:
+        name = candidate["name"]
+    verifier = (identity_verifier() if kind in {"riff_toggle", "ample_strummer_sequence"} else IdentityVerifier(
         name="fixture-state-identity", version="1", code_sha256=sha256_file(__file__),
         code_path=__file__, verify=_identity,
     ))
@@ -357,7 +409,7 @@ def _intake_fixture(tmp_path, settings, kind):
     return candidate, published, evidence_root, sample
 
 
-@pytest.mark.parametrize("kind", ["riff_toggle", "midi_context"])
+@pytest.mark.parametrize("kind", ["riff_toggle", "ample_strummer_sequence", "midi_context"])
 def test_external_publication_import_reuses_admitted_state_and_never_falls_back(
     tmp_path, settings, monkeypatch, kind
 ):
