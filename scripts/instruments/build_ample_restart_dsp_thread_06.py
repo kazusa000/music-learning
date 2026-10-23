@@ -224,8 +224,10 @@ def prepare_source(source_root: Path) -> dict[str, dict[str, str]]:
     shutil.copy2(BASE_SOURCE / HOST_REL, overlay_audio / "Host.h")
     shutil.copy2(BASE_SOURCE / TRACE_REL, overlay_probe / TRACE_REL.name)
     shutil.copy2(BASE_SOURCE / PUMP_REL, overlay_probe / PUMP_REL.name)
+    dual_reader = overlay_probe / "ample-component-layout-rea-02/AmpleComponentLayoutReader.h"
+    dual_reader.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(BASE_SOURCE / "native/instrument-probe/ample-component-layout-rea-02/AmpleComponentLayoutReader.h",
-                 overlay_probe / "ample-component-layout-rea-02/AmpleComponentLayoutReader.h")
+                 dual_reader)
     test_path = source_root / "native/tests/DiagnosticDspDispatcher.cpp"
     test_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT / "native/tests/DiagnosticDspDispatcher.cpp", test_path)
@@ -401,11 +403,17 @@ def build_prepared_plan(*, plan_03: dict, source_manifest_path: Path,
 
 
 def main() -> None:
+    global EVIDENCE, OUT, OUTPUT_ROOT
     parser = argparse.ArgumentParser()
     parser.add_argument("--jobs", type=int, default=2)
+    parser.add_argument("--attempt", choices=("initial", "rebuild-01"), default="initial")
     args = parser.parse_args()
     if args.jobs < 1 or args.jobs > 4:
         raise SystemExit("--jobs must be between 1 and 4")
+    if args.attempt == "rebuild-01":
+        EVIDENCE = INTAKE / "restart-callback-dsp-thread-06-rebuild-01"
+        OUT = ROOT / "runtime/build/ample-restart-callback-dsp-thread-06-rebuild-01"
+        OUTPUT_ROOT = ROOT / "data/maintenance/instrument-intake/q/pc06-rebuild-01"
     if OUT.exists() or EVIDENCE.exists():
         raise SystemExit(f"Refusing to overwrite an existing diagnostic attempt: {OUT} / {EVIDENCE}")
 
