@@ -273,11 +273,25 @@ def test_snapshot_ancestry_ignores_incomplete_unrelated_system_rows():
                "command_line": "python supervise_ample_failed_retry.py --run-dir E:\\retry"}
     system_idle = {"pid": 0, "ppid": 0, "created_ticks": 0,
                    "name": "System Idle Process", "command_line": ""}
-    protected_process = {"pid": 4, "ppid": 0, "created_ticks": 0,
-                         "name": "System", "command_line": ""}
+    protected_processes = [
+        {"pid": pid, "ppid": 4, "created_ticks": 0,
+         "name": "Protected process", "command_line": ""}
+        for pid in range(30000, 30195)
+    ]
+    protected_processes.append({"pid": 4, "ppid": 0, "created_ticks": 0,
+                                "name": "System", "command_line": ""})
+    unrelated_processes = [
+        {"pid": pid, "ppid": 4, "created_ticks": 50,
+         "name": "service.exe", "command_line": f"service.exe --id {pid}"}
+        for pid in range(31000, 31390)
+    ]
+    # Match the actual CIM inventory shape: many unrelated protected rows
+    # omit birth time and command line, alongside ordinary valid rows.
+    inventory = [system_idle, target, current, *protected_processes, *unrelated_processes]
+    assert len(inventory) == 589
 
     assert ample_retry_planning.process_row_matches_ancestor_snapshot(
-        target, 200, [system_idle, target, protected_process, current]
+        target, 200, inventory
     )
 
     # An incomplete row for a PID on the actual path makes that identity
@@ -286,6 +300,13 @@ def test_snapshot_ancestry_ignores_incomplete_unrelated_system_rows():
                          "name": "python.exe", "command_line": ""}
     assert not ample_retry_planning.process_row_matches_ancestor_snapshot(
         target, 200, [target, incomplete_target, current]
+    )
+
+    # A duplicate PID on the actual ancestry path remains ambiguous and fails
+    # closed; the broad inventory exception applies only to unrelated rows.
+    assert not ample_retry_planning.process_row_matches_ancestor_snapshot(
+        target, 200, [target, current,
+                      {**current, "command_line": "python.exe another-run"}]
     )
 
 

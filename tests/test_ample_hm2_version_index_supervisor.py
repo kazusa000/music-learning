@@ -151,9 +151,21 @@ def test_active_product_gate_ignores_only_verified_invocation_ancestors():
     }
     incomplete_unrelated_rows = [
         {"pid": 0, "ppid": 0, "created_ticks": 0, "name": "Idle",
-         "executable_path": "", "command_line": ""},
-        {"pid": 195, "ppid": 4, "created_ticks": 0, "name": "System",
-         "executable_path": "", "command_line": ""},
+         "executable_path": "", "command_line": ""}
+    ] + [
+        {"pid": pid, "ppid": 4, "created_ticks": 0,
+         "name": "Protected process", "executable_path": "", "command_line": ""}
+        for pid in range(30000, 30195)
+    ]
+    incomplete_unrelated_rows.append(
+        {"pid": 4, "ppid": 0, "created_ticks": 0, "name": "System",
+         "executable_path": "", "command_line": ""}
+    )
+    unrelated_inventory_rows = [
+        {"pid": pid, "ppid": 4, "created_ticks": 50, "name": "service.exe",
+         "executable_path": "C:/Windows/service.exe",
+         "command_line": f"service.exe --id {pid}"}
+        for pid in range(31000, 31388)
     ]
     unrelated_same_name = {
         "pid": 4100, "ppid": 1000, "created_ticks": 4000,
@@ -166,7 +178,9 @@ def test_active_product_gate_ignores_only_verified_invocation_ancestors():
         "executable_path": "E:/intake/instrument_probe_host.exe",
         "command_line": f'instrument_probe_host.exe --plugin "{plugin_path}"',
     }
-    rows = [current, launcher, *incomplete_unrelated_rows, unrelated_same_name, actual_host]
+    rows = [current, launcher, *incomplete_unrelated_rows, *unrelated_inventory_rows,
+            unrelated_same_name, actual_host]
+    assert len(rows) == 589
 
     assert supervisor._active_product_conflicts(
         rows, product="AGSC", plugin_path=plugin_path,
