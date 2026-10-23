@@ -8,7 +8,9 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import json
+import ntpath
 from pathlib import Path
+import re
 from types import SimpleNamespace
 
 from .instrument_intake_publication import (
@@ -24,7 +26,8 @@ from .vst3_state import state_components, vst3_preset
 
 CORE_SHA256 = "6e6abad7518574e4f4e5e20779860f7c789041df63b75e0f03c29a18d701aeab"
 WRAPPER_SHA256 = "75cdaa3b4d187e0e2f21b9057ebd5759400a27988df11301d703922018babe4f"
-IDENTIFIER = "VST3-Kontakt 8-9f68cff3-f852a294"
+VST3_UNIQUE_ID = "f852a294"
+_IDENTIFIER_PATTERN = re.compile(r"^VST3-Kontakt 8-([0-9a-f]{8})-f852a294$")
 CLASS_ID = "5653544E694B386B6F6E74616B742038"
 VERSION = "8.10.1"
 # Observed in every pinned 8.10.1 empty/single/multi native control. This
@@ -39,17 +42,79 @@ def verifier():
     return make_kontakt_native_verifier(core_sha256=CORE_SHA256, version=VERSION)
 
 
-def plugin_spec(plugin_path: Path, preset_id: str) -> dict:
-    return dict(id=preset_id, path=str(Path(plugin_path).resolve(strict=True)),
-                identifier=IDENTIFIER, binary_sha256=WRAPPER_SHA256, version=VERSION)
+def _canonical_plugin_path(value) -> str:
+    return ntpath.normcase(ntpath.normpath(str(value)))
 
 
-def _exact_identity(plugin, expected):
+def _validate_descriptor(plugin_path: Path, descriptor: dict) -> dict:
+    """Accept only the pinned Kontakt class scanned from the requested module path.
+
+    JUCE's descriptor identifier contains a path-derived component, so it must
+    come from a scan of the exact runtime module rather than a repository-wide
+    constant. The binary digest and native class are still checked after load.
+    """
+    path = Path(plugin_path).resolve(strict=True)
+    if not isinstance(descriptor, dict):
+        raise ValueError("Kontakt plugin spec requires the result of a VST3 scan")
+    if (_canonical_plugin_path(descriptor.get("path", "")) != _canonical_plugin_path(path)
+            or descriptor.get("format") != "VST3"
+            or descriptor.get("name") != "Kontakt 8"
+            or descriptor.get("manufacturer") != "Native Instruments"
+            or descriptor.get("version") != VERSION
+            or descriptor.get("is_instrument") is not True
+            or not isinstance(descriptor.get("unique_id"), int)
+            or (descriptor["unique_id"] & 0xFFFFFFFF) != int(VST3_UNIQUE_ID, 16)):
+        raise ValueError("VST3 scan did not identify the pinned Kontakt 8 instrument at this path")
+    identifier = descriptor.get("identifier")
+    if not isinstance(identifier, str) or not _IDENTIFIER_PATTERN.fullmatch(identifier):
+        raise ValueError("Kontakt VST3 scan returned an unexpected descriptor identifier")
+    return {
+        "path": str(path),
+        "identifier": identifier,
+        "name": descriptor["name"],
+        "manufacturer": descriptor["manufacturer"],
+        "format": descriptor["format"],
+        "version": descriptor["version"],
+        "unique_id": descriptor["unique_id"],
+    }
+
+
+def resolve_plugin_descriptor(host, plugin_path: Path, *, timeout=45) -> dict:
+    """Scan one exact pinned runtime path and return its validated descriptor."""
+    path = Path(plugin_path).resolve(strict=True)
+    result = host.call({"schema_version": 1, "action": "scan", "plugin_path": str(path)}, timeout=timeout)
+    plugins = result.get("plugins") if isinstance(result, dict) else None
+    if not isinstance(plugins, list):
+        raise ValueError("Kontakt VST3 scan did not return a descriptor list")
+    matches = []
+    for descriptor in plugins:
+        try:
+            matches.append(_validate_descriptor(path, descriptor))
+        except (TypeError, ValueError):
+            continue
+    if len(matches) != 1:
+        raise ValueError("Exact runtime path must resolve to one pinned Kontakt 8 descriptor")
+    return matches[0]
+
+
+def plugin_spec(plugin_path: Path, preset_id: str, *, descriptor: dict) -> dict:
+    descriptor = _validate_descriptor(plugin_path, descriptor)
+    return dict(id=preset_id, path=descriptor["path"], identifier=descriptor["identifier"],
+                binary_sha256=WRAPPER_SHA256, version=VERSION,
+                descriptor=descriptor)
+
+
+def _exact_identity(plugin, expected, *, descriptor_identifier, expected_plugin_path):
     _full_parameters(plugin)
     actual = verifier().verify(dict(expected_identity=expected), plugin)
     if actual != expected:
         raise ValueError("Kontakt native instrument identity differs from the official source getters")
-    if (plugin.get("identifier") != IDENTIFIER or plugin.get("binary_sha256") != WRAPPER_SHA256
+    if (not isinstance(descriptor_identifier, str)
+            or not _IDENTIFIER_PATTERN.fullmatch(descriptor_identifier)
+            or not isinstance(expected_plugin_path, str) or not expected_plugin_path
+            or plugin.get("identifier") != descriptor_identifier
+            or _canonical_plugin_path(plugin.get("path", "")) != _canonical_plugin_path(expected_plugin_path)
+            or plugin.get("binary_sha256") != WRAPPER_SHA256
             or plugin.get("vst3_class_id") != CLASS_ID or plugin.get("version") != VERSION):
         raise ValueError("Kontakt source loaded a different native class/version")
 
@@ -71,7 +136,11 @@ def capture_source(host, spec, output: Path, *, startup, expected_identity, time
     if not diagnostics.resolve().is_relative_to(output.resolve()):
         raise ValueError("Capture diagnostics escaped their evidence root")
     before = set(diagnostics.iterdir()) if diagnostics.exists() else set()
-    request = dict(schema_version=1, action="inspect", plugin=spec)
+    descriptor = spec.get("descriptor")
+    if not isinstance(descriptor, dict) or spec.get("identifier") != descriptor.get("identifier"):
+        raise ValueError("Source capture requires a path-matched VST3 descriptor scan")
+    request_plugin = {key: spec[key] for key in ("id", "path", "identifier", "binary_sha256", "version")}
+    request = dict(schema_version=1, action="inspect", plugin=request_plugin)
     with startup():
         result = host.call(request, timeout=timeout_seconds)
     calls = set(diagnostics.iterdir()) - before
@@ -84,11 +153,13 @@ def capture_source(host, spec, output: Path, *, startup, expected_identity, time
     plugin = result["plugin"]
     _verify_state_blob(plugin)
     _param_map(plugin)
-    _exact_identity(plugin, expected_identity)
+    _exact_identity(plugin, expected_identity, descriptor_identifier=spec["identifier"],
+                    expected_plugin_path=spec["path"])
     atomic_write_json(output / "state.json", plugin)
     refs = {key: artifact_ref(call / (key + ".json"), output) for key in ("request", "response", "execution")}
     refs["state"] = artifact_ref(output / "state.json", output)
-    atomic_write_json(output / "capture.json", dict(schema_version=1, expected_identity=expected_identity, refs=refs))
+    atomic_write_json(output / "capture.json", dict(schema_version=1, expected_identity=expected_identity,
+                                                     plugin_descriptor=descriptor, refs=refs))
     return plugin
 
 
@@ -105,7 +176,9 @@ def make_candidate(metadata, source_item, conversion, source_state, *, bank_root
                    audition_controllers=()):
     """Freeze the catalog candidate BEFORE either fresh-state audio validation."""
     identity = conversion["observed_identity"]
-    _exact_identity(source_state, identity)
+    descriptor_identifier = source_state.get("identifier")
+    _exact_identity(source_state, identity, descriptor_identifier=descriptor_identifier,
+                    expected_plugin_path=source_state.get("path", ""))
     context = conversion.get("playback_context")
     if not isinstance(context, dict) or not context.get("instruments"):
         raise ValueError("Kontakt admission requires source MIDI playback getters")
@@ -128,7 +201,7 @@ def make_candidate(metadata, source_item, conversion, source_state, *, bank_root
                      installed_library=dict(installed_library), source_manifest_sha256=source_manifest_sha256,
                      source_factory_sha256=source_sha, expected_identity=identity,
                      expected_parameters=_param_map(source_state), plugin_path=source_state["path"],
-                     plugin_sha256=WRAPPER_SHA256, identifier=IDENTIFIER, vst3_class_id=CLASS_ID,
+                     plugin_sha256=WRAPPER_SHA256, identifier=descriptor_identifier, vst3_class_id=CLASS_ID,
                      performance_profile=performance)
     return _candidate_for_catalog(candidate)
 
@@ -136,7 +209,9 @@ def make_candidate(metadata, source_item, conversion, source_state, *, bank_root
 def validate_captured(host, candidate, source_state, output: Path, *, empty_startup,
                       validator_pin: ValidatorPin, resource_root: Path, timeout_seconds=180):
     """Both audio processes start empty, then restore the frozen source bytes."""
-    _exact_identity(source_state, candidate["expected_identity"])
+    descriptor_identifier = candidate.get("identifier")
+    _exact_identity(source_state, candidate["expected_identity"], descriptor_identifier=descriptor_identifier,
+                    expected_plugin_path=candidate["plugin_path"])
     if _param_map(source_state) != candidate["expected_parameters"]:
         raise ValueError("Frozen candidate differs from source parameters")
     from .installed_libraries import verify_installed_library
@@ -156,7 +231,8 @@ def validate_captured(host, candidate, source_state, output: Path, *, empty_star
     for phase in ("first", "reopen"):
         response = json.loads((output / index[phase]["response"]["path"]).read_bytes())["result"]
         after = response["tracks"][0]["plugin_readback_after"][0]
-        _exact_identity(after, candidate["expected_identity"])
+        _exact_identity(after, candidate["expected_identity"], descriptor_identifier=descriptor_identifier,
+                        expected_plugin_path=candidate["plugin_path"])
         if _param_map(after) != candidate["expected_parameters"]:
             raise ValueError("Kontakt source parameters changed during audition processing")
     parser = verifier()
@@ -164,7 +240,7 @@ def validate_captured(host, candidate, source_state, output: Path, *, empty_star
                    resource_manifest_sha256=resource_manifest_fingerprint(candidate),
                    validator=validator_pin.receipt_fields(),
                    identity_verifier=dict(name=parser.name, version=parser.version, code_sha256=parser.code_sha256),
-                   plugin=dict(path=candidate["plugin_path"], identifier=IDENTIFIER,
+                   plugin=dict(path=candidate["plugin_path"], identifier=descriptor_identifier,
                                binary_sha256=WRAPPER_SHA256, vst3_class_id=CLASS_ID),
                    first=index["first"], reopen=index["reopen"],
                    startup=dict(first="empty", reopen="empty"), source_state_sha256=source_state["state_sha256"])

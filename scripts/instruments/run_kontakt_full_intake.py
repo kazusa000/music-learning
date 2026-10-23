@@ -134,7 +134,8 @@ def execute(plan_path, expected_plan_sha256):
     from music_learning.kontakt_default_multi import scoped_default_multi
     from music_learning.kontakt_catalog_metadata import kontakt_preset_metadata
     from music_learning.kontakt_validation import (
-        LIBRARIES, plugin_spec, capture_source, preset_bytes, make_candidate, validate_captured, verifier,
+        LIBRARIES, resolve_plugin_descriptor, plugin_spec, capture_source, preset_bytes,
+        make_candidate, validate_captured, verifier,
     )
     from music_learning.instrument_intake_previews import enqueue_published_previews
     from music_learning.installed_libraries import verify_installed_library
@@ -217,6 +218,7 @@ def execute(plan_path, expected_plan_sha256):
                 raise ValueError("Kontakt prepared runtime/plugin escaped its designated installation")
             profile_dir = runtime_root / "UserData/Kontakt 8/default"
             host_path = Path(plan["probe"])
+            plugin_descriptor = None
             validator = ValidatorPin(name="kontakt-full-validator", version="1", code_path=Path(plan["pins_path"]),
                                      host_path=host_path)
 
@@ -278,6 +280,11 @@ def execute(plan_path, expected_plan_sha256):
                     if time.monotonic() >= deadline:
                         raise TimeoutError("Kontakt full job reached its bounded duration")
                     budget()
+                    if plugin_descriptor is None:
+                        plugin_descriptor = resolve_plugin_descriptor(
+                            NativeHost(host_path, run / "plugin-descriptor-scan"),
+                            Path(runtime["plugin_path"]),
+                        )
                     check_pins()
                     item_root = lib_run / "i" / item["id"][-12:]
                     item_root.mkdir(parents=True, exist_ok=False)
@@ -298,7 +305,8 @@ def execute(plan_path, expected_plan_sha256):
                         multi = lib_run / result["output"]["path"]
                         capture_root = item_root / "c"
                         source_state = capture_source(NativeHost(host_path, capture_root / "calls"),
-                                                      plugin_spec(Path(runtime["plugin_path"]), item["id"]), capture_root,
+                                                      plugin_spec(Path(runtime["plugin_path"]), item["id"],
+                                                                  descriptor=plugin_descriptor), capture_root,
                                                       startup=lambda: startup(multi), expected_identity=result["observed_identity"])
                         from music_learning.instrument_intake_publication import _resolve_under_bank
 

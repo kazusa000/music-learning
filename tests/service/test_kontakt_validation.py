@@ -30,6 +30,7 @@ from scripts.instruments.run_kontakt_full_intake import (
 
 _MEMORY_ALPHABET = ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
 _SOURCE_SHA = hashlib.sha256(b"fixture factory source").hexdigest()
+_FIXTURE_IDENTIFIER = "VST3-Kontakt 8-01234567-f852a294"
 _PARAMETER_IDS = [str(index) for index in range(2049)] + [
     str(1295056896 + 256 * controller + channel)
     for controller in range(131) for channel in range(16)
@@ -52,7 +53,8 @@ def _encode_memory_block(value: bytes) -> str:
     return f"{len(value)}.{''.join(encoded)}"
 
 
-def _native_plugin(*, count=4145, name="Factory Instrument", parameter_ids=None):
+def _native_plugin(*, count=4145, name="Factory Instrument", parameter_ids=None,
+                   path="K:/fixture/Kontakt.vst3"):
     component = b"fixture component bytes"
     controller = b"fixture controller bytes"
     xml = (
@@ -62,8 +64,8 @@ def _native_plugin(*, count=4145, name="Factory Instrument", parameter_ids=None)
     ).encode("utf-8")
     raw_state = b"VC2!" + struct.pack("<I", len(xml)) + xml
     return {
-        "path": "K:/fixture/Kontakt.vst3",
-        "identifier": validation.IDENTIFIER,
+        "path": path,
+        "identifier": _FIXTURE_IDENTIFIER,
         "binary_sha256": validation.WRAPPER_SHA256,
         "vst3_class_id": validation.CLASS_ID,
         "version": validation.VERSION,
@@ -100,6 +102,25 @@ def _replace_serialized_state(plugin, *, component: bytes, controller: bytes = b
 
 def _expected_identity(plugin):
     return validation.verifier().verify({"expected_identity": {"source_sha256": _SOURCE_SHA}}, plugin)
+
+
+def _descriptor(target_path, **changes):
+    descriptor = {
+        "path": str(Path(target_path).resolve()),
+        "identifier": _FIXTURE_IDENTIFIER,
+        "format": "VST3",
+        "name": "Kontakt 8",
+        "manufacturer": "Native Instruments",
+        "version": validation.VERSION,
+        "is_instrument": True,
+        "unique_id": -128802156,
+    }
+    descriptor.update(changes)
+    return descriptor
+
+
+def _plugin_spec(path, preset_id="fixture", **descriptor_changes):
+    return validation.plugin_spec(path, preset_id, descriptor=_descriptor(path, **descriptor_changes))
 
 
 def _profile():
@@ -153,10 +174,10 @@ def _candidate(plugin, tmp_path):
 
 
 def test_capture_source_requires_one_owned_persisted_execution_and_full_native_state(tmp_path):
-    plugin = _native_plugin()
-    output = tmp_path / "capture"
     source_file = tmp_path / "Kontakt.vst3"
     source_file.write_bytes(b"fixture plugin placeholder; never executed")
+    plugin = _native_plugin(path=str(source_file.resolve()))
+    output = tmp_path / "capture"
     entered = []
 
     @contextmanager
@@ -182,7 +203,7 @@ def test_capture_source_requires_one_owned_persisted_execution_and_full_native_s
             return {"plugin": plugin}
 
     captured = validation.capture_source(
-        Host(), validation.plugin_spec(source_file, "fixture"), output,
+        Host(), _plugin_spec(source_file), output,
         startup=startup, expected_identity=_expected_identity(plugin),
     )
 
@@ -192,6 +213,62 @@ def test_capture_source_requires_one_owned_persisted_execution_and_full_native_s
     index = json.loads((output / "capture.json").read_bytes())
     assert set(index["refs"]) == {"request", "response", "execution", "state"}
     assert index["refs"]["state"]["path"] == "state.json"
+    assert index["plugin_descriptor"]["identifier"] == _FIXTURE_IDENTIFIER
+
+
+def test_plugin_spec_uses_path_matched_descriptor_identifier_and_keeps_runtime_pins(tmp_path):
+    path = tmp_path / "Kontakt 8.vst3"
+    path.write_bytes(b"fixture plugin placeholder")
+    identifier = "VST3-Kontakt 8-deadbeef-f852a294"
+
+    spec = _plugin_spec(path, identifier=identifier)
+
+    assert spec["path"] == str(path.resolve())
+    assert spec["identifier"] == identifier
+    assert spec["binary_sha256"] == validation.WRAPPER_SHA256
+    assert spec["version"] == validation.VERSION
+    assert spec["descriptor"]["unique_id"] == -128802156
+
+
+@pytest.mark.parametrize("changes", [
+    {"path": "K:/other/Kontakt 8.vst3", "identifier": "VST3-Kontakt 8-9f68cff3-f852a294"},
+    {"format": "VST2"},
+    {"name": "Kontakt 7"},
+    {"manufacturer": "Other"},
+    {"version": "8.10.0"},
+    {"is_instrument": False},
+    {"unique_id": 123},
+    {"identifier": "VST3-Kontakt 8-deadbeef-00000000"},
+])
+def test_plugin_spec_rejects_stale_or_unmatched_vst3_descriptors(tmp_path, changes):
+    path = tmp_path / "Kontakt 8.vst3"
+    path.write_bytes(b"fixture plugin placeholder")
+    with pytest.raises(ValueError, match="pinned Kontakt|descriptor identifier"):
+        validation.plugin_spec(path, "fixture", descriptor=_descriptor(path, **changes))
+
+
+def test_resolve_plugin_descriptor_scans_exact_path_and_rejects_ambiguous_result(tmp_path):
+    path = tmp_path / "Kontakt 8.vst3"
+    path.write_bytes(b"fixture plugin placeholder")
+
+    class Host:
+        def __init__(self, rows):
+            self.rows = rows
+            self.requests = []
+
+        def call(self, request, *, timeout):
+            self.requests.append((request, timeout))
+            return {"plugins": self.rows}
+
+    identifier = "VST3-Kontakt 8-deadbeef-f852a294"
+    descriptor = _descriptor(path, identifier=identifier)
+    host = Host([descriptor])
+    resolved = validation.resolve_plugin_descriptor(host, path, timeout=37)
+
+    assert resolved["identifier"] == identifier
+    assert host.requests == [({"schema_version": 1, "action": "scan", "plugin_path": str(path.resolve())}, 37)]
+    with pytest.raises(ValueError, match="one pinned Kontakt 8 descriptor"):
+        validation.resolve_plugin_descriptor(Host([descriptor, descriptor]), path)
 
 
 def test_capture_source_rejects_hidden_preset_or_state_override_before_startup(tmp_path):
@@ -204,7 +281,7 @@ def test_capture_source_rejects_hidden_preset_or_state_override_before_startup(t
     with pytest.raises(ValueError, match="directly"):
         validation.capture_source(
             type("Host", (), {"diagnostics": output / "calls", "call": lambda *_args, **_kwargs: called.append(1)})(),
-            {**validation.plugin_spec(source, "fixture"), "preset_path": "elsewhere.vstpreset"},
+            {**_plugin_spec(source), "preset_path": "elsewhere.vstpreset"},
             output, startup=lambda: called.append(2), expected_identity=_expected_identity(plugin),
         )
     assert called == []
@@ -346,6 +423,29 @@ def test_validate_captured_rejects_native_identity_change_after_midi_in_either_p
         tmp_path, monkeypatch, first_plugin=first, reopen_plugin=reopen,
     )
     with pytest.raises(ValueError, match="native instrument identity"):
+        validation.validate_captured(
+            object(), candidate, source, output, empty_startup=empty_startup, validator_pin=pin,
+            resource_root=tmp_path,
+        )
+    assert not (output / "receipt.json").exists()
+
+
+@pytest.mark.parametrize("phase", ["first", "reopen"])
+@pytest.mark.parametrize("mutation", ["descriptor_identifier", "plugin_path"])
+def test_validate_captured_rejects_descriptor_or_module_path_change_after_midi(
+    tmp_path, monkeypatch, phase, mutation,
+):
+    changed = _native_plugin()
+    if mutation == "descriptor_identifier":
+        changed["identifier"] = "VST3-Kontakt 8-deadbeef-f852a294"
+    else:
+        changed["path"] = "K:/other/Kontakt.vst3"
+    first, reopen = (changed, None) if phase == "first" else (None, changed)
+    source, candidate, output, empty_startup, _starts, pin = _validation_fixture(
+        tmp_path, monkeypatch, first_plugin=first, reopen_plugin=reopen,
+    )
+
+    with pytest.raises(ValueError, match="different native class/version"):
         validation.validate_captured(
             object(), candidate, source, output, empty_startup=empty_startup, validator_pin=pin,
             resource_root=tmp_path,
