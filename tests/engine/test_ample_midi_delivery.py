@@ -1,5 +1,7 @@
 import importlib.util
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,7 +17,10 @@ def complete_trace(*, nonzero_last_sample: int | None = 32767) -> dict:
     block_size = 512
     blocks = []
     for ordinal, start in enumerate(range(0, duration, block_size), start=1):
-        count = min(block_size, duration - start)
+        # The native renderer processes a full device block at the end of the
+        # project. Its source cursor can therefore finish past the exact
+        # project duration; readiness evidence must use that real block end.
+        count = block_size
         first = last = -1
         nonzero = 0
         peak = rms = 0.0
@@ -45,7 +50,7 @@ def complete_trace(*, nonzero_last_sample: int | None = 32767) -> dict:
     for phase, source_sample in (
         ("after_state_restore", 0),
         ("before_first_process_block", 0),
-        ("after_final_process_block", duration),
+        ("after_final_process_block", blocks[-1]["source_start_sample"] + block_size),
     ):
         readiness.append({
             "source_sample": source_sample,
@@ -100,6 +105,62 @@ def test_source_control_pins_exact_identity_and_note48_event():
     }
 
 
+def test_release_context_keeps_normal_qa_strict_and_source_control_explicit():
+    active_path = probe.ROOT / "runtime/application-release.local.json"
+    archived_path = probe.ROOT / probe.ARCHIVED_SOURCE_CONTROL_DESCRIPTOR
+    active = json.loads(active_path.read_bytes())
+    archived = json.loads(archived_path.read_bytes())
+
+    current = probe.validate_release_context(
+        active, active, active_path, source_control=False)
+    assert current["mode"] == "active_release"
+    assert current["active_matches_descriptor"] is True
+    assert current["active_pointer_sha256"]
+
+    with pytest.raises(ValueError, match="does not match the active release pointer"):
+        probe.validate_release_context(
+            archived, active, archived_path, source_control=False)
+
+    isolated = probe.validate_release_context(
+        archived, active, archived_path, source_control=True)
+    assert isolated["mode"] == "isolated_archived_source_control"
+    assert isolated["active_matches_descriptor"] is False
+    assert isolated["native_bundle_matches_active"] is True
+    assert isolated["descriptor_sha256"] == probe.ARCHIVED_SOURCE_CONTROL_DESCRIPTOR_SHA256
+    assert isolated["active_commit"] == active["commit"]
+
+
+def test_source_control_rejects_descriptor_or_native_bundle_drift():
+    active = json.loads((probe.ROOT / "runtime/application-release.local.json").read_bytes())
+    archived_path = probe.ROOT / probe.ARCHIVED_SOURCE_CONTROL_DESCRIPTOR
+    archived = json.loads(archived_path.read_bytes())
+
+    bad_commit = dict(archived, commit="0" * 40)
+    with pytest.raises(ValueError, match="descriptor changed"):
+        probe.validate_release_context(
+            bad_commit, active, archived_path, source_control=True)
+
+    bad_native = dict(active, native_files={**active["native_files"], "ml_engine.exe": "0" * 64})
+    with pytest.raises(ValueError, match="immutable native bundle"):
+        probe.validate_release_context(
+            archived, bad_native, archived_path, source_control=True)
+
+    wrong_path = probe.ROOT / "runtime/application-release.intake-preview-20261023-v7.local.json"
+    with pytest.raises(ValueError, match="pinned archived V8 descriptor"):
+        probe.validate_release_context(
+            archived, active, wrong_path, source_control=True)
+
+
+def test_imported_service_modules_must_resolve_from_pinned_release():
+    source_root = probe.ROOT / "runtime/releases/2979290760419fd68cd74207aeacc01b20bb7ddd/src"
+    accepted = SimpleNamespace(__file__=str(source_root / "music_learning/contracts.py"))
+    probe.validate_imported_service_source((accepted,), source_root)
+
+    escaped = SimpleNamespace(__file__=str(probe.ROOT / "src/music_learning/contracts.py"))
+    with pytest.raises(ValueError, match="escaped its pinned release source"):
+        probe.validate_imported_service_source((escaped,), source_root)
+
+
 def test_control_note_is_tied_to_exact_historical_positive_request_and_wav():
     request = (probe.SOURCE_POSITIVE_EVIDENCE / "request.json").read_bytes()
     wav = (probe.SOURCE_POSITIVE_EVIDENCE / "probe.wav").read_bytes()
@@ -126,7 +187,26 @@ def test_complete_trace_reports_plugin_audio_cutoff_sample_32767():
     assert result["plugin_output_last_nonzero_sample"] == 32767
     assert result["ample_readiness"]["trace_complete"] is True
     assert result["ample_readiness"]["all_snapshots_ready"] is True
+    assert result["source_coverage_end_sample"] == 220672
+    assert result["ample_readiness"]["snapshots"][-1]["source_sample"] == 220672
     assert result["audio_outcome"] == "nonzero_post_process_output"
+
+
+def test_readiness_uses_actual_final_block_end_when_it_overshoots_duration():
+    trace = complete_trace()
+    assert trace["audio_blocks"][-1]["source_start_sample"] == 220160
+    assert trace["audio_blocks"][-1]["block_samples"] == 512
+    assert trace["ample_readiness"][-1]["source_sample"] == 220672
+
+    result = probe.analyze_processblock_trace(trace)
+    assert result["trace_complete"] is True
+    assert result["ample_readiness"]["trace_complete"] is True
+
+    clamped = complete_trace()
+    clamped["ample_readiness"][-1]["source_sample"] = probe.PROJECT_SAMPLES
+    clamped_result = probe.analyze_processblock_trace(clamped)
+    assert clamped_result["trace_complete"] is True
+    assert clamped_result["ample_readiness"]["trace_complete"] is False
 
 
 def test_complete_midi_with_silent_plugin_output_is_not_called_a_pass():

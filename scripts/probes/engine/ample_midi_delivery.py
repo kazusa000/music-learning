@@ -23,6 +23,11 @@ SOURCE_STATE_SHA256 = "4b2f8bb080b0468b3195ca84b9c227ce1d75240b2dd6c879168a6620a
 SOURCE_POSITIVE_WAV_SHA256 = "c31b524c479d9c2e68abab6aea7a3cf30e6c353b5889e0620839a7e76e23962a"
 SOURCE_POSITIVE_REQUEST_SHA256 = "9da35a8fb8d42370337f5bec0d075b66e9301d7ea9cc9f0f3500fadc0287bb83"
 READINESS_MODULE_SHA256 = "4cd985483c2a7d8da15fb7959f8afb3e2d3c917635718262f1a2f6eab93e850e"
+ARCHIVED_SOURCE_CONTROL_DESCRIPTOR = Path(
+    "runtime/application-release.intake-preview-20261023-v8.local.json"
+)
+ARCHIVED_SOURCE_CONTROL_DESCRIPTOR_SHA256 = "401d8d38c8a47e78ce2a94d74644011acc6b18303cfe79453106bbdd891e5fd3"
+ARCHIVED_SOURCE_CONTROL_COMMIT = "2979290760419fd68cd74207aeacc01b20bb7ddd"
 SAMPLE_RATE = 44100
 PROJECT_SAMPLES = SAMPLE_RATE * 5
 NOTE_PITCH = 48
@@ -100,12 +105,25 @@ def analyze_readiness_trace(midi_delivery: dict) -> dict:
     if dropped != 0 or len(rows) != 3:
         return {"trace_complete": False, "dropped": dropped,
                 "snapshot_count": len(rows), "snapshots": rows}
+    audio_blocks = midi_delivery.get("audio_blocks")
+    final_boundary = None
+    if isinstance(audio_blocks, list) and audio_blocks:
+        crossings = []
+        for index, block in enumerate(audio_blocks):
+            if not isinstance(block, dict):
+                continue
+            start, count = block.get("source_start_sample"), block.get("block_samples")
+            if type(start) is int and type(count) is int and count > 0:
+                if start < PROJECT_SAMPLES <= start + count:
+                    crossings.append((index, start + count))
+        if len(crossings) == 1 and crossings[0][0] == len(audio_blocks) - 1:
+            final_boundary = crossings[0][1]
     expected = [
         ("after_state_restore", 0),
         ("before_first_process_block", 0),
-        ("after_final_process_block", PROJECT_SAMPLES),
+        ("after_final_process_block", final_boundary),
     ]
-    complete = True
+    complete = final_boundary is not None
     normalized = []
     for index, (row, (phase, sample)) in enumerate(zip(rows, expected, strict=True)):
         if not isinstance(row, dict):
@@ -113,7 +131,7 @@ def analyze_readiness_trace(midi_delivery: dict) -> dict:
         if (type(row.get("plugin_index")) is not int or row["plugin_index"] != 0
                 or row.get("phase") != phase
                 or type(row.get("source_sample")) is not int
-                or row["source_sample"] != sample):
+                or sample is None or row["source_sample"] != sample):
             complete = False
         for field in ("fields_read", "ready", "loading_byte_read",
                       "loader_error_count_read", "status_read"):
@@ -294,6 +312,70 @@ def _contained(path: Path, parent: Path, label: str) -> Path:
     return intake._contained(path, parent, label)
 
 
+def validate_release_context(record: dict, active: dict, descriptor_path: Path, *,
+                             source_control: bool) -> dict:
+    """Pin the release descriptor and keep archived cause-control separate from QA."""
+    descriptor_path = _contained(descriptor_path, ROOT / "runtime", "release descriptor")
+    active_path = ROOT / "runtime" / "application-release.local.json"
+    active_sha = intake.sha256_file(active_path)
+    candidate_sha = intake.sha256_file(descriptor_path)
+    matches_active = all(record.get(field) == active.get(field) for field in (
+        "commit", "source_manifest_sha256", "native_audio_bundle", "web_root",
+        "native_files", "web_files"))
+    if not source_control:
+        intake.validate_active_release(record, active)
+        mode = "active_release"
+    else:
+        expected_path = (ROOT / ARCHIVED_SOURCE_CONTROL_DESCRIPTOR).resolve(strict=True)
+        if descriptor_path != expected_path:
+            raise ValueError("Source-control mode requires the pinned archived V8 descriptor")
+        if (candidate_sha != ARCHIVED_SOURCE_CONTROL_DESCRIPTOR_SHA256
+                or record.get("commit") != ARCHIVED_SOURCE_CONTROL_COMMIT):
+            raise ValueError("Pinned archived source-control descriptor changed")
+        if (record.get("native_audio_bundle") != active.get("native_audio_bundle")
+                or record.get("native_files") != active.get("native_files")):
+            raise ValueError("Archived source control does not share the active immutable native bundle")
+        mode = "isolated_archived_source_control"
+    return {
+        "mode": mode,
+        "descriptor_path": str(descriptor_path),
+        "descriptor_sha256": candidate_sha,
+        "descriptor_commit": record.get("commit"),
+        "descriptor_source_manifest_sha256": record.get("source_manifest_sha256"),
+        "active_pointer_path": str(active_path),
+        "active_pointer_sha256": active_sha,
+        "active_commit": active.get("commit"),
+        "active_source_manifest_sha256": active.get("source_manifest_sha256"),
+        "active_native_audio_bundle": active.get("native_audio_bundle"),
+        "active_matches_descriptor": matches_active,
+        "native_bundle_matches_active": record.get("native_audio_bundle") == active.get("native_audio_bundle"),
+    }
+
+
+def activate_verified_service_source(source_root: Path) -> Path:
+    """Import the isolated service from the descriptor's verified immutable source tree."""
+    source = Path(source_root).resolve(strict=True)
+    source_src = (source / "src").resolve(strict=True)
+    if not source_src.is_dir():
+        raise ValueError("Verified release has no immutable src tree")
+    if str(source_src) in sys.path:
+        sys.path.remove(str(source_src))
+    sys.path.insert(0, str(source_src))
+    return source_src
+
+
+def validate_imported_service_source(modules, source_src: Path) -> None:
+    """Reject a source-control run if Python resolves service modules from the mutable tree."""
+    root = Path(source_src).resolve(strict=True)
+    for module in modules:
+        path = Path(module.__file__).resolve(strict=True)
+        try:
+            path.relative_to(root)
+        except ValueError as error:
+            raise ValueError("Isolated service module escaped its pinned release source: "
+                             + str(path)) from error
+
+
 def _diagnostic_bundle(path: Path) -> tuple[Path, dict]:
     bundle = _contained(path, DIAGNOSTIC_ROOT / "bundle", "diagnostic bundle")
     if bundle.parent != (DIAGNOSTIC_ROOT / "bundle").resolve(strict=True):
@@ -350,10 +432,12 @@ def run_probe(args) -> int:
         (SOURCE_POSITIVE_EVIDENCE / "request.json").read_bytes(),
         (SOURCE_POSITIVE_EVIDENCE / "probe.wav").read_bytes(),
     )
-    record, source = intake._load_source(ROOT, Path(args.release))
+    release_descriptor = Path(args.release)
+    record, source = intake._load_source(ROOT, release_descriptor)
     intake.publication_plan_files(Path(args.publication_plan), ROOT)
     active = intake._read_json(ROOT / "runtime/application-release.local.json")
-    intake.validate_active_release(record, active)
+    release_context = validate_release_context(
+        record, active, release_descriptor, source_control=args.source_control)
     config = intake._read_json(ROOT / "runtime/app.local.json")
     library_record = intake._read_json(ROOT / "runtime/instrument-library.local.json")
     library = Path(library_record["root"]).resolve(strict=True)
@@ -375,6 +459,8 @@ def run_probe(args) -> int:
         "probe_script_sha256": intake.sha256_file(Path(__file__).resolve()),
         "release_commit": record["commit"],
         "release_source_manifest_sha256": record["source_manifest_sha256"],
+        "release_context": release_context,
+        "active_runtime_config_sha256": intake.sha256_file(ROOT / "runtime/app.local.json"),
         "active_base_bundle": record["native_audio_bundle"],
         "diagnostic_bundle": str(bundle),
         "diagnostic_bundle_sha256": bundle.name,
@@ -403,6 +489,7 @@ def run_probe(args) -> int:
     owned_processes: dict[int, float] = {}
     engine_process = None
     try:
+        source_src = activate_verified_service_source(source)
         from music_learning import contracts as c
         from music_learning.database import Database
         from music_learning.engine.controller import get_broker
@@ -411,6 +498,10 @@ def run_probe(args) -> int:
         from music_learning.service import Service
         from music_learning.settings import Settings
         from music_learning.worker import Worker
+
+        import music_learning
+        import music_learning.service as service_module
+        validate_imported_service_source((music_learning, c, service_module), source_src)
 
         report["formal_idle_before"] = intake._formal_idle(ROOT, Client, config)
         report["formal_engine_gate"] = "stopped_no_jobs_no_dialogue"
@@ -443,7 +534,11 @@ def run_probe(args) -> int:
         report["status"] = "running"
         intake._atomic_json(progress, report)
 
-        settings = intake._settings_from_config(Settings, config, record, output / "application", library)
+        private_config = dict(config)
+        if release_context["mode"] == "isolated_archived_source_control":
+            private_config["web_root"] = record["web_root"]
+        settings = intake._settings_from_config(
+            Settings, private_config, record, output / "application", library)
         os.environ["ML_PLUGIN_WORKER_SHA256"] = bundle_manifest["files"]["ml_plugin_worker.exe"]
         os.environ["ML_ENGINE_BUNDLE"] = str(bundle)
         database = Database(settings)
@@ -575,6 +670,7 @@ def run_probe(args) -> int:
     except BaseException as error:
         report.update(status="failed", error=repr(error), finished_at_utc=datetime.now(UTC).isoformat())
         intake._atomic_json(output / "failure.json", report)
+        intake._atomic_json(progress, report)
         raise
     finally:
         cleanup_errors = []
@@ -626,6 +722,8 @@ def parser() -> argparse.ArgumentParser:
                         help="completed publication result.json or product-result directory")
     result.add_argument("--diagnostic-bundle", required=True, type=Path)
     result.add_argument("--output", required=True, type=Path)
+    result.add_argument("--source-control", action="store_true",
+                        help="run only the pinned archived release as an isolated cause-control")
     return result
 
 
