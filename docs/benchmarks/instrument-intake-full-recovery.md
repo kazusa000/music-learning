@@ -1,5 +1,19 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 16:36 UTC：完整实时记录已取得，截断仍存在
+
+Goal ACTIVE。`goal-progress-20261023-163409.json`实核原full-h两进程47740/46344出生时间/命令相符，337通过/15失败/1运行/639待测；Kontakt正式0，正式九表/head/E12保护SHA仍相同。新增Factory失败在E内并行分析原报告，原992队列不改，仍须全部终态后才启动失败独立重试。
+
+专用DSP线程06隔离构建/CTest通过，实际`20261023T161448Z-c240382d67`的64-first、64-reopen、32-first均退出0/释放，音频SHA和原05逐字节相同，继续在32767/16383截断；**线程分离没有改善这三次结果**。32-reopen未启动，监督在fresh CIM清单遇到`Failed to create CoreCLR, HRESULT: 0x8007000E`后终态，原checkpoint保留。`root-terminal-assessment-01.json`（SHAf8f693e1…）和纯partial analysis保存这项有限负结果及所有自有PID退出，不能说四组全部完成，也不能据瞬时错误断言当前内存持续不足。不重跑已完成的三项。
+
+MIDI08-r3将音频容量独立扩为4096，MIDI仍512，原07及f056不变。r1编译、r2报告夹具路径失败均保留，最终bundle66b5b164…、worker0e566e35…、report5f8cf60f…固定。启动前发现native JUCE指针十六进制不带`0x`，旧容量适配器要求前缀；`5e2435b`新增只用于格式校验视图的wire适配，不改raw/native/原严格分析器，24相关回归及Ruff通过。
+
+`midi-capacity-wire-01/plan.json`（SHA8cc83e95…）实际启动`q/md10-01`：43432/5096和两轮worker36952/35212均已退出。首开/独立重开每轮1366个音频块全部保存、连续覆盖，34条MIDI完整，audio/MIDI/readiness drop全部0；note48的on=0、off=22050、velocity约0.34646，三次真实loader均ready/Success/error0。**两轮实际音频最后非零采样均3529，仅约0.08秒**。完整记录排除了这段MIDI漏送/采集溢出的猜测，不能把`nonzero_post_process_output`或`strict_audio_positive`当完整音符/全乐句验收。
+
+原progress保留`completed_diagnostic`、strict_audio_positive=true、strict_diagnostic_complete=false。后者来自原readiness比较器把项目边界块要求为整个device trace的最后块；实际第965块跨项目末尾到220502，快照正好在220502，设备后续仍记录401块直到312230。`fef003b`独立纯分析器以同一原始trace定位唯一项目边界，仅给原readiness comparator提供对应前缀，完整raw和全部音频覆盖/顺序/drop/身份检查保留；缺块、错边界、loader错误仍拒绝，7回归/Ruff通过。原报告不重写、不重跑音频。`actual-assessment-01.json`（SHAf50e2760…）保存两份raw SHA、原严格flags、独立边界分析和所有PID释放。
+
+下一步隔离Windows消息观察07正在E内构建，保持原64/32派发时点和DSP/状态/MIDI，记录自身GUI线程真实WM_TIMER/私有消息/所属窗口与回调模块；尚无实际插件结果。上轮restart和完整state突变已排除，不删除消息泵或抑制合法回调制造通过。原full-h、共享JUCE、固定14、正式工程及历史失败原件不动。默认11f0，V9/新翻译未部署，52项试听让路仍必须续回。
+
 ## 2026-10-23 15:58 UTC：排除restart猜测、真实loader状态和诊断环溢出
 
 Goal ACTIVE；`goal-progress-20261023-155803.json`实核full-h47740/46344仍为原出生时间/命令，279通过/8失败/1运行/704待测，Kontakt正式入库0。正式九表/head及E12保护SHA相同，H两pin不在活动原队列期间重读。未停改原队列、正式工程或正式引擎发布。
