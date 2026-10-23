@@ -9,6 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts/instruments"))
+import supervise_ample_final_bank_riff_retry as final_bank_retry  # noqa: E402
 
 from supervise_ample_final_bank_riff_retry import (  # noqa: E402
     FinalBankRetryError,
@@ -21,6 +22,8 @@ from supervise_ample_final_bank_riff_retry import (  # noqa: E402
     _read_live_config,
     _run_dir_from_command,
     _terminal,
+    _verify_code_dependency_sha256,
+    code_dependency_sha256,
 )
 from supervise_ample_failed_retry import queue_identity  # noqa: E402
 
@@ -86,6 +89,29 @@ def test_run_dir_from_command_supports_the_unpinned_and_pinned_runner_shapes(tmp
     assert _run_dir_from_command(f"python run.py --run-dir {run} --python venv.exe") == run
     pinned = str(run / "pinned/scripts/run_ample_factory_validation.py").replace("/", "\\\\")
     assert _run_dir_from_command(f'python "{pinned}" run --run-dir {run}') == run
+
+
+def test_retry_plan_pins_supervisor_and_shared_ancestry_dependencies(monkeypatch):
+    expected = {
+        "scripts/instruments/supervise_ample_final_bank_riff_retry.py": "a" * 64,
+        "scripts/instruments/supervise_ample_failed_retry.py": "b" * 64,
+        "src/music_learning/ample_retry_planning.py": "c" * 64,
+    }
+    monkeypatch.setattr(final_bank_retry, "code_dependency_sha256", lambda: expected)
+    _verify_code_dependency_sha256({"code_dependency_sha256": expected})
+
+    with pytest.raises(FinalBankRetryError, match="does not match"):
+        _verify_code_dependency_sha256({"code_dependency_sha256": {**expected, "extra": "d" * 64}})
+
+
+def test_retry_code_pins_cover_mutable_supervisor_and_shared_module():
+    hashes = code_dependency_sha256()
+    assert set(hashes) == {
+        "scripts/instruments/supervise_ample_final_bank_riff_retry.py",
+        "scripts/instruments/supervise_ample_failed_retry.py",
+        "src/music_learning/ample_retry_planning.py",
+    }
+    assert all(len(value) == 64 for value in hashes.values())
 
 
 def test_only_aglp_queue_processes_hold_the_aglp_config_gate(tmp_path):

@@ -160,3 +160,41 @@ recorded child if still alive; otherwise it resumes the same fixed queue using
 the existing terminal guard, so completed IDs are not run again. Retry05
 remains held. A queue that reaches terminal failures is recorded as terminal
 with unresolved items and is not automatically repeated.
+
+## Attempt05 process-chain recovery (2026-10-23)
+
+The durable attempt05 outer supervisor reached the stable AGLP config gate and
+prepared the exact two-ID queue, but its child retry supervisor exited before
+the first runner invocation. The child log records
+`An unowned Ample process already references this pinned retry queue`; the
+queue remains `prepared` with two `pending_staging` items and
+`invocation_count=0`. The outer checkpoint confirms one child exit code 1 and
+zero formal-project or catalog writes. No H-backed probe ran. Attempt05 and its
+queue, pins, log, and checkpoint are preserved as an unresolved attempt.
+
+The shared cause was the child supervisor's process matcher: it exempted any
+Python command containing `supervise_ample_failed_retry.py` without proving
+parentage, while it treated the real outer `supervise_ample_final_bank_riff_retry.py`
+ancestor as an unowned process because that command carried the child run path.
+The replacement matcher exempts a recognized Python supervisor only when a
+single current process snapshot proves exact PID, creation time, PPID, command,
+and birth-ordered ancestry to the current child supervisor. It stops at the
+candidate; a missing unrelated grandparent does not block. Same-script siblings,
+reused PID edges, unknown rows, and independent hosts remain conflicts. Conflict
+logs now retain compact PID/PPID/creation-time and command-hash evidence without
+printing command contents.
+
+The shared matcher is
+`process_row_matches_ancestor_snapshot` in
+`src/music_learning/ample_retry_planning.py`, also used by the read-only
+preparer ancestry check. Retry06 plans now pin and self-check the SHA-256 of the
+outer supervisor, child supervisor, and shared ancestry module before each
+launch. Regressions cover exact parent lineage, missing irrelevant grandparents,
+independent sibling processes, PID reuse, and shell text that merely mentions
+the script. The three focused test files passed 37 tests through
+`scripts/maintenance/run-tests.ps1`; Ruff and `git diff --check` passed.
+
+The next execution is a separate attempt06 plan, run directory, checkpoint,
+and locator. It inherits the same frozen two failed IDs, source queue/status,
+audited AGLP bank/manifest, fixed host and strict first/reopen requirements.
+Attempt05's prepared queue and original retry3/retry4 reports remain unchanged.

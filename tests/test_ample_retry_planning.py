@@ -257,6 +257,40 @@ def test_preparer_does_not_exempt_shell_that_only_mentions_script_text(tmp_path,
     assert [row["pid"] for row in active] == [shell_pid]
 
 
+def test_snapshot_ancestry_matches_exact_parent_and_stops_at_target():
+    target = {"pid": 100, "ppid": 999, "created_ticks": 100,
+              "command_line": "python supervise_ample_final_bank_riff_retry.py --run-dir E:\\retry"}
+    current = {"pid": 200, "ppid": 100, "created_ticks": 200,
+               "command_line": "python supervise_ample_failed_retry.py --run-dir E:\\retry"}
+
+    assert ample_retry_planning.process_row_matches_ancestor_snapshot(target, 200, [target, current])
+
+
+def test_snapshot_ancestry_rejects_same_script_sibling_and_reused_parent():
+    target = {"pid": 100, "ppid": 10, "created_ticks": 300,
+              "command_line": "python supervise_ample_final_bank_riff_retry.py --run-dir E:\\retry"}
+    current = {"pid": 200, "ppid": 10, "created_ticks": 200,
+               "command_line": "python supervise_ample_failed_retry.py --run-dir E:\\retry"}
+    assert not ample_retry_planning.process_row_matches_ancestor_snapshot(target, 200, [target, current])
+
+    reused_parent = {**target, "created_ticks": 300}
+    younger_child = {**current, "ppid": 100, "created_ticks": 200}
+    assert not ample_retry_planning.process_row_matches_ancestor_snapshot(
+        reused_parent, 200, [reused_parent, younger_child]
+    )
+
+
+def test_snapshot_ancestry_rejects_missing_candidate_but_not_missing_grandparent():
+    target = {"pid": 100, "ppid": 999, "created_ticks": 100,
+              "command_line": "python supervisor.py --run-dir E:\\retry"}
+    current = {"pid": 200, "ppid": 300, "created_ticks": 200,
+               "command_line": "python child.py --run-dir E:\\retry"}
+    assert not ample_retry_planning.process_row_matches_ancestor_snapshot(target, 200, [target, current])
+
+    current["ppid"] = 100
+    assert ample_retry_planning.process_row_matches_ancestor_snapshot(target, 200, [target, current])
+
+
 def test_preparer_refuses_a_pid_reused_parent_chain(tmp_path, monkeypatch):
     import psutil
 

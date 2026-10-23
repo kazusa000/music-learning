@@ -233,10 +233,48 @@ def test_runner_tree_identity_requires_creation_command_and_parent():
 
 def test_supervisor_launcher_is_not_misidentified_as_a_runner():
     run_dir = Path(r"E:\repo\data\maintenance\instrument-intake\run")
-    rows = [{"pid": 100, "ppid": 10, "created_ticks": 100,
-             "name": "python.exe", "executable_path": "python.exe",
-             "command_line": f'python scripts/instruments/supervise_ample_failed_retry.py --run-dir "{run_dir}"'}]
+    launcher = {"pid": 100, "ppid": 10, "created_ticks": 100,
+                "name": "python.exe", "executable_path": "python.exe",
+                "command_line": f'python "{supervisor.ROOT / "scripts/instruments/supervise_ample_final_bank_riff_retry.py"}" --run-dir "{run_dir}"'}
+    current = {"pid": 200, "ppid": 100, "created_ticks": 200,
+               "name": "python.exe", "executable_path": "python.exe",
+               "command_line": f'python "{supervisor.ROOT / "scripts/instruments/supervise_ample_failed_retry.py"}" --run-dir "{run_dir}"'}
+    rows = [launcher, current]
     assert supervisor._matching_run_rows(rows, run_dir, 200) == []
+
+
+def test_supervisor_conflict_scan_keeps_same_script_sibling_and_reused_parent():
+    run_dir = Path(r"E:\repo\data\maintenance\instrument-intake\run")
+    wrapper_path = supervisor.ROOT / "scripts/instruments/supervise_ample_final_bank_riff_retry.py"
+    launcher = {"pid": 100, "ppid": 10, "created_ticks": 300,
+                "name": "python.exe", "executable_path": "python.exe",
+                "command_line": f'python "{wrapper_path}" --run-dir "{run_dir}"'}
+    current = {"pid": 200, "ppid": 10, "created_ticks": 200,
+               "name": "python.exe", "executable_path": "python.exe",
+               "command_line": f'python "{supervisor.ROOT / "scripts/instruments/supervise_ample_failed_retry.py"}" --run-dir "{run_dir}"'}
+    assert supervisor._matching_run_rows([launcher, current], run_dir, 200) == [launcher]
+
+    reused = {**launcher, "created_ticks": 300}
+    current = {**current, "ppid": 100, "created_ticks": 200}
+    assert supervisor._matching_run_rows([reused, current], run_dir, 200) == [reused]
+
+
+def test_supervisor_conflict_scan_does_not_exempt_shell_text_or_sibling_child():
+    run_dir = Path(r"E:\repo\data\maintenance\instrument-intake\run")
+    wrapper_path = supervisor.ROOT / "scripts/instruments/supervise_ample_final_bank_riff_retry.py"
+    shell = {"pid": 100, "ppid": 10, "created_ticks": 100,
+             "name": "powershell.exe", "executable_path": "powershell.exe",
+             "command_line": f'Write-Output "{wrapper_path} --run-dir {run_dir}"'}
+    current = {"pid": 200, "ppid": 100, "created_ticks": 200,
+               "name": "python.exe", "executable_path": "python.exe",
+               "command_line": f'python "{supervisor.ROOT / "scripts/instruments/supervise_ample_failed_retry.py"}" --run-dir "{run_dir}"'}
+    sibling = {"pid": 201, "ppid": 99, "created_ticks": 201,
+               "name": "python.exe", "executable_path": "python.exe",
+               "command_line": f'python "{wrapper_path}" --run-dir "{run_dir}"'}
+
+    # The shell is not a run process merely because it prints script text, but
+    # the independent process carrying the same queue path remains a conflict.
+    assert supervisor._matching_run_rows([shell, current, sibling], run_dir, 200) == [sibling]
 
 
 def test_spawned_runner_requires_exact_parent_and_pinned_command():

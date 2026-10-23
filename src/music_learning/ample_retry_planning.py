@@ -123,6 +123,76 @@ def process_row_matches_current_process(process_info: dict) -> bool:
         return False
 
 
+def process_row_matches_ancestor_snapshot(
+    process_info: dict,
+    current_pid: int,
+    rows: Iterable[dict],
+    *,
+    max_depth: int = 64,
+) -> bool:
+    """Prove a process snapshot is an exact, birth-ordered ancestor.
+
+    The snapshot table and target must use either the ``created_ticks`` /
+    ``command_line`` fields from the Windows CIM inventory or the
+    ``create_time`` / ``cmdline`` fields from psutil. The walk stops as soon as
+    it reaches the proposed target; missing ancestors above that boundary are
+    irrelevant, while any missing or reused PID on the path to the target
+    leaves it unverified.
+    """
+    if type(current_pid) is not int or current_pid <= 0:
+        return False
+    if type(max_depth) is not int or not 1 <= max_depth <= 64:
+        return False
+
+    def identity(row: object) -> tuple[int, int, int | float, object] | None:
+        if not isinstance(row, dict):
+            return None
+        pid, ppid = row.get("pid"), row.get("ppid")
+        if type(pid) is not int or pid <= 0 or type(ppid) is not int or ppid < 0:
+            return None
+        if "created_ticks" in row:
+            born, command = row.get("created_ticks"), row.get("command_line")
+            if type(born) is not int or born <= 0 or not isinstance(command, str) or not command:
+                return None
+        else:
+            born, command = row.get("create_time"), row.get("cmdline")
+            if (type(born) not in {int, float} or born <= 0
+                    or not isinstance(command, (tuple, list)) or not command
+                    or any(not isinstance(part, str) for part in command)):
+                return None
+            command = tuple(command)
+        return pid, ppid, born, command
+
+    target = identity(process_info)
+    if target is None or target[0] == current_pid:
+        return False
+    by_pid: dict[int, tuple[int, int, int | float, object]] = {}
+    for row in rows:
+        value = identity(row)
+        if value is None or value[0] in by_pid:
+            return False
+        by_pid[value[0]] = value
+    if target[0] not in by_pid or by_pid[target[0]] != target:
+        return False
+    if current_pid not in by_pid:
+        return False
+
+    seen = {current_pid}
+    child = by_pid[current_pid]
+    for _ in range(max_depth):
+        parent_pid = child[1]
+        if parent_pid <= 0 or parent_pid in seen:
+            return False
+        parent = by_pid.get(parent_pid)
+        if parent is None or parent[2] > child[2]:
+            return False
+        if parent_pid == target[0]:
+            return parent == target
+        seen.add(parent_pid)
+        child = parent
+    return False
+
+
 def process_row_matches_current_ancestor(process_info: dict, *, max_depth: int = 64) -> bool:
     """Prove a process row is an exact, birth-ordered ancestor of this process.
 
@@ -138,32 +208,27 @@ def process_row_matches_current_ancestor(process_info: dict, *, max_depth: int =
         if not isinstance(max_depth, int) or not 1 <= max_depth <= 64:
             return False
         target_pid = process_info.get("pid")
-        target_created = process_info.get("create_time")
-        target_ppid = process_info.get("ppid")
-        target_command = tuple(process_info.get("cmdline") or ())
-        if not isinstance(target_pid, int) or target_created is None or target_ppid is None:
+        if type(target_pid) is not int:
             return False
-        child = psutil.Process(os.getpid())
-        child_created = child.create_time()
-        seen = {child.pid}
+        current_pid = os.getpid()
+        child = psutil.Process(current_pid)
+        rows = []
         for _ in range(max_depth):
+            rows.append({"pid": child.pid, "ppid": child.ppid(),
+                         "create_time": child.create_time(), "cmdline": tuple(child.cmdline())})
+            if child.pid == target_pid:
+                return False
             parent_pid = child.ppid()
-            if parent_pid <= 0 or parent_pid in seen:
+            if parent_pid <= 0:
                 return False
             parent = psutil.Process(parent_pid)
-            parent_created = parent.create_time()
-            parent_ppid = parent.ppid()
-            parent_command = tuple(parent.cmdline())
-            if child.ppid() != parent_pid or parent_created > child_created:
-                return False
-            if parent_pid == target_pid:
-                return (
-                    parent_created == target_created
-                    and parent_ppid == target_ppid
-                    and parent_command == target_command
+            if parent.pid == target_pid:
+                rows.append({"pid": parent.pid, "ppid": parent.ppid(),
+                             "create_time": parent.create_time(), "cmdline": tuple(parent.cmdline())})
+                return process_row_matches_ancestor_snapshot(
+                    process_info, current_pid, rows, max_depth=max_depth
                 )
-            seen.add(parent_pid)
-            child, child_created = parent, parent_created
+            child = parent
         return False
     except (ImportError, psutil.NoSuchProcess, psutil.AccessDenied, OSError, TypeError):
         return False

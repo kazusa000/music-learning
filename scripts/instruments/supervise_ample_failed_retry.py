@@ -16,11 +16,16 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import time
 
 
 ROOT = Path(__file__).resolve().parents[2]
 INTAKE_ROOT = ROOT / "data/maintenance/instrument-intake"
+sys.path.insert(0, str(ROOT / "src"))
+from music_learning.ample_retry_planning import (  # noqa: E402
+    process_row_matches_ancestor_snapshot,
+)
 TERMINAL = {"passed", "failed", "inconclusive", "blocked_missing_sample_group"}
 UNRESOLVED = {"pending_staging", "deferred"}
 ACTIVE = {"queued", "running"}
@@ -283,6 +288,10 @@ def _matching_runner_rows(rows: list[dict], run_dir: Path, supervisor_pid: int) 
 def _matching_run_rows(rows: list[dict], run_dir: Path, supervisor_pid: int) -> list[dict]:
     token = _norm(str(run_dir))
     host = _norm(str(run_dir / "pinned/instrument_probe_host.exe"))
+    wrapper_paths = (
+        _norm(str(ROOT / "scripts/instruments/supervise_ample_failed_retry.py")),
+        _norm(str(ROOT / "scripts/instruments/supervise_ample_final_bank_riff_retry.py")),
+    )
     matches = []
     for row in rows:
         if row["pid"] == supervisor_pid:
@@ -290,14 +299,35 @@ def _matching_run_rows(rows: list[dict], run_dir: Path, supervisor_pid: int) -> 
         name = row["name"].lower()
         command = _norm(row["command_line"])
         executable = _norm(row.get("executable_path", ""))
-        # The venv launcher may remain as the current supervisor's ancestor on
-        # Windows. It shares the run-dir argument but is not a queue runner.
-        supervisor_launcher = name == "python.exe" and "supervise_ample_failed_retry.py" in command
-        if (not supervisor_launcher
-                and ((name == "python.exe" and token in command)
-                     or host in executable or host in command)):
-            matches.append(row)
+        references_run = ((name in {"python.exe", "pythonw.exe"} and token in command)
+                          or host in executable or host in command)
+        if not references_run:
+            continue
+        # The outer durable supervisor and a Python launcher can carry the
+        # child queue path in their command line. Exempt one only when the
+        # current process inventory proves this exact PID/creation/PPID/command
+        # row is on our birth-ordered parent chain. A same-script sibling,
+        # reused PID, or shell that merely prints text remains a conflict.
+        is_supervisor_wrapper = (
+            name in {"python.exe", "pythonw.exe"}
+            and any(path in command for path in wrapper_paths)
+        )
+        if (is_supervisor_wrapper
+                and process_row_matches_ancestor_snapshot(row, supervisor_pid, rows)):
+            continue
+        matches.append(row)
     return matches
+
+
+def _process_conflict_evidence(rows: list[dict]) -> list[dict]:
+    """Return compact process identity evidence without exposing command text."""
+    return [{
+        "pid": row["pid"],
+        "ppid": row["ppid"],
+        "created_ticks": row["created_ticks"],
+        "name": row["name"],
+        "command_sha256": hashlib.sha256(row["command_line"].encode("utf-8")).hexdigest(),
+    } for row in rows]
 
 
 def _snapshot_process(row: dict) -> dict:
@@ -447,7 +477,10 @@ def _wait_existing_runner(rows_provider, run_dir: Path, state: dict, state_path:
             outsiders = [row for row in _matching_run_rows(rows, run_dir, os.getpid())
                          if row["pid"] not in tree]
             if outsiders:
-                raise SupervisorError("An Ample process for this queue exists outside the recorded runner tree")
+                raise SupervisorError(
+                    "An Ample process for this queue exists outside the recorded runner tree: "
+                    + json.dumps(_process_conflict_evidence(outsiders), separators=(",", ":"))
+                )
             state["observed_tree"] = {
                 str(pid): {"pid": by_pid[pid]["pid"], "created_ticks": by_pid[pid]["created_ticks"],
                            "command_line": by_pid[pid]["command_line"]}
@@ -465,7 +498,10 @@ def _wait_existing_runner(rows_provider, run_dir: Path, state: dict, state_path:
         outsiders = [row for row in _matching_run_rows(rows, run_dir, os.getpid())
                      if row["pid"] not in {item["pid"] for item in survivors}]
         if outsiders:
-            raise SupervisorError("An Ample process remains outside the recorded runner tree")
+            raise SupervisorError(
+                "An Ample process remains outside the recorded runner tree: "
+                + json.dumps(_process_conflict_evidence(outsiders), separators=(",", ":"))
+            )
         if survivors:
             if stop_after_limit and elapsed_seconds(state) >= max_total_seconds:
                 raise SupervisorError("24-hour cap reached while an orphaned runner child remains active")
@@ -554,7 +590,10 @@ def supervise(run_dir: Path, python: Path, native_host: Path, checkpoint_dir: Pa
             rows = inventory_fn()
             foreign = _matching_run_rows(rows, run_dir, current_pid)
             if foreign:
-                raise SupervisorError("An unowned Ample process already references this pinned retry queue")
+                raise SupervisorError(
+                    "An unowned Ample process already references this pinned retry queue: "
+                    + json.dumps(_process_conflict_evidence(foreign), separators=(",", ":"))
+                )
             queue, status = _read_queue(run_dir)
             if queue_identity(queue) != state["queue_identity_sha256"]:
                 raise SupervisorError("Fixed queue identity or source selection changed")

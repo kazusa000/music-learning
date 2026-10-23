@@ -22,6 +22,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 INTAKE = ROOT / "data/maintenance/instrument-intake"
 sys.path.insert(0, str(ROOT / "scripts/instruments"))
+sys.path.insert(0, str(ROOT / "src"))
 from supervise_ample_failed_retry import (  # noqa: E402
     SupervisorError,
     _matching_run_rows,
@@ -36,6 +37,14 @@ from supervise_ample_failed_retry import (  # noqa: E402
 
 TERMINAL_RUNS = {"completed", "selection_completed"}
 MAX_TOTAL_SECONDS = 24 * 60 * 60
+CODE_DEPENDENCY_PATHS = {
+    "scripts/instruments/supervise_ample_final_bank_riff_retry.py":
+        ROOT / "scripts/instruments/supervise_ample_final_bank_riff_retry.py",
+    "scripts/instruments/supervise_ample_failed_retry.py":
+        ROOT / "scripts/instruments/supervise_ample_failed_retry.py",
+    "src/music_learning/ample_retry_planning.py":
+        ROOT / "src/music_learning/ample_retry_planning.py",
+}
 
 
 class FinalBankRetryError(RuntimeError):
@@ -44,6 +53,21 @@ class FinalBankRetryError(RuntimeError):
 
 def _sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
+
+
+def code_dependency_sha256() -> dict[str, str]:
+    """Hash every mutable process-ownership module used by retry06."""
+    return {relative: _sha(path.read_bytes())
+            for relative, path in sorted(CODE_DEPENDENCY_PATHS.items())}
+
+
+def _verify_code_dependency_sha256(plan: dict) -> None:
+    expected = plan.get("code_dependency_sha256")
+    actual = code_dependency_sha256()
+    if not isinstance(expected, dict) or expected != actual:
+        raise FinalBankRetryError(
+            "Frozen retry plan does not match the current Ample supervisor/ancestry code dependencies"
+        )
 
 
 def _atomic_json(path: Path, value: dict) -> None:
@@ -393,6 +417,7 @@ def run(plan_path: Path, locator_path: Path, *, inventory_fn=process_inventory,
     plan, plan_sha = _read_json(plan_path, "final-bank retry plan")
     if plan.get("schema_version") != 1 or plan.get("status") != "prepared_plan_waiting_for_same_config_release":
         raise FinalBankRetryError("Final-bank retry plan is not in the expected prepared state")
+    _verify_code_dependency_sha256(plan)
     if plan.get("max_total_wait_seconds") != MAX_TOTAL_SECONDS:
         raise FinalBankRetryError("Retry06 plan must retain the fixed 24-hour total wait budget")
     default_checkpoint = INTAKE / "20261023-ample-shared-fix/final-bank-riff-retry-06-supervision/control.json"
@@ -465,6 +490,7 @@ def run(plan_path: Path, locator_path: Path, *, inventory_fn=process_inventory,
     config_path = Path(next(iter(configs)))
 
     while True:
+        _verify_code_dependency_sha256(plan)
         current_plan, current_plan_sha = _read_json(plan_path, "final-bank retry plan")
         if current_plan_sha != plan_sha:
             raise FinalBankRetryError("Frozen retry plan changed while the supervisor was active")
@@ -559,6 +585,7 @@ def run(plan_path: Path, locator_path: Path, *, inventory_fn=process_inventory,
         break
 
     if not run_dir.exists():
+        _verify_code_dependency_sha256(plan)
         command = [
             str(ROOT / "data/envs/app/Scripts/python.exe"),
             str(ROOT / "scripts/instruments/prepare_ample_terminal_profile_retry.py"),
