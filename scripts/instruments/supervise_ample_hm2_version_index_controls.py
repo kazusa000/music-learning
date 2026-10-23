@@ -25,6 +25,8 @@ MAX_WAIT_SECONDS = 24 * 60 * 60
 POLL_SECONDS = 20
 PRODUCT_ORDER = ("AGSC", "AGLP")
 CONTROL_CODE_PATHS = (
+    "scripts/instruments/supervise_ample_hm2_version_index_controls.py",
+    "src/music_learning/ample_retry_planning.py",
     "scripts/instruments/probe_ample_hm2_migration.py",
     "scripts/probe_staged_ample.py",
     "scripts/native_host.py",
@@ -45,6 +47,10 @@ EXCLUSIVE_PROBE_TOKENS = (
     "supervise_ample_final_bank_riff_retry.py", "supervise_ample_phrase_duration_retest.py",
     "run_ample_factory_chain.py", "supervise_ample_hm2_version_index_controls.py",
 )
+LOCATOR_NAMES = {
+    "ample-hm2-version-index-controls.local.json",
+    "ample-hm2-version-index-controls-06.local.json",
+}
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -53,6 +59,9 @@ from instruments.probe_ample_hm2_migration import (  # noqa: E402
 )
 from instruments.supervise_ample_failed_retry import (  # noqa: E402
     SupervisorError, _descendants, process_inventory, supervisor_lock,
+)
+from music_learning.ample_retry_planning import (  # noqa: E402
+    process_row_matches_ancestor_snapshot,
 )
 from music_learning.instrument_probe_budget import loading_budget  # noqa: E402
 
@@ -210,13 +219,17 @@ def _request_plugin_paths(request: dict) -> set[str]:
 
 
 def _active_product_conflicts(rows: list[dict], *, product: str, plugin_path: Path,
-                              ignored_pids: set[int] | None = None) -> list[dict]:
+                              ignored_pids: set[int] | None = None,
+                              current_pid: int | None = None) -> list[dict]:
     """Find a live matching plugin host; unknown generic hosts fail closed."""
     ignored = ignored_pids or set()
     target = str(plugin_path.resolve(strict=False)).casefold()
     conflicts = []
     for row in rows:
         if row["pid"] in ignored:
+            continue
+        if (current_pid is not None
+                and process_row_matches_ancestor_snapshot(row, current_pid, rows)):
             continue
         name = row.get("name", "").casefold()
         command = row.get("command_line", "")
@@ -387,7 +400,8 @@ def _spawn_control(*, plan: dict, product: str, variant_group: dict, group_index
             continue
         conflicts = _active_product_conflicts(rows, product=product,
                                               plugin_path=Path(control["plugin_path"]),
-                                              ignored_pids={own["pid"]})
+                                              ignored_pids={own["pid"]},
+                                              current_pid=own["pid"])
         if conflicts:
             _update(job_dir, locator, state, own, status="waiting_for_same_product_host",
                     current_product=product, current_variant=variant,
@@ -413,7 +427,8 @@ def _spawn_control(*, plan: dict, product: str, variant_group: dict, group_index
         rows = inventory_fn()
         conflicts = _active_product_conflicts(rows, product=product,
                                               plugin_path=Path(control["plugin_path"]),
-                                              ignored_pids={own["pid"]})
+                                              ignored_pids={own["pid"]},
+                                              current_pid=own["pid"])
         try:
             last_budget = budget_fn("H:")
         except Exception as error:
@@ -778,7 +793,7 @@ def _supervise_locked(*, plan_path: Path, output: Path, locator: Path,
         (output / "plan.json").write_bytes(Path(plan_path).read_bytes())
 
     locator = Path(locator).resolve(strict=False)
-    if locator.parent != RUNTIME_ROOT or locator.name != "ample-hm2-version-index-controls.local.json":
+    if locator.parent != RUNTIME_ROOT or locator.name not in LOCATOR_NAMES:
         raise HM2SupervisorError("Use the dedicated runtime HM2 controls locator")
     if resume and state.get("fixed_inputs", {}).get("plan_path") != str(Path(plan_path).resolve(strict=True)):
         raise HM2SupervisorError("Resume plan path changed")
@@ -889,7 +904,7 @@ def _supervise(*, plan_path: Path, output: Path, locator: Path,
                spawn_fn=subprocess.Popen, sleep_fn=time.sleep,
                now_fn=_now) -> dict:
     locator = Path(locator).resolve(strict=False)
-    if locator.parent != RUNTIME_ROOT or locator.name != "ample-hm2-version-index-controls.local.json":
+    if locator.parent != RUNTIME_ROOT or locator.name not in LOCATOR_NAMES:
         raise HM2SupervisorError("Use the dedicated runtime HM2 controls locator")
     lock_path = locator.with_suffix(locator.suffix + ".lock")
     with supervisor_lock(lock_path):

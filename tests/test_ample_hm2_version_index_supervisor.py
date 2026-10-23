@@ -137,6 +137,43 @@ def test_active_ample_probe_waiter_is_a_launch_conflict():
         ignored_pids={own["pid"]}) == [waiter]
 
 
+def test_active_product_gate_ignores_only_verified_invocation_ancestors():
+    plugin_path = Path(r"C:\Program Files\Common Files\VST3\AGSC.vst3")
+    current = {
+        "pid": 3100, "ppid": 2000, "created_ticks": 3000,
+        "name": "python.exe", "executable_path": "C:/Python/python.exe",
+        "command_line": "python supervise_ample_hm2_version_index_controls.py",
+    }
+    launcher = {
+        "pid": 2000, "ppid": 1000, "created_ticks": 2000,
+        "name": "pwsh.exe", "executable_path": "C:/PowerShell/pwsh.exe",
+        "command_line": "pwsh -Command supervise_ample_hm2_version_index_controls.py",
+    }
+    incomplete_unrelated_rows = [
+        {"pid": 0, "ppid": 0, "created_ticks": 0, "name": "Idle",
+         "executable_path": "", "command_line": ""},
+        {"pid": 195, "ppid": 4, "created_ticks": 0, "name": "System",
+         "executable_path": "", "command_line": ""},
+    ]
+    unrelated_same_name = {
+        "pid": 4100, "ppid": 1000, "created_ticks": 4000,
+        "name": "python.exe", "executable_path": "C:/Python/python.exe",
+        "command_line": "python supervise_ample_hm2_version_index_controls.py --other-run",
+    }
+    actual_host = {
+        "pid": 4200, "ppid": 1000, "created_ticks": 4100,
+        "name": "instrument_probe_host.exe",
+        "executable_path": "E:/intake/instrument_probe_host.exe",
+        "command_line": f'instrument_probe_host.exe --plugin "{plugin_path}"',
+    }
+    rows = [current, launcher, *incomplete_unrelated_rows, unrelated_same_name, actual_host]
+
+    assert supervisor._active_product_conflicts(
+        rows, product="AGSC", plugin_path=plugin_path,
+        ignored_pids={current["pid"]}, current_pid=current["pid"],
+    ) == [unrelated_same_name, actual_host]
+
+
 def _encode_memory_block(raw: bytes) -> str:
     alphabet = ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
     accumulator = bits = 0
