@@ -22,6 +22,26 @@ SUPPORTED = {
     ("Ample Guitar SC", "4.0.1"): "AEG_STATE",
 }
 
+# Ample serializes some host-owned defaults into its native component state
+# although those controls are absent from most individual factory files. The
+# values below are the defaults observed across the complete passed factory
+# batch and the product's own Default preset. They are the only native-only
+# fields accepted by the source-to-loaded-state comparison.
+NATIVE_ONLY_DEFAULTS = {
+    ("Ample Guitar M", "3.1.0"): {
+        "S-TempoMode": 0.0,
+        "S-Disable Animation": 0.0,
+        "S-Keyboard Skin": 1.0,
+    },
+    ("Ample Guitar LP", "4.0.0"): {
+        "R-Sync Host Playback Toggle": 0.0,
+        "M-Acc Mode": 0.0,
+    },
+    ("Ample Guitar SC", "4.0.1"): {
+        "R-Sync Host Playback Toggle": 0.0,
+    },
+}
+
 
 def _decode_memory_block(text: str) -> bytes:
     count, separator, encoded = text.partition(".")
@@ -70,26 +90,81 @@ def _identity(xml: ET.Element) -> dict:
             "database": nodes[0].get("Value") if nodes else None}
 
 
-def _parameter_map(xml: ET.Element) -> dict[str, float]:
+def _normalized_value(raw_value: str, name: str) -> float | str:
+    """Normalize numeric XML values to the VST3 float32 state representation.
+
+    Ample factory XML often writes the exact decimal expansion of a float32,
+    while a loaded component writes a short round-trip decimal. Canonicalizing
+    through float32 preserves the exact plugin value without fuzzy tolerance.
+    Text-valued enum parameters remain exact strings.
+    """
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        if not isinstance(raw_value, str) or not raw_value or len(raw_value) > 512:
+            raise ValueError("Ample factory parameter has an invalid text value: " + name)
+        return raw_value
+    if not math.isfinite(value):
+        raise ValueError("Ample factory parameter is not finite: " + name)
+    try:
+        normalized = struct.unpack("<f", struct.pack("<f", value))[0]
+    except (OverflowError, struct.error) as error:
+        raise ValueError("Ample factory parameter exceeds float32 range: " + name) from error
+    if not math.isfinite(normalized):
+        raise ValueError("Ample factory parameter exceeds float32 range: " + name)
+    return 0.0 if normalized == 0.0 else normalized
+
+
+def _parameter_map(xml: ET.Element) -> dict[str, float | str]:
     result = {}
     for node in xml.findall("Parameter"):
         name, raw_value = node.get("Name"), node.get("Value")
         if not name or raw_value is None or name in result:
             raise ValueError("Invalid or duplicate Ample parameter identity")
-        try:
-            value = float(raw_value)
-        except (TypeError, ValueError) as error:
-            raise ValueError("Ample factory parameter is not numeric: " + name) from error
-        if not math.isfinite(value):
-            raise ValueError("Ample factory parameter is not finite: " + name)
-        result[name] = value
+        result[name] = _normalized_value(raw_value, name)
     return result
 
 
 def _parameter_sha256(xml: ET.Element) -> str:
-    canonical = json.dumps(_parameter_map(xml), ensure_ascii=False, sort_keys=True,
+    return parameter_map_sha256(_parameter_map(xml))
+
+
+def parameter_map_sha256(parameters: dict[str, float | str]) -> str:
+    canonical = json.dumps(parameters, ensure_ascii=False, sort_keys=True,
                            separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
+
+
+def identity_compatibility(plugin_name: str, plugin_version: str) -> dict:
+    """Return the exact product schema for native-only default parameters."""
+    expected = NATIVE_ONLY_DEFAULTS.get((plugin_name, plugin_version))
+    if expected is None:
+        raise ValueError("Unsupported Ample native-identity compatibility schema")
+    return {"schema_version": 1, "native_only_defaults": dict(expected)}
+
+
+def parameter_state_differences(source: dict[str, float | str],
+                                native: dict[str, float | str],
+                                compatibility: dict) -> dict:
+    """Describe exact typed-map differences without applying fuzzy tolerance."""
+    defaults = compatibility.get("native_only_defaults", {})
+    expected = dict(source)
+    for name, value in defaults.items():
+        expected.setdefault(name, value)
+    return {
+        "missing_source_parameters": sorted(set(source) - set(native)),
+        "changed_source_parameters": [
+            {"name": name, "source_value": source[name], "native_value": native[name]}
+            for name in sorted(set(source) & set(native)) if source[name] != native[name]
+        ],
+        "missing_native_defaults": sorted((set(defaults) - set(source)) - set(native)),
+        "changed_native_defaults": [
+            {"name": name, "expected_value": defaults[name], "native_value": native[name]}
+            for name in sorted((set(defaults) - set(source)) & set(native))
+            if defaults[name] != native[name]
+        ],
+        "unexpected_native_parameters": sorted(set(native) - set(expected)),
+    }
 
 
 def factory_identity(factory_xml: bytes | Path, *, expected_sha256: str | None = None) -> dict:
@@ -100,6 +175,15 @@ def factory_identity(factory_xml: bytes | Path, *, expected_sha256: str | None =
         raise ValueError("Ample factory XML changed after the validation queue was frozen")
     xml = parse_factory_xml(raw)
     return {**_identity(xml), "factory_parameters_sha256": _parameter_sha256(xml)}
+
+
+def factory_parameters(factory_xml: bytes | Path, *, expected_sha256: str | None = None) -> dict[str, float | str]:
+    """Return typed source parameters from the same SHA-pinned factory XML."""
+    raw = Path(factory_xml).read_bytes() if isinstance(factory_xml, (Path, str)) else bytes(factory_xml)
+    digest = hashlib.sha256(raw).hexdigest()
+    if expected_sha256 and digest != expected_sha256:
+        raise ValueError("Ample factory XML changed after the validation queue was frozen")
+    return _parameter_map(parse_factory_xml(raw))
 
 
 def _component_xml(plugin: dict) -> ET.Element:
@@ -145,7 +229,46 @@ def _component_xml(plugin: dict) -> ET.Element:
 
 
 def native_factory_identity(candidate: dict, plugin: dict) -> dict:
-    """Parse the loaded plugin's state into its exact factory identity."""
-    del candidate  # Identity is derived only from captured native state.
+    """Verify source factory parameters against the loaded native component.
+
+    The candidate's expected source map is derived from the SHA-pinned factory
+    XML. Native identity is still parsed from the opaque captured component
+    state. Every source parameter must be present with the exact float32/text
+    value, and native-only fields must match the small product default contract.
+    """
     xml = _component_xml(plugin)
-    return {**_identity(xml), "factory_parameters_sha256": _parameter_sha256(xml)}
+    native_identity = _identity(xml)
+    expected = candidate.get("expected_identity")
+    source_parameters = candidate.get("expected_factory_parameters")
+    compatibility = candidate.get("factory_identity_compatibility")
+    if not isinstance(expected, dict) or not isinstance(source_parameters, dict):
+        raise ValueError("Ample candidate lacks SHA-bound factory parameter identity")
+    for key in ("root_tag", "name", "database"):
+        if native_identity.get(key) != expected.get(key):
+            raise ValueError("Loaded Ample component differs from factory identity: " + key)
+    native_parameters = _parameter_map(xml)
+    normalized_source = {}
+    for name, value in source_parameters.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError("Ample source parameter identity is malformed")
+        normalized_source[name] = value
+    expected_compatibility = identity_compatibility(plugin.get("name"), plugin.get("version"))
+    if compatibility != expected_compatibility:
+        raise ValueError("Ample candidate identity compatibility schema differs from the product contract")
+    differences = parameter_state_differences(normalized_source, native_parameters, expected_compatibility)
+    if any(differences.values()):
+        details = ", ".join(
+            key + "=" + "/".join(entry["name"] if isinstance(entry, dict) else entry
+                                    for entry in value)
+            for key, value in differences.items() if value
+        )
+        raise ValueError("Loaded Ample component parameters differ from exact source/default state: " + details)
+    identity = {
+        **native_identity,
+        "factory_parameters_sha256": parameter_map_sha256(normalized_source),
+        "loaded_parameters_sha256": parameter_map_sha256(native_parameters),
+    }
+    if (identity["factory_parameters_sha256"] != expected.get("factory_parameters_sha256")
+            or identity["loaded_parameters_sha256"] != expected.get("loaded_parameters_sha256")):
+        raise ValueError("Loaded Ample parameter identity differs from the SHA-bound factory map")
+    return identity

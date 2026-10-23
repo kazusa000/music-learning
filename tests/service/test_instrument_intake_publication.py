@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 import multiprocessing
+from array import array
 from pathlib import Path
 import struct
 import wave
@@ -24,6 +25,7 @@ from music_learning.instrument_intake_publication import (
     resource_manifest_fingerprint,
     sha256_bytes,
     sha256_file,
+    _verify_run,
     write_publication_plan,
 )
 
@@ -430,6 +432,207 @@ def _write_encoded_wav(path, values, encoding, *, extensible=False):
     chunks += b"data" + struct.pack("<I", len(data)) + data
     path.write_bytes(b"RIFF" + struct.pack("<I", 4 + len(chunks)) + b"WAVE" + chunks)
     return path
+
+
+def _riff_profile_candidate(*, bpm=120, bars=4):
+    from music_learning.instrument_performance_profiles import trigger_phrase
+
+    source_sha = hashlib.sha256(b"riff factory source").hexdigest()
+    candidate = _candidate()
+    candidate["source_factory_sha256"] = source_sha
+    candidate["performance_profile"] = {
+        "schema_version": 1,
+        "kind": "riff_toggle",
+        "factory_riff_sha256": source_sha,
+        "riff_name": "Test Riff",
+        "riff_type": "Riff",
+        "tempo_bpm": bpm,
+        "numerator": 4,
+        "denominator": 4,
+        "bars": bars,
+        "trigger_note": 94,
+        "trigger_velocity": 1.0,
+        "stop_velocity": 1 / 127,
+    }
+    return candidate, trigger_phrase(candidate["performance_profile"], sample_rate=44100)
+
+
+def _write_profile_run(root, name, candidate, phrase, *, extra_frames=0,
+                       silent_window=False, altered_notes=False, requested_binary_sha=None,
+                       requested_path=None):
+    folder = root / name
+    folder.mkdir(parents=True)
+    plugin = {
+        "path": candidate["plugin_path"],
+        "state_base64": base64.b64encode(b"factory=60 Model").decode("ascii"),
+        "state_sha256": sha256_bytes(b"factory=60 Model"),
+        "parameters_readback": [{"id": "BassModel", "value": 0.25}],
+        "binary_sha256": candidate["plugin_sha256"],
+        "identifier": candidate["identifier"],
+        "vst3_class_id": candidate["vst3_class_id"],
+    }
+    track = {
+        "plugins": [{"path": requested_path or candidate["plugin_path"],
+                     "identifier": candidate["identifier"],
+                     **({"binary_sha256": requested_binary_sha} if requested_binary_sha else {})}],
+        "notes": [dict(note) for note in phrase["notes"]],
+        "controllers": [dict(controller) for controller in phrase["controllers"]],
+    }
+    if altered_notes:
+        track["notes"][0]["note"] += 1
+    project = {
+        "revision_id": "profile-render",
+        "sample_rate": 44100,
+        "duration_samples": phrase["duration_samples"],
+        "tail_samples": phrase["tail_samples"],
+        "tempo": phrase["tempo"],
+        "meter": phrase["meter"],
+        "tracks": [track],
+    }
+    frames = phrase["duration_samples"] + phrase["tail_samples"] + extra_frames
+    values = array("f", [0.125]) * frames
+    start = min(44100 // 2, phrase["duration_samples"] // 4)
+    stop = phrase["duration_samples"] - 44100 // 4
+    if silent_window:
+        values[start:stop] = array("f", [0.0]) * (stop - start)
+    request = folder / "request.json"
+    request.write_text(json.dumps({"project": project}), encoding="utf-8")
+    response = folder / "response.json"
+    response.write_text(json.dumps({
+        "ok": True,
+        "result": {"rms": math.sqrt(sum(value * value for value in values) / len(values)),
+                   "peak": max(abs(value) for value in values), "clipped_samples": 0,
+                   "snapshot": {"tracks": [{"plugins": [plugin]}]}},
+    }), encoding="utf-8")
+    execution = folder / "execution.json"
+    execution.write_text(json.dumps({"status": "completed", "returncode": 0}), encoding="utf-8")
+    state = folder / "captured-state.json"
+    state.write_text(json.dumps({"plugin": plugin}), encoding="utf-8")
+    probe = _write_encoded_wav(folder / "probe.wav", values, "float32")
+    return {key: artifact_ref(path, root) for key, path in {
+        "request": request, "response": response, "execution": execution,
+        "state": state, "probe": probe,
+    }.items()}
+
+
+def test_source_pinned_performance_profile_allows_exact_long_phrase_and_checks_trigger_window(tmp_path):
+    candidate, phrase = _riff_profile_candidate()
+    evidence = tmp_path / "profile-evidence"
+    evidence.mkdir()
+    refs = _write_profile_run(evidence, "first", candidate, phrase)
+    request = json.loads((evidence / "first" / "request.json").read_bytes())
+    requested_plugin = request["project"]["tracks"][0]["plugins"][0]
+    assert "binary_sha256" not in requested_plugin  # The native response still pins the loaded binary.
+    measured = _verify_run(candidate, evidence, refs, VERIFIER.verify, "first")
+
+    assert measured["audio"]["frames"] == phrase["duration_samples"] + phrase["tail_samples"]
+    assert measured["audio"]["frames"] > 44100 * 5
+    assert measured["audio"]["performance_window"]["rms"] == pytest.approx(0.125)
+    assert measured["audio"]["performance_window"]["peak"] == pytest.approx(0.125)
+
+
+def test_profile_request_accepts_only_identical_float32_velocity_serialization(tmp_path):
+    candidate, phrase = _riff_profile_candidate()
+    evidence = tmp_path / "profile-evidence"
+    evidence.mkdir()
+    refs = _write_profile_run(evidence, "first", candidate, phrase)
+    request_path = evidence / "first" / "request.json"
+    request = json.loads(request_path.read_bytes())
+    stop_note = request["project"]["tracks"][0]["notes"][1]
+    stop_note["velocity"] = float(f"{stop_note['velocity']:.15g}")
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    refs["request"] = artifact_ref(request_path, evidence)
+
+    measured = _verify_run(candidate, evidence, refs, VERIFIER.verify, "first")
+    assert measured["audio"]["frames"] == phrase["duration_samples"] + phrase["tail_samples"]
+
+
+def test_profile_request_rejects_a_different_native_float32_velocity(tmp_path):
+    candidate, phrase = _riff_profile_candidate()
+    evidence = tmp_path / "profile-evidence"
+    evidence.mkdir()
+    refs = _write_profile_run(evidence, "first", candidate, phrase)
+    request_path = evidence / "first" / "request.json"
+    request = json.loads(request_path.read_bytes())
+    request["project"]["tracks"][0]["notes"][1]["velocity"] = 2 / 127
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    refs["request"] = artifact_ref(request_path, evidence)
+
+    with pytest.raises(ValueError, match="Rendered request MIDI differs"):
+        _verify_run(candidate, evidence, refs, VERIFIER.verify, "first")
+
+
+def test_profile_request_must_render_the_exact_source_pinned_phrase(tmp_path):
+    candidate, phrase = _riff_profile_candidate()
+    evidence = tmp_path / "profile-evidence"
+    evidence.mkdir()
+    refs = _write_profile_run(evidence, "first", candidate, phrase, altered_notes=True)
+    with pytest.raises(ValueError, match="Rendered request MIDI differs"):
+        _verify_run(candidate, evidence, refs, VERIFIER.verify, "first")
+
+
+def test_profile_wav_must_have_exact_phrase_plus_tail_frames(tmp_path):
+    candidate, phrase = _riff_profile_candidate()
+    evidence = tmp_path / "profile-evidence"
+    evidence.mkdir()
+    refs = _write_profile_run(evidence, "first", candidate, phrase, extra_frames=1)
+    with pytest.raises(ValueError, match="exceeds its source-pinned performance phrase and tail"):
+        _verify_run(candidate, evidence, refs, VERIFIER.verify, "first")
+
+
+def test_profile_total_audio_cannot_hide_a_silent_trigger_window(tmp_path):
+    candidate, phrase = _riff_profile_candidate()
+    evidence = tmp_path / "profile-evidence"
+    evidence.mkdir()
+    refs = _write_profile_run(evidence, "first", candidate, phrase, silent_window=True)
+    with pytest.raises(ValueError, match="Performance-profile trigger window is silent"):
+        _verify_run(candidate, evidence, refs, VERIFIER.verify, "first")
+
+
+def test_profile_request_must_not_select_a_different_plugin_path(tmp_path):
+    candidate, phrase = _riff_profile_candidate()
+    evidence = tmp_path / "profile-evidence"
+    evidence.mkdir()
+    refs = _write_profile_run(evidence, "first", candidate, phrase, requested_path="other.vst3")
+    with pytest.raises(ValueError, match="request selected a different plugin path"):
+        _verify_run(candidate, evidence, refs, VERIFIER.verify, "first")
+
+
+def test_request_must_include_at_least_one_native_plugin_selector(tmp_path):
+    candidate, phrase = _riff_profile_candidate()
+    evidence = tmp_path / "profile-evidence"
+    evidence.mkdir()
+    refs = _write_profile_run(evidence, "first", candidate, phrase)
+    request_path = evidence / "first" / "request.json"
+    request = json.loads(request_path.read_bytes())
+    request["project"]["tracks"][0]["plugins"] = [{}]
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    refs["request"] = artifact_ref(request_path, evidence)
+
+    with pytest.raises(ValueError, match="lacks a plugin path, binary hash or class identity"):
+        _verify_run(candidate, evidence, refs, VERIFIER.verify, "first")
+
+
+def test_profile_phrase_is_bounded_by_preview_budget_and_tail(tmp_path):
+    from music_learning.instrument_intake_publication import _performance_phrase_contract
+    from music_learning.instrument_performance_profiles import trigger_phrase
+
+    candidate, _ = _riff_profile_candidate(bpm=1, bars=1)
+    phrase = trigger_phrase(candidate["performance_profile"], sample_rate=44100)
+    request = {"project": {
+        "sample_rate": 44100,
+        "duration_samples": phrase["duration_samples"],
+        "tail_samples": phrase["tail_samples"],
+        "tracks": [{"notes": phrase["notes"], "controllers": phrase["controllers"]}],
+    }}
+    with pytest.raises(ValueError, match="bounded phrase-plus-tail limit"):
+        _performance_phrase_contract(candidate, request)
+
+
+def test_unprofiled_audio_keeps_the_five_second_cap(tmp_path):
+    path = _write_encoded_wav(tmp_path / "ordinary-long.wav", array("f", [0.1]) * (44100 * 6), "float32")
+    with pytest.raises(ValueError, match="five seconds"):
+        _audio_measure(path)
 
 
 def test_audio_measure_decodes_signed_pcm32_without_float_guessing(tmp_path):

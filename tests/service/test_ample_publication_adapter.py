@@ -9,7 +9,10 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from music_learning.ample_identity import factory_identity, native_factory_identity
+from music_learning.ample_identity import (
+    factory_identity, factory_parameters, identity_compatibility, native_factory_identity,
+    parameter_map_sha256,
+)
 from music_learning.ample_publication import (
     PRODUCTS, candidate_for_factory, identity_verifier, receipt_from_probe, variant_label,
 )
@@ -32,11 +35,14 @@ def _memory_block(data: bytes) -> str:
     return f"{len(data)}.{encoded}"
 
 
-def _captured_plugin(root: str = "AEG_STATE", *, name: str = "Autumn Leaves(Blues)") -> dict:
-    component = (f'<{root} Name="{name}"><DBName Value="AGSCNk"/>'
-                 '<Parameter Name="Volume" Value="0.8"/>'
-                 '<Parameter Name="Pedal-HM2-Dist" Value="10"/>'
-                 '</' + root + '>').encode()
+def _captured_plugin(root: str = "AEG_STATE", *, name: str = "Autumn Leaves(Blues)",
+                     database="AGSCNk",
+                     product_name="Ample Guitar SC", product_version="4.0.1",
+                     parameters: str = ('<Parameter Name="Volume" Value="0.8"/>'
+                                        '<Parameter Name="R-Sync Host Playback Toggle" Value="0"/>'
+                                        '<Parameter Name="Pedal-HM2-Dist" Value="10"/>')) -> dict:
+    component = (f'<{root} Name="{name}"><DBName Value="{database}"/>'
+                 + parameters + '</' + root + '>').encode()
     component_state = b"VC2!" + struct.pack("<I", len(component)) + component
     state_xml = ET.tostring(ET.Element("VST3PluginState"), encoding="utf-8")
     outer = ET.fromstring(state_xml)
@@ -44,11 +50,28 @@ def _captured_plugin(root: str = "AEG_STATE", *, name: str = "Autumn Leaves(Blue
     state_payload = ET.tostring(outer, encoding="utf-8")
     state = b"VC2!" + struct.pack("<I", len(state_payload)) + state_payload
     return {
-        "name": "Ample Guitar SC",
-        "version": "4.0.1",
+        "name": product_name,
+        "version": product_version,
         "manufacturer": "Ample Sound",
         "state_base64": base64.b64encode(state).decode("ascii"),
         "parameters_readback": [{"id": "7", "value": 0.8}],
+    }
+
+
+def _candidate_identity(factory: bytes, plugin_name="Ample Guitar SC", plugin_version="4.0.1") -> dict:
+    expected = factory_identity(factory)
+    source = factory_parameters(factory)
+    compatibility = identity_compatibility(plugin_name, plugin_version)
+    loaded = dict(source)
+    for name, value in compatibility["native_only_defaults"].items():
+        loaded.setdefault(name, value)
+    return {
+        "expected_identity": {
+            **expected,
+            "loaded_parameters_sha256": parameter_map_sha256(loaded),
+        },
+        "expected_factory_parameters": source,
+        "factory_identity_compatibility": compatibility,
     }
 
 
@@ -59,15 +82,59 @@ def test_native_identity_parser_is_self_contained_and_pins_all_factory_parameter
     path = tmp_path / "factory.agscstate"
     path.write_bytes(factory)
     expected = factory_identity(path, expected_sha256=hashlib.sha256(factory).hexdigest())
-    actual = native_factory_identity({}, _captured_plugin())
+    candidate = _candidate_identity(factory)
+    actual = native_factory_identity(candidate, _captured_plugin())
 
-    assert actual == expected
+    assert actual == candidate["expected_identity"]
     assert expected["database"] == "AGSCNk"
     assert expected["factory_parameters_sha256"]
     assert identity_verifier().code_path.name == "ample_identity.py"
     assert identity_verifier().code_sha256 == sha256_file(identity_verifier().code_path)
     with pytest.raises(ValueError, match="changed"):
         factory_identity(path, expected_sha256="0" * 64)
+
+
+def test_native_identity_uses_exact_typed_source_values_and_float32_normalization():
+    factory = (b'<AEG_STATE Name="Autumn Leaves(Blues)"><DBName Value="AGSCNk"/>'
+               b'<Parameter Name="AMP-Type-Index" Value="Lead 800"/>'
+               b'<Parameter Name="Volume" Value="0.20000000298023224"/>'
+               b'<Parameter Name="R-Sync Host Playback Toggle" Value="1"/></AEG_STATE>')
+    candidate = _candidate_identity(factory)
+    plugin = _captured_plugin(parameters=(
+        '<Parameter Name="AMP-Type-Index" Value="Lead 800"/>'
+        '<Parameter Name="Volume" Value="0.2"/>'
+        '<Parameter Name="R-Sync Host Playback Toggle" Value="1"/>'
+    ))
+
+    assert native_factory_identity(candidate, plugin) == candidate["expected_identity"]
+    assert candidate["expected_factory_parameters"]["Volume"] == 0.20000000298023224
+
+
+def test_native_identity_rejects_unrecognized_extra_parameters():
+    factory = (b'<AEG_STATE Name="Autumn Leaves(Blues)"><DBName Value="AGSCNk"/>'
+               b'<Parameter Name="Volume" Value="0.8"/></AEG_STATE>')
+    candidate = _candidate_identity(factory)
+    plugin = _captured_plugin(parameters=(
+        '<Parameter Name="Volume" Value="0.8"/>'
+        '<Parameter Name="Not a product default" Value="0"/>'
+    ))
+
+    with pytest.raises(ValueError, match="exact source/default state"):
+        native_factory_identity(candidate, plugin)
+
+
+def test_native_identity_allows_only_exact_documented_product_default():
+    factory = (b'<AAG_STATE Name="Default"><DBName Value="AGMFg"/>'
+               b'<Parameter Name="Volume" Value="0.8"/></AAG_STATE>')
+    candidate = _candidate_identity(factory, "Ample Guitar M", "3.1.0")
+    plugin = _captured_plugin(root="AAG_STATE", name="Default", database="AGMFg",
+                              product_name="Ample Guitar M", product_version="3.1.0", parameters=(
+        '<Parameter Name="Volume" Value="0.8"/>'
+        '<Parameter Name="S-TempoMode" Value="1"/>'
+    ))
+
+    with pytest.raises(ValueError, match="exact source/default state"):
+        native_factory_identity(candidate, plugin)
 
 
 @pytest.mark.parametrize("plugin,match", [
@@ -120,6 +187,10 @@ def test_factory_candidate_uses_explicit_product_model_bilingual_label_and_full_
     }
     assert candidate["labels_zh"] == {"model": "电吉他", "variant": "秋叶（布鲁斯）"}
     assert candidate["expected_identity"]["database"] == "AGSCNk"
+    assert candidate["expected_identity"]["loaded_parameters_sha256"]
+    assert candidate["expected_factory_parameters"] == {"Volume": 0.800000011920929,
+                                                           "Pedal-HM2-Dist": 10.0}
+    assert candidate["factory_identity_compatibility"]["schema_version"] == 1
     assert candidate["expected_parameters"] == {"7": 0.8}
     assert candidate["runtime_dependencies"] == {}
     assert candidate["source_factory_sha256"] == factory_hash

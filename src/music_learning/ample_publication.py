@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Mapping
 
 from .ample_identity import (
-    factory_identity, native_factory_identity, parse_factory_xml,
+    factory_identity, factory_parameters, identity_compatibility,
+    native_factory_identity, parameter_map_sha256, parse_factory_xml,
 )
 from .instrument_intake_publication import (
     SHA256_RE, IdentityVerifier, ValidatorPin, _candidate_for_catalog, _plugin_from_response,
@@ -225,6 +226,9 @@ def candidate_for_factory(item: Mapping, first_plugin: Mapping, *, bank_root: st
         raise ValueError("Native plugin name/version differs from the Ample product map")
     factory_path = Path(item["factory_xml"])
     expected = factory_identity(factory_path, expected_sha256=item.get("factory_sha256"))
+    source_factory_parameters = factory_parameters(
+        factory_path, expected_sha256=item.get("factory_sha256")
+    )
     if expected["name"] != item.get("name") or expected["database"] != item.get("db_name"):
         raise ValueError("Ample factory XML identity differs from the frozen queue")
     labels = {"model": product["model_label"], "variant": variant_label(item["name"])}
@@ -240,6 +244,14 @@ def candidate_for_factory(item: Mapping, first_plugin: Mapping, *, bank_root: st
         validate_performance_profile(raw_profile, expected_source_sha256=source_factory_sha256)
         if raw_profile is not None else None
     )
+    identity_schema = identity_compatibility(plugin_name, product["version"])
+    loaded_parameters = dict(source_factory_parameters)
+    for parameter_name, default_value in identity_schema["native_only_defaults"].items():
+        loaded_parameters.setdefault(parameter_name, default_value)
+    expected_identity = {
+        **expected,
+        "loaded_parameters_sha256": parameter_map_sha256(loaded_parameters),
+    }
     candidate = {
         "id": f"{product['library_id']}:{item['id']}",
         "name": item["name"],
@@ -260,7 +272,9 @@ def candidate_for_factory(item: Mapping, first_plugin: Mapping, *, bank_root: st
         "installed_library": dict(installed_library),
         "source_manifest_sha256": source_manifest_sha256,
         "source_factory_sha256": source_factory_sha256,
-        "expected_identity": expected,
+        "expected_identity": expected_identity,
+        "expected_factory_parameters": source_factory_parameters,
+        "factory_identity_compatibility": identity_schema,
         "expected_parameters": _native_parameters(first_plugin),
         "plugin_path": first_plugin.get("path"),
         "plugin_sha256": first_plugin.get("binary_sha256"),

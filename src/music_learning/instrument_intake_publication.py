@@ -73,7 +73,8 @@ FINGERPRINT_FIELDS = (
     "family", "instrument_ids", "classification_basis", "backend", "entrypoint", "bank_root",
     "key_range", "gm_programs", "identifier", "plugin_path", "plugin_sha256", "resources",
     "runtime_dependencies", "installed_library", "source_manifest_sha256", "expected_identity",
-    "source_factory_sha256", "performance_profile", "vst3_class_id",
+    "expected_factory_parameters", "factory_identity_compatibility", "source_factory_sha256",
+    "performance_profile", "vst3_class_id",
     "expected_parameters", "source_category", "tags", "usage", "default",
 )
 
@@ -505,30 +506,144 @@ def _plugin_from_response(response: Mapping) -> tuple[dict, dict]:
     return result, plugin
 
 
-def _audio_measure(path: Path) -> dict:
-    """Read actual PCM from a bounded probe WAV and reject silent/invalid audio."""
+def _audio_measure(path: Path, *, max_frames: int | None = None,
+                   performance_window: tuple[int, int] | None = None) -> dict:
+    """Read actual PCM from a bounded probe WAV and reject silent/invalid audio.
+
+    Ordinary presets retain the historic five-second cap. A source-pinned
+    performance profile may supply an exact frame bound and a separately
+    measured musical-event window; callers must derive both from the validated
+    profile and the request that was actually rendered.
+    """
     try:
         values, channels, rate = read_pcm(path)
     except (OSError, ValueError) as error:
         raise ValueError("Probe is not a supported finite PCM/float WAV") from error
     frames = len(values) // channels
-    if frames < 1 or frames > rate * 5:
-        raise ValueError("Probe WAV must contain between one sample and five seconds")
+    frame_limit = rate * 5 if max_frames is None else max_frames
+    if type(frame_limit) is not int or frame_limit < 1:
+        raise ValueError("Probe WAV frame limit must be a positive integer")
+    if frames < 1 or frames > frame_limit:
+        if max_frames is None:
+            raise ValueError("Probe WAV must contain between one sample and five seconds")
+        raise ValueError("Probe WAV exceeds its source-pinned performance phrase and tail")
+    if performance_window is not None:
+        start, stop = performance_window
+        if (type(start) is not int or type(stop) is not int or start < 0
+                or stop <= start or stop > frames):
+            raise ValueError("Performance-profile audio window is outside the rendered WAV")
     peak = 0.0
     square_sum = 0.0
     nonzero = 0
     clipped = 0
     sample_count = len(values)
+    window_peak = 0.0
+    window_square_sum = 0.0
+    window_count = 0
     for value in values:
         peak = max(peak, abs(value))
         square_sum += value * value
         nonzero += value != 0.0
         clipped += abs(value) >= 1.0
+    if performance_window is not None:
+        start, stop = performance_window
+        first = start * channels
+        last = stop * channels
+        for value in values[first:last]:
+            window_peak = max(window_peak, abs(value))
+            window_square_sum += value * value
+            window_count += 1
     rms = math.sqrt(square_sum / sample_count)
     if not nonzero or rms < 1e-6 or peak <= 0.0:
         raise ValueError("Probe WAV is silent")
-    return {"channels": channels, "frames": frames, "sample_rate": rate,
-            "peak": peak, "rms": rms, "clipped_samples": clipped}
+    measured = {"channels": channels, "frames": frames, "sample_rate": rate,
+                "peak": peak, "rms": rms, "clipped_samples": clipped}
+    if performance_window is not None:
+        window_rms = math.sqrt(window_square_sum / window_count) if window_count else 0.0
+        if window_count == 0 or window_rms < 1e-6 or window_peak <= 0.0:
+            raise ValueError("Performance-profile trigger window is silent")
+        measured["performance_window"] = {
+            "start_sample": start, "end_sample": stop, "frames": stop - start,
+            "sample_rate": rate, "rms": window_rms, "peak": window_peak,
+        }
+    return measured
+
+
+def _performance_phrase_contract(candidate: Mapping, request: Mapping) -> tuple[int, tuple[int, int]] | None:
+    """Bind a longer render and its audible window to the exact profile phrase."""
+    profile = candidate.get("performance_profile")
+    if profile is None:
+        return None
+    from .instrument_performance_profiles import MAX_PREVIEW_SECONDS, trigger_phrase, validate
+
+    profile = validate(profile, expected_source_sha256=candidate.get("source_factory_sha256"))
+    try:
+        project = request["project"]
+        rate = project["sample_rate"]
+        tracks = project["tracks"]
+        if type(rate) is not int or not isinstance(tracks, list) or len(tracks) != 1:
+            raise ValueError
+        track = tracks[0]
+    except (KeyError, TypeError, IndexError) as error:
+        raise ValueError("Performance-profile request lacks one bounded project track") from error
+    phrase = trigger_phrase(profile, sample_rate=rate, max_seconds=MAX_PREVIEW_SECONDS)
+    duration = phrase.get("duration_samples")
+    tail = phrase.get("tail_samples")
+    if (type(duration) is not int or duration < 1 or type(tail) is not int or tail < 0
+            or duration + tail > (MAX_PREVIEW_SECONDS + 1) * rate):
+        raise ValueError("Performance profile exceeds the bounded phrase-plus-tail limit")
+    if project.get("duration_samples") != duration or project.get("tail_samples") != tail:
+        raise ValueError("Rendered request duration differs from the source-pinned performance phrase")
+    if (_canonical_profile_notes(track.get("notes")) != _canonical_profile_notes(phrase.get("notes"))
+            or track.get("controllers", []) != phrase.get("controllers", [])):
+        raise ValueError("Rendered request MIDI differs from the source-pinned performance phrase")
+    for field in ("tempo", "meter"):
+        expected = phrase.get(field)
+        if expected and project.get(field) != expected:
+            raise ValueError("Rendered request transport differs from the source-pinned performance phrase")
+    notes = phrase.get("notes")
+    if not isinstance(notes, list) or not notes:
+        raise ValueError("Performance profile has no audible event notes")
+    first_event = min(note["sample"] for note in notes)
+    last_event = max(note["sample"] + note["duration_samples"] for note in notes)
+    start = first_event + min(rate // 2, duration // 4)
+    stop = min(duration, last_event) - rate // 4
+    if start < 0 or stop <= start:
+        raise ValueError("Performance profile has no bounded post-trigger audio window")
+    return duration + tail, (start, stop)
+
+
+def _canonical_profile_notes(notes):
+    """Compare source note velocities as the exact float32 sent to JUCE.
+
+    The native renderer converts request velocity doubles to `float` before
+    constructing MIDI messages. JSON's shorter decimal serialization can
+    therefore differ as a Python double while producing the identical native
+    float. Only velocity is canonicalized; event timing, pitch, duration,
+    channel, controller events and transport remain exact.
+    """
+    if not isinstance(notes, list):
+        return notes
+    import struct
+
+    normalized = []
+    for note in notes:
+        if not isinstance(note, dict):
+            return notes
+        item = dict(note)
+        if "velocity" in item:
+            raw = item["velocity"]
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(float(raw)):
+                return notes
+            try:
+                value = struct.unpack("<f", struct.pack("<f", float(raw)))[0]
+            except (OverflowError, struct.error):
+                return notes
+            if not math.isfinite(value):
+                return notes
+            item["velocity"] = value
+        normalized.append(item)
+    return normalized
 
 
 def _param_map(plugin: Mapping) -> dict:
@@ -614,7 +729,18 @@ def _verify_run(candidate, root, run, verifier, phase):
         or not isinstance(clipped, int) or clipped != 0
     ):
         raise ValueError(f"{phase} host reported silent, invalid or clipped audio")
-    actual_audio = _audio_measure(probe_path)
+    phrase_contract = _performance_phrase_contract(candidate, request)
+    if phrase_contract is None:
+        actual_audio = _audio_measure(probe_path)
+    else:
+        expected_frames, performance_window = phrase_contract
+        actual_audio = _audio_measure(
+            probe_path, max_frames=expected_frames, performance_window=performance_window
+        )
+        if actual_audio["frames"] != expected_frames:
+            raise ValueError(f"{phase} WAV frame count differs from the exact performance phrase and tail")
+        if actual_audio["sample_rate"] != request["project"]["sample_rate"]:
+            raise ValueError(f"{phase} WAV sample rate differs from the rendered performance phrase")
     metric_tolerance = {"rel_tol": 1e-4, "abs_tol": 1e-7}
     if not math.isclose(actual_audio["rms"], float(reported_rms), **metric_tolerance):
         raise ValueError(f"{phase} native RMS differs from decoded WAV")
@@ -627,11 +753,25 @@ def _verify_run(candidate, root, run, verifier, phase):
         request_plugin = request["project"]["tracks"][0]["plugins"][0]
     except (TypeError, KeyError, IndexError):
         pass
-    if request_plugin is not None:
-        if request_plugin.get("binary_sha256") != candidate["plugin_sha256"]:
-            raise ValueError(f"{phase} request pinned a different plugin binary")
-        if request_plugin.get("identifier") != candidate.get("identifier"):
-            raise ValueError(f"{phase} request pinned a different plugin class")
+    if not isinstance(request_plugin, dict):
+        raise ValueError(f"{phase} request lacks a native plugin selector")
+    requested_binary_sha = request_plugin.get("binary_sha256")
+    requested_identifier = request_plugin.get("identifier")
+    requested_class_id = request_plugin.get("vst3_class_id")
+    requested_path = request_plugin.get("path")
+    if not any((requested_binary_sha, requested_identifier, requested_class_id, requested_path)):
+        raise ValueError(f"{phase} request lacks a plugin path, binary hash or class identity")
+    if requested_binary_sha is not None and requested_binary_sha != candidate["plugin_sha256"]:
+        raise ValueError(f"{phase} request pinned a different plugin binary")
+    if requested_identifier is not None and requested_identifier != candidate.get("identifier"):
+        raise ValueError(f"{phase} request pinned a different plugin class")
+    if requested_class_id is not None and requested_class_id != candidate.get("vst3_class_id"):
+        raise ValueError(f"{phase} request pinned a different VST3 class ID")
+    if requested_path is not None and requested_path != candidate.get("plugin_path"):
+        raise ValueError(f"{phase} request selected a different plugin path")
+    if (str(candidate.get("library_id", "")).startswith("ample-guitar-")
+            and requested_path != candidate.get("plugin_path")):
+        raise ValueError(f"{phase} Ample request lacks the exact candidate plugin path")
     state_parameters = _param_map(state_plugin)
     response_parameters = _param_map(response_plugin)
     if state_parameters != response_parameters:
