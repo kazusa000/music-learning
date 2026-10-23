@@ -1,5 +1,21 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 14:37 UTC：实际续跑链、调用链回归与单因素诊断准备
+
+Goal 保持 ACTIVE，旧暂停记录不生效。`goal-progress-20261023-143749.json`再次逐 PID/出生时间/实际 plan 命令核实 full-h47740/46344，仍145通过/7失败/840待测、0Kontakt正式入库，H忙时原批保留等待。正式九表/head与E内12固定SHA相同；H两pin未在忙盘期重读。没有停改原Kontakt或441控制，也没有改正式工程。
+
+**后续协调器权威入口为 `runtime/ample-root-cause-chain-v3-job.local.json`。** 新coordinator45732、wrapper56012于14:36:25 UTC实启，script SHA `453fe7ec039ba9cf14066f306a88bc0a419cb406d6528a99def29a138082e5a9`，chain03 plan SHA `ff07701aee43d2a69f43ea329af1ac930e3c5facac0daaaac4cb354411f00086`。当前仅E内等execution04终态，active_host=null，尚未进入H门控或新发声。`root-cause-chain-03/launch-assessment.json`与最新goal报告记录实际身份；不能把 prepared 或旧locator当成运行证据。
+
+`352ed1b`第一版协调器的行为回归`eefbd47`确实发现两项共享问题：异常结束的前序可能等满24小时，Python runner启动被误写为native host已经启动。root在其无子进程、仅被动等待时保存原脚本/plan/checkpoint/locator字节，然后只停止已核验的43060，wrapper42108自然退出；四份原文件未改、04进程身份不变。证据在`root-cause-chain-02/transition-01`。02随后仅准备，审查继续抓到QA快照缺失和storage的observations/samples格式不匹配，故未启动02。
+
+`a75ee1d`与`d6e4c67`修复上述共享协议，21项行为/预检回归通过。真实`_fresh_chain_gate`现在重核QA07终态与物理释放，沿用实际`loading_budget`、`sample_drive`和busy规则，给原观测附UTC时间；Riff消费的就是这三条真实observations。集成回归贯穿真实gate builder到六次消费者，只替换Windows采样、CIM、manifest和formal-idle等叶节点，避免用模拟的上层gate掩盖字段错误。异常/失去前序身份会明确留下待诊断终态，不能当作成功继续；runner派发与实际native启动证据分开，没有证据时保留unknown。03固定后不再修改活动实现，也不添加第二个等待器。
+
+`59c9027`修正Kontakt失败项CLI与冻结runner传错根目录的问题，并明确冻结校验模块路径。22项专项通过，包含未mock实际start-gate verifier的两条调用链和错误根拒绝。原full-h尚未全终态，实际失败重试仍未启动；通过/未完成项不会混进失败队列。
+
+`source-state-mode-audit-01/report.json`绑定67份源状态，没有找到明确的输入通道、键域或力度域限制来解释48有声而后续音符缺失，未靠改音符或忽略字段放行。`message-dispatch-correlation-01/report.json`进一步绑定132/134 WAV的32768/65536边界与消息派发；JUCE的restart/async机制只是可解释的候选路径，未证明Ample实际发过特定flags。`79975a5`准备了同源、同观测代码的64/32 cadence离线宿主对；唯一控制变量为派发频率，保留原1ms派发。计划`pump-cadence-control-01/prepared-plan.json`当前SHA `63155e71222bf315b96f69acda555cac91f2e22a570f70e8f445a5615d1ecd55`，四份请求仅输出路径变动；fixture CTest1/1通过。两诊断宿主未执行，应在03结果/loader判断后由本目标在释放的唯一通道安排，不开并行等待器。Instrumentation会增加观测开销，不能拿它冒充生产性能比较；旧宿主/lib、冻结07/worker和JUCE固定SHA不变。
+
+额外只读排查捕捉到正式API持续逻辑IO，但多次句柄采样只有E数据库、锁、日志和Windows库，没有H句柄；全局试听1275ready/94failed/52cancelled、queued/loading=0，无活动engine owner。证据在`data/maintenance/instrument-intake/api-io-starvation-01/process-io-assessment-20261023T142941Z.json`。这些全局数包含历史缓存，不代表当前79款全已就绪；也不足以证明API造成物理H压力或正在编译工程。因此没有重启API、关闭后来新开的界面或修改校验规则。52项让路试听与未部署的7332324仍在持久入口列明，完成共享修复及真实产品验收后必须续回。
+
 ## 2026-10-23 14:08 UTC：诊断交接固定、实际默认版本与源正例
 
 Goal 继续 ACTIVE。`goal-progress-20261023-140848.json` 实查原 full-h wrapper47740/worker46344 的 PID、出生时间和 plan 命令均匹配，仍为145通过/7失败/840待测，正在等待 H 盘空闲；不启动第二份 Kontakt 批次。正式九表/head 与 E 内12固定文件再次相同，H 两pin未在忙盘期重读。此时仅见后来新启动的桌面界面，没有实际 engine/plugin-worker/audio-host 残留，不能把新界面当成此前待清理的旧宿主。
