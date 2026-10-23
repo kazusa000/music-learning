@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from functools import lru_cache
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
 import threading
@@ -17,6 +18,17 @@ from .instruments import catalog, materialize, preset_spec, resource_path
 from .installed_libraries import verify_installed_library
 from .processes import OwnedProcess
 from .storage import digest
+
+
+def preview_storage_budget(settings):
+    """Defer background sample loading on a busy configured local volume."""
+    library = settings.instrument_library
+    drive = library.drive if library is not None else ""
+    if os.name != "nt" or len(drive) != 2 or drive[1] != ":":
+        return {"allowed": True}
+    from .instrument_probe_budget import loading_budget
+
+    return loading_budget(drive)
 
 
 def encoded(value):
@@ -196,7 +208,7 @@ class InstrumentPreviews:
         self.start()
         return result
 
-    def __init__(self, settings, renderer=render_preview):
+    def __init__(self, settings, renderer=render_preview, *, storage_budget=None):
         self.settings = settings
         self.renderer = renderer
         self.root = settings.path("instrument-previews")
@@ -207,6 +219,8 @@ class InstrumentPreviews:
         self.thread = None
         self.lock = threading.Lock()
         self.last_catalog = None
+        self.storage_budget = storage_budget or (lambda: preview_storage_budget(settings))
+        self.storage_retry_at = 0.0
         with self.db() as db:
             db.executescript("""
             CREATE TABLE IF NOT EXISTS previews (
@@ -351,14 +365,31 @@ class InstrumentPreviews:
         return path
 
     def process_next(self):
+        # Performance-counter sampling must not hold a queue write lock. A busy
+        # volume leaves work queued, without failing or restarting a native host.
+        if time.monotonic() < self.storage_retry_at:
+            return False
         with self.db() as db:
-            db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "select * from previews where status='queued' order by priority desc,case when priority>0 then -accessed else created end limit 1"
             ).fetchone()
-            if row is None:
+        if row is None:
+            return False
+        try:
+            available = self.storage_budget().get("allowed") is True
+        except Exception:
+            available = False
+        if not available:
+            self.storage_retry_at = time.monotonic() + 20
+            return False
+        with self.db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            claimed = db.execute(
+                "update previews set status='loading',updated=? where id=? and generation=? and status='queued'",
+                (time.time(), row["id"], row["generation"]),
+            ).rowcount
+            if not claimed:
                 return False
-            db.execute("update previews set status='loading',updated=? where id=?", (time.time(), row["id"]))
         identifier = row["id"]
         generation = row["generation"]
         entry = json.loads(row["entry"])

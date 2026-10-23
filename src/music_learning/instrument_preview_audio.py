@@ -15,7 +15,13 @@ RATE = 44100
 
 def _ordinary_phrase(entry):
     ids = entry.get("instrument_ids", [entry["family"]])
-    low, high = entry["key_range"]
+    # A physical range is optional catalog metadata. Without one, keep the
+    # family phrase's normal register; do not invent a range in the catalog.
+    declared_range = entry.get("key_range", [0, 127])
+    if (not isinstance(declared_range, (list, tuple)) or len(declared_range) != 2
+            or any(type(value) is not int for value in declared_range)):
+        raise ValueError("Invalid instrument pitch range")
+    low, high = declared_range
     if high < low or low < 0 or high > 127:
         raise ValueError("Invalid instrument pitch range")
     bass = any("bass" in i for i in ids)

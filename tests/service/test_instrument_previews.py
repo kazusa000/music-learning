@@ -37,7 +37,7 @@ def previews(service, tmp_path, monkeypatch):
         tone(path)
         return path, dict(duration=1)
 
-    store = InstrumentPreviews(service.settings, renderer)
+    store = InstrumentPreviews(service.settings, renderer, storage_budget=lambda: {"allowed": True})
     monkeypatch.setattr(store, "start", lambda: None)
     service.instrument_previews = store
     return store, entry
@@ -168,6 +168,65 @@ def test_phrases_respect_ranges_and_normalization_is_nonzero_and_peak_safe(tmp_p
     tone(raw, 0)
     with pytest.raises(ValueError, match="silent"):
         normalize(raw, target)
+
+
+def test_ordinary_preview_accepts_undeclared_range_without_claiming_one():
+    entry = dict(family="electric-guitar", instrument_ids=["electric-guitar"])
+    before = dict(entry)
+    assert phrase_spec(entry) == phrase_spec({**entry, "key_range": [0, 127]})
+    assert entry == before and "key_range" not in entry
+    notes = phrase_spec({**entry, "key_range": [71, 73]})["notes"]
+    assert all(71 <= note["note"] <= 73 for note in notes)
+
+
+@pytest.mark.parametrize("declared", [None, [], [60], [60, 70, 80], [True, 80],
+                                      [60.0, 80], [80, 60], [-1, 80], [60, 128]])
+def test_declared_preview_range_is_still_validated(declared):
+    with pytest.raises(ValueError, match="pitch range"):
+        phrase_spec(dict(family="guitar", key_range=declared))
+
+
+def test_preview_prepare_and_get_accept_optional_range(service, previews):
+    store, entry = previews
+    entry.pop("key_range")
+    path = service.settings.instrument_library / "catalog.json"
+    path.write_text(json.dumps(dict(schema_version=1, presets=[entry])))
+    prepared = store.prepare(PrepareInstrumentPreview(preset_id=entry["id"]), "no-range")
+    assert prepared["status"] == "queued" and prepared["phrase"]
+    assert store.process_next()
+    assert store.get(prepared["id"])["status"] == "ready"
+
+
+def test_busy_storage_leaves_previews_queued_and_resumes_without_requeue(service, previews, monkeypatch):
+    store, entry = previews
+    selected = store.prepare(PrepareInstrumentPreview(preset_id=entry["id"]), "busy")
+    calls = []
+    observations = iter([{"allowed": False}, {"allowed": True}])
+    def budget():
+        calls.append(1)
+        return next(observations)
+    store.storage_budget = budget
+    now = [100.0]
+    monkeypatch.setattr("music_learning.instrument_previews.time.monotonic", lambda: now[0])
+    assert not store.process_next()
+    assert not store.process_next() and len(calls) == 1
+    assert store.get(selected["id"])["status"] == "queued"
+    assert not (store.root / "work").exists()
+    now[0] = 121.0
+    assert store.process_next() and len(calls) == 2
+    assert store.get(selected["id"])["status"] == "ready"
+
+
+def test_cancel_during_storage_check_cannot_claim_or_render(service, previews):
+    store, entry = previews
+    selected = store.prepare(PrepareInstrumentPreview(preset_id=entry["id"]), "cancel-on-budget")
+    def budget():
+        store.cancel(selected["id"])
+        return {"allowed": True}
+    store.storage_budget = budget
+    assert not store.process_next()
+    assert store.get(selected["id"])["status"] == "cancelled"
+    assert not (store.root / "work").exists()
 
 
 def test_riff_profile_phrase_and_native_request_keep_trigger_and_transport(tmp_path, monkeypatch):
@@ -396,7 +455,8 @@ def test_queue_survives_restart_and_recovers_interrupted_preparation(service, pr
     selected = store.prepare(PrepareInstrumentPreview(preset_id=entry["id"]), "before-restart")
     with store.db() as db:
         db.execute("update previews set status='loading'")
-    recovered = InstrumentPreviews(service.settings, store.renderer)
+    recovered = InstrumentPreviews(service.settings, store.renderer,
+                                   storage_budget=lambda: {"allowed": True})
     recovered.start()
     try:
         deadline = time.monotonic() + 5
