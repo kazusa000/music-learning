@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from .instrument_localization_context import corrected_legacy_label, musical_term
+
 
 def table(text):
     return dict(line.split("|", 1) for line in text.strip().splitlines())
@@ -545,22 +547,26 @@ _codes = re.compile(
 )
 
 
-def translate(text):
+def translate(text, *, instrument_ids=()):
     """Return a translation and unresolved words; never change a factory name."""
+    contextual = musical_term(text, instrument_ids)
+    if contextual is not None:
+        return contextual, []
     value = _pattern.sub(lambda m: _folded[m[0].casefold()], text)
     rest = _codes.sub("", value)
     missing = sorted(set(re.findall(r"[A-Za-zÀ-ÿ]+(?:'[A-Za-z]+)?", rest)))
     return re.sub(r"\s+", " ", value).strip(), missing
 
 
-def label(text, explicit=None, fallback="音色"):
+def label(text, explicit=None, fallback="音色", *, instrument_ids=()):
     if explicit:
+        explicit = corrected_legacy_label(text, explicit, instrument_ids)
         unchanged_code = (isinstance(explicit, str) and explicit == text
-                          and translate(text) == (text, []))
+                          and translate(text, instrument_ids=instrument_ids) == (text, []))
         if not isinstance(explicit, str) or (not re.search(r"[\u4e00-\u9fff]", explicit) and not unchanged_code):
             raise ValueError("Chinese instrument labels must contain Chinese text")
         return explicit
-    translated, missing = translate(text)
+    translated, missing = translate(text, instrument_ids=instrument_ids)
     return translated if not missing else fallback
 
 
@@ -589,8 +595,9 @@ def translated_names(entry):
             variant = "Original"
         elif variant.startswith(prefix + " "):
             variant = variant[len(prefix) :].strip(" -")
-    translated_model = label(model["name"], names.get("model"), "乐器型号")
-    translated_variant = label(variant, names.get("variant"))
+    ids = entry.get("instrument_ids", ())
+    translated_model = label(model["name"], names.get("model"), "乐器型号", instrument_ids=ids)
+    translated_variant = label(variant, names.get("variant"), instrument_ids=ids)
     return translated_model, translated_variant
 
 
@@ -632,7 +639,7 @@ def prepare_import(entry, overrides=None):
         ("variant", entry["variant_name"].split(" - ", 1)[-1]),
     ]:
         if not entry.get("labels_zh", {}).get(field):
-            missing.extend(translate(original)[1])
+            missing.extend(translate(original, instrument_ids=entry.get("instrument_ids", ()))[1])
     if missing:
         raise ValueError(
             "Provide labels_zh for untranslated instrument names: " + ", ".join(sorted(set(missing)))
