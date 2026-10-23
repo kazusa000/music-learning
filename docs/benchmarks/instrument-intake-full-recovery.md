@@ -1,5 +1,13 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 04:27 清单修订审计与实际加载排查
+
+当前准备 canonical locator 已改为 `metadata-refresh-01`，实际32840/ctime1792722161.8696787；运行时、CSS及CSS Solo已审计结果复用，Factory按新输入修订继续完整SHA审计。旧清单仍保留：两项 `.nkc` 大小不变但时间戳与原清单不同，原清单没有逐文件SHA，不能声称内容未变。修复 `56f37db` 只在全清单差异均为同大小普通NKC时，计算其当前SHA并建立独立E修订；主资源/其他大小变化成组拒绝，源文件不写入。新修订位于 `kf22/prep/inventory-revisions/metadata-refresh-20261023T022431.108684+0000/kontakt-factory.json`，SHA `54320cdd06fa3ebd99fc6b4fddc7f06d8fffcd61b0a9ae65a1437c8bf4fd1551`。19回归通过、Ruff通过；旧失败不改。04:27读回Factory审计1453/3699，未终态。
+
+`full-e` 已于02:24:15 UTC终态退出，正式表与14项固定SHA相同。CSS7失败、CSS Solo11失败中，实际5项为源加载超时，13项已完成Lua转换但在下游报 `Plugin identifier not found`；不能把18项统称为未加载或音频失败。固定原始NKM/回执/执行报告保留。独立诊断将复用已核实转换结果，核对克隆后模块实际descriptor/identifier及严格class/版本/SHA，先证明首次/空机架恢复的真实声音再建新完整固定队列；不修改旧full-e或提前重跑992项。新的full-job准备器 `75a8412` 支持显式清单修订并冻结到独立run，计划从冻结文件读取路径与SHA；37测试与Ruff通过，不重写旧清单或隐瞒变化。
+
+Ample retry4先前因IO暂缓实际退出（2失败/1deferred/18pending），已由 `fe26cc2`/`cb5e295` 的持久监督恢复同一固定队列：实际PID47024/ctime1792722001.751663，检查点 `20261023-ample-shared-fix/failed-only-source-profile-retry-4-supervision/supervision.json`。每次需重核PID与命令；终态项JSON哈希保持，累计24小时预算，H忙不启动新probe，不重试失败项、不新建批次。10项回归及Ruff通过。下一次跟进应看此监督检查点和retry4，而非只读已完成的retry3。原67通过和retry3新增14通过仍未发布，其他参数/Strummer演奏问题继续隔离排查。
+
 ## 2026-10-23 02:59 旧副本策略兼容修复
 
 当前准备为 `transfer-compat-fix-01`（实际 supervisor41660/ctime1792717145.7087245），完整固定验证为 `kf22/full-e`（实际49692/ctime1792717161.6561122），仍从既有两个 canonical locator 定位。full-e计划SHA `8a09b5c5f243ebb2ddd7956ad0099ca1eabdfbeb4474fccfdf379e1720792167`，当前等待资源结果；未开始992项音频验证、未发布新Kontakt条目。进程身份须每次重新核对。
