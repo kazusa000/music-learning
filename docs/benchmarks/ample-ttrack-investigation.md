@@ -1,0 +1,79 @@
+# Ample AGM T-Track state investigation
+
+Date: 2026-10-23. This is an E-only evidence note for the strict Ample intake
+queue. It records one unresolved source-state mismatch and does not change the
+plugin, source preset, installed library, or validation result.
+
+## Finding
+
+Factory item `89a7b114ca1da59cf570b9c2` (`Wish You Were Here - AGM`) has a
+strict state mismatch: the source request contains `T-Track Index = 1`, while
+the captured plugin state reports `0`. The original failure remains a failure;
+this note does not canonicalize or ignore the parameter.
+
+The pinned source is
+`C:\Users\wjj\Documents\Ample Sound\AGM\Presets\Wish_You_Were_Here_AGM.agmstate`,
+SHA-256 `ac5fe0b1f01eca068d78c1981efcfa06e9cdc8e2f00fbf4f0451f20b3eef0261`.
+Its XML has 343 parameters and contains:
+
+| Field | Source value |
+| --- | --- |
+| `T-Track Index` | `1.00000000000000000000` |
+| `T-Play Toggle` | `0.00000000000000000000` |
+| `T-Playback Toggle` | `0.00000000000000000000` |
+| `Tab-Path` | `D:\D\MyMusic\AmpleSound\Demo-Download\AGT-Wish You Were Here\Tabs\Wish You Were Here.gp5` |
+
+Read-only REA analysis of the installed AGM VST3 (`C:\Program Files\Common
+Files\VST3\AGM.vst3`) found the parameter registration at `0x1802f01b0`:
+parameter ID `0x145`, display name `T-Track Index`, description `Select
+Track`. Adjacent metadata describes `T-Play Toggle` as controlling tab playback
+via A6 note velocity and `T-Playback Toggle` as letting the tab respond to host
+playback. This supports interpreting T-Track as a tab-track selector. The
+generic registration, base initialization, metadata-map, and float-parameter
+helpers examined did not identify a runtime consumer or state-reset path.
+
+Therefore the analysis does **not** establish the valid index range, whether
+the selected track changes generated MIDI/audio for this preset, or whether the
+host/plugin resets it on load or recovery. The installed module SHA-256 was
+`9f8d18d346f00532015dac386227f8a8b8dca6e8312876f352c152b7b148962b` before and
+after analysis; the plugin was read-only and unchanged.
+
+## Resource-inventory boundary
+
+The existing E-side AGM fresh-resource audit is
+`data/maintenance/instrument-intake/20261023-ample-shared-fix/fresh-resource-audit-01/AGM-result.json`
+(SHA-256 `19fbfc82404d74b4e5f7472722fa1889fbc6a0e1d77506054755ee1d4bafe618`).
+It records the installed sample-bank manifest reference
+`Manifests/9ae994aa70da4472195844626c9ca73b584821292023c2d857333dbccdd27bbd.json`
+and the separate fresh resource-audit manifest
+`Manifests/1c69f10e93149674cf2b236bf1455c12f18a82c8c063b6ea5ba5d5142824aab0.json`.
+The corresponding E preparation snapshot records 133 sample groups across
+`AGMCm` (75), `AGMFg` (29), and `AGMSt` (29), plus their three DBConfig index
+files; its 136 prepared files are the sample/index resource set, not a factory
+tab-file inventory. No `.gp5` resource is listed in that frozen preparation
+inventory. The available E-side evidence therefore cannot show that the
+external tab referenced by the preset is installed in the H bank, nor does it
+prove that the path exists. The referenced `D:` path was not accessed, read,
+copied, or modified. No H rescan was performed.
+
+## Strict disposition and next diagnostic
+
+Keep this item blocked from admission until the parameter mismatch and tab
+resource dependency are resolved with source-bound evidence. Do not substitute
+another GP5, clear `Tab-Path`, set the index to zero, or exempt T-Track from
+full-state comparison.
+
+A controlled `T-Track Index` 0/1 comparison may diagnose the field only after
+the other AGM worker has released the AGM configuration/host lease and the
+fixed host is idle. It must use the same pinned state and identical MIDI/audio
+settings, preserve full captured state and first/reopen evidence, and remain
+diagnostic rather than an admission bypass. No such new AGM control was started
+for this investigation. The active AGLP duration retest was left untouched.
+
+## Evidence references
+
+- REA findings: `data/maintenance/instrument-intake/20261023-ample-shared-fix/agm-ttrack-rea-01/rea-findings.json`, SHA-256 `69650080cf0567933e46e9582d26b4efe596a9e593bd57b80aa89aaff31d6efb`.
+- REA evidence bundle: `data/maintenance/instrument-intake/20261023-ample-shared-fix/agm-ttrack-rea-01/evidence-bundle.json`, SHA-256 `1dbae344054d89776a6b49ce06024096dcd82848d851bb47a46a9d2c020e44a8`.
+- Fresh AGM preparation: `data/maintenance/instrument-intake/20261023-ample-shared-fix/fresh-resource-audit-01/AGM-preparation.json`, SHA-256 `4becf68c2fdc654542b1e9e33c9bd8de4f91087c3877eb0a941ba6089a7aa43f`.
+- Strict preflight snapshot: `data/maintenance/instrument-intake/20261023-ample-shared-fix/strict-publication-preflight-04/report.json`, SHA-256 `00535bbab43f4059dd0f0297522c9cc40609d6093dea9b4b2fedc14c9ffba71b`.
+
