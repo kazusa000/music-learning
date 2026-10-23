@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -483,3 +485,169 @@ def test_retry_gate_detects_changed_large_passed_audio_artifact(terminal_full_h,
             plan, live_source_processes=[], live_kontakt_processes=[],
             profile_evidence=profile, storage_observations=storage,
         )
+
+
+def test_frozen_release_path_resolves_checkout_full_h_not_release_data(tmp_path):
+    checkout = tmp_path / "checkout"
+    release_script = checkout / "runtime" / "releases" / "frozen-commit" / "src" / "music_learning" / "kontakt_failed_only_retry.py"
+    release_script.parent.mkdir(parents=True)
+    release_script.write_text("# synthetic frozen source path\n", encoding="utf-8")
+    (checkout / "src" / "music_learning").mkdir(parents=True)
+    expected = checkout / "data" / "maintenance" / "instrument-intake" / "kf22" / "full-h"
+    expected.mkdir(parents=True)
+    (checkout / "data" / "maintenance" / "instrument-intake").mkdir(parents=True, exist_ok=True)
+
+    assert retry.default_full_h_run(release_script, environ={}) == expected
+    assert retry._selected_full_h_run(expected, script_path=release_script, environ={}) == expected.resolve()
+
+
+def test_nested_full_h_code_markers_do_not_become_checkout_root(tmp_path):
+    checkout = tmp_path / "checkout"
+    full_h = checkout / "data/maintenance/instrument-intake/kf22/full-h"
+    full_h.mkdir(parents=True)
+    nested_script = full_h / "code/src/music_learning/kontakt_validation.py"
+    nested_script.parent.mkdir(parents=True)
+    nested_script.write_text("# frozen validator path\n", encoding="utf-8")
+    # The frozen code snapshot has the broad markers used by workspace_root,
+    # but only the outer checkout contains the fixed full-h anchor.
+    (full_h / "code/data/maintenance/instrument-intake").mkdir(parents=True)
+    (checkout / "src/music_learning").mkdir(parents=True)
+
+    assert retry.default_full_h_run(nested_script, environ={}) == full_h
+
+
+def test_explicit_full_run_root_rejects_another_workspace(tmp_path):
+    wrong = tmp_path / "another" / "data" / "maintenance" / "instrument-intake" / "kf22" / "full-h"
+    wrong.mkdir(parents=True)
+    with pytest.raises(ValueError, match="fixed full-h run"):
+        retry._selected_full_h_run(wrong)
+
+
+def test_cli_callbacks_reuse_runner_conversion_and_full_receipt_verifier(tmp_path):
+    cli_path = Path(__file__).resolve().parents[2] / "scripts/instruments/prepare_kontakt_failed_only_retry.py"
+    spec = importlib.util.spec_from_file_location("kontakt_failed_retry_cli_test", cli_path)
+    assert spec is not None and spec.loader is not None
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+
+    library_root = tmp_path / "css"
+    candidate_path = library_root / "i" / "abc" / "candidate.json"
+    receipt_path = library_root / "i" / "abc" / "a" / "receipt.json"
+    candidate_raw = _write_json(candidate_path, {"id": "css:abc", "fixture": "candidate"})
+    receipt_raw = _write_json(receipt_path, {"preset_id": "css:abc", "fixture": "receipt"})
+    calls = {}
+    conversion_proof = {"status": "converted_pending_validation", "output": {"sha256": "d" * 64}}
+
+    class Pin:
+        def __init__(self, **values):
+            self.values = values
+
+    def reverify_conversion(item, root):
+        calls["conversion"] = (item, root)
+        return conversion_proof
+
+    def resume_evidence(item, root):
+        calls["evidence"] = (item, root)
+        return {
+            "candidate": "i/abc/candidate.json",
+            "receipt": "i/abc/a/receipt.json",
+            "evidence_root": "i/abc/a",
+        }
+    runner = SimpleNamespace(reverify_conversion=reverify_conversion, resume_evidence=resume_evidence)
+
+    def verify_receipt(candidate, receipt, evidence_root, identity_verifier, pin, *, resource_root):
+        calls["receipt"] = (candidate, receipt, evidence_root, identity_verifier, pin.values, resource_root)
+        return {
+            "candidate_sha256": "a" * 64,
+            "receipt_sha256": "b" * 64,
+            "first": {"probe_sha256": "c" * 64, "state_sha256": "d" * 64},
+            "reopen": {"probe_sha256": "e" * 64, "state_sha256": "f" * 64},
+        }
+
+    def load_json(path):
+        return json.loads(Path(path).read_bytes())
+
+    def sha256_file(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    verify_conversion, verify_passed = cli.build_reverification_callbacks(
+        runner=runner,
+        verify_receipt=verify_receipt,
+        identity_verifier="pinned-identity-verifier",
+        validator_pin=Pin,
+        plan={"pins_path": "pins.json", "probe": "probe.exe", "resource_root": "H:/music/Sound Library"},
+        load_json=load_json,
+        sha256_file=sha256_file,
+    )
+    item = {"id": "css:abc", "candidate": str(candidate_path), "receipt": str(receipt_path)}
+    verified_conversion = verify_conversion("css", item, library_root)
+    proof = verify_passed("css", item, verified_conversion, library_root)
+
+    assert verified_conversion is conversion_proof
+    assert calls["conversion"] == (item, library_root)
+    assert calls["evidence"] == (item, library_root)
+    assert calls["receipt"] == (
+        {"id": "css:abc", "fixture": "candidate"},
+        {"preset_id": "css:abc", "fixture": "receipt"},
+        library_root / "i/abc/a",
+        "pinned-identity-verifier",
+        {"name": "kontakt-full-validator", "version": "1", "code_path": Path("pins.json"),
+         "host_path": Path("probe.exe")},
+        Path("H:/music/Sound Library"),
+    )
+    assert proof == {
+        "status": "verified",
+        "candidate_sha256": "a" * 64,
+        "candidate_file_sha256": hashlib.sha256(candidate_raw).hexdigest(),
+        "receipt_sha256": "b" * 64,
+        "receipt_file_sha256": hashlib.sha256(receipt_raw).hexdigest(),
+        "first_audio_sha256": "c" * 64,
+        "reopen_audio_sha256": "e" * 64,
+        "first_state_sha256": "d" * 64,
+        "reopen_state_sha256": "f" * 64,
+    }
+
+
+def test_pinned_runner_import_uses_frozen_path_despite_workspace_name_collision(tmp_path, monkeypatch):
+    cli_path = Path(__file__).resolve().parents[2] / "scripts/instruments/prepare_kontakt_failed_only_retry.py"
+    spec = importlib.util.spec_from_file_location("kontakt_failed_retry_runner_import_test", cli_path)
+    assert spec is not None and spec.loader is not None
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+
+    workspace_runner = tmp_path / "workspace/scripts/instruments/run_kontakt_full_intake.py"
+    frozen_code = tmp_path / "full-h/code"
+    frozen_runner = frozen_code / "scripts/instruments/run_kontakt_full_intake.py"
+    workspace_runner.parent.mkdir(parents=True)
+    frozen_runner.parent.mkdir(parents=True)
+    workspace_runner.write_text('ORIGIN = "workspace"\n', encoding="utf-8")
+    frozen_runner.write_text('ORIGIN = "frozen"\n', encoding="utf-8")
+    monkeypatch.syspath_prepend(str(workspace_runner.parent))
+
+    runner = cli._load_pinned_full_runner(frozen_code)
+
+    assert runner.ORIGIN == "frozen"
+    assert Path(runner.__file__).resolve() == frozen_runner.resolve()
+
+
+def test_cli_refuses_active_full_run_before_loading_callbacks_or_writing(tmp_path, monkeypatch):
+    cli_path = Path(__file__).resolve().parents[2] / "scripts/instruments/prepare_kontakt_failed_only_retry.py"
+    spec = importlib.util.spec_from_file_location("kontakt_failed_retry_active_cli_test", cli_path)
+    assert spec is not None and spec.loader is not None
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+
+    full_run = tmp_path / "full-h"
+    full_run.mkdir()
+    _write_json(full_run / "progress.json", {
+        "status": "validating", "current": {"library_id": "css", "preset_id": "active-item"},
+    })
+
+    def unexpected_callback_load(_full_run):
+        raise AssertionError("An active full run must be rejected before loading verifier callbacks")
+
+    monkeypatch.setattr(cli, "_load_pinned_callback_modules", unexpected_callback_load)
+    output = tmp_path / "failed-only"
+    with pytest.raises(ValueError, match="remains nonterminal"):
+        cli._prepare(full_run, output)
+    assert not output.exists()

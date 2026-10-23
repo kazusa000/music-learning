@@ -17,6 +17,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 import math
 
+from .ample_paths import workspace_root
 from .kontakt_import import _resolve_root, _resolve_under, _validate_batch, preset_id_for_source
 from .instrument_intake_publication import candidate_fingerprint, json_fingerprint
 
@@ -31,7 +32,53 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 EXPECTED_SOURCE_COUNT = 992
 MAX_JSON_BYTES = 64 * 1024 * 1024
 MAX_REHASH_AT_GATE_BYTES = 1024 * 1024
-FULL_H_RUN = Path(__file__).resolve().parents[2] / "data/maintenance/instrument-intake/kf22/full-h"
+FULL_H_RELATIVE = Path("data/maintenance/instrument-intake/kf22/full-h")
+
+
+def default_full_h_run(script_path: str | Path = __file__, *, environ: dict | None = None) -> Path:
+    """Resolve the preserved full-h run from the enclosing checkout.
+
+    Frozen source releases and full-h's own ``code`` snapshot can contain the
+    usual workspace markers.  Prefer the shared resolver, but only accept its
+    result when the actual preserved full-h anchor exists there; otherwise
+    walk outward to that anchor.  This prevents a nested snapshot from being
+    mistaken for the checkout root.
+    """
+    environment = os.environ if environ is None else environ
+    configured = environment.get("MUSIC_LEARNING_REPO_ROOT")
+    if configured:
+        root = Path(configured).resolve(strict=True)
+        if not (root / "src/music_learning").is_dir() or not (root / FULL_H_RELATIVE).is_dir():
+            raise ValueError("MUSIC_LEARNING_REPO_ROOT does not contain the fixed Kontakt full-h run")
+        return root / FULL_H_RELATIVE
+
+    try:
+        resolved = workspace_root(script_path, environ=environment)
+        if (resolved / "src/music_learning").is_dir() and (resolved / FULL_H_RELATIVE).is_dir():
+            return resolved / FULL_H_RELATIVE
+    except (OSError, ValueError):
+        pass
+
+    source = Path(script_path).resolve(strict=True)
+    for candidate in source.parents:
+        if ((candidate / "src/music_learning").is_dir()
+                and (candidate / FULL_H_RELATIVE).is_dir()):
+            return candidate / FULL_H_RELATIVE
+    raise ValueError("Cannot locate the enclosing checkout's fixed Kontakt full-h run")
+
+
+FULL_H_RUN = default_full_h_run()
+
+
+def _selected_full_h_run(full_run_root: Path | None, *, script_path: str | Path = __file__,
+                         environ: dict | None = None) -> Path:
+    if full_run_root is None:
+        return _resolve_root(FULL_H_RUN)
+    selected = _resolve_root(Path(full_run_root))
+    expected = _resolve_root(default_full_h_run(script_path, environ=environ))
+    if selected != expected:
+        raise ValueError("Explicit Kontakt full-run root differs from the checkout's fixed full-h run")
+    return selected
 
 
 def _canonical(value: object) -> bytes:
@@ -303,6 +350,8 @@ def prepare_failed_only_retry_plan(
     *,
     verify_conversion: Callable[[str, Mapping, Path], Mapping],
     verify_passed: Callable[[str, Mapping, Mapping, Path], Mapping],
+    full_run_root: Path | None = None,
+    recovery_toolchain: Mapping | None = None,
 ) -> dict:
     """Write a new E-only retry plan after a full Kontakt job reached terminal state.
 
@@ -317,9 +366,11 @@ def prepare_failed_only_retry_plan(
     """
     if not callable(verify_conversion) or not callable(verify_passed):
         raise ValueError("Retry preparation requires independent conversion and receipt verifiers")
+    if recovery_toolchain is not None and not isinstance(recovery_toolchain, Mapping):
+        raise ValueError("Kontakt recovery toolchain pin must be a JSON object")
 
     source_run = _resolve_root(Path(source_run))
-    expected_source_run = _resolve_root(FULL_H_RUN)
+    expected_source_run = _selected_full_h_run(full_run_root)
     if source_run != expected_source_run:
         raise ValueError("Terminal retry source must be the preserved full-h run")
     destination_run = Path(destination_run).absolute()
@@ -647,6 +698,7 @@ def prepare_failed_only_retry_plan(
         },
         "retained_passes": retained_passes,
         "verified_source_conversions": reusable_conversions,
+        "recovery_toolchain": dict(recovery_toolchain or {}),
         "launch_gates": {
             "source_full_run_still_matches_snapshot": True,
             "source_wrapper_and_worker_exited": "required_before_start",
@@ -702,6 +754,7 @@ def verify_retry_start_gates(
     live_kontakt_processes: Sequence[Mapping],
     profile_evidence: Mapping,
     storage_observations: Sequence[Mapping],
+    full_run_root: Path | None = None,
 ) -> None:
     """Fail closed unless a prepared retry still has a terminal/quiescent source.
 
@@ -718,7 +771,7 @@ def verify_retry_start_gates(
         raise ValueError("A Kontakt runtime/probe process still owns the profile lane")
     retry_run = _resolve_root(Path(retry_plan.get("retry_run", "")))
     source_run = _resolve_root(Path(retry_plan.get("source_run", "")))
-    if (source_run != _resolve_root(FULL_H_RUN) or retry_run.parent != source_run.parent
+    if (source_run != _selected_full_h_run(full_run_root) or retry_run.parent != source_run.parent
             or retry_run == source_run):
         raise ValueError("Kontakt retry run/source paths are outside the fixed maintenance roots")
     stored_plan, stored_plan_sha = _read_json(retry_run, "plan.json")
@@ -808,4 +861,5 @@ def verify_retry_start_gates(
         raise ValueError("Kontakt H budget samples are stale or not a fresh consecutive window")
 
 
-__all__ = ["prepare_failed_only_retry_plan", "verify_retry_start_gates"]
+__all__ = ["FULL_H_RUN", "default_full_h_run", "prepare_failed_only_retry_plan",
+           "verify_retry_start_gates"]
