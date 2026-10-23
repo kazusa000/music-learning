@@ -354,11 +354,12 @@ def _strict_control_evidence(plan: dict, item: dict, output: Path,
                          "parameters": len(response_map), "native_identity": native_identity,
                          "decoded_audio": wav, "host_audio_metrics": reported}
 
-    first_request = _request_plugin(first_artifacts["request"])[1]
+    first_response = _response_plugin(first_artifacts["response"])[1]
     reopen_request = _request_plugin(reopen_artifacts["request"])[1]
-    if (reopen_request.get("state_base64") != first_request.get("state_base64")
-            or reopen_request.get("state_sha256") != first_request.get("state_sha256")
-            or reopen_request.get("state_base64") != _response_plugin(first_artifacts["response"])[1].get("state_base64")):
+    first_captured_state = _state_blob(first_response, "first response")
+    reopen_supplied_state = _state_blob(reopen_request, "reopen request")
+    if (reopen_supplied_state["raw"] != first_captured_state["raw"]
+            or reopen_supplied_state["sha256"] != first_captured_state["sha256"]):
         raise ControlSupervisorError("Reopen did not receive the exact first-captured state bytes")
     if native_identities["first"] != native_identities["reopen"]:
         raise ControlSupervisorError("Source native identity did not survive the independent reopen")
@@ -376,6 +377,122 @@ def _strict_control_evidence(plan: dict, item: dict, output: Path,
             "complete_factory_identity_equal": True,
             "formal_project_writes": 0, "catalog_writes": 0,
             "final_bank_writes": 0, "nas_access": False}
+
+
+def _replay_audit_binding(item: dict, audit_path: Path, prior_binding: dict) -> dict:
+    """Bind replayed E-side audio evidence to the fresh audit without reading H."""
+    if not audit_path.is_file() or audit_path.is_symlink():
+        raise ControlSupervisorError("Fresh E-side resource audit is missing or not regular")
+    result = _json(audit_path)
+    binding = resource_audit_reference(result, item)
+    audit_sha = _sha(audit_path)
+    if not isinstance(prior_binding, dict):
+        raise ControlSupervisorError("Prior evidence has no resource-audit binding")
+    for field in ("product", "source_manifest_sha256", "installed_library", "manifest",
+                  "prepared_file_count", "audited_total_bytes"):
+        if prior_binding.get(field) != binding.get(field):
+            raise ControlSupervisorError("Fresh audit differs from prior evidence in " + field)
+    # The previous checkpoint captured a null result SHA because a later merge
+    # overwrote it. Keep that historical value in provenance; the new evidence
+    # receives the independently computed SHA of this E-side audit JSON.
+    previous_result_sha = prior_binding.get("result_sha256")
+    if previous_result_sha not in (None, audit_sha):
+        raise ControlSupervisorError("Prior audit result SHA conflicts with the fresh audit")
+    manifest = binding["manifest"]
+    if (prior_binding.get("manifest_file_sha256") != manifest.get("sha256")
+            or prior_binding.get("manifest_file_bytes") != manifest.get("bytes")):
+        raise ControlSupervisorError("Fresh audit manifest differs from prior final-bank evidence")
+    binding["manifest_file_sha256"] = manifest["sha256"]
+    binding["manifest_file_bytes"] = manifest["bytes"]
+    binding["result_sha256"] = audit_sha
+    return binding
+
+
+def _replay_prior_products(plan: dict, items: dict, audit_dir: Path,
+                           library_root: Path) -> tuple[dict, list[dict]]:
+    """Re-assess immutable first/reopen evidence without rerunning native audio."""
+    rows = plan.get("replay_products", [])
+    if not rows:
+        return {}, []
+    seeded = {}
+    provenance = []
+    for source in rows:
+        product = source["product"]
+        if product not in items or product in seeded:
+            raise ControlSupervisorError("Replay product is absent from the fixed plan or duplicated")
+        checkpoint_path = _inside(Path(source["source_checkpoint"]), INTAKE_ROOT,
+                                  "prior final-bank checkpoint")
+        if checkpoint_path.is_symlink() or not checkpoint_path.is_file():
+            raise ControlSupervisorError("Prior final-bank checkpoint is not a regular file")
+        checkpoint_sha = _sha(checkpoint_path)
+        if checkpoint_sha != source["source_checkpoint_sha256"]:
+            raise ControlSupervisorError("Prior final-bank checkpoint changed after replay planning")
+        previous = _json(checkpoint_path)
+        prior_product = previous.get("products", {}).get(product)
+        prior_attempt = prior_product.get("attempt") if isinstance(prior_product, dict) else None
+        if not isinstance(prior_attempt, dict):
+            raise ControlSupervisorError("Prior final-bank product has no recorded attempt")
+        if (prior_product.get("status") != "blocked_control_failure"
+                or prior_attempt.get("status") != "blocked_control_failure"
+                or prior_attempt.get("error") != source["expected_original_error"]):
+            raise ControlSupervisorError("Prior product was not blocked by the pinned replayable gate")
+        report_path = _inside(Path(prior_attempt.get("report", "")), INTAKE_ROOT,
+                              "prior final-bank report")
+        report_sha = _sha(report_path)
+        if (report_sha != source["expected_report_sha256"]
+                or report_sha != prior_attempt.get("report_sha256")):
+            raise ControlSupervisorError("Prior final-bank report changed after replay planning")
+        index_path = _inside(Path(source["evidence_index_path"]), INTAKE_ROOT,
+                             "prior first/reopen evidence index")
+        if index_path.is_symlink() or not index_path.is_file():
+            raise ControlSupervisorError("Prior first/reopen evidence index is not a regular file")
+        index_sha = _sha(index_path)
+        if index_sha != source["evidence_index_sha256"]:
+            raise ControlSupervisorError("Prior first/reopen evidence index changed after replay planning")
+        audit_path = audit_dir / f"{product}-result.json"
+        audit_binding = _replay_audit_binding(
+            items[product], audit_path, prior_attempt.get("resource_audit"))
+        verified = _strict_control_evidence(plan, items[product], report_path.parent, audit_binding)
+        if verified.get("status") != "passed":
+            raise ControlSupervisorError("Offline evidence replay did not pass for " + product)
+        original_error = prior_attempt["error"]
+        verified["evidence_replay"] = {
+            "mode": "offline_first_reopen_evidence_reassessment",
+            "source_checkpoint": str(checkpoint_path),
+            "source_checkpoint_sha256": checkpoint_sha,
+            "source_report": str(report_path),
+            "source_report_sha256": report_sha,
+            "original_status": prior_attempt["status"],
+            "original_gate_error": original_error,
+            "source_resource_audit_result_sha256": prior_attempt.get(
+                "resource_audit", {}).get("result_sha256"),
+            "reassessed_resource_audit_result_sha256": audit_binding["result_sha256"],
+            "new_native_processes": 0,
+            "new_audio_renders": 0,
+        }
+        replay_attempt = {
+            "status": "passed",
+            "report": str(report_path),
+            "report_sha256": report_sha,
+            "verified_evidence": verified,
+            "resource_audit": audit_binding,
+            "assessment_mode": "offline_first_reopen_evidence_reassessment",
+        }
+        seeded[product] = {"status": "passed", "attempt": replay_attempt}
+        provenance.append({
+            "product": product,
+            "source_checkpoint": str(checkpoint_path),
+            "source_checkpoint_sha256": checkpoint_sha,
+            "source_report": str(report_path),
+            "source_report_sha256": report_sha,
+            "evidence_index": str(index_path),
+            "evidence_index_sha256": index_sha,
+            "source_resource_audit_result_sha256": prior_attempt.get(
+                "resource_audit", {}).get("result_sha256"),
+            "reassessed_resource_audit_result_sha256": audit_binding["result_sha256"],
+            "assessment_mode": "offline_first_reopen_evidence_reassessment",
+        })
+    return seeded, provenance
 
 
 def _contains_selected_plugin(request_path: Path, plugin_path: str) -> bool:
@@ -425,10 +542,11 @@ def _offset_job_terminal(locator_path: Path, config_path: Path, config_sha256: s
     pid = locator.get("pid")
     creation = locator.get("creation_ticks")
     command = locator.get("command_line")
-    if not isinstance(pid, int) or not isinstance(creation, int) or not isinstance(command, str):
-        return False, {"reason": "offset_locator_identity_incomplete"}
+    if type(pid) is not int or pid <= 0:
+        return False, {"reason": "offset_locator_pid_invalid"}
+    has_process_identity = type(creation) is int and isinstance(command, str) and bool(command)
     live = next((row for row in inventory if row["pid"] == pid), None)
-    if live is not None:
+    if has_process_identity and live is not None:
         if live["created_ticks"] != creation or live["command_line"] != command:
             return False, {"reason": "offset_pid_identity_changed", "pid": pid}
         return False, {"reason": "offset_supervisor_still_active", "pid": pid,
@@ -446,11 +564,23 @@ def _offset_job_terminal(locator_path: Path, config_path: Path, config_sha256: s
     if not terminal:
         return False, {"reason": "offset_checkpoint_not_terminal",
                        "status": checkpoint.get("status")}
+    if not has_process_identity and live is not None:
+        # Older completed locators used a command array and omitted creation
+        # identity. A currently live PID cannot safely be classified as the
+        # old supervisor or an unrelated PID reuse, so fail closed.
+        return False, {"reason": "offset_terminal_locator_identity_missing_live_pid",
+                       "pid": pid}
     active = checkpoint.get("active_attempt")
-    if isinstance(active, dict):
-        child_pid = active.get("pid")
-        child_ctime = active.get("created_ticks")
+    child_refs = [active] if isinstance(active, dict) else []
+    observed = checkpoint.get("observed_child_tree")
+    if isinstance(observed, list):
+        child_refs.extend(row for row in observed if isinstance(row, dict))
+    for child_ref in child_refs:
+        child_pid = child_ref.get("pid")
+        child_ctime = child_ref.get("created_ticks")
         child = next((row for row in inventory if row["pid"] == child_pid), None)
+        if child is not None and type(child_ctime) is not int:
+            return False, {"reason": "offset_child_identity_incomplete", "pid": child_pid}
         if child is not None and child.get("created_ticks") == child_ctime:
             return False, {"reason": "offset_native_child_still_active", "pid": child_pid}
     config_path = Path(config_path)
@@ -461,7 +591,9 @@ def _offset_job_terminal(locator_path: Path, config_path: Path, config_sha256: s
         return False, {"reason": "offset_config_not_restored",
                        "expected_config_sha256": config_sha256,
                        "observed_config_sha256": observed_config_sha}
-    return True, {"status": checkpoint.get("status"), "checkpoint": str(checkpoint_path)}
+    return True, {"status": checkpoint.get("status"), "checkpoint": str(checkpoint_path),
+                  "legacy_terminal_locator": not has_process_identity,
+                  "supervisor_pid_absent": live is None}
 
 
 def _own_row(inventory: list[dict], script_name: str) -> dict:
@@ -484,6 +616,31 @@ def _validate_plan(plan_path: Path, plan_sha256: str) -> tuple[dict, Path]:
         raise ControlSupervisorError("Final-bank plan product selection is malformed")
     if plan.get("formal_project_writes", 0) not in (0, None):
         raise ControlSupervisorError("Final-bank plan claims formal project writes")
+    replay_products = plan.get("replay_products", [])
+    if not isinstance(replay_products, list):
+        raise ControlSupervisorError("Final-bank replay product list is malformed")
+    if replay_products:
+        provenance = plan.get("repair_provenance")
+        if (not isinstance(provenance, dict)
+                or provenance.get("repair_code_sha256") != _sha(Path(__file__).resolve(strict=True))):
+            raise ControlSupervisorError("Replay plan does not pin this repair implementation")
+        manifest_pins = plan.get("control_manifest_sha256")
+        if (not isinstance(manifest_pins, dict) or set(manifest_pins) != set(PRODUCT_ORDER)
+                or any(not re.fullmatch(r"[0-9a-f]{64}", str(manifest_pins.get(product, "")))
+                       for product in PRODUCT_ORDER)):
+            raise ControlSupervisorError("Replay plan does not pin each product control manifest")
+        seen = set()
+        for entry in replay_products:
+            if (not isinstance(entry, dict) or entry.get("product") not in PRODUCT_INFO
+                    or entry["product"] in seen
+                    or not isinstance(entry.get("source_checkpoint"), str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("source_checkpoint_sha256", "")))
+                    or not isinstance(entry.get("expected_original_error"), str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("expected_report_sha256", "")))
+                    or not isinstance(entry.get("evidence_index_path"), str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("evidence_index_sha256", "")))):
+                raise ControlSupervisorError("Final-bank replay source is incomplete")
+            seen.add(entry["product"])
     return plan, plan_path.parent
 
 
@@ -532,8 +689,11 @@ def _audit_ready(item: dict, audit_path: Path, library_root: Path) -> tuple[bool
             return False, None, {"status": status, "path": str(audit_path)}
         raise ControlSupervisorError("Fresh resource audit ended unsuccessfully: " + str(status))
     binding = resource_audit_reference(result, item)
-    binding["result_sha256"] = _sha(audit_path)
     binding.update(verify_final_manifest(item, result, library_root))
+    # verify_final_manifest starts from resource_audit_reference(), whose
+    # result_sha256 is intentionally null because it has no path to the audit
+    # JSON. Set the digest last so the merge cannot erase this provenance.
+    binding["result_sha256"] = _sha(audit_path)
     return True, result, binding
 
 
@@ -599,20 +759,23 @@ def _wait_product_gate(*, product: str, item: dict, audit_path: Path,
                 continue
             state["offset_gate"] = offset
 
-        audit_ok, audit_result, audit_binding = _audit_ready(item, audit_path, library_root)
-        if not audit_ok:
-            _update(job_dir, locator, state, own, status="waiting_for_resource_audit",
-                    now_fn=now_fn, current_product=product,
-                    resource_audit_gate=audit_binding, wait_remaining_seconds=remaining)
-            sleep_fn(min(poll_seconds, remaining))
-            continue
-
         budget = _safe_idle_budget(budget_fn)
         state["last_budget"] = budget
         if budget.get("allowed") is not True:
             _update(job_dir, locator, state, own, status="waiting_for_idle",
                     now_fn=now_fn, current_product=product, last_budget=budget,
                     wait_remaining_seconds=remaining)
+            sleep_fn(min(poll_seconds, remaining))
+            continue
+
+        # A fresh audit includes a small manifest read from the authorized H
+        # bank, so even that read stays behind the same idle-window gate as the
+        # native probe and bulk resource audit.
+        audit_ok, audit_result, audit_binding = _audit_ready(item, audit_path, library_root)
+        if not audit_ok:
+            _update(job_dir, locator, state, own, status="waiting_for_resource_audit",
+                    now_fn=now_fn, current_product=product,
+                    resource_audit_gate=audit_binding, wait_remaining_seconds=remaining)
             sleep_fn(min(poll_seconds, remaining))
             continue
 
@@ -666,6 +829,9 @@ def _execute_attempt(*, plan: dict, item: dict, audit_binding: dict,
     product = item["product"]
     manifest = Path(plan["plan_path"]).parent / f"{product}-manifest.json"
     _inside(manifest, INTAKE_ROOT, "product control manifest")
+    expected_manifest_sha = plan.get("control_manifest_sha256", {}).get(product)
+    if expected_manifest_sha is not None and _sha(manifest) != expected_manifest_sha:
+        raise ControlSupervisorError("Product control manifest changed after plan pinning")
     manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
     if (not isinstance(manifest_data, list) or len(manifest_data) != 1
             or manifest_data[0].get("instrument") != product
@@ -802,7 +968,10 @@ def run_supervisor(*, plan_path: Path, plan_sha256: str, job_dir: Path,
     if job_dir == INTAKE_ROOT:
         raise ControlSupervisorError("Job directory must be a child of instrument-intake maintenance")
     locator = Path(locator).resolve(strict=False)
-    if locator.parent != RUNTIME_ROOT or locator.name != "ample-final-bank-controls.local.json":
+    allowed_locator = (locator.name == "ample-final-bank-controls.local.json"
+                       or re.fullmatch(r"ample-final-bank-controls-repair-[a-z0-9-]+\.local\.json",
+                                       locator.name) is not None)
+    if locator.parent != RUNTIME_ROOT or not allowed_locator:
         raise ControlSupervisorError("Use the dedicated runtime final-bank control locator")
     if not 10 <= poll_seconds <= 60 or not 60 <= max_wait_seconds <= MAX_WAIT_SECONDS:
         raise ControlSupervisorError("Wait settings are outside the bounded maintenance limits")
@@ -820,8 +989,9 @@ def run_supervisor(*, plan_path: Path, plan_sha256: str, job_dir: Path,
     audit_dir = _inside(Path(plan["resource_audit_run"]["path"]), INTAKE_ROOT,
                         "resource audit directory")
     library_root = Path(r"H:\music\Sound Library").resolve(strict=True)
+    seeded_products, replay_provenance = _replay_prior_products(
+        plan, items, audit_dir, library_root)
     job_dir.mkdir(parents=True, exist_ok=False)
-    state_path = job_dir / "checkpoint.json"
     started_monotonic = time.monotonic()
     fixed = {"plan_path": str(Path(plan_path).resolve()), "plan_sha256": plan_sha256,
              "products": {product: {key: items[product][key] for key in
@@ -830,6 +1000,9 @@ def run_supervisor(*, plan_path: Path, plan_sha256: str, job_dir: Path,
                             "bank_relative_root")}
                            for product in PRODUCT_ORDER},
              "code_sha256": expected_code}
+    if plan.get("replay_products"):
+        fixed["repair_code_sha256"] = plan["repair_provenance"]["repair_code_sha256"]
+        fixed["replay_provenance"] = replay_provenance
     fixed["supervisor_sha256"] = _sha(Path(__file__).resolve(strict=True))
 
     with supervisor_lock(job_dir / "supervisor.lock"):
@@ -837,7 +1010,9 @@ def run_supervisor(*, plan_path: Path, plan_sha256: str, job_dir: Path,
         own = _own_row(inventory, Path(__file__).name)
         state = {"schema_version": 1, "status": "starting", "started_at": _iso(now_fn()),
                  "job_dir": str(job_dir), "fixed_inputs": fixed,
-                 "products": {product: {"status": "pending"} for product in PRODUCT_ORDER},
+                 "products": {product: seeded_products.get(product, {"status": "pending"})
+                              for product in PRODUCT_ORDER},
+                 "replayed_assessments": replay_provenance,
                  "attempts": [], "active_attempt": None,
                  "formal_project_writes": 0, "catalog_writes": 0,
                  "final_bank_writes": 0, "nas_access": False}
@@ -847,6 +1022,8 @@ def run_supervisor(*, plan_path: Path, plan_sha256: str, job_dir: Path,
 
         for product in PRODUCT_ORDER:
             item = items[product]
+            if state["products"].get(product, {}).get("status") == "passed":
+                continue
             output_index = 0
             while True:
                 audit_path = audit_dir / f"{product}-result.json"
