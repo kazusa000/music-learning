@@ -70,7 +70,8 @@ int main()
               == "message_thread_immediate",
           "dispatch route names are stable for the report schema");
 
-    trace.clear();
+    auto& wrapperTrace = recorder();
+    wrapperTrace.clear();
     MockProcessor processor;
     MockComponent component;
     const auto processingResult = call_set_processing(&processor, false);
@@ -78,7 +79,7 @@ int main()
     check(processingResult == -12 && activeResult == 21
               && processor.calls == 1 && component.calls == 1,
           "instrumentation preserves each lifecycle callback and exact result");
-    count = trace.snapshot(events.data(), events.size());
+    count = wrapperTrace.snapshot(events.data(), events.size());
     check(count == 4
               && events[0].kind == EventKind::set_processing_begin
               && events[1].kind == EventKind::set_processing_end
