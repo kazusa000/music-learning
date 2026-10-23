@@ -1,5 +1,13 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 02:29 资源分类修复并续跑
+
+当前准备入口仍为 `runtime/kontakt-preparation-job.local.json`，已改用 `vendor-assets-fix-01`；当前固定完整验证为 `kf22/full-d`，入口 `runtime/kontakt-full-job.local.json`，实际 PID 6244/ctime 1792715354.8744364，计划 SHA `73aee0a1a952325bb80cc141bb0728d457a8083efce6182d98cb4ed6184bcf42`。应每次重核身份，PID 不是永久运行证明。full-d 仍等待准备审计结果，992 款音频验证尚未开始，未入库。自动跟进已纠正到“音源导入”聊天 `01a15b37-7167-78c0-9586-ecc83480fa09` 并保持 PAUSED，不得再唤醒“开发”聊天或擅自恢复定时任务。
+
+旧 `readonly-copy-fix-01` 在实际完成 7321/8481 文件后停止：静态 NKX 卷积容器位于 Presets 树，原大资源分类没有覆盖该根。不是缺文件或新发声失败。共享修复 `94e02f5` 按 Presets 根和严格静态容器/音频后缀分类，不按单个文件名特判、不允许 UserData 硬链接、不放开任意大文件复制。对完整冻结 plan 的 8481 项做 E-only 检查，全部 4 个大文件已分类、0 未分类。8 项回归通过/1 权限跳过，Ruff 通过；自动测试 runner 已清本轮夹具并保留报告。新准备在同一目标逐项复核和复用已有资源，全部旧报告及原失败保留，旧 full-c 已退出，终态正式表与14项固定文件均相同。
+
+Ample 原始链已全部终态：LP17通过/18失败、M15通过/17失败/1缺AGMPk、SC35通过/10失败，总计67通过/45失败/1缺采样。原批不改。独立失败来源清单在 `20261023-ample-failure-retry-1/retry-plan.json`；共同原因和单独固定重试继续处理，不能把该清单或67项通过称为发布入库。
+
 ## 2026-10-23 自主修复与续跑入口
 
 用户要求发现问题直接处理，不逐次请求批准或只汇报阻塞；仅全部收尾或确需用户材料时反馈。当前 Kontakt 准备入口 `runtime/kontakt-preparation-job.local.json` 已切到 `readonly-copy-fix-01`，完整验证入口 `runtime/kontakt-full-job.local.json` 已切到独立固定 `kf22/full-c`，实际 PID 分别 26132、276（均须按命令和 creation_time 重新核实，不能把旧 PID 当运行证据）。Ample 仍由 `runtime/ample-factory-chain.local.json` 继续原队列，跨来源并行，H 繁忙时保持有界等待。
