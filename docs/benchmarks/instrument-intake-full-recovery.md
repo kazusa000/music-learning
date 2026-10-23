@@ -1,5 +1,21 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 12:32 UTC：V8与实际新试听宿主已接入
+
+V7 `705664d`的完整冻结回归原结果为824通过/3跳过/1失败，唯一失败是PresetId命名空间规则未同步到生成的JSON Schema。`2979290`重新生成合约，`export_contracts --check`和前端typecheck通过；新V8固定提交`2979290760419fd68cd74207aeacc01b20bb7ddd`，完整service **827通过/3跳过/0失败，270.42秒**。报告`runtime/test-reports/20261023-122531-316f78ea`；6118文件/7345目录/1自有联接临时夹具自动清理，0错误。V7原失败保留。
+
+共享总线修复`064b56a`保留原stereo/sidechain验收边界，在独立目录协商主总线布局并补充逐bus诊断。新host SHA `a803e794fa74b1373a48b7cbf23d1ea5137b6b9e8869a01d14afc179b92c0a41`；真实`product-preview-full-state-ab-06/supervision-01/state.json`已completed。AGM同一预设的factory-preset和admitted-full-state均实际输出749700帧、44.1kHz立体声，RMS 0.004907539、peak 0.179005265、65290非零采样、0削波，二者WAV SHA完全相同`600eec67cd47eae64b8af5b3fcd1347ba6f5d04a0964890cbc524d5be829734a`，完整2320参数及原生身份通过，配置SHA恢复。旧host拒绝与早期零attempt报告保留，不能覆盖。
+
+正式引擎无会话、无活动jobs/对话后，通过已有stop.request平滑退出并激活V8；配置只添加`admitted_preset_host`指向E内容寻址的上述新host。旧native_host及web3b9d/nativef056/desktopaa81逐项相同，旧Keyscape/Pianoteq1252缓存指纹保持。`product-preview-host-activation-03/{activation-before,activation-after}.json`保存正式九表/head逐项相同证据。没有写正式工程、运行正式渲染或音乐模型。最新`goal-progress-20261023-123242.json`再次核对正式表/E内12固定SHA相同，H两项未繁忙重读，最近完整14项仍为full-g-transition-01。
+
+新后端已经自动为79个已发布条目建立当前指纹试听：**1ready/1loading/77queued**。这是12:32:42 UTC快照，不是全库音频验收；原历史行保留，全局ready不可当79款当前ready。实际产品加载/换音色设备QA05另做，QA04的`Contract validation failed`发生在jobs.submit前，没有原生音频失败证据。
+
+两条已审查的源文件标题通过presentation-only CAS附加到H指定库catalog，E独立证据`presentation-title-publication-02/{plan,catalog-before,catalog-after,publication}.json`。API实际返回“金属风格·E 小调·100（Metal-Em-100）”与“老派独奏（Old School Solo）”，产品名Ample Guitar LP保持英文。除presentation_title外全目录逐字段相同，native Default身份、默认语义和完整状态不变，目录仍1331/Ample79。
+
+Kontakt full-h真实wrapper47740/worker46344及ctime/命令仍匹配；当前CSS6过/1败、Solo5过/6败、Factory67过/907待测，合计**78过/7败/907待测，Kontakt正式入库0**。不修改原固定批，全部终态后再用独立失败队列；`476ed06`修正失败重试计划区分candidate/receipt语义指纹与原文件SHA，9回归通过，不把raw SHA冒充语义绑定。
+
+Retry08两款完整Riff均真实精确静音、原生调用成功，原报告保留（efe3b73）。额外E窗口统计发现原部分非零Riff只在开始约1秒有活动，不能把首击非零说成完整多小节演奏。当前线索是共享触发键只保持1个采样；将按官方Riffer语义做1/512/完整乐句保持的单因素独立控制，确认后才修改共享profile，不先加任意延迟或放宽音频检查。HM2-07诊断目录加UUID达273字符而失败，配置已恢复、宿主未启动；其路径修复和真实NativeHost集成回归与新独立控制另行推进。Goal和本聊天跟进继续ACTIVE，常规bug自主修复，MODO仍按用户暂缓、不探测。
+
 ## 2026-10-23 11:56 UTC：完整状态试听专用宿主路由与V6候选
 
 `bf7cd00`新增通用可选设置`admitted_preset_host`。所有带`native_admission`协议的音源试听统一选择它，并将实际所用宿主SHA纳入缓存键；未配置时保持原合同，配置后文件缺失或发声/状态检查失败也不会退回旧host。普通Keyscape/Pianoteq条目仍使用原`native_host`，原缓存ID不变，避免一次新宿主修复触发1252份旧库重复预热。完整状态、全部参数、原生身份、削波和静音检查未放宽。75专项通过，后加普通Riff实际命令选择断言后相关39项通过，Ruff通过；这里的命令/音频测试使用E夹具，不冒充真实VST3结果。
