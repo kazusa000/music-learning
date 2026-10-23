@@ -37,6 +37,11 @@ VARIANTS = (
     "source_version_current_indices",
     "current_version_current_indices",
 )
+PRODUCTS = {
+    "AGM": "AGM 3.1.0",
+    "AGLP": "AGLP 4.0.0",
+    "AGSC": "AGSC 4.0.1",
+}
 
 
 def _sha(raw: bytes) -> str:
@@ -136,6 +141,14 @@ def _within_intake(path: Path) -> Path:
     return candidate
 
 
+def _final_bank_path(instrument: str) -> Path:
+    try:
+        product = PRODUCTS[instrument]
+    except KeyError as error:
+        raise ValueError("Unsupported Ample product for final-bank control") from error
+    return (Path(r"H:\music\Sound Library") / "Ample Sound" / product).resolve()
+
+
 def _source_item(queue_path: Path, item_id: str) -> tuple[dict, Path]:
     intake = (ROOT / "data/maintenance/instrument-intake").resolve(strict=True)
     queue_path = Path(queue_path).resolve(strict=True)
@@ -143,8 +156,8 @@ def _source_item(queue_path: Path, item_id: str) -> tuple[dict, Path]:
         raise ValueError("Queue must be inside instrument-intake")
     queue = json.loads(queue_path.read_text(encoding="utf-8"))
     found = [row for row in queue.get("items", []) if row.get("id") == item_id]
-    if len(found) != 1 or found[0].get("instrument") != "AGLP":
-        raise ValueError("Expected exactly one AGLP source item")
+    if len(found) != 1 or found[0].get("instrument") not in PRODUCTS:
+        raise ValueError("Expected exactly one supported Ample source item")
     item = found[0]
     if item.get("status") != "failed":
         raise ValueError("HM2 controls may use only a preserved failed source item")
@@ -208,7 +221,8 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
     item, source_path = _source_item(queue_path, item_id)
     source_raw = source_path.read_bytes()
     attempt = Path(item["attempts"][-1]["output"]).resolve(strict=True)
-    evidence = attempt / "probe/AGLP/evidence"
+    instrument = item["instrument"]
+    evidence = attempt / f"probe/{instrument}/evidence"
     captured_path = evidence / "first/captured-state.json"
     request_path = evidence / "first/request.json"
     if (not captured_path.is_file() or captured_path.is_symlink()
@@ -228,13 +242,12 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
     if host_path != expected_host:
         raise ValueError("Host must match the frozen source queue")
     library = Path(library).resolve(strict=True)
-    expected_library = (Path(r"H:\music\Sound Library") / "Ample Sound" /
-                        "AGLP 4.0.0").resolve(strict=True)
+    expected_library = _final_bank_path(instrument).resolve(strict=True)
     if library != expected_library:
-        raise ValueError("Only the authorized final AGLP bank may be used")
+        raise ValueError(f"Only the authorized final {instrument} bank may be used")
     config = Path(item["config"]).resolve(strict=True)
-    if config.is_symlink() or config.name != "AGLP_inst.xml":
-        raise ValueError("Only the regular AGLP InstDir XML may be leased")
+    if config.is_symlink() or config.name != f"{instrument}_inst.xml":
+        raise ValueError(f"Only the regular {instrument} InstDir XML may be leased")
 
     variants = build_variants(captured, source_raw)
     output.mkdir(parents=True)
@@ -246,6 +259,7 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
     report: dict = {
         "schema_version": 1, "kind": "ample-hm2-version-index-control",
         "status": "prepared", "report_path": str(output / "report.json"),
+        "instrument": instrument,
         "source": {"factory_path": str(source_path), "factory_sha256": _sha(source_raw),
                    "captured_state_path": str(captured_path),
                    "captured_state_file_sha256": _sha(captured_raw),
@@ -274,7 +288,7 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
         "identifier": plugin_spec.get("identifier"),
     }
     source_root = parse_xml(source_raw)
-    expected = {"name": item["name"], "database": database(source_root),
+    expected = {"name": source_root.get("Name"), "database": database(source_root),
                 "parameters": parameters(source_root), "root_tag": source_root.tag}
     original_config_sha = _sha(config.read_bytes())
     started = time.monotonic()
@@ -297,7 +311,7 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
                     return report
                 scoped_project = project_for_variant if phase == "first" else phases["first"]["snapshot"]
                 wav = output / "audio" / name / f"{phase}.wav"
-                with sample_path(config, library, "AGLP"):
+                with sample_path(config, library, instrument):
                     response = _call_render(
                         NativeHost(executable=host_path,
                                    diagnostics=output / "native-calls" / name / phase),
@@ -306,7 +320,7 @@ def run(queue_path: Path, item_id: str, host_path: Path, library: Path,
                     )
                 after = config.read_bytes()
                 if _sha(after) != original_config_sha:
-                    raise ValueError("AGLP InstDir XML was not restored after host call")
+                    raise ValueError(f"{instrument} InstDir XML was not restored after host call")
                 plugin_state = response["snapshot"]["tracks"][0]["plugins"][0]
                 phase_record = {
                     "metrics": {key: response.get(key) for key in

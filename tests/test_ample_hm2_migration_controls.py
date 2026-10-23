@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import struct
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import pytest
 
 from music_learning.ample_presets import component_xml, parameters
 from music_learning.preset_import import preset_state
 from scripts.instruments.probe_ample_hm2_migration import (
+    PRODUCTS,
     VARIANTS,
+    _final_bank_path,
+    _source_item,
     build_variants,
 )
 
@@ -102,3 +108,57 @@ def test_builder_preserves_source_index_variant_and_rejects_incomplete_current_m
         b'</AEG_STATE>')
     with pytest.raises(ValueError, match="missing from the current native index map"):
         build_variants(incomplete, source)
+
+
+@pytest.mark.parametrize("instrument", tuple(PRODUCTS))
+def test_final_bank_control_path_is_product_specific_and_authorized(instrument):
+    expected = Path(r"H:\music\Sound Library") / "Ample Sound" / PRODUCTS[instrument]
+    assert _final_bank_path(instrument) == expected.resolve()
+
+
+def test_final_bank_control_rejects_unknown_product():
+    with pytest.raises(ValueError, match="Unsupported Ample product"):
+        _final_bank_path("OTHER")
+
+
+@pytest.mark.parametrize("instrument", tuple(PRODUCTS))
+def test_hm2_source_item_accepts_preserved_failures_for_each_product(tmp_path, monkeypatch,
+                                                                  instrument):
+    intake = tmp_path / "data/maintenance/instrument-intake"
+    source = intake / "source" / f"Factory.{instrument.lower()}state"
+    output = intake / "attempt"
+    source.parent.mkdir(parents=True)
+    output.mkdir(parents=True)
+    source_bytes = b'<AEG_STATE Name="Factory Native Name" Ver="3.7.0" />'
+    source.write_bytes(source_bytes)
+    queue_path = intake / "failed.json"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue_path.write_text(json.dumps({"items": [{
+        "id": "failed-source", "instrument": instrument, "status": "failed",
+        "factory_xml": str(source),
+        "factory_sha256": hashlib.sha256(source_bytes).hexdigest(),
+        "attempts": [{"output": str(output)}],
+    }]}), encoding="utf-8")
+    monkeypatch.setattr("scripts.instruments.probe_ample_hm2_migration.ROOT", tmp_path)
+
+    item, resolved_source = _source_item(queue_path, "failed-source")
+
+    assert item["instrument"] == instrument
+    assert resolved_source == source.resolve()
+
+
+def test_hm2_source_item_rejects_unrecognized_product(tmp_path, monkeypatch):
+    intake = tmp_path / "data/maintenance/instrument-intake"
+    source = intake / "source.agmstate"
+    intake.mkdir(parents=True)
+    source_bytes = b'<AEG_STATE Name="Factory" Ver="3.7.0" />'
+    source.write_bytes(source_bytes)
+    queue_path = intake / "failed.json"
+    queue_path.write_text(json.dumps({"items": [{
+        "id": "bad", "instrument": "OTHER", "status": "failed",
+        "factory_xml": str(source),
+    }]}), encoding="utf-8")
+    monkeypatch.setattr("scripts.instruments.probe_ample_hm2_migration.ROOT", tmp_path)
+
+    with pytest.raises(ValueError, match="supported Ample source item"):
+        _source_item(queue_path, "bad")
