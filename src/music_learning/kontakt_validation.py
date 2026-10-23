@@ -232,13 +232,19 @@ def make_candidate(metadata, source_item, conversion, source_state, *, bank_root
     source_sha = source_item["source"]["sha256"]
     if identity["source_sha256"] != source_sha:
         raise ValueError("Kontakt conversion/source provenance differs")
-    performance = validate_profile(dict(schema_version=1, kind="midi_context", source_factory_sha256=source_sha,
-                                        instruments=deepcopy(context["instruments"]),
-                                        controllers=[dict(cc) for cc in audition_controllers]),
-                                   expected_source_sha256=source_sha)
+    performance_source = dict(schema_version=1, kind="midi_context", source_factory_sha256=source_sha,
+                              instruments=deepcopy(context["instruments"]),
+                              controllers=[dict(cc) for cc in audition_controllers])
+    audition_pattern = metadata.get("audition_pattern")
+    if audition_pattern is not None:
+        performance_source.update(audition_pattern=audition_pattern,
+                                  audition_timing={"onset_interval_ms": 500, "gate_ms": 550,
+                                                   "overlap_ms": 50})
+    performance = validate_profile(performance_source, expected_source_sha256=source_sha)
     if [row["index"] for row in performance["instruments"]] != identity["instrument_indices"]:
         raise ValueError("Kontakt MIDI getter indices differ from semantic identity")
     candidate = dict(metadata)
+    candidate.pop("audition_pattern", None)
     ranges = [row["key_range"] for row in performance["instruments"]]
     candidate.update(name=metadata["source_name"], library_name=LIBRARIES[source_item["library_id"]],
                      classification_basis=metadata["model_basis"],

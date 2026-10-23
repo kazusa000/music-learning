@@ -81,9 +81,20 @@ def test_cinematic_strings_use_reviewed_sections_and_preserve_library_boundary()
     assert full["variant_name"] == "Classic"
     assert solo["variant_name"] == "Solo"
     assert legato["variant_name"] == "Classic Legato"
+    assert legato["audition_pattern"] == "legato-overlap-v1"
     assert lite_ensemble["model_spec"]["key"].endswith("full-ensemble")
     assert lite_ensemble["variant_name"] == "Solo Lite"
     assert lite_ensemble["labels_zh"]["variant"] == "独奏精简版"
+    assert "audition_pattern" not in lite_ensemble
+
+
+def test_only_explicit_classic_legato_source_assignments_use_legato_audition_pattern():
+    rows = build_kontakt_catalog_metadata(INVENTORIES)
+    legato = [row for row in rows if row.get("audition_pattern") == "legato-overlap-v1"]
+
+    assert len(legato) == 5
+    assert {row["library_id"] for row in legato} == {"css-solo"}
+    assert {row["variant_name"] for row in legato} == {"Classic Legato"}
 
 
 @pytest.mark.parametrize(

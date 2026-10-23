@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 
 from music_learning import kontakt_validation as validation
+from music_learning.instrument_intake_publication import candidate_fingerprint
+from music_learning.instrument_performance_profiles import validate as validate_performance_profile
 from music_learning.kontakt_import import build_batch
 from music_learning import kontakt_catalog_metadata
 from scripts.instruments import prepare_kontakt_full_job as prepare_job
@@ -370,6 +372,47 @@ def test_make_candidate_freezes_native_identity_and_all_source_parameters(monkey
     assert len(candidate["expected_parameters"]) == 4145
     assert candidate["source_factory_sha256"] == _SOURCE_SHA
     assert candidate["performance_profile"]["source_factory_sha256"] == _SOURCE_SHA
+    assert observed == candidate
+
+
+def test_make_candidate_pins_explicit_legato_audition_pattern_in_performance_profile(monkeypatch, tmp_path):
+    observed = {}
+    monkeypatch.setattr(validation, "_candidate_for_catalog", lambda candidate: observed.update(candidate) or candidate)
+    plugin = _native_plugin()
+    identity = _expected_identity(plugin)
+    source_item = {"id": "kontakt-fixture", "library_id": "kontakt-factory",
+                   "source": {"path": "Factory/Fixture.nki", "sha256": _SOURCE_SHA}}
+    conversion = {
+        "observed_identity": identity,
+        "playback_context": {"instruments": [{
+            "index": 0, "midi_channel": 1, "key_range": [24, 108],
+            "velocity_range": [1, 127], "mute": False, "solo": False,
+        }]},
+    }
+    metadata = {"source_name": "Factory Instrument", "model_basis": "reviewed explicit legato variant",
+                "model_spec": {"key": "fixture", "name": "Fixture", "kind": "instrument"},
+                "variant_name": "Classic Legato", "audition_pattern": "legato-overlap-v1"}
+    candidate = validation.make_candidate(
+        metadata, source_item, conversion, plugin, bank_root="Bank", entrypoint="Presets/fixture.vstpreset",
+        resources={"Presets/fixture.vstpreset": {"bytes": 4, "sha256": hashlib.sha256(b"four").hexdigest()}},
+        runtime_dependencies=[], installed_library={"library_id": "kontakt-factory"},
+        source_manifest_sha256=hashlib.sha256(b"manifest").hexdigest(),
+    )
+
+    assert "audition_pattern" not in candidate
+    assert candidate["performance_profile"]["source_factory_sha256"] == _SOURCE_SHA
+    assert candidate["performance_profile"]["audition_pattern"] == "legato-overlap-v1"
+    assert candidate["performance_profile"]["audition_timing"] == {
+        "onset_interval_ms": 500, "gate_ms": 550, "overlap_ms": 50,
+    }
+    assert validate_performance_profile(candidate["performance_profile"], expected_source_sha256=_SOURCE_SHA) \
+        == candidate["performance_profile"]
+    detached = dict(candidate)
+    detached["performance_profile"] = {
+        key: value for key, value in candidate["performance_profile"].items()
+        if key not in {"audition_pattern", "audition_timing"}
+    }
+    assert candidate_fingerprint(detached) != candidate_fingerprint(candidate)
     assert observed == candidate
 
 

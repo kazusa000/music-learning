@@ -86,6 +86,11 @@ def _validate_record(record: Mapping[str, object], library_id: str, source_path:
         if (not isinstance(values, list) or not values or
                 any(not isinstance(value, str) or not value.strip() for value in values)):
             raise ValueError(f"Kontakt assignment needs a non-empty {field} list: {path}")
+    if "audition_pattern" in record:
+        pattern = record["audition_pattern"]
+        if (pattern != "legato-overlap-v1"
+                or not re.search(r"(?<![A-Za-z])legato(?![A-Za-z])", record["variant_name"], re.IGNORECASE)):
+            raise ValueError("Kontakt audition pattern must match an explicitly reviewed legato variant: " + path)
     return dict(record)
 
 

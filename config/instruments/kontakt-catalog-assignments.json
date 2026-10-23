@@ -245,6 +245,7 @@
       },
       "model_basis": "reviewed-sourcepath:css-solo/Classic Legato Patches/CSSS (Classic Legato) Cello.nki; CSS/CSS Solo official instrument section identity; Classic/Lite remain variants",
       "variant_name": "Classic Legato",
+      "audition_pattern": "legato-overlap-v1",
       "labels_zh": {
         "model": "大提琴",
         "variant": "经典连奏"
@@ -277,6 +278,7 @@
       },
       "model_basis": "reviewed-sourcepath:css-solo/Classic Legato Patches/CSSS (Classic Legato) Full Ensemble.nki; CSS/CSS Solo official instrument section identity; Classic/Lite remain variants",
       "variant_name": "Classic Legato",
+      "audition_pattern": "legato-overlap-v1",
       "labels_zh": {
         "model": "弦乐合奏",
         "variant": "经典连奏"
@@ -309,6 +311,7 @@
       },
       "model_basis": "reviewed-sourcepath:css-solo/Classic Legato Patches/CSSS (Classic Legato) Viola.nki; CSS/CSS Solo official instrument section identity; Classic/Lite remain variants",
       "variant_name": "Classic Legato",
+      "audition_pattern": "legato-overlap-v1",
       "labels_zh": {
         "model": "中提琴",
         "variant": "经典连奏"
@@ -341,6 +344,7 @@
       },
       "model_basis": "reviewed-sourcepath:css-solo/Classic Legato Patches/CSSS (Classic Legato) Violin I.nki; CSS/CSS Solo official instrument section identity; Classic/Lite remain variants",
       "variant_name": "Classic Legato",
+      "audition_pattern": "legato-overlap-v1",
       "labels_zh": {
         "model": "小提琴一部",
         "variant": "经典连奏"
@@ -373,6 +377,7 @@
       },
       "model_basis": "reviewed-sourcepath:css-solo/Classic Legato Patches/CSSS (Classic Legato) Violin II.nki; CSS/CSS Solo official instrument section identity; Classic/Lite remain variants",
       "variant_name": "Classic Legato",
+      "audition_pattern": "legato-overlap-v1",
       "labels_zh": {
         "model": "小提琴二部",
         "variant": "经典连奏"

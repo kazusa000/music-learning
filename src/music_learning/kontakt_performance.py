@@ -12,14 +12,24 @@ import re
 from typing import Mapping
 
 FIELDS = {"schema_version", "kind", "source_factory_sha256", "instruments", "controllers"}
+AUDITION_FIELDS = {"audition_pattern", "audition_timing"}
 ROW_FIELDS = {"index", "midi_channel", "key_range", "velocity_range", "mute", "solo"}
+LEGATO_AUDITION_PATTERN = "legato-overlap-v1"
+LEGATO_AUDITION_TIMING = {"onset_interval_ms": 500, "gate_ms": 550, "overlap_ms": 50}
 
 
 def validate_profile(profile: Mapping, *, expected_source_sha256=None) -> dict:
-    if (not isinstance(profile, Mapping) or set(profile) != FIELDS
+    if (not isinstance(profile, Mapping) or set(profile) not in (FIELDS, FIELDS | AUDITION_FIELDS)
             or type(profile.get("schema_version")) is not int or profile["schema_version"] != 1
             or profile.get("kind") != "midi_context"):
         raise ValueError("Unsupported Kontakt MIDI performance profile")
+    has_audition_pattern = AUDITION_FIELDS <= set(profile)
+    if bool(set(profile) & AUDITION_FIELDS) != has_audition_pattern:
+        raise ValueError("Kontakt audition pattern and timing must be supplied together")
+    if has_audition_pattern and (
+            profile.get("audition_pattern") != LEGATO_AUDITION_PATTERN
+            or profile.get("audition_timing") != LEGATO_AUDITION_TIMING):
+        raise ValueError("Unsupported Kontakt articulation audition pattern or timing")
     source = profile.get("source_factory_sha256")
     if not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{64}", source):
         raise ValueError("Kontakt MIDI profile must pin its factory source")
@@ -58,8 +68,12 @@ def validate_profile(profile: Mapping, *, expected_source_sha256=None) -> dict:
             raise ValueError("Invalid or duplicate Kontakt audition controller")
         seen.add(item["controller"])
         clean.append(dict(item))
-    return dict(schema_version=1, kind="midi_context", source_factory_sha256=source,
-                instruments=normalized, controllers=clean)
+    result = dict(schema_version=1, kind="midi_context", source_factory_sha256=source,
+                  instruments=normalized, controllers=clean)
+    if has_audition_pattern:
+        result.update(audition_pattern=LEGATO_AUDITION_PATTERN,
+                      audition_timing=dict(LEGATO_AUDITION_TIMING))
+    return result
 
 
 def profile_phrase(profile: Mapping, *, sample_rate=44100, max_seconds=30.0) -> dict:
@@ -75,6 +89,13 @@ def profile_phrase(profile: Mapping, *, sample_rate=44100, max_seconds=30.0) -> 
     if any(row["midi_channel"] > 16 for row in active):
         raise ValueError("Kontakt source uses MIDI port B-D; this host exposes port A only")
     notes, signatures, channels = [], set(), set()
+    audition_timing = profile.get("audition_timing")
+    if audition_timing is None:
+        onset_interval = round(0.5 * sample_rate)
+        gate_samples = round(0.35 * sample_rate)
+    else:
+        onset_interval = round(audition_timing["onset_interval_ms"] * sample_rate / 1000)
+        gate_samples = round(audition_timing["gate_ms"] * sample_rate / 1000)
     for row in active:
         channel = row["midi_channel"] or 1
         low, high = row["key_range"]
@@ -88,8 +109,8 @@ def profile_phrase(profile: Mapping, *, sample_rate=44100, max_seconds=30.0) -> 
             if signature in signatures:
                 continue
             signatures.add(signature)
-            start = round(len(notes) * 0.5 * sample_rate)
-            duration = round(0.35 * sample_rate)
+            start = len(notes) * onset_interval
+            duration = gate_samples
             if start + duration > max_seconds * sample_rate:
                 raise ValueError("Kontakt source needs more than the bounded audition window")
             notes.append(dict(sample=start, duration_samples=duration, note=pitch,
@@ -98,10 +119,14 @@ def profile_phrase(profile: Mapping, *, sample_rate=44100, max_seconds=30.0) -> 
     controllers = [dict(sample=0, channel=channel, **cc)
                    for channel in sorted(channels) for cc in profile["controllers"]]
     fingerprint = hashlib.sha256(json.dumps(profile, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return dict(notes=notes, controllers=controllers,
+    result = dict(notes=notes, controllers=controllers,
                 duration_samples=max(4 * sample_rate, round(len(notes) * 0.5 * sample_rate)),
                 tail_samples=sample_rate, tempo=[], meter=[],
                 phrase="按原预设通道与音域试听", profile_sha256=fingerprint)
+    if audition_timing is not None:
+        result.update(audition_pattern=profile["audition_pattern"],
+                      audition_timing=dict(audition_timing))
+    return result
 
 
 class KontaktProbeProfile:
