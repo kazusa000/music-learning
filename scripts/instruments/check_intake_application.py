@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -34,11 +35,15 @@ def main():
     if (plan.get("plan_sha256") != args.plan_sha256 or json_fingerprint(
             {key: value for key, value in plan.items() if key != "plan_sha256"}) != args.plan_sha256):
         raise ValueError("Application check requires the exact verified publication plan")
-    settings = Settings(data_root=output / "private-data", instrument_library=Path(r"H:\music\Sound Library"),
+    # Native Windows file APIs may reject the long report-root + CAS filename.
+    # Keep actual product task paths short, with the report pointing to them.
+    private_root = maintenance / "ac" / uuid.uuid4().hex[:12]
+    private_root.mkdir(parents=True, exist_ok=False)
+    settings = Settings(data_root=private_root, instrument_library=Path(r"H:\music\Sound Library"),
                         instrument_preview_warm=False)
     results = []
     for index, entry in enumerate(plan["additions"]):
-        directory = settings.path("tasks", f"intake-{index:04}", "application-check")
+        directory = settings.path("tasks", f"intake-{index:04}", "check")
         directory.mkdir(parents=True)
         result = import_admitted(settings, {"id": f"intake-{index:04}", "kind": "instrument.capture",
             "project_id": "isolated-intake-compatibility", "payload": {"preset": entry}}, directory)
@@ -59,7 +64,7 @@ def main():
                         "profile": entry.get("performance_profile", {}).get("kind"), "status": "passed"})
     report = {"status": "passed", "release_commit": record["commit"], "source_root": str(source),
               "plan_sha256": args.plan_sha256, "items": results, "formal_project_writes": 0,
-              "native_or_model_calls": 0, "catalog_written": False}
+              "native_or_model_calls": 0, "catalog_written": False, "private_data_root": str(private_root)}
     (output / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"status": "passed", "count": len(results), "report": str(output / "report.json")}))
 
