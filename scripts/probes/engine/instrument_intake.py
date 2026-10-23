@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import UTC, datetime
+from fractions import Fraction
 import hashlib
 import json
 import os
@@ -256,6 +257,361 @@ def select_ordinary_presets(entries: list[dict], per_product: int = 2) -> list[d
     return selected
 
 
+def select_performance_presets(entries: list[dict], required_products: set[str]) -> list[dict]:
+    """Select one published preset per product/profile kind, including every Riff product."""
+    grouped: dict[tuple[str, str], list[dict]] = {}
+    for entry in entries:
+        profile = entry.get("performance_profile")
+        if entry.get("audio_verified") is not True or not isinstance(profile, dict):
+            continue
+        if (entry.get("backend") != "vst3-preset"
+                or not str(entry.get("plugin_path", "")).casefold().endswith(".vst3")):
+            continue
+        product, kind = entry.get("library_id"), profile.get("kind")
+        if not isinstance(product, str) or not product or not isinstance(kind, str) or not kind:
+            raise ValueError("Published performance preset is missing product or profile kind")
+        grouped.setdefault((product, kind), []).append(entry)
+
+    riff_products = {product for product, kind in grouped if kind == "riff_toggle"}
+    if riff_products != required_products:
+        raise ValueError("Riff profile coverage does not match every published product")
+    selected = []
+    for key in sorted(grouped):
+        selected.append(sorted(grouped[key], key=lambda item: item["id"])[0])
+    if not selected:
+        raise ValueError("No published performance-profile presets were found")
+    return selected
+
+
+def _profile_timing(phrase: dict) -> tuple[list[dict], list[dict], str]:
+    """Return source timing, or explicitly labeled neutral timing for untimed MIDI context."""
+    tempo = phrase.get("tempo")
+    meter = phrase.get("meter")
+    if tempo == [] and meter == []:
+        return ([{"sample": 0, "bpm": 120}],
+                [{"sample": 0, "numerator": 4, "denominator": 4}],
+                "neutral_qa_timing_no_source_tempo_or_meter")
+    if (not isinstance(tempo, list) or len(tempo) != 1
+            or not isinstance(tempo[0], dict) or tempo[0].get("sample") != 0
+            or not isinstance(meter, list) or len(meter) != 1
+            or not isinstance(meter[0], dict) or meter[0].get("sample") != 0):
+        raise ValueError("This isolated profile probe requires a single source-pinned tempo and meter")
+    return tempo, meter, "source_profile"
+
+
+def build_profile_snapshot(contracts, track, plugin, phrase: dict) -> dict:
+    """Build an isolated project from the exact profile event and timing contract."""
+    sample_rate = 44100
+    phrase_samples = phrase.get("duration_samples")
+    tail_samples = phrase.get("tail_samples")
+    if (type(phrase_samples) is not int or phrase_samples < sample_rate
+            or phrase_samples > 120 * sample_rate
+            or type(tail_samples) is not int or not 0 <= tail_samples <= 30 * sample_rate):
+        raise ValueError("Performance profile has an invalid full-phrase duration or tail")
+    duration = phrase_samples + tail_samples
+    tempo, meter, _timing_source = _profile_timing(phrase)
+    if (not isinstance(tempo, list) or len(tempo) != 1 or tempo[0].get("sample") != 0
+            or not isinstance(tempo[0].get("bpm"), (int, float))
+            or isinstance(tempo[0].get("bpm"), bool)
+            or not isinstance(meter, list) or len(meter) != 1 or meter[0].get("sample") != 0
+            or type(meter[0].get("numerator")) is not int
+            or type(meter[0].get("denominator")) is not int):
+        raise ValueError("This isolated profile probe requires one source-pinned tempo and meter")
+    bpm = Fraction(str(tempo[0].get("bpm")))
+    if bpm <= 0:
+        raise ValueError("Performance profile tempo must be positive")
+    beat_phrase_end = Fraction(phrase_samples) * bpm / (sample_rate * 60)
+    beat_project_end = Fraction(duration) * bpm / (sample_rate * 60)
+    provenance = track.provenance
+    anchors = [
+        contracts.TimingAnchor(sample=0, beat=contracts.Beat.of(0)),
+        contracts.TimingAnchor(sample=phrase_samples, beat=contracts.Beat.of(beat_phrase_end)),
+    ]
+    if duration > phrase_samples:
+        anchors.append(contracts.TimingAnchor(sample=duration,
+                                              beat=contracts.Beat.of(beat_project_end)))
+    timing_map = contracts.TimingMap(
+        id=contracts.new_id(), sample_rate=sample_rate,
+        anchors=anchors,
+        meters=[contracts.Meter(beat=contracts.Beat.of(0), bar=1,
+                               numerator=meter[0]["numerator"],
+                               denominator=meter[0]["denominator"])],
+        provenance=provenance,
+    )
+    notes = []
+    for event in phrase.get("notes", []):
+        sample, event_duration = event.get("sample"), event.get("duration_samples")
+        pitch, velocity, channel = event.get("note"), event.get("velocity"), event.get("channel")
+        if (type(sample) is not int or type(event_duration) is not int or event_duration <= 0
+                or type(pitch) is not int or type(channel) is not int
+                or not isinstance(velocity, (int, float)) or isinstance(velocity, bool)
+                or sample < 0 or sample + event_duration > phrase_samples):
+            raise ValueError("Performance profile contains an invalid or out-of-range MIDI note")
+        notes.append(contracts.NoteEvent(
+            id=contracts.new_id(), track_id=track.id, pitch=pitch,
+            start_sample=sample, end_sample=sample + event_duration,
+            velocity=float(velocity), channel=channel, provenance=provenance,
+        ))
+    controllers = []
+    source_controllers = phrase.get("controllers")
+    if not isinstance(source_controllers, list):
+        raise ValueError("Performance profile is missing its controller event list")
+    for event in source_controllers:
+        sample = event.get("sample")
+        channel, controller, value = event.get("channel"), event.get("controller"), event.get("value")
+        if (type(sample) is not int or not 0 <= sample < phrase_samples
+                or type(channel) is not int or not 1 <= channel <= 16
+                or type(controller) is not int or not 0 <= controller <= 127
+                or type(value) is not int or not 0 <= value <= 127):
+            raise ValueError("Performance profile contains an invalid controller event time")
+        controllers.append(contracts.ControlEvent(
+            id=contracts.new_id(), track_id=track.id, sample=sample,
+            channel=channel, controller=controller, value=value, provenance=provenance,
+        ))
+    snapshot = contracts.Snapshot(
+        sample_rate=sample_rate, duration_samples=duration, timing_map=timing_map,
+        tracks=[track], track_order=[track.id], notes=notes,
+        controllers=controllers, plugins=[plugin],
+    )
+    return snapshot.model_dump(mode="json")
+
+
+def validate_profile_events(snapshot: dict, track_id: str, phrase: dict) -> dict:
+    """Verify the private revision retained every profile note, CC, tempo, and meter."""
+    notes = snapshot.get("notes")
+    controllers = snapshot.get("controllers")
+    if not isinstance(notes, list) or not isinstance(controllers, list):
+        raise ValueError("Profile revision is missing MIDI notes or controller events")
+    expected_notes = sorted((event["note"], event["sample"],
+        event["sample"] + event["duration_samples"], float(event["velocity"]),
+        event["channel"]) for event in phrase["notes"])
+    actual_notes = sorted((event["pitch"], event["start_sample"], event["end_sample"],
+        float(event["velocity"]), event["channel"])
+        for event in notes if event.get("track_id") == track_id)
+    if actual_notes != expected_notes or len(notes) != len(expected_notes):
+        raise ValueError("Profile revision changed or dropped source MIDI events")
+    expected_controllers = sorted((event["sample"], event["channel"],
+        event["controller"], event["value"]) for event in phrase["controllers"])
+    actual_controllers = sorted((event["sample"], event["channel"],
+        event["controller"], event["value"])
+        for event in controllers if event.get("track_id") == track_id)
+    if actual_controllers != expected_controllers or len(controllers) != len(expected_controllers):
+        raise ValueError("Profile revision changed or dropped source controller events")
+    timing = snapshot.get("timing_map")
+    tempo, meter, timing_source = _profile_timing(phrase)
+    if (not isinstance(timing, dict) or timing.get("sample_rate") != 44100
+            or not isinstance(timing.get("anchors"), list) or len(timing["anchors"]) not in {2, 3}
+            or not isinstance(timing.get("meters"), list) or len(timing["meters"]) != 1
+            or not isinstance(tempo, list) or len(tempo) != 1
+            or not isinstance(meter, list) or len(meter) != 1):
+        raise ValueError("Profile revision did not retain its source tempo/meter map")
+    duration = phrase["duration_samples"] + phrase["tail_samples"]
+    phrase_samples = phrase["duration_samples"]
+    if (snapshot.get("duration_samples") != duration
+            or timing["anchors"][0].get("sample") != 0
+            or timing["anchors"][1].get("sample") != phrase_samples
+            or timing["anchors"][-1].get("sample") != duration):
+        raise ValueError("Profile revision truncated its source phrase or timing extent")
+    bpm = Fraction(str(tempo[0]["bpm"]))
+    expected_beat = Fraction(phrase_samples) * bpm / (44100 * 60)
+    ending_beat = timing["anchors"][1].get("beat")
+    if (not isinstance(ending_beat, dict)
+            or Fraction(ending_beat.get("n", 0), ending_beat.get("d", 1)) != expected_beat):
+        raise ValueError("Profile revision changed its source tempo/sample mapping")
+    project_end_beat = timing["anchors"][-1].get("beat")
+    expected_project_end_beat = Fraction(duration) * bpm / (44100 * 60)
+    if (not isinstance(project_end_beat, dict)
+            or Fraction(project_end_beat.get("n", 0), project_end_beat.get("d", 1))
+            != expected_project_end_beat):
+        raise ValueError("Profile revision changed its tail timing extent")
+    actual_meter = timing["meters"][0]
+    if (actual_meter.get("bar") != 1
+            or actual_meter.get("beat") != {"n": 0, "d": 1}
+            or actual_meter.get("numerator") != meter[0]["numerator"]
+            or actual_meter.get("denominator") != meter[0]["denominator"]):
+        raise ValueError("Profile revision changed the source meter")
+    return {"notes": len(expected_notes), "controllers": len(expected_controllers),
+            "tempo_points": len(tempo), "meter_points": len(meter),
+            "duration_samples": duration, "timing_source": timing_source}
+
+
+def validate_profile_completion(state: dict, track_id: str, revision_id: str,
+                                required_position: int, peak_seen: float) -> dict:
+    """Require the complete source phrase, live device audio, and a clean engine state."""
+    if (state.get("status") not in {"ready", "stopped"}
+            or state.get("applied_revision") != revision_id):
+        raise ValueError("Native engine did not retain the complete profile revision")
+    position = state.get("position_sample")
+    if type(position) is not int or position < required_position:
+        raise ValueError("Native engine stopped before the complete performance phrase")
+    terminal_peak = (state.get("meters") or {}).get(track_id, 0)
+    if (peak_seen <= 0 or not isinstance(terminal_peak, (int, float))
+            or isinstance(terminal_peak, bool) or terminal_peak < 0):
+        raise ValueError("Complete profile playback produced no nonzero device meter")
+    if state.get("underruns") != 0 or state.get("xruns") != 0:
+        raise ValueError("Profile playback reported a device underrun or xrun")
+    plugin = (state.get("plugins") or {}).get(track_id)
+    if (not isinstance(plugin, dict) or type(plugin.get("pid")) is not int
+            or plugin["pid"] <= 0 or plugin.get("missed_blocks") != 0 or plugin.get("error")):
+        raise ValueError("Profile playback worker is absent or reported a missed block/error")
+    return {"track_peak_seen": float(peak_seen), "worker_pid": plugin["pid"],
+            "completed_position_sample": position}
+
+
+def wait_for_profile_completion(service, contracts, track_id: str, revision_id: str,
+                                required_position: int, sample_rate: int,
+                                owned_workers=None, owned_processes=None) -> tuple[dict, float]:
+    deadline = time.monotonic() + required_position / sample_rate + 20
+    peak_seen = 0.0
+    last = None
+    while time.monotonic() < deadline:
+        last = _invoke(service, contracts, "engine.status")
+        _record_status_workers(last, owned_workers, owned_processes)
+        if last.get("applied_revision") != revision_id:
+            raise ValueError("Profile playback changed revisions before the complete phrase ended")
+        meter = (last.get("meters") or {}).get(track_id, 0)
+        if isinstance(meter, (int, float)) and not isinstance(meter, bool):
+            peak_seen = max(peak_seen, float(meter))
+        if last.get("underruns") != 0 or last.get("xruns") != 0:
+            raise ValueError("Profile playback reported a device underrun or xrun")
+        plugins = last.get("plugins") or {}
+        plugin = plugins.get(track_id) if isinstance(plugins, dict) else None
+        if isinstance(plugin, dict) and (plugin.get("missed_blocks") != 0 or plugin.get("error")):
+            raise ValueError("Profile playback worker reported a missed block/error")
+        position = last.get("position_sample")
+        if type(position) is int and position >= required_position:
+            return last, peak_seen
+        if last.get("playing") is False:
+            raise ValueError("Native transport ended before the complete performance phrase")
+        time.sleep(.025)
+    raise TimeoutError("Native transport did not cover the full profile phrase: "
+                       + json.dumps(last, ensure_ascii=False))
+
+
+def close_private_engine(service, contracts, session: dict) -> dict:
+    """Stop and close this probe's own engine session before another profile load."""
+    _invoke(service, contracts, "engine.transport", {**session, "playing": False})
+    _invoke(service, contracts, "engine.close", session)
+    state = _invoke(service, contracts, "engine.status")
+    if state.get("status") not in {"stopped", "closed"} or state.get("playing") is not False:
+        raise ValueError("Private engine did not stop cleanly between profile probes")
+    return state
+
+
+def run_profile_suite(service, worker, contracts, project_id: str, current_revision_id: str,
+                      profile_entries: list[dict], report: dict, loading_budget,
+                      active_config: dict, settings, broker, owned_workers: dict[int, float],
+                      owned_processes: dict[int, float], progress: Path,
+                      repository: Path = ROOT, client_class=None) -> tuple[str, list[dict]]:
+    """Exercise complete, published performance contracts on isolated revisions."""
+    from music_learning.instrument_performance_profiles import trigger_phrase, validate
+
+    results = []
+    current_revision = current_revision_id
+    for entry in profile_entries:
+        _require_no_competing_instrument_process(report, "profile-capture:" + entry["id"])
+        _require_no_legacy_audio_host(report, "profile-capture:" + entry["id"])
+        formal_status = _formal_idle(repository, client_class, active_config)
+        report.setdefault("formal_idle_checks", []).append({
+            "before": "profile-capture:" + entry["id"], **formal_status,
+        })
+        profile = validate(entry["performance_profile"],
+                           expected_source_sha256=entry["source_factory_sha256"])
+        phrase = trigger_phrase(profile, sample_rate=44100, max_seconds=120)
+        if not phrase.get("notes") or phrase.get("duration_samples", 0) < 44100:
+            raise ValueError("Published performance profile did not produce a complete MIDI phrase")
+        profile_sha = phrase.get("profile_sha256")
+        if not isinstance(profile_sha, str) or len(profile_sha) != 64:
+            raise ValueError("Published performance phrase has no stable profile fingerprint")
+
+        capture = _capture_preset(service, worker, contracts, project_id,
+            current_revision, entry, report, loading_budget)
+        report["capture_count"] = report.get("capture_count", 0) + 1
+        report["last_capture"] = entry["id"]
+        provenance = contracts.Provenance(origin="rule", source_id="instrument-release-profile-qa")
+        track = contracts.Track(id=contracts.new_id(), name="Profile QA " + entry["id"],
+                                kind="instrument", gain_db=0, provenance=provenance)
+        plugin = contracts.PluginInstance.model_validate(
+            _plugin_with_capture(contracts, capture, track.id, contracts.new_id()))
+        snapshot = build_profile_snapshot(contracts, track, plugin, phrase)
+        event_summary = validate_profile_events(snapshot, track.id, phrase)
+        revision = _invoke(service, contracts, "revisions.commit", {
+            "project_id": project_id, "snapshot": snapshot,
+            "author": "isolated-qa",
+            "description": "Apply complete published performance profile " + entry["id"],
+        }, current_revision)
+        revision_id = revision["id"]
+        stored = _invoke(service, contracts, "revisions.get", {
+            "project_id": project_id, "revision_id": revision_id,
+        })
+        applied = validate_capture_and_revision(
+            capture["capture"]["result"], stored["snapshot"], entry["id"])
+        event_summary = validate_profile_events(stored["snapshot"], track.id, phrase)
+        if service.engine_sync_error:
+            raise RuntimeError("Profile revision did not reach the private engine: "
+                               + str(service.engine_sync_error))
+
+        formal_status = _formal_idle(repository, client_class, active_config)
+        report.setdefault("formal_idle_checks", []).append({
+            "before": "profile-engine-open:" + entry["id"], **formal_status,
+        })
+        _require_no_competing_instrument_process(report, "profile-engine-open:" + entry["id"])
+        _require_no_legacy_audio_host(report, "profile-engine-open:" + entry["id"])
+        _check_h(loading_budget, report, "profile-engine-open:" + entry["id"])
+        opened = _invoke(service, contracts, "engine.open", {
+            "project_id": project_id, "revision_id": revision_id,
+            "position_sample": 0, "playing": False,
+        })
+        state = _wait_ready(service, contracts, revision_id,
+                            owned_workers=owned_workers, owned_processes=owned_processes)
+        if broker.owner:
+            process = broker.owner.process
+            _record_owned_process_tree(process.pid, owned_processes)
+        session = {"engine_session": state["engine_session"], "generation": state["generation"]}
+        _invoke(service, contracts, "engine.monitor", {**session, "tracks": {
+            track.id: {"gain_db": 0, "mute": False, "solo": False},
+        }})
+        _invoke(service, contracts, "engine.transport", {**session, "playing": True})
+        required_position = phrase["duration_samples"] + phrase["tail_samples"]
+        final_state, peak_seen = wait_for_profile_completion(
+            service, contracts, track.id, revision_id, required_position, 44100,
+            owned_workers=owned_workers, owned_processes=owned_processes)
+        completion = validate_profile_completion(
+            final_state, track.id, revision_id, required_position, peak_seen)
+        if opened.get("compile_ms") is not None:
+            completion["compile_ms"] = opened["compile_ms"]
+        _record_worker_identity(completion["worker_pid"], owned_workers, owned_processes)
+        result = {
+            "preset_id": entry["id"], "library_id": entry["library_id"],
+            "profile_kind": profile["kind"], "profile_sha256": profile_sha,
+            "performance_profile": profile,
+            "phrase_spec": phrase,
+            "factory_state_sha256": entry["source_factory_sha256"],
+            "capture_job_id": capture["job"]["id"],
+            "plugin_state_sha256": sha256_bytes(json.dumps(
+                capture["plugin"], sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False, allow_nan=False).encode("utf-8")),
+            "phrase": phrase.get("phrase"),
+            "full_phrase_samples": phrase["duration_samples"],
+            "tail_samples": phrase["tail_samples"],
+            "event_summary": event_summary,
+            "state_asset_id": applied["state_asset_id"],
+            "descriptor_asset_id": applied["descriptor_asset_id"],
+            "parameter_count": len(applied["parameters"]),
+            "revision_id": revision_id,
+            "playback": completion,
+        }
+        close_private_engine(service, contracts, session)
+        results.append(result)
+        current_revision = revision_id
+        report["profile_results"] = results
+        report["profile_tests_completed"] = len(results)
+        report["worker_pids"] = sorted(owned_workers)
+        _verify_no_render(service, contracts, project_id, report["capture_count"], settings)
+        _atomic_json(progress, report)
+    return current_revision, results
+
+
 def validate_capture_and_revision(capture: dict, snapshot: dict, preset_id: str) -> dict:
     """Require the whole native state to survive capture and revision application."""
     if capture.get("state_imported") is not True:
@@ -336,6 +692,43 @@ def active_legacy_audio_hosts(process_iter=None) -> list[dict]:
         except psutil.Error as error:
             raise RuntimeError("Cannot verify whether another direct audio host is active") from error
     return sorted(hosts, key=lambda item: item["pid"])
+
+
+def active_competing_instrument_processes(process_iter=None) -> list[dict]:
+    """Find the Ample full-state A/B supervisor or an owned direct probe host."""
+    import psutil
+    iterator = process_iter if process_iter is not None else psutil.process_iter(
+        ["pid", "name", "create_time", "cmdline"]
+    )
+    competing = []
+    for process in iterator:
+        try:
+            info = process.info if hasattr(process, "info") else process
+            pid = int(info["pid"])
+            if pid == os.getpid():
+                continue
+            name = str(info.get("name", "")).casefold()
+            command = " ".join(info.get("cmdline") or []).casefold()
+            role = None
+            if name == "instrument_probe_host.exe":
+                role = "direct-instrument-probe-host"
+            elif name == "ml_audio_host.exe":
+                role = "legacy-direct-audio-host"
+            elif name in {"python.exe", "pythonw.exe"} and any(marker in command for marker in (
+                    "run_ample_preview_state_ab.py", "run_ample_factory_validation.py",
+                    "run_ample_phrase_retest.py")):
+                role = "ample-instrument-supervisor"
+            if role:
+                created = info.get("create_time")
+                if not isinstance(created, (int, float)) or created <= 0:
+                    raise RuntimeError("Cannot verify competing audio process creation time")
+                competing.append({"pid": pid, "created_at": float(created),
+                                  "name": name, "role": role})
+        except psutil.NoSuchProcess:
+            continue
+        except psutil.Error as error:
+            raise RuntimeError("Cannot verify whether another instrument probe is active") from error
+    return sorted(competing, key=lambda item: item["pid"])
 
 
 def _read_all_pages(call, operation: str, arguments: dict | None = None) -> list[dict]:
@@ -465,6 +858,16 @@ def _require_no_legacy_audio_host(report: dict, phase: str) -> None:
         raise AudioHostDeferred("An external direct audio host is active: " + json.dumps(hosts))
 
 
+def _require_no_competing_instrument_process(report: dict, phase: str) -> None:
+    competing = active_competing_instrument_processes()
+    report["competing_instrument_process_check"] = {
+        "phase": phase, "active_processes": competing,
+    }
+    if competing:
+        raise AudioHostDeferred("A competing instrument probe owns the audio lane: "
+                                + json.dumps(competing))
+
+
 def _invoke(service, contracts, operation: str, arguments: dict | None = None,
             expected_revision: str | None = None):
     spec = contracts.OPERATIONS.get(operation)
@@ -572,6 +975,8 @@ def run_probe(args) -> int:
         "status": "preflight",
         "started_at_utc": datetime.now(UTC).isoformat(),
         "pid": os.getpid(),
+        "qa_probe_script": str(Path(__file__).resolve()),
+        "qa_probe_script_sha256": sha256_file(Path(__file__).resolve()),
         "release_descriptor": str(Path(args.release).resolve()),
         "release_commit": record["commit"],
         "release_source": str(source),
@@ -611,7 +1016,8 @@ def run_probe(args) -> int:
         expected_products = getattr(args, "expected_products", 3)
         if len(products) != expected_products:
             raise ValueError(f"Expected {expected_products} published products, found {len(products)}")
-        for entry in selected:
+        profile_selected = select_performance_presets(additions, products)
+        for entry in [*selected, *profile_selected]:
             if not any(Path(entry["plugin_path"]).resolve().is_relative_to(Path(root).resolve())
                        for root in active_config["plugin_roots"]):
                 raise ValueError("Published plugin path is outside the active exact-root allowlist")
@@ -620,6 +1026,13 @@ def run_probe(args) -> int:
             {"id": entry["id"], "library_id": entry["library_id"], "name": entry["name"],
              "variant_name": entry.get("variant_name"), "plugin_path": entry["plugin_path"],
              "plugin_sha256": entry["plugin_sha256"]} for entry in selected
+        ]
+        report["selected_performance_profiles"] = [
+            {"id": entry["id"], "library_id": entry["library_id"],
+             "name": entry["name"], "variant_name": entry.get("variant_name"),
+             "kind": entry["performance_profile"]["kind"],
+             "plugin_path": entry["plugin_path"], "plugin_sha256": entry["plugin_sha256"]}
+            for entry in profile_selected
         ]
         report["status"] = "running"
         _atomic_json(progress, report)
@@ -658,6 +1071,7 @@ def run_probe(args) -> int:
 
         captures = {}
         for entry in selected:
+            _require_no_competing_instrument_process(report, "capture:" + entry["id"])
             _require_no_legacy_audio_host(report, "capture:" + entry["id"])
             captures[entry["id"]] = _capture_preset(service, worker, c, project_id,
                 revision_id, entry, report, loading_budget)
@@ -691,6 +1105,7 @@ def run_probe(args) -> int:
             report.setdefault("formal_idle_checks", []).append({
                 "before": "engine-open:" + first["id"], **formal_status,
             })
+            _require_no_competing_instrument_process(report, "engine-open:" + first["id"])
             _require_no_legacy_audio_host(report, "engine-open:" + first["id"])
             _check_h(loading_budget, report, "engine-open:" + first["id"])
             opened = _invoke(service, c, "engine.open", {"project_id": project_id,
@@ -716,6 +1131,7 @@ def run_probe(args) -> int:
             report.setdefault("formal_idle_checks", []).append({
                 "before": "preset-switch:" + second["id"], **formal_status,
             })
+            _require_no_competing_instrument_process(report, "preset-switch:" + second["id"])
             _require_no_legacy_audio_host(report, "preset-switch:" + second["id"])
             _check_h(loading_budget, report, "preset-switch:" + second["id"])
             second_revision = _invoke(service, c, "edits.apply", {
@@ -763,9 +1179,32 @@ def run_probe(args) -> int:
             report["worker_pids"] = sorted(owned_workers)
             _atomic_json(progress, report)
 
-        _verify_no_render(service, c, project_id, len(selected), settings)
+        if profile_selected:
+            last_state = _invoke(service, c, "engine.status")
+            _record_status_workers(last_state, owned_workers, owned_processes)
+            owner = getattr(broker, "owner", None)
+            process = getattr(owner, "process", None) if owner is not None else None
+            if process is None or process.poll() is not None:
+                raise RuntimeError("Private engine owner exited before profile QA")
+            _record_owned_process_tree(process.pid, owned_processes)
+            close_private_engine(service, c, session)
+            current_revision_id, profile_results = run_profile_suite(
+                service, worker, c, project_id, current_revision_id, profile_selected,
+                report, loading_budget, active_config, settings, broker, owned_workers,
+                owned_processes, progress, repository=ROOT_PATH, client_class=Client,
+            )
+            report["profile_results"] = profile_results
+            report["profile_tests_completed"] = len(profile_results)
+
+        total_captures = len(captures) + len(report.get("profile_results", []))
+        _verify_no_render(service, c, project_id, total_captures, settings)
         report.update(status="succeeded", finished_at_utc=datetime.now(UTC).isoformat(),
-                      render_jobs=0, capture_jobs=len(selected), products_tested=len(product_results))
+                      render_jobs=0, capture_jobs=total_captures, products_tested=len(product_results),
+                      ordinary_presets_tested=len(selected),
+                      performance_profiles_tested=len(report.get("profile_results", [])),
+                      performance_profile_kinds_tested=sorted({
+                          result["profile_kind"] for result in report.get("profile_results", [])
+                      }))
         _atomic_json(progress, report)
         return 0
     except (StorageDeferred, AudioHostDeferred) as error:
@@ -884,6 +1323,7 @@ def _record_status_workers(state: dict, owned_workers, owned_processes) -> None:
 
 def supervise_probe(args, *, repository: Path = ROOT, loading_budget_fn=None,
                     run_attempt=None, legacy_hosts_fn=active_legacy_audio_hosts,
+                    competing_processes_fn=active_competing_instrument_processes,
                     sleep=time.sleep, monotonic=time.monotonic) -> int:
     """Wait boundedly for three H: idle samples and preserve each isolated attempt."""
     maximum_wait = float(getattr(args, "max_wait_seconds", 86400))
@@ -915,6 +1355,8 @@ def supervise_probe(args, *, repository: Path = ROOT, loading_budget_fn=None,
         "started_at_utc": datetime.now(UTC).isoformat(),
         "pid": os.getpid(),
         "pid_created_at": _process_creation_time(os.getpid()),
+        "qa_probe_script": str(Path(__file__).resolve()),
+        "qa_probe_script_sha256": sha256_file(Path(__file__).resolve()),
         "release_commit": record["commit"],
         "publication_plan": str(Path(args.publication_plan).resolve()),
         "max_wait_seconds": maximum_wait,
@@ -929,6 +1371,23 @@ def supervise_probe(args, *, repository: Path = ROOT, loading_budget_fn=None,
     deadline = monotonic() + maximum_wait
     idle_samples = 0
     while monotonic() < deadline:
+        try:
+            competing = competing_processes_fn()
+        except Exception as error:
+            report.update(status="blocked_process_check", error=repr(error),
+                          finished_at_utc=datetime.now(UTC).isoformat())
+            _atomic_json(progress, report)
+            return 2
+        if competing:
+            idle_samples = 0
+            report.update(status="waiting_for_idle", idle_samples=0,
+                          last_preflight={"at_utc": datetime.now(UTC).isoformat(),
+                                          "active_competing_instrument_processes": competing})
+            _atomic_json(progress, report)
+            remaining = deadline - monotonic()
+            if remaining > 0:
+                sleep(min(poll_seconds, remaining))
+            continue
         try:
             hosts = legacy_hosts_fn()
         except Exception as error:

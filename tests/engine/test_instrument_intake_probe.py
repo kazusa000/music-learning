@@ -149,6 +149,113 @@ def test_missing_second_ordinary_preset_blocks_product_instead_of_silent_shortfa
         probe.select_ordinary_presets([entry])
 
 
+def test_profile_selection_covers_every_kind_and_riff_product():
+    entries = []
+    for product in ("agm", "aglp", "agsc"):
+        entries.append({"id": product + ":riff", "library_id": product,
+            "audio_verified": True, "backend": "vst3-preset", "plugin_path": "vendor.vst3",
+            "performance_profile": {"kind": "riff_toggle"}})
+    entries.append({"id": "agm:strummer", "library_id": "agm", "audio_verified": True,
+        "backend": "vst3-preset", "plugin_path": "vendor.vst3",
+        "performance_profile": {"kind": "ample_strummer_sequence"}})
+    selected = probe.select_performance_presets(entries, {"agm", "aglp", "agsc"})
+    assert {(entry["library_id"], entry["performance_profile"]["kind"])
+            for entry in selected} == {
+        ("agm", "riff_toggle"), ("aglp", "riff_toggle"),
+        ("agsc", "riff_toggle"), ("agm", "ample_strummer_sequence"),
+    }
+    with pytest.raises(ValueError, match="Riff profile coverage"):
+        probe.select_performance_presets(entries[:-1], {"agm", "aglp", "missing"})
+
+
+def test_profile_snapshot_retains_full_notes_controllers_tempo_meter_and_tail():
+    from music_learning import contracts
+
+    provenance = contracts.Provenance(origin="rule", source_id="profile-fixture")
+    track = contracts.Track(id=contracts.new_id(), name="Profile fixture", kind="instrument",
+                            provenance=provenance)
+    plugin = contracts.PluginInstance(
+        id=contracts.new_id(), track_id=track.id, class_id="class", version="1",
+        binary_sha256="a" * 64, state_asset_id="b" * 64,
+        descriptor_asset_id="c" * 64, parameters={"gain": 0.5}, order=0,
+        preset_id="preset",
+    )
+    phrase = {
+        "notes": [{"sample": 0, "duration_samples": 44100, "note": 60,
+                   "velocity": .8, "channel": 1}],
+        "controllers": [{"sample": 4410, "channel": 1, "controller": 64, "value": 127}],
+        "duration_samples": 88200, "tail_samples": 44100,
+        "tempo": [{"sample": 0, "bpm": 120}],
+        "meter": [{"sample": 0, "numerator": 4, "denominator": 4}],
+    }
+    snapshot = probe.build_profile_snapshot(contracts, track, plugin, phrase)
+    summary = probe.validate_profile_events(snapshot, track.id, phrase)
+    assert summary == {"notes": 1, "controllers": 1, "tempo_points": 1,
+                       "meter_points": 1, "duration_samples": 132300,
+                       "timing_source": "source_profile"}
+    assert snapshot["duration_samples"] == phrase["duration_samples"] + phrase["tail_samples"]
+    assert snapshot["timing_map"]["anchors"][1]["sample"] == phrase["duration_samples"]
+    assert snapshot["controllers"][0]["value"] == 127
+
+    changed = json.loads(json.dumps(snapshot))
+    changed["notes"][0]["pitch"] = 61
+    with pytest.raises(ValueError, match="changed or dropped source MIDI"):
+        probe.validate_profile_events(changed, track.id, phrase)
+    changed = json.loads(json.dumps(snapshot))
+    changed["timing_map"]["anchors"][1]["beat"]["n"] += 1
+    with pytest.raises(ValueError, match="tempo/sample mapping"):
+        probe.validate_profile_events(changed, track.id, phrase)
+
+
+def test_profile_without_source_tempo_uses_labeled_neutral_timing():
+    from music_learning import contracts
+
+    provenance = contracts.Provenance(origin="rule", source_id="profile-fixture")
+    track = contracts.Track(id=contracts.new_id(), name="MIDI context", kind="instrument",
+                            provenance=provenance)
+    plugin = contracts.PluginInstance(
+        id=contracts.new_id(), track_id=track.id, class_id="class", version="1",
+        binary_sha256="a" * 64, state_asset_id="b" * 64, order=0, preset_id="preset",
+    )
+    phrase = {"notes": [{"sample": 0, "duration_samples": 1000, "note": 60,
+                          "velocity": .8, "channel": 1}],
+              "controllers": [], "duration_samples": 44100, "tail_samples": 44100,
+              "tempo": [], "meter": []}
+    snapshot = probe.build_profile_snapshot(contracts, track, plugin, phrase)
+    summary = probe.validate_profile_events(snapshot, track.id, phrase)
+    assert summary["timing_source"] == "neutral_qa_timing_no_source_tempo_or_meter"
+    assert snapshot["timing_map"]["anchors"][1]["sample"] == phrase["duration_samples"]
+
+
+def test_full_source_riff_phrase_is_not_truncated_by_preview_limit():
+    from music_learning.instrument_performance_profiles import trigger_phrase
+
+    profile = {"schema_version": 1, "kind": "riff_toggle",
+        "factory_riff_sha256": "a" * 64, "riff_name": "Long source pattern",
+        "riff_type": "Riff", "tempo_bpm": 30, "numerator": 4, "denominator": 4,
+        "bars": 8, "trigger_note": 94, "trigger_velocity": 1.0, "stop_velocity": .25}
+    phrase = trigger_phrase(profile, max_seconds=30)
+    assert phrase["duration_samples"] == 8 * 8 * 44100
+    assert phrase["duration_samples"] / 44100 > 30
+    assert phrase["notes"][0]["sample"] == 0
+    assert phrase["notes"][-1]["sample"] == phrase["duration_samples"] - 1
+
+
+def test_profile_playback_requires_complete_phrase_audio_and_clean_worker():
+    state = {"status": "stopped", "applied_revision": "rev", "playing": False,
+        "position_sample": 10000, "meters": {"track": 0}, "underruns": 0, "xruns": 0,
+        "plugins": {"track": {"pid": 1234, "missed_blocks": 0}}}
+    result = probe.validate_profile_completion(state, "track", "rev", 10000, .03)
+    assert result["completed_position_sample"] == 10000
+    assert result["track_peak_seen"] == .03
+    for update in ({"position_sample": 9999}, {"underruns": 1},
+                   {"plugins": {"track": {"pid": 1234, "missed_blocks": 1}}}):
+        with pytest.raises(ValueError):
+            probe.validate_profile_completion({**state, **update}, "track", "rev", 10000, .03)
+    with pytest.raises(ValueError, match="no nonzero device meter"):
+        probe.validate_profile_completion(state, "track", "rev", 10000, 0)
+
+
 @pytest.mark.parametrize("state", [
     {"status": "ready", "playing": False},
     {"status": "stopped", "playing": True},
@@ -266,6 +373,22 @@ def test_active_legacy_audio_host_is_a_cold_probe_blocker():
     ]) == [{"pid": 8, "created_at": 2.0}]
 
 
+def test_ample_supervisors_and_direct_probe_hosts_are_competing_audio_owners():
+    processes = [
+        {"pid": 101, "name": "python.exe", "create_time": 1.0,
+         "cmdline": ["python.exe", "scripts/instruments/run_ample_preview_state_ab.py"]},
+        {"pid": 102, "name": "python.exe", "create_time": 2.0,
+         "cmdline": ["python.exe", "scripts/instruments/run_ample_factory_validation.py", "run"]},
+        {"pid": 103, "name": "instrument_probe_host.exe", "create_time": 3.0,
+         "cmdline": ["instrument_probe_host.exe"]},
+        {"pid": 104, "name": "other.exe", "create_time": 4.0,
+         "cmdline": ["other.exe"]},
+    ]
+    active = probe.active_competing_instrument_processes(processes)
+    assert [item["pid"] for item in active] == [101, 102, 103]
+    assert all(item["created_at"] > 0 for item in active)
+
+
 def test_storage_budget_unknown_or_busy_defers_without_claiming_success():
     with pytest.raises(probe.StorageDeferred, match="unknown"):
         probe.wait_h_idle(lambda _drive: {"reason": "counter timeout"})
@@ -328,7 +451,7 @@ def test_supervisor_waits_for_three_idle_samples_and_preserves_deferred_attempts
     args.expected_products = 3
     code = probe.supervise_probe(args, repository=repository,
         loading_budget_fn=lambda _drive: next(budgets), run_attempt=attempt,
-        legacy_hosts_fn=lambda: [],
+        legacy_hosts_fn=lambda: [], competing_processes_fn=lambda: [],
         sleep=clock.sleep, monotonic=clock.monotonic)
     assert code == 0
     assert len(outputs) == 2
@@ -369,7 +492,7 @@ def test_supervisor_times_out_without_launching_when_storage_stays_busy(tmp_path
     code = probe.supervise_probe(args, repository=repository,
         loading_budget_fn=lambda _drive: {"allowed": False, "reason": "io_pressure"},
         run_attempt=lambda _args: attempts.append(True) or 0,
-        legacy_hosts_fn=lambda: [],
+        legacy_hosts_fn=lambda: [], competing_processes_fn=lambda: [],
         sleep=clock.sleep, monotonic=clock.monotonic)
     state = json.loads((intake / "busy-qa/supervision.json").read_text())
     assert code == 2
@@ -408,6 +531,7 @@ def test_supervisor_waits_while_direct_audio_host_owns_device(tmp_path, monkeypa
         loading_budget_fn=lambda _drive: {"allowed": True, "reason": "idle"},
         run_attempt=lambda _args: launched.append(True) or 0,
         legacy_hosts_fn=lambda: [{"pid": 8, "created_at": 2.0}],
+        competing_processes_fn=lambda: [],
         sleep=clock.sleep, monotonic=clock.monotonic)
     state = json.loads((intake / "device-busy/supervision.json").read_text())
     assert code == 2
@@ -416,3 +540,45 @@ def test_supervisor_waits_while_direct_audio_host_owns_device(tmp_path, monkeypa
     assert state["last_preflight"]["active_legacy_audio_hosts"] == [
         {"pid": 8, "created_at": 2.0},
     ]
+
+
+def test_supervisor_waits_for_ample_profile_owner_before_storage_budget(tmp_path, monkeypatch):
+    repository = tmp_path
+    intake = repository / "data/maintenance/instrument-intake"
+    intake.mkdir(parents=True)
+    runtime = repository / "runtime"
+    runtime.mkdir()
+    record = {"commit": "release", "source_manifest_sha256": "a" * 64,
+              "native_audio_bundle": "bundle", "web_root": "web",
+              "native_files": {}, "web_files": {}}
+    (runtime / "application-release.local.json").write_text(json.dumps(record), encoding="utf-8")
+    monkeypatch.setattr(probe, "_load_source", lambda _root, _release: (record, repository / "source"))
+    monkeypatch.setattr(probe, "publication_plan_files", lambda *_args: [repository / "plan.json"])
+
+    class Clock:
+        current = 0.0
+
+        def monotonic(self):
+            return self.current
+
+        def sleep(self, seconds):
+            self.current += seconds
+
+    clock = Clock()
+    budget_calls, attempt_calls = [], []
+    args = Namespace(release=runtime / "release.local.json",
+        publication_plan=intake / "publication", output=intake / "owner-busy",
+        max_wait_seconds=2, poll_seconds=1)
+    code = probe.supervise_probe(args, repository=repository,
+        loading_budget_fn=lambda _drive: budget_calls.append(True) or {
+            "allowed": True, "reason": "idle"},
+        run_attempt=lambda _args: attempt_calls.append(True) or 0,
+        legacy_hosts_fn=lambda: [],
+        competing_processes_fn=lambda: [{"pid": 9452, "created_at": 10.0,
+                                         "name": "python.exe", "role": "ample-instrument-supervisor"}],
+        sleep=clock.sleep, monotonic=clock.monotonic)
+    state = json.loads((intake / "owner-busy/supervision.json").read_text())
+    assert code == 2
+    assert not budget_calls
+    assert not attempt_calls
+    assert state["last_preflight"]["active_competing_instrument_processes"][0]["pid"] == 9452
