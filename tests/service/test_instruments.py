@@ -5,6 +5,7 @@ import struct
 import wave
 
 import pytest
+from pydantic import ValidationError
 
 from music_learning import contracts as c
 from music_learning.instruments import resource_path, voice_preset
@@ -80,6 +81,64 @@ def test_unverified_catalog_does_not_become_automatic_mapping(service, project, 
     rec = invoke(service, "instruments.recommend", dict(project_id=project["id"]))["assignments"][0]
     assert rec["preset"]["id"] == "test-piano" and rec["review"] == "unreviewed"
     assert "resources" not in rec["preset"] and rec["out_of_range_notes"] == 0
+
+
+@pytest.mark.parametrize(
+    "preset_id",
+    [
+        "../escape",
+        r"C:\\preset",
+        None,
+        "",
+        "x" * 201,
+        "library:preset:extra",
+        ":preset",
+        "library:",
+    ],
+)
+def test_preset_id_contract_rejects_malformed_or_unbounded_values(preset_id):
+    with pytest.raises(ValidationError):
+        c.CaptureInstrument.model_validate({"preset_id": preset_id})
+
+
+def test_preset_id_contract_accepts_one_canonical_namespace():
+    preset_id = "ample-guitar-lp-4.0.0:41fc3d3f6ba5dcecb9a581f5"
+    assert c.CaptureInstrument.model_validate({"preset_id": preset_id}).preset_id == preset_id
+    assert c.InstrumentModelQuery(current_preset_id=preset_id).current_preset_id == preset_id
+    assert c.InstrumentLabels(preset_ids=[preset_id]).preset_ids == [preset_id]
+    assert c.PrepareInstrumentPreview(preset_id=preset_id).preset_id == preset_id
+    assert c.InstrumentPreview(
+        id="a" * 64,
+        preset_id=preset_id,
+        display_name="LP Guitar",
+        status="ready",
+        phrase="fixture phrase",
+    ).preset_id == preset_id
+
+
+def test_jobs_submit_accepts_namespaced_published_preset_id(service, project, tmp_path):
+    root, entry = installed(service.settings, tmp_path)
+    preset_id = "ample-guitar-lp-4.0.0:41fc3d3f6ba5dcecb9a581f5"
+    entry["id"] = preset_id
+    (root / "catalog.json").write_text(
+        json.dumps(dict(schema_version=1, presets=[entry])), encoding="utf-8"
+    )
+
+    job = invoke(
+        service,
+        "jobs.submit",
+        dict(
+            project_id=project["id"],
+            kind="instrument.capture",
+            payload={"preset_id": preset_id},
+            max_attempts=1,
+        ),
+        project["current_revision"],
+    )
+
+    assert job["kind"] == "instrument.capture"
+    assert job["payload"]["preset_id"] == preset_id
+    assert job["payload"]["preset"]["id"] == preset_id
 
 
 def test_readonly_discussion_can_discover_presets_with_pinned_track(service, project, tmp_path):

@@ -12,6 +12,14 @@ Id = Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]
 Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 Sample = Annotated[int, Field(ge=0, strict=True)]
 ReasoningEffort = Annotated[str, Field(min_length=1, max_length=32, pattern=r"^[a-z][a-z0-9_]*$")]
+PresetId = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
+    ),
+]
 
 
 def new_id() -> str:
@@ -755,7 +763,7 @@ class PluginPayload(Model):
 
 
 class CaptureInstrument(Model):
-    preset_id: str = Field(min_length=1, max_length=200, pattern=r"^[a-zA-Z0-9_.-]+$")
+    preset_id: PresetId
 
 
 class InstrumentModelSpec(Model):
@@ -773,7 +781,7 @@ class InstrumentQuery(Page):
 
 
 class InstrumentModelQuery(InstrumentQuery):
-    current_preset_id: str | None = Field(default=None, min_length=1, max_length=200)
+    current_preset_id: PresetId | None = None
 
 
 class InstrumentModelItem(Model):
@@ -786,16 +794,16 @@ class InstrumentModelItem(Model):
     source: dict[str, str]
     instrument_ids: list[str]
     variant_count: int
-    preview_preset_id: str | None
+    preview_preset_id: PresetId | None
 
 
 class InstrumentLabels(Model):
-    preset_ids: list[str] = Field(default_factory=list, max_length=128)
+    preset_ids: list[PresetId] = Field(default_factory=list, max_length=128)
     parameter_names: list[str] = Field(default_factory=list, max_length=256)
 
 
 class PrepareInstrumentPreview(Model):
-    preset_id: str = Field(min_length=1, max_length=200)
+    preset_id: PresetId
     retry: bool = False
 
 
@@ -805,7 +813,7 @@ class InstrumentPreviewRef(Model):
 
 class InstrumentPreview(Model):
     id: Hash
-    preset_id: str
+    preset_id: PresetId
     display_name: str
     status: Literal["queued", "loading", "ready", "failed", "cancelled"]
     audio_url: str | None = None
