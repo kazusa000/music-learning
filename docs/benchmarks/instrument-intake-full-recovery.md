@@ -1,5 +1,15 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 18:48 UTC：修复源键位查询入口，原队列继续证据重验
+
+本轮为具体代码/诊断准备进展并有实核等待：full-h的49316/28632原ctime和精确argv匹配，starting阶段持续CPU/读取活动，无新的音频实例；不是只有旧locator。队列仍518通过/15失败/459待测。`kf22/kontakt-only-resume-20261023/progress-184819.json`保存正式九表/head、E12和134固定输入前后一致，未停止或修改原验证器。
+
+`3c26f91`修正源键位文档中的错误调用协议，补充`kontakt_source_query.py`纯Lua生成器：当前原生`ml_kontakt_probe.exe`接JSON，不执行Lua；Lua使用实际既有`Kontakt 8.exe request.lua`协议。生成器在输出已存在时先拒绝，再在独立进程rack按已有reset/remove/load次序加载一个NKI，并核验返回slot、唯一instrument和原来源回执的name，之后运行原只读查询。没有set参数/音符/入库动作，也未打开Kontakt或读取H。
+
+34项相关回归实际通过，包含本机Lua解释器执行、0和128稀疏slot、名称与路径转义、来源载入失败、错误slot/name、多instrument和输出防覆盖；Kontakt API是明确mock。首次测试把完整空collection的mock期望写成partial而有2个失败，保留原报告后修正测试期望，未修改产品规则。最终报告`runtime/test-reports/20261023-184544-cdf84850`，30文件/19目录自动清理、0错误；Ruff通过。
+
+`kf22/source-keymap-preparation-01/prepared.json`只用E原始capture/候选/转换证据，为12个静音失败项准备24份首开/重开源查询Lua与具体command、SHA、tags。另3个超时项缺完整source capture，明确列为先恢复conversion/capture。状态prepared_not_executed；所有原full-h终态/进程退出、runtime/profile/storage/source前后核验仍须在实际调用前完成。这里的reopen是独立NKI重载，不是VST3状态恢复；tags仅引用原VST3 capture，不能替代两次独立空机架音频/完整状态证明。Ample及MODO继续暂停。
+
 ## 2026-10-23 18:40 UTC：用户恢复 Kontakt，Ample 继续暂停
 
 用户最新要求先完成Kontakt全部入库，Ample以后再说。Goal仅Kontakt ACTIVE；`keyscape`原自动跟进已更新为Kontakt-only，不新建聊天/跟进。Ample诊断、验证和52项待续预热全部暂停，MODO不探测。本段覆盖下方18:07的全体暂停，也覆盖更早涉及Ample的自主续跑指示。
