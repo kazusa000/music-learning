@@ -20,34 +20,21 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 INTAKE = ROOT / "data/maintenance/instrument-intake/20261023-ample-shared-fix"
-RUN_ROOT = INTAKE / "factory-default-control-01"
+RUN_ROOT = INTAKE / "factory-default-control-01-rebuild-02"
 PLAN_PATH = RUN_ROOT / "prepared-plan.json"
 ATTEMPTS_ROOT = RUN_ROOT / "attempts"
-OUTPUT_ROOT = ROOT / "data/maintenance/instrument-intake/q/fd01"
-LOCATOR = ROOT / "runtime/ample-factory-default-control-01-job.local.json"
+OUTPUT_ROOT = ROOT / "data/maintenance/instrument-intake/q/fd01-rebuild-02"
+LOCATOR = ROOT / "runtime/ample-factory-default-control-01-rebuild-02-job.local.json"
 RUN_LOCK = ROOT / "runtime/ample-restart-callback-trace.lock"
 
 BASE07_ROOT = INTAKE / "windows-message-control-07-rebuild-03"
 BASE07_PLAN = BASE07_ROOT / "prepared-plan.json"
-BASE07_PLAN_SHA256 = "b88f8eaeac91af9fcdd7b6ae4496847211cc92f5fc5d6d16ad7708ac7cbb761d"
 BASE07_REQUEST = BASE07_ROOT / "requests/64-first.request.json"
-BASE07_REQUEST_SHA256 = "517d6621b0b1e7b9f2f1cccec4bf9b6ffeaf562a5264ee4810245c17e8835ff9"
-BASE07_ATTEMPT = BASE07_ROOT / "attempts/20261023T164146Z-9f5ad4aacc/64-first"
-BASE07_RESPONSE = BASE07_ATTEMPT / "response.json"
-BASE07_RESPONSE_SHA256 = "f36a03127495eec8b3f60ba1a151e74581d51f01810624a7c5a3a94ad84c1a72"
-BASE07_WAV = BASE07_ATTEMPT / "output.wav"
-BASE07_WAV_SHA256 = "c31b524c479d9c2e68abab6aea7a3cf30e6c353b5889e0620839a7e76e23962a"
-BASE07_EXECUTION = BASE07_ATTEMPT / "execution.json"
-BASE07_EXECUTION_SHA256 = "dfee4c9eeff732805e0db9103645bc304cac5bf0637d57404fce1b94f2483883"
 BASE07_ASSESSMENT = BASE07_ROOT / "root-message-assessment-01.json"
 BASE07_ASSESSMENT_SHA256 = "8e44c7e8720d230412e879420cc82198491fd2bb31da57f3e181d1c436649c08"
 
 HOST_PATH = ROOT / "runtime/build/ample-windows-message-07-rebuild-03/cmake/bin/ml_pump_cadence_host_64.exe"
-HOST_SHA256 = "510b456f471e8e51706fc903b28bb33595c18aaeb89cbf9a443c6d607db1f619"
 CALLBACK_RUNNER = ROOT / "scripts/instruments/run_ample_restart_callback_trace.py"
-CALLBACK_RUNNER_SHA256 = "c8adc748305accf2a19d97c69635b537d40ccaae34f15529fd42c6b3ab4e44d0"
-CADENCE_LEAF_SHA256 = "b5300bcaec6a67e1b00cff8eccae3b1a708ec02c662a9fd8fa1f3621a1ac3238"
-PRESET_SHA256 = "f18d93c3d707be9a210df2c02ea506ab69aa42c509e2b9b15723397d12bd5de5"
 SOURCE_CASES = ("factory-default-fresh-64-a", "factory-default-fresh-64-b")
 MAX_GATE_WAIT_SECONDS = 300
 MAX_HOST_SECONDS = 300
@@ -137,8 +124,22 @@ def assert_factory_derivation(source: dict, derived: dict, expected_output_path:
         raise FactoryDefaultError("Factory-default request added plugin state")
 
 
+def _load_frozen_assessment() -> tuple[dict, str, str]:
+    if sha(BASE07_ASSESSMENT) != BASE07_ASSESSMENT_SHA256:
+        raise FactoryDefaultError("Frozen 07 source-preset assessment changed")
+    assessment = load_json(BASE07_ASSESSMENT, "frozen 07 source-preset assessment")
+    source_attempt = assessment.get("source_attempt", {})
+    runner_sha256 = source_attempt.get("frozen_executor_sha256")
+    leaf_sha256 = source_attempt.get("frozen_leaf_script_sha256")
+    if any(not isinstance(value, str) or len(value) != 64
+           for value in (runner_sha256, leaf_sha256)):
+        raise FactoryDefaultError("Frozen 07 assessment lacks valid runner/leaf SHA pins")
+    return assessment, runner_sha256, leaf_sha256
+
+
 def _load_callback_runner():
-    if sha(CALLBACK_RUNNER) != CALLBACK_RUNNER_SHA256:
+    _assessment, runner_sha256, leaf_sha256 = _load_frozen_assessment()
+    if sha(CALLBACK_RUNNER) != runner_sha256:
         raise FactoryDefaultError("Pinned callback runner changed")
     spec = importlib.util.spec_from_file_location("factory_control_frozen_callback_runner", CALLBACK_RUNNER)
     if spec is None or spec.loader is None:
@@ -146,56 +147,79 @@ def _load_callback_runner():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     leaves = module.load_leaves()
-    if sha(module.LEAF) != CADENCE_LEAF_SHA256:
+    if sha(module.LEAF) != leaf_sha256:
         raise FactoryDefaultError("Pinned cadence leaf changed")
     return module, leaves
 
 
-def _source_request_and_control() -> tuple[dict, dict, dict]:
-    if sha(BASE07_PLAN) != BASE07_PLAN_SHA256:
-        raise FactoryDefaultError("Frozen 07 plan changed")
-    if sha(BASE07_REQUEST) != BASE07_REQUEST_SHA256:
-        raise FactoryDefaultError("Frozen 07 64-first request changed")
-    if sha(BASE07_RESPONSE) != BASE07_RESPONSE_SHA256:
-        raise FactoryDefaultError("Frozen 07 source-preset response changed")
-    if sha(BASE07_WAV) != BASE07_WAV_SHA256:
-        raise FactoryDefaultError("Frozen 07 source-preset WAV changed")
-    if sha(BASE07_EXECUTION) != BASE07_EXECUTION_SHA256:
-        raise FactoryDefaultError("Frozen 07 source-preset execution receipt changed")
-    if sha(BASE07_ASSESSMENT) != BASE07_ASSESSMENT_SHA256:
-        raise FactoryDefaultError("Frozen 07 source-preset assessment changed")
+def _source_request_and_control() -> tuple[dict, dict, dict, dict]:
+    assessment, callback_runner_sha256, cadence_leaf_sha256 = _load_frozen_assessment()
     base_plan = load_json(BASE07_PLAN, "frozen 07 plan")
-    source = load_json(BASE07_REQUEST, "frozen 07 64-first request")
-    execution = load_json(BASE07_EXECUTION, "frozen 07 source-preset execution")
-    response = load_json(BASE07_RESPONSE, "frozen 07 source-preset response")
-    assessment = load_json(BASE07_ASSESSMENT, "frozen 07 source-preset assessment")
+    base_plan_sha256 = sha(BASE07_PLAN)
+    if assessment.get("source_attempt", {}).get("prepared_plan_sha256") != base_plan_sha256:
+        raise FactoryDefaultError("Frozen 07 assessment does not bind the current prepared plan")
+    reference = base_plan.get("request_variants", {}).get("64-first", {})
+    source_path = _e_path(reference.get("request", ""), "frozen 07 first request")
+    if source_path != BASE07_REQUEST.resolve(strict=True) or sha(source_path) != reference.get("request_sha256"):
+        raise FactoryDefaultError("Frozen 07 assessment/plan first-request binding changed")
+    source_request_sha256 = reference["request_sha256"]
+    source = load_json(source_path, "frozen 07 64-first request")
+    host = base_plan.get("diagnostic_executables", {}).get("64", {})
+    host_path = _e_path(host.get("path", ""), "frozen 07 64-bit diagnostic host")
+    host_sha256 = host.get("sha256")
+    if (host_path != HOST_PATH.resolve(strict=True) or sha(host_path) != host_sha256
+            or host_path.name != "ml_pump_cadence_host_64.exe"):
+        raise FactoryDefaultError("Frozen 07 plan does not bind the exact 64-bit host")
+    case = assessment.get("case_results", {}).get("64-first", {})
+    attempt_dir = _e_path(case.get("attempt_case_path", ""), "frozen 07 source-preset case")
+    baseline_response = attempt_dir / "response.json"
+    baseline_wav = attempt_dir / "output.wav"
+    baseline_execution = attempt_dir / "execution.json"
+    for path, expected, label in (
+            (baseline_response, case.get("response_sha256"), "response"),
+            (baseline_wav, case.get("wav", {}).get("sha256"), "WAV"),
+            (baseline_execution, case.get("execution_sha256"), "execution receipt")):
+        if not expected or sha(path) != expected:
+            raise FactoryDefaultError(f"Frozen 07 source-preset {label} changed")
+    execution = load_json(baseline_execution, "frozen 07 source-preset execution")
+    response = load_json(baseline_response, "frozen 07 source-preset response")
     plugin = source["project"]["tracks"][0]["plugins"][0]
     preset = _e_path(plugin["preset_path"], "source preset negative control")
-    if sha(preset) != PRESET_SHA256:
-        raise FactoryDefaultError("Pinned source preset file changed")
+    preset_identity = assessment.get("source_identity", {})
+    preset_ref = assessment.get("raw_evidence_refs", {}).get("source_preset", {})
+    preset_sha256 = preset_identity.get("preset_file_sha256")
+    if (preset != _e_path(preset_ref.get("path", ""), "assessed source preset")
+            or sha(preset) != preset_sha256 or preset_sha256 != preset_ref.get("sha256")):
+        raise FactoryDefaultError("Frozen 07 assessment source-preset identity changed")
     if (execution.get("returncode") != 0 or execution.get("process_release") != "released"
-            or execution.get("host_sha256") != HOST_SHA256
+            or execution.get("host_sha256") != host_sha256
             or response.get("ok") is not True):
         raise FactoryDefaultError("Frozen 07 negative-control execution is not a released successful host call")
-    assessed = assessment.get("source_identity", {})
-    if (assessed.get("preset_file_sha256") != PRESET_SHA256
-            or assessed.get("source_state_sha256_from_pinned_positive_control")
+    if (preset_identity.get("source_state_sha256_from_pinned_positive_control")
             != base_plan.get("source_positive_control", {}).get("state_sha256")):
         raise FactoryDefaultError("Frozen 07 source-preset assessment identity changed")
-    return base_plan, source, {
+    control = {
         "preset_path": str(preset),
         "preset_bytes": preset.stat().st_size,
-        "preset_sha256": PRESET_SHA256,
-        "baseline_07_request": {"path": str(BASE07_REQUEST), "sha256": BASE07_REQUEST_SHA256},
-        "baseline_07_response": {"path": str(BASE07_RESPONSE), "sha256": BASE07_RESPONSE_SHA256},
-        "baseline_07_wav": {"path": str(BASE07_WAV), "sha256": BASE07_WAV_SHA256},
-        "baseline_07_execution": {"path": str(BASE07_EXECUTION), "sha256": BASE07_EXECUTION_SHA256},
+        "preset_sha256": preset_sha256,
+        "baseline_07_request": {"path": str(source_path), "sha256": source_request_sha256},
+        "baseline_07_response": {"path": str(baseline_response), "sha256": case["response_sha256"]},
+        "baseline_07_wav": {"path": str(baseline_wav), "sha256": case["wav"]["sha256"]},
+        "baseline_07_execution": {"path": str(baseline_execution), "sha256": case["execution_sha256"]},
         "baseline_07_returncode": execution.get("returncode"),
         "baseline_07_process_release": execution.get("process_release"),
         "baseline_snapshot": _snapshot_summary(response),
-        "assessment": {"path": str(BASE07_ASSESSMENT), "sha256": BASE07_ASSESSMENT_SHA256},
+        "assessment": {"path": str(BASE07_ASSESSMENT), "sha256": sha(BASE07_ASSESSMENT)},
         "retained_as_negative_control": True,
         "rerun": False,
+    }
+    return base_plan, source, control, {
+        "plan_sha256": base_plan_sha256,
+        "request_sha256": source_request_sha256,
+        "host_path": str(host_path),
+        "host_sha256": host_sha256,
+        "callback_runner_sha256": callback_runner_sha256,
+        "cadence_leaf_sha256": cadence_leaf_sha256,
     }
 
 
@@ -230,14 +254,12 @@ def prepare_plan() -> dict:
     """Write only a new E-side prepared plan and two derived request templates."""
     if RUN_ROOT.exists() or OUTPUT_ROOT.exists():
         raise FactoryDefaultError("Factory-default evidence target already exists; refusing overwrite")
-    if not HOST_PATH.is_file() or HOST_PATH.is_symlink() or sha(HOST_PATH) != HOST_SHA256:
-        raise FactoryDefaultError("Pinned frozen 07 64-bit diagnostic host changed")
     wrapper, leaves = _load_callback_runner()
-    base_plan, source, negative_control = _source_request_and_control()
+    base_plan, source, negative_control, pins = _source_request_and_control()
     if (base_plan.get("kind") != "ample-offline-message-pump-cadence-diagnostic"
             or base_plan.get("status") != "prepared_not_started"
-            or base_plan.get("diagnostic_executables", {}).get("64", {}).get("path") != str(HOST_PATH)
-            or base_plan.get("diagnostic_executables", {}).get("64", {}).get("sha256") != HOST_SHA256):
+            or base_plan.get("diagnostic_executables", {}).get("64", {}).get("path") != pins["host_path"]
+            or base_plan.get("diagnostic_executables", {}).get("64", {}).get("sha256") != pins["host_sha256"]):
         raise FactoryDefaultError("Frozen 07 plan does not bind the required 64-bit host")
     wrapper.verify_extra_sources(leaves, base_plan)
 
@@ -255,10 +277,10 @@ def prepare_plan() -> dict:
             "request": str(request_path.resolve(strict=True)),
             "request_sha256": sha(request_path),
             "source_request": str(BASE07_REQUEST),
-            "source_request_sha256": BASE07_REQUEST_SHA256,
+            "source_request_sha256": pins["request_sha256"],
             "template_output_path": str(template_output),
             "host_path": str(HOST_PATH),
-            "host_sha256": HOST_SHA256,
+            "host_sha256": pins["host_sha256"],
             "host_bytes": HOST_PATH.stat().st_size,
             "started": False,
             "output_path_policy": "Per attempt the runner changes only output_path again to a unique absent q/fd01 path.",
@@ -274,15 +296,16 @@ def prepare_plan() -> dict:
         "attempts_root": str(ATTEMPTS_ROOT),
         "output_root": str(OUTPUT_ROOT.resolve(strict=True)),
         "runner_script": {"path": str(Path(__file__).resolve()), "sha256": sha(Path(__file__).resolve())},
-        "frozen_callback_runner": {"path": str(CALLBACK_RUNNER), "sha256": CALLBACK_RUNNER_SHA256},
-        "frozen_cadence_leaf_sha256": CADENCE_LEAF_SHA256,
-        "source_07_plan": {"path": str(BASE07_PLAN), "sha256": BASE07_PLAN_SHA256},
+        "frozen_callback_runner": {"path": str(CALLBACK_RUNNER),
+                                    "sha256": pins["callback_runner_sha256"]},
+        "frozen_cadence_leaf_sha256": pins["cadence_leaf_sha256"],
+        "source_07_plan": {"path": str(BASE07_PLAN), "sha256": pins["plan_sha256"]},
         "source_07_plan_kind": base_plan["kind"],
         "source_snapshot": base_plan["source_snapshot"],
         **_source_manifest_summary(base_plan),
-        "source_request": {"path": str(BASE07_REQUEST), "sha256": BASE07_REQUEST_SHA256,
+        "source_request": {"path": str(BASE07_REQUEST), "sha256": pins["request_sha256"],
                            "request_case": "64-first", "phase": "first"},
-        "diagnostic_host": {"path": str(HOST_PATH), "sha256": HOST_SHA256,
+        "diagnostic_host": {"path": pins["host_path"], "sha256": pins["host_sha256"],
                             "bytes": HOST_PATH.stat().st_size,
                             "architecture": "64-bit", "cadence_blocks": 64,
                             "reuse_frozen_07_binary": True},
@@ -347,14 +370,24 @@ def verify_plan_static(plan_path: Path, expected_plan_sha256: str) -> tuple[dict
             or plan.get("runner_script", {}).get("sha256") != sha(Path(__file__).resolve()):
         raise FactoryDefaultError("Factory-default runner source changed")
     wrapper, leaves = _load_callback_runner()
-    if (plan.get("frozen_callback_runner", {}).get("sha256") != CALLBACK_RUNNER_SHA256
-            or plan.get("frozen_cadence_leaf_sha256") != CADENCE_LEAF_SHA256
-            or plan.get("source_07_plan") != {"path": str(BASE07_PLAN), "sha256": BASE07_PLAN_SHA256}
-            or sha(BASE07_PLAN) != BASE07_PLAN_SHA256):
+    base_plan, source, negative, pins = _source_request_and_control()
+    if (plan.get("frozen_callback_runner") != {
+                "path": str(CALLBACK_RUNNER), "sha256": pins["callback_runner_sha256"]}
+            or plan.get("frozen_cadence_leaf_sha256") != pins["cadence_leaf_sha256"]
+            or plan.get("source_07_plan") != {"path": str(BASE07_PLAN), "sha256": pins["plan_sha256"]}
+            or sha(BASE07_PLAN) != pins["plan_sha256"]):
         raise FactoryDefaultError("Frozen 07 runner or plan identity changed")
-    if sha(HOST_PATH) != HOST_SHA256:
+    if (plan.get("source_request") != {"path": str(BASE07_REQUEST),
+                                       "sha256": pins["request_sha256"],
+                                       "request_case": "64-first", "phase": "first"}):
+        raise FactoryDefaultError("Factory-default plan source-request pin changed")
+    if sha(HOST_PATH) != pins["host_sha256"]:
         raise FactoryDefaultError("Frozen 07 64-bit host changed")
-    base_plan, source, negative = _source_request_and_control()
+    if plan.get("diagnostic_host") != {
+            "path": pins["host_path"], "sha256": pins["host_sha256"],
+            "bytes": HOST_PATH.stat().st_size, "architecture": "64-bit",
+            "cadence_blocks": 64, "reuse_frozen_07_binary": True}:
+        raise FactoryDefaultError("Factory-default plan diagnostic-host binding changed")
     if plan.get("source_preset_negative_control") != negative:
         raise FactoryDefaultError("Original source-preset negative control changed")
     wrapper.verify_extra_sources(leaves, base_plan)
@@ -368,9 +401,9 @@ def verify_plan_static(plan_path: Path, expected_plan_sha256: str) -> tuple[dict
         request = load_json(request_path, f"{case} request template")
         assert_factory_derivation(source, request, reference.get("template_output_path", ""))
         if (reference.get("source_request") != str(BASE07_REQUEST)
-                or reference.get("source_request_sha256") != BASE07_REQUEST_SHA256
+                or reference.get("source_request_sha256") != pins["request_sha256"]
                 or reference.get("host_path") != str(HOST_PATH)
-                or reference.get("host_sha256") != HOST_SHA256
+                or reference.get("host_sha256") != pins["host_sha256"]
                 or Path(reference["template_output_path"]).exists()):
             raise FactoryDefaultError(f"{case} host/source/output binding changed")
     if plan.get("request_variants")[SOURCE_CASES[0]]["request"] == plan.get("request_variants")[SOURCE_CASES[1]]["request"]:
@@ -559,8 +592,9 @@ def _process_identity(leaves) -> dict:
 
 def run(plan_path: Path, plan_sha256: str, gate_wait_seconds: int) -> dict:
     plan, wrapper, leaves = verify_plan_static(plan_path, plan_sha256)
+    _base_plan, source, _negative_control, pins = _source_request_and_control()
     leaves.PREPARED = BASE07_PLAN
-    leaves.EXPECTED_PREPARED_SHA256 = BASE07_PLAN_SHA256
+    leaves.EXPECTED_PREPARED_SHA256 = pins["plan_sha256"]
     leaves.ATTEMPTS_ROOT = ATTEMPTS_ROOT
     leaves.MAX_HOST_SECONDS = MAX_HOST_SECONDS
     own = _process_identity(leaves)
@@ -575,14 +609,15 @@ def run(plan_path: Path, plan_sha256: str, gate_wait_seconds: int) -> dict:
         raise FactoryDefaultError("Unique attempt/output path already exists; refusing overwrite")
     attempt_dir.mkdir(parents=True, exist_ok=False)
     output_dir.mkdir(parents=True, exist_ok=False)
-    source = load_json(BASE07_REQUEST, "frozen 07 source request")
+    source = load_json(plan["source_request"]["path"], "frozen 07 source request")
     negative = plan["source_preset_negative_control"]
     state = {"schema_version": 1, "status": "prepared_waiting_for_fresh_gates",
              "attempt_id": attempt_id, "created_at_utc": datetime.now(timezone.utc).isoformat(),
              "updated_at_utc": datetime.now(timezone.utc).isoformat(), "prepared_plan": str(plan_path.resolve(strict=True)),
              "prepared_plan_sha256": plan_sha256, "runner_sha256": sha(Path(__file__).resolve()),
-             "own_process": own, "source_07_plan_sha256": BASE07_PLAN_SHA256,
-             "source_07_request_sha256": BASE07_REQUEST_SHA256, "host_sha256": HOST_SHA256,
+             "own_process": own, "source_07_plan_sha256": pins["plan_sha256"],
+             "source_07_request_sha256": pins["request_sha256"],
+             "host_sha256": pins["host_sha256"],
              "gate_wait_seconds_max": gate_wait_seconds, "host_seconds_max": MAX_HOST_SECONDS,
              "cases": {}, "completed_case_order": [], "formal_project_writes": 0,
              "catalog_writes": 0, "resource_writes": 0, "nas_access": False, "h_tmp_access": False,
@@ -618,10 +653,10 @@ def run(plan_path: Path, plan_sha256: str, gate_wait_seconds: int) -> dict:
                                            indent=2) + "\n", encoding="utf-8")
         record = {"case": case, "request_path": str(request_path.resolve(strict=True)),
                   "request_sha256": sha(request_path), "source_request_path": str(BASE07_REQUEST),
-                  "source_request_sha256": BASE07_REQUEST_SHA256,
+                  "source_request_sha256": pins["request_sha256"],
                   "output_path": str(output_path.resolve(strict=False)),
                   "response_path": str(response_path.resolve(strict=False)),
-                  "host_path": str(HOST_PATH), "host_sha256": HOST_SHA256,
+                  "host_path": str(HOST_PATH), "host_sha256": pins["host_sha256"],
                   "status": "pending_gate"}
         state["cases"][case] = record
     save("prepared_waiting_for_fresh_gates")
@@ -631,6 +666,13 @@ def run(plan_path: Path, plan_sha256: str, gate_wait_seconds: int) -> dict:
     try:
         for case in SOURCE_CASES:
             record = state["cases"][case]
+            case_dir = Path(record["request_path"]).parent
+            request = load_json(Path(record["request_path"]), f"{case} staged request")
+            if (sha(Path(record["request_path"])) != record["request_sha256"]
+                    or Path(request.get("output_path", "")).resolve(strict=False)
+                    != Path(record["output_path"]).resolve(strict=False)):
+                raise FactoryDefaultError(f"{case} staged request/output binding changed")
+            assert_factory_derivation(source, request, record["output_path"])
             leaves.verify_prepared_inputs(BASE07_PLAN)
             while True:
                 if sha(plan_path) != plan_sha256:
@@ -712,8 +754,9 @@ def run(plan_path: Path, plan_sha256: str, gate_wait_seconds: int) -> dict:
 
 def preflight(plan_path: Path, plan_sha256: str) -> dict:
     plan, _wrapper, leaves = verify_plan_static(plan_path, plan_sha256)
+    pins = _source_request_and_control()[3]
     leaves.PREPARED = BASE07_PLAN
-    leaves.EXPECTED_PREPARED_SHA256 = BASE07_PLAN_SHA256
+    leaves.EXPECTED_PREPARED_SHA256 = pins["plan_sha256"]
     leaves.ATTEMPTS_ROOT = ATTEMPTS_ROOT
     result = leaves.preflight(BASE07_PLAN)
     return {"status": result.get("status"), "plan_sha256": plan_sha256,
