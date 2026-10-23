@@ -22,6 +22,9 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _KONTAKT_NKC_MAGIC = bytes.fromhex("7a10e13f")
 _MAX_NKC_BYTES = 16 * 1024 * 1024
 _MAX_TOTAL_NKC_BYTES = 128 * 1024 * 1024
+_MAX_STATIC_FILES = 10_000
+_MAX_STATIC_TOTAL_BYTES = 256 * 1024 * 1024 * 1024
+_MAX_REGISTERED_FILES = 20_000
 _REPARSE_ATTRIBUTE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 
 
@@ -69,6 +72,20 @@ def _checked_file(root: Path, relative: str, *, label: str) -> tuple[Path, os.st
     return resolved, info
 
 
+def _checked_directory_chain(path: Path, *, label: str) -> Path:
+    """Resolve a directory only after rejecting reparse points in its chain."""
+    absolute = Path(os.path.abspath(path))
+    chain = list(reversed((absolute, *absolute.parents)))
+    for entry in chain:
+        try:
+            info = entry.lstat()
+        except OSError as exc:
+            raise KontaktDerivedIndexError(f"{label} path is missing or unreadable") from exc
+        if _is_reparse(info) or stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            raise KontaktDerivedIndexError(f"{label} contains a reparse point or non-directory")
+    return absolute.resolve(strict=True)
+
+
 def _hash_stable(path: Path, expected: os.stat_result, *, limit: int) -> tuple[str, bytes]:
     if expected.st_size < len(_KONTAKT_NKC_MAGIC) or expected.st_size > limit:
         raise KontaktDerivedIndexError("Kontakt index size is outside the supported bound")
@@ -95,6 +112,109 @@ def _hash_stable(path: Path, expected: os.stat_result, *, limit: int) -> tuple[s
     if bytes(prefix) != _KONTAKT_NKC_MAGIC:
         raise KontaktDerivedIndexError("Kontakt index has an unexpected file signature")
     return digest.hexdigest(), bytes(prefix)
+
+
+def _hash_resource_stable(path: Path, expected: os.stat_result, *, limit: int) -> str:
+    """Hash one immutable library resource and reject changes during the read."""
+    if expected.st_size < 1 or expected.st_size > limit:
+        raise KontaktDerivedIndexError("Static resource size is outside the supported bound")
+    digest = hashlib.sha256()
+    before_signature = (expected.st_dev, expected.st_ino, expected.st_size,
+                        expected.st_mtime_ns, expected.st_ctime_ns)
+    try:
+        with path.open("rb") as stream:
+            opened_before = os.fstat(stream.fileno())
+            if _is_reparse(opened_before) or stat.S_ISLNK(opened_before.st_mode):
+                raise KontaktDerivedIndexError("Static resource opened through a reparse point")
+            if (opened_before.st_dev, opened_before.st_ino, opened_before.st_size,
+                    opened_before.st_mtime_ns, opened_before.st_ctime_ns) != before_signature:
+                raise KontaktDerivedIndexError("Static resource changed while opening")
+            total = 0
+            while chunk := stream.read(1024 * 1024):
+                total += len(chunk)
+                if total > limit:
+                    raise KontaktDerivedIndexError("Static resource exceeded its pinned size bound")
+                digest.update(chunk)
+            opened_after = os.fstat(stream.fileno())
+        after = path.lstat()
+    except KontaktDerivedIndexError:
+        raise
+    except OSError as exc:
+        raise KontaktDerivedIndexError("Cannot hash static Kontakt resource") from exc
+    for current in (opened_after, after):
+        if (_is_reparse(current) or stat.S_ISLNK(current.st_mode)
+                or (current.st_dev, current.st_ino, current.st_size,
+                    current.st_mtime_ns, current.st_ctime_ns) != before_signature):
+            raise KontaktDerivedIndexError("Static resource changed while hashing")
+    if total != expected.st_size:
+        raise KontaktDerivedIndexError("Static resource byte count differs from its pinned size")
+    return digest.hexdigest()
+
+
+def snapshot_static_resources(
+    records: list[Mapping[str, Any]],
+    *,
+    library_id: str,
+    bank_root: str | os.PathLike[str],
+) -> list[dict[str, Any]]:
+    """Fully hash every non-NKC resource against its audited source identity.
+
+    NKC files are deliberately excluded because they have their own derived
+    snapshot protocol. Every other registered resource remains content-checked.
+    """
+    if not isinstance(library_id, str) or not library_id or "/" in library_id or "\\" in library_id:
+        raise KontaktDerivedIndexError("Kontakt library id is invalid")
+    if not isinstance(records, list) or len(records) > _MAX_REGISTERED_FILES:
+        raise KontaktDerivedIndexError("Static resource inventory is not a bounded list")
+    prefix = f"Libraries/{library_id}/"
+    root = Path(bank_root)
+    output: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    seen_all: set[str] = set()
+    total_bytes = 0
+    for row in records:
+        if not isinstance(row, Mapping):
+            raise KontaktDerivedIndexError("Static resource record must be an object")
+        relative = row.get("path")
+        parts = _safe_parts(relative, "static resource path")
+        normalized = "/".join(parts)
+        folded = normalized.casefold()
+        if not folded.startswith(prefix.casefold()):
+            raise KontaktDerivedIndexError("Static resource inventory contains another library")
+        if folded in seen_all:
+            raise KontaktDerivedIndexError("Kontakt resource inventory repeats a path")
+        seen_all.add(folded)
+        if folded.endswith(".nkc"):
+            continue
+        if folded in seen:
+            raise KontaktDerivedIndexError("Static resource inventory repeats a path")
+        seen.add(folded)
+        expected_size = row.get("bytes")
+        expected_sha = row.get("sha256")
+        if (type(expected_size) is not int or expected_size < 1
+                or not isinstance(expected_sha, str) or not _SHA256_RE.fullmatch(expected_sha)):
+            raise KontaktDerivedIndexError("Static resource has invalid pinned content identity")
+        total_bytes += expected_size
+        if len(seen) > _MAX_STATIC_FILES or total_bytes > _MAX_STATIC_TOTAL_BYTES:
+            raise KontaktDerivedIndexError("Static resource snapshot exceeds its bounded inventory")
+        installed_relative = normalized[len(prefix):]
+        path, info = _checked_file(root, normalized, label="Installed static Kontakt resource")
+        if info.st_size != expected_size:
+            raise KontaktDerivedIndexError("Installed static resource size differs from its source audit")
+        actual_sha = _hash_resource_stable(path, info, limit=expected_size)
+        if actual_sha != expected_sha:
+            raise KontaktDerivedIndexError("Installed static resource content differs from its source audit")
+        output.append({
+            "path": normalized,
+            "bytes": int(info.st_size),
+            "mtime_ns": int(info.st_mtime_ns),
+            "sha256": actual_sha,
+            "destination_path": installed_relative,
+        })
+    if not output:
+        raise KontaktDerivedIndexError("Static resource snapshot is empty")
+    output.sort(key=lambda item: item["path"].casefold())
+    return output
 
 
 def _signature(info: os.stat_result) -> tuple[int, int, int, int]:
@@ -330,8 +450,6 @@ def snapshot_derived_indexes(
             raise KontaktDerivedIndexError("Derived index path repeats")
         seen.add(str(relative).casefold())
         path, info = _checked_file(root, str(relative), label="Installed Kontakt index")
-        if info.st_size != row.get("bytes"):
-            raise KontaktDerivedIndexError("Installed Kontakt index size differs from its registered source")
         total_bytes += int(info.st_size)
         if info.st_size > _MAX_NKC_BYTES or total_bytes > _MAX_TOTAL_NKC_BYTES:
             raise KontaktDerivedIndexError("Kontakt index snapshot exceeds its hashing budget")
@@ -352,3 +470,127 @@ def snapshot_derived_indexes(
     if seen != expected_indexes:
         raise KontaktDerivedIndexError("Derived index snapshot does not cover the exact registered index set")
     return output
+
+
+def snapshot_kontakt_index_pairs(
+    records: list[Mapping[str, Any]],
+    *,
+    library_id: str,
+    source_root: str | os.PathLike[str],
+    bank_root: str | os.PathLike[str],
+    registered_resource_paths: set[str],
+) -> list[dict[str, Any]]:
+    """Capture source and post-load installed snapshots for registered indexes."""
+    if not isinstance(library_id, str) or not library_id or "/" in library_id or "\\" in library_id:
+        raise KontaktDerivedIndexError("Kontakt library id is invalid")
+    installed = snapshot_derived_indexes(
+        records,
+        bank_root=bank_root,
+        registered_resource_paths=registered_resource_paths,
+    )
+    installed_by_path = {row["path"].casefold(): row for row in installed}
+    source_base = Path(source_root)
+    expected_prefix = f"Libraries/{library_id}/"
+    output: list[dict[str, Any]] = []
+    total_bytes = 0
+    for record in records:
+        relative = str(record["path"])
+        if not relative.casefold().startswith(expected_prefix.casefold()):
+            raise KontaktDerivedIndexError("Derived index belongs to a different Kontakt library")
+        source_relative = relative[len(expected_prefix):]
+        source_path, source_stat = _checked_file(source_base, source_relative, label="Kontakt source index")
+        total_bytes += int(source_stat.st_size)
+        if total_bytes > _MAX_TOTAL_NKC_BYTES:
+            raise KontaktDerivedIndexError("Kontakt source index snapshot exceeds its hashing budget")
+        source_digest, source_magic = _hash_stable(source_path, source_stat, limit=_MAX_NKC_BYTES)
+        if source_magic.hex() != record.get("signature_hex"):
+            raise KontaktDerivedIndexError("Kontakt source index signature changed after audit")
+        current_source = {
+            "bytes": int(source_stat.st_size),
+            "mtime_ns": int(source_stat.st_mtime_ns),
+            "sha256": source_digest,
+        }
+        source_matches_audit = (
+            current_source["bytes"] == record.get("bytes")
+            and current_source["sha256"] == record.get("source_sha256")
+        )
+        source_stat_matches_audit = current_source["mtime_ns"] == record.get("source_audit_mtime_ns")
+        output.append({
+            "path": relative,
+            "source_audit": {
+                "bytes": record.get("bytes"),
+                "mtime_ns": record.get("source_audit_mtime_ns"),
+                "sha256": record.get("source_sha256"),
+            },
+            "source_after_load": current_source,
+            "source_matches_audit": source_matches_audit,
+            "source_stat_matches_audit": source_stat_matches_audit,
+            "source_unchanged": source_matches_audit and source_stat_matches_audit,
+            "installed_before_load": {
+                "bytes": record.get("bytes"),
+                "mtime_ns": record.get("installed_mtime_ns"),
+                "sha256": record.get("installed_sha256"),
+            },
+            "installed_after_load": installed_by_path[relative.casefold()],
+        })
+    return output
+
+
+def audit_kontakt_index_paths(
+    *,
+    bank_root: str | os.PathLike[str],
+    library_id: str,
+    registered_resource_paths: set[str],
+) -> dict[str, list[str]]:
+    """Find missing or unregistered on-disk NKC entries without reading payloads."""
+    if not isinstance(library_id, str) or not library_id or "/" in library_id or "\\" in library_id:
+        raise KontaktDerivedIndexError("Kontakt library id is invalid")
+    root = Path(bank_root)
+    library_root = root / "Libraries" / library_id
+    try:
+        root_resolved = _checked_directory_chain(root, label="Kontakt bank root")
+        _checked_directory_chain(root / "Libraries", label="Kontakt Libraries directory")
+        library_resolved = _checked_directory_chain(library_root, label="Kontakt library directory")
+        library_resolved.relative_to(root_resolved)
+    except KontaktDerivedIndexError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise KontaktDerivedIndexError("Kontakt library tree is missing or escapes its bank root") from exc
+
+    expected_prefix = f"Libraries/{library_id}/"
+    expected: set[str] = set()
+    for raw in registered_resource_paths:
+        _safe_parts(raw, "registered resource path")
+        folded = raw.casefold()
+        if folded.startswith(expected_prefix.casefold()) and PurePosixPath(raw).suffix.casefold() == ".nkc":
+            expected.add(folded)
+
+    observed: set[str] = set()
+    entry_count = 0
+    def on_walk_error(error: OSError) -> None:
+        raise KontaktDerivedIndexError("Cannot enumerate Kontakt index paths") from error
+
+    for current, directories, files in os.walk(library_resolved, topdown=True, followlinks=False, onerror=on_walk_error):
+        current_path = Path(current)
+        for directory in list(directories):
+            path = current_path / directory
+            info = path.lstat()
+            entry_count += 1
+            if entry_count > 50_000 or _is_reparse(info) or stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                raise KontaktDerivedIndexError("Kontakt library tree contains an unsafe or excessive directory entry")
+        for filename in files:
+            path = current_path / filename
+            info = path.lstat()
+            entry_count += 1
+            if entry_count > 50_000 or _is_reparse(info) or stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+                raise KontaktDerivedIndexError("Kontakt library tree contains an unsafe or excessive file entry")
+            if path.suffix.casefold() == ".nkc":
+                rel = path.relative_to(root_resolved).as_posix().casefold()
+                observed.add(rel)
+
+    return {
+        "registered": sorted(expected),
+        "observed": sorted(observed),
+        "missing": sorted(expected - observed),
+        "unregistered": sorted(observed - expected),
+    }

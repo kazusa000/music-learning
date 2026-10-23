@@ -12,7 +12,10 @@ from music_learning.kontakt_derived_indexes import (
     build_kontakt_index_revision,
     copy_audit_result_with_revision,
     publish_manifest_revision,
+    audit_kontakt_index_paths,
     snapshot_derived_indexes,
+    snapshot_kontakt_index_pairs,
+    snapshot_static_resources,
 )
 
 
@@ -163,6 +166,117 @@ def test_snapshot_keeps_registered_paths_and_reports_current_content(tmp_path):
     assert snapshot[0]["path"] == index_records[0]["path"]
     assert snapshot[0]["sha256"] == index_records[0]["installed_sha256"]
     assert snapshot[0]["bytes"] == index_records[0]["bytes"]
+
+
+def test_after_load_snapshot_allows_generated_index_size_to_change_and_checks_source(tmp_path):
+    source, _, bank, library, audit = _fixture_library(tmp_path)
+    revision = build_kontakt_index_revision(audit, resource_root=tmp_path / "Sound Library")
+    records = revision["manifest"]["derived_index_observations"]
+    installed = library / "Samples/Strings.nkc"
+    installed.write_bytes(_NKC_MAGIC + b"expanded generated cache")
+
+    snapshots = snapshot_kontakt_index_pairs(
+        records,
+        library_id="css-fixture",
+        source_root=source,
+        bank_root=bank,
+        registered_resource_paths=set(audit["resources"]),
+    )
+
+    assert len(snapshots) == 1
+    row = snapshots[0]
+    assert row["source_unchanged"] is True
+    assert row["source_matches_audit"] is True
+    assert row["installed_after_load"]["bytes"] == installed.stat().st_size
+    assert row["installed_after_load"]["bytes"] != row["installed_before_load"]["bytes"]
+    assert row["installed_after_load"]["sha256"] == hashlib.sha256(installed.read_bytes()).hexdigest()
+
+
+def test_after_load_snapshot_reports_changed_source_without_mutating_it(tmp_path):
+    source, _, bank, library, audit = _fixture_library(tmp_path)
+    revision = build_kontakt_index_revision(audit, resource_root=tmp_path / "Sound Library")
+    records = revision["manifest"]["derived_index_observations"]
+    source_index = source / "Samples/Strings.nkc"
+    source_index.write_bytes(_NKC_MAGIC + b"source-index changed")
+    source_after = source_index.read_bytes()
+
+    snapshots = snapshot_kontakt_index_pairs(
+        records,
+        library_id="css-fixture",
+        source_root=source,
+        bank_root=bank,
+        registered_resource_paths=set(audit["resources"]),
+    )
+
+    assert snapshots[0]["source_unchanged"] is False
+    assert snapshots[0]["source_matches_audit"] is False
+    assert source_index.read_bytes() == source_after
+
+
+def test_static_snapshot_hashes_every_non_nkc_resource_against_source_audit(tmp_path):
+    _, _, bank, library, audit = _fixture_library(tmp_path)
+    records = [
+        {"path": path, "bytes": row["bytes"], "sha256": row["sha256"]}
+        for path, row in audit["resources"].items()
+    ]
+
+    snapshot = snapshot_static_resources(records, library_id="css-fixture", bank_root=bank)
+
+    assert [row["path"] for row in snapshot] == [
+        "Libraries/css-fixture/Instruments/Violin.nki",
+        "Libraries/css-fixture/Samples/Strings.nkx",
+    ]
+    assert all(len(row["sha256"]) == 64 for row in snapshot)
+    assert all(not row["path"].endswith(".nkc") for row in snapshot)
+
+
+def test_static_snapshot_rejects_same_size_content_change_even_when_mtime_is_restored(tmp_path):
+    _, _, bank, library, audit = _fixture_library(tmp_path)
+    sample = library / "Samples/Strings.nkx"
+    original_mtime = sample.stat().st_mtime_ns
+    sample.write_bytes(b"SAMPLE ARCHIVE")
+    os.utime(sample, ns=(original_mtime, original_mtime))
+    records = [
+        {"path": path, "bytes": row["bytes"], "sha256": row["sha256"]}
+        for path, row in audit["resources"].items()
+    ]
+
+    with pytest.raises(KontaktDerivedIndexError, match="content differs"):
+        snapshot_static_resources(records, library_id="css-fixture", bank_root=bank)
+
+
+def test_static_snapshot_rejects_duplicate_or_foreign_library_records(tmp_path):
+    _, _, bank, _, audit = _fixture_library(tmp_path)
+    records = [
+        {"path": path, "bytes": row["bytes"], "sha256": row["sha256"]}
+        for path, row in audit["resources"].items()
+    ]
+    records.append(dict(records[0]))
+    with pytest.raises(KontaktDerivedIndexError, match="repeats a path"):
+        snapshot_static_resources(records, library_id="css-fixture", bank_root=bank)
+
+    records = [dict(row) for row in records[:-1]]
+    records[0]["path"] = records[0]["path"].replace("css-fixture", "css-solo-fixture")
+    with pytest.raises(KontaktDerivedIndexError, match="another library"):
+        snapshot_static_resources(records, library_id="css-fixture", bank_root=bank)
+
+
+def test_index_path_audit_reports_unregistered_and_missing_indexes(tmp_path):
+    _, _, bank, library, audit = _fixture_library(tmp_path)
+    registered = set(audit["resources"])
+    rogue = library / "Samples/Rogue.nkc"
+    rogue.write_bytes(_NKC_MAGIC + b"not registered")
+    (library / "Samples/Strings.nkc").unlink()
+
+    result = audit_kontakt_index_paths(
+        bank_root=bank,
+        library_id="css-fixture",
+        registered_resource_paths=registered,
+    )
+
+    expected = "libraries/css-fixture/samples/strings.nkc"
+    assert result["missing"] == [expected]
+    assert result["unregistered"] == ["libraries/css-fixture/samples/rogue.nkc"]
 
 
 def test_snapshot_rejects_index_not_bound_to_source_inventory(tmp_path):
