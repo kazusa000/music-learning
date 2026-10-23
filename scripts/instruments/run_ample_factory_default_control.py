@@ -146,7 +146,7 @@ def _load_callback_runner():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     leaves = module.load_leaves()
-    if leaves.sha(leaves.LEAF) != CADENCE_LEAF_SHA256:
+    if sha(module.LEAF) != CADENCE_LEAF_SHA256:
         raise FactoryDefaultError("Pinned cadence leaf changed")
     return module, leaves
 
