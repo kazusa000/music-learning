@@ -172,6 +172,105 @@ def test_published_plan_entry_missing_from_installed_catalog_is_rejected(tmp_pat
         probe.load_published_additions(intake, catalog, tmp_path)
 
 
+def _refresh_publication_plan(result_path: Path, plan_path: Path, plan: dict) -> None:
+    body = {key: value for key, value in plan.items() if key != "plan_sha256"}
+    digest = probe.json_fingerprint(body)
+    plan["plan_sha256"] = digest
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["groups"][0]["plan_sha256"] = digest
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+
+
+@pytest.mark.parametrize("field", ["performance_profile", "expected_parameters"])
+def test_installed_catalog_must_match_complete_musical_candidate(tmp_path, field):
+    intake = tmp_path / "data/maintenance/instrument-intake"
+    intake.mkdir(parents=True)
+    result = published_result(intake, "product-a", [{"name": "one"}, {"name": "two"}])
+    result_value = json.loads(result.read_text(encoding="utf-8"))
+    plan_path = Path(result_value["groups"][0]["plan"])
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["additions"][0][field] = (
+        {"kind": "riff_toggle"} if field == "performance_profile" else {"Pedal-HM2-Dist": 10}
+    )
+    _refresh_publication_plan(result, plan_path, plan)
+    catalog = catalog_from_result(result, tmp_path)
+    installed = json.loads(catalog.read_text(encoding="utf-8"))
+    installed["presets"][0][field] = (
+        {"kind": "midi_context"} if field == "performance_profile" else {"Pedal-HM2-Dist": 0}
+    )
+    catalog.write_text(json.dumps(installed), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="musical candidate changed"):
+        probe.load_published_additions(intake, catalog, tmp_path)
+
+
+@pytest.mark.parametrize("field", ["native_admission", "state_sha256"])
+def test_installed_catalog_must_match_admitted_native_state_reference(tmp_path, field):
+    intake = tmp_path / "data/maintenance/instrument-intake"
+    intake.mkdir(parents=True)
+    result = published_result(intake, "product-a", [{"name": "one"}, {"name": "two"}])
+    result_value = json.loads(result.read_text(encoding="utf-8"))
+    plan_path = Path(result_value["groups"][0]["plan"])
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["additions"][0]["native_admission"] = {
+        "path": "Admissions/one.json", "bytes": 16, "sha256": "e" * 64,
+    }
+    plan["additions"][0]["state_sha256"] = "f" * 64
+    _refresh_publication_plan(result, plan_path, plan)
+    catalog = catalog_from_result(result, tmp_path)
+    installed = json.loads(catalog.read_text(encoding="utf-8"))
+    if field == "native_admission":
+        installed["presets"][0][field]["sha256"] = "0" * 64
+    else:
+        installed["presets"][0][field] = "0" * 64
+    catalog.write_text(json.dumps(installed), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=f"admitted state changed.*{field}"):
+        probe.load_published_additions(intake, catalog, tmp_path)
+
+
+def test_presentation_only_catalog_amendments_do_not_change_musical_fingerprint(tmp_path):
+    intake = tmp_path / "data/maintenance/instrument-intake"
+    intake.mkdir(parents=True)
+    result = published_result(intake, "product-a", [{"name": "one"}, {"name": "two"}])
+    catalog = catalog_from_result(result, tmp_path)
+    installed = json.loads(catalog.read_text(encoding="utf-8"))
+    installed["presets"][0]["presentation_title"] = "中文型号（Original Model）"
+    installed["presets"][0]["display_name"] = "中文变体（Original Variant）"
+    catalog.write_text(json.dumps(installed, ensure_ascii=False), encoding="utf-8")
+
+    entries, _ = probe.load_published_additions(intake, catalog, tmp_path)
+    assert len(entries) == 2
+    assert entries[0]["presentation_title"] == "中文型号（Original Model）"
+
+
+def test_ordinary_selection_accepts_unknown_physical_range_without_fabricating_one():
+    entries = [
+        {"id": f"product-a:{number}", "library_id": "product-a", "audio_verified": True,
+         "backend": "vst3-preset", "plugin_path": "vendor.vst3"}
+        for number in range(2)
+    ] + [
+        {"id": f"product-b:{number}", "library_id": "product-b", "audio_verified": True,
+         "backend": "vst3-preset", "plugin_path": "vendor.vst3", "key_range": None}
+        for number in range(2)
+    ]
+
+    selected = probe.select_ordinary_presets(entries)
+
+    assert len(selected) == 4
+    assert all("key_range" not in item or item["key_range"] is None for item in selected)
+
+
+@pytest.mark.parametrize("key_range", [[60], [72, 60], [-1, 127], [60, 128], [True, 72], "48-84"])
+def test_ordinary_selection_rejects_malformed_explicit_physical_range(key_range):
+    entry = {"id": "a", "library_id": "product-a", "audio_verified": True,
+             "backend": "vst3-preset", "plugin_path": "vendor.vst3", "key_range": key_range}
+
+    with pytest.raises(ValueError, match="malformed explicit physical key_range"):
+        probe.select_ordinary_presets([entry])
+
+
 def test_missing_second_ordinary_preset_blocks_product_instead_of_silent_shortfall():
     entry = {"id": "a", "library_id": "product-a", "audio_verified": True,
              "backend": "vst3-preset", "plugin_path": "vendor.vst3", "key_range": [48, 84]}

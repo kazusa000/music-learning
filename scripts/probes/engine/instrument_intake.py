@@ -213,6 +213,12 @@ def load_published_additions(plan_source: Path, catalog_path: Path,
         raise ValueError("Installed catalog contains duplicate or invalid preset identities")
 
     candidates: dict[str, dict] = {}
+    # This probe must exercise the exact musical candidate that was admitted.
+    # Display-only amendments are intentionally excluded by the shared source
+    # fingerprint, while the separately published full native state pointer is
+    # checked byte-for-byte below.
+    from music_learning.instrument_intake_publication import candidate_fingerprint
+
     for path in plan_files:
         plan = json.loads(path.read_bytes())
         if plan.get("schema_version") != 1 or not isinstance(plan.get("additions"), list):
@@ -227,6 +233,11 @@ def load_published_additions(plan_source: Path, catalog_path: Path,
             for field in IDENTITY_FIELDS:
                 if field in candidate and installed.get(field) != candidate[field]:
                     raise ValueError(f"Published catalog identity changed for {preset_id}: {field}")
+            if candidate_fingerprint(installed) != candidate_fingerprint(candidate):
+                raise ValueError(f"Published catalog musical candidate changed for {preset_id}")
+            for field in ("native_admission", "state_sha256"):
+                if installed.get(field) != candidate.get(field):
+                    raise ValueError(f"Published catalog admitted state changed for {preset_id}: {field}")
             candidates[preset_id] = installed
     if not candidates:
         raise ValueError("No strictly published catalog entries were found")
@@ -249,10 +260,13 @@ def select_ordinary_presets(entries: list[dict], per_product: int = 2) -> list[d
         if entry.get("backend") != "vst3-preset" or not entry.get("plugin_path", "").casefold().endswith(".vst3"):
             continue
         key_range = entry.get("key_range")
-        if (not isinstance(key_range, list) or len(key_range) != 2
-                or not all(type(note) is int for note in key_range)
-                or not all(key_range[0] <= pitch <= key_range[1] for pitch in TEST_PITCHES)):
-            continue
+        if key_range is not None:
+            if (not isinstance(key_range, list) or len(key_range) != 2
+                    or not all(type(note) is int for note in key_range)
+                    or not 0 <= key_range[0] <= key_range[1] <= 127):
+                raise ValueError("Published preset has a malformed explicit physical key_range")
+            if not all(key_range[0] <= pitch <= key_range[1] for pitch in TEST_PITCHES):
+                continue
         library_id = entry.get("library_id")
         if not isinstance(library_id, str) or not library_id:
             raise ValueError("Published preset is missing its product library ID")
