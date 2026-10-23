@@ -187,11 +187,12 @@ printing command contents.
 The shared matcher is
 `process_row_matches_ancestor_snapshot` in
 `src/music_learning/ample_retry_planning.py`, also used by the read-only
-preparer ancestry check. Retry06 plans now pin and self-check the SHA-256 of the
-outer supervisor, child supervisor, and shared ancestry module before each
-launch. Regressions cover exact parent lineage, missing irrelevant grandparents,
-independent sibling processes, PID reuse, and shell text that merely mentions
-the script. The three focused test files passed 37 tests through
+preparer ancestry check. Retry06 plans pin and self-check the SHA-256 of the
+outer supervisor, child supervisor, and shared ancestry module before
+preparation and again immediately before child launch. Regressions cover exact
+parent lineage, missing irrelevant grandparents, independent sibling
+processes, PID reuse, and shell text that merely mentions the script. The
+three focused test files passed 37 tests through
 `scripts/maintenance/run-tests.ps1`; Ruff and `git diff --check` passed.
 
 The next execution is a separate attempt06 plan, run directory, checkpoint,
@@ -228,3 +229,74 @@ identity verification found supervisor PID 44864, creation ticks
 locator; its parent launcher PID 33292 was alive and born earlier. Initial
 status is `waiting_for_config_stability`; no retry queue or probe has yet been
 started. It retains the 24-hour bound and existing three-sample H: storage gate.
+
+Attempt06's child then exited before starting a runner. Its preserved queue is
+still `prepared`, with two `pending_staging` items and `invocation_count=0`;
+the child log reports three Python process rows in the exact launcher → outer
+supervisor → child-wrapper ancestry. The first shared fix accepted only
+recognized supervisor-script rows, so it still rejected the exact Python
+launcher/bootstrap ancestor. No audio probe ran and the original queue remains
+unchanged.
+
+The shared matcher now exempts a Python process only when its exact PID,
+creation time, PPID and command are proven on the current child supervisor's
+birth-ordered parent chain. A Python shim need not itself contain a known
+supervisor filename; unrelated siblings, same-script processes, reused PIDs,
+unknown rows and shell text remain conflicts. The regression suite now has 38
+focused passes, including a shim ancestor with an independent sibling still
+blocking. Ruff and `git diff --check` pass. Attempt05 and attempt06 remain
+preserved as separate no-probe attempts.
+
+The next durable execution is independent attempt07. Its fresh process
+preflight is
+`final-bank-riff-retry-06-attempt-07-preflight/process-preflight.json`
+(SHA-256 `75d12057c1554c9ea272abaad18ca9e46feaf2cf7f7a4f5f7a3d476a8c4d21f5`):
+zero matching processes, no queue write, and zero formal/catalog writes. The
+standalone manifest SHA is
+`6586764a4438087fe51afcbbcf6a621903eef9ec00309102567551172f3ece05`.
+The frozen plan SHA is
+`4a8a7980cee193dc2987cdf1ebc1ee2706b121bcab9737fe1e32612e08063e13`; it pins
+the current shared child/outer/helper code. Locator:
+`runtime/ample-final-bank-riff-retry-06-attempt-07-job.local.json`.
+Supervisor PID 17356, creation ticks `639283544157409930`, was verified with
+the exact plan and locator command; its initial state is
+`waiting_for_config_stability`. No attempt07 probe was reported as started in
+the initial snapshot. The usual 24-hour bound and three-sample H: gate remain
+in force.
+
+## Attempt07 CIM snapshot diagnosis and attempt08 recovery
+
+Attempt07 also terminated before any probe: its queue remains two
+`pending_staging` rows and `invocation_count=0`; no H-backed host was started.
+The direct process matcher showed the exact failure was not missing ancestry
+but malformed unrelated rows in the Windows CIM inventory. The read-only
+control at `process-ancestry-cim-control-01/assessment.json` captured 589
+rows, including PID 0 and 195 processes with empty commands. The original
+ancestry helper rejected the complete inventory before traversing the valid
+target chain. Filtering only unrelated incomplete rows made the same exact
+chain prove successfully; the report records zero H reads and zero formal
+project writes.
+
+Shared fix `c01f3b3` changes the ancestry map to ignore incomplete rows with
+unrelated PIDs, while recording malformed or duplicate PIDs as ambiguous.
+If such a PID is the target, current process, or a parent on the traversed
+chain, proof still fails closed. Regression coverage includes PID 0,
+protected/system rows with empty commands, incomplete target identities,
+missing chain parents, PID reuse and independent siblings. The focused suite
+passed 39 tests; Ruff passed. Attempt07 and its terminal artifacts remain
+preserved.
+
+Attempt08 uses a new fixed queue and checkpoint, based on a fresh process-only
+preflight with zero active matches and no writes. Plan SHA-256 is
+`8bbd2a7ebe63b0e1cac6ce8c85dbc070cc495759bdd232192bd609d55dfc07eb`;
+preflight JSON SHA-256 is
+`846f840aa154858734147b0543564acb5c9552e91e94408c6dccff8cc2af28a9`, and
+its manifest SHA-256 is
+`18d4cc853a05ad2304a5cc5320fd1cb1907edaa0d6a9d75e881bd712667dbb5b`.
+The durable locator is
+`runtime/ample-final-bank-riff-retry-06-attempt-08-job.local.json`. Initial
+supervisor identity is PID 26884, creation ticks `639283545430409510`, with an
+exact plan/locator command and status `waiting_for_config_stability`. The plan
+pins the updated shared ancestry module and both supervisors; it still selects
+only the two fixed failed IDs, preserves the 24-hour bound, and delegates the
+three-sample H: budget gate unchanged.
