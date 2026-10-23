@@ -36,6 +36,10 @@ class StorageDeferred(RuntimeError):
     """The H: performance-counter gate declined a new sample-loading step."""
 
 
+class AudioHostDeferred(RuntimeError):
+    """Another direct native host owns the audio device during a preflight."""
+
+
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -314,6 +318,26 @@ def wait_h_idle(loading_budget, *, attempts: int = 1) -> dict:
     return last
 
 
+def active_legacy_audio_hosts(process_iter=None) -> list[dict]:
+    """Find old direct-render hosts that share the device with this QA probe."""
+    import psutil
+    iterator = process_iter if process_iter is not None else psutil.process_iter(
+        ["pid", "name", "create_time"]
+    )
+    hosts = []
+    for process in iterator:
+        try:
+            info = process.info if hasattr(process, "info") else process
+            name = str(info.get("name", ""))
+            if name.casefold() == "ml_audio_host.exe":
+                hosts.append({"pid": int(info["pid"]), "created_at": float(info["create_time"])})
+        except psutil.NoSuchProcess:
+            continue
+        except psutil.Error as error:
+            raise RuntimeError("Cannot verify whether another direct audio host is active") from error
+    return sorted(hosts, key=lambda item: item["pid"])
+
+
 def _read_all_pages(call, operation: str, arguments: dict | None = None) -> list[dict]:
     values: list[dict] = []
     offset = 0
@@ -432,6 +456,13 @@ def _check_h(loading_budget, report: dict, phase: str) -> None:
                       storage_defer=str(error), updated_at_utc=datetime.now(UTC).isoformat())
         raise
     report["last_storage_budget"] = budget
+
+
+def _require_no_legacy_audio_host(report: dict, phase: str) -> None:
+    hosts = active_legacy_audio_hosts()
+    report["legacy_audio_host_check"] = {"phase": phase, "active_hosts": hosts}
+    if hosts:
+        raise AudioHostDeferred("An external direct audio host is active: " + json.dumps(hosts))
 
 
 def _invoke(service, contracts, operation: str, arguments: dict | None = None,
@@ -627,6 +658,7 @@ def run_probe(args) -> int:
 
         captures = {}
         for entry in selected:
+            _require_no_legacy_audio_host(report, "capture:" + entry["id"])
             captures[entry["id"]] = _capture_preset(service, worker, c, project_id,
                 revision_id, entry, report, loading_budget)
             report["capture_count"] = len(captures)
@@ -659,6 +691,7 @@ def run_probe(args) -> int:
             report.setdefault("formal_idle_checks", []).append({
                 "before": "engine-open:" + first["id"], **formal_status,
             })
+            _require_no_legacy_audio_host(report, "engine-open:" + first["id"])
             _check_h(loading_budget, report, "engine-open:" + first["id"])
             opened = _invoke(service, c, "engine.open", {"project_id": project_id,
                 "revision_id": first_revision_id, "position_sample": 0, "playing": False})
@@ -683,6 +716,7 @@ def run_probe(args) -> int:
             report.setdefault("formal_idle_checks", []).append({
                 "before": "preset-switch:" + second["id"], **formal_status,
             })
+            _require_no_legacy_audio_host(report, "preset-switch:" + second["id"])
             _check_h(loading_budget, report, "preset-switch:" + second["id"])
             second_revision = _invoke(service, c, "edits.apply", {
                 "project_id": project_id,
@@ -734,8 +768,12 @@ def run_probe(args) -> int:
                       render_jobs=0, capture_jobs=len(selected), products_tested=len(product_results))
         _atomic_json(progress, report)
         return 0
-    except StorageDeferred as error:
+    except (StorageDeferred, AudioHostDeferred) as error:
         report.update(status="deferred_storage", error=str(error), finished_at_utc=datetime.now(UTC).isoformat())
+        if isinstance(error, StorageDeferred):
+            report["storage_defer"] = str(error)
+        else:
+            report["host_defer"] = str(error)
         _atomic_json(progress, report)
         return 2
     except BaseException as error:
@@ -845,7 +883,8 @@ def _record_status_workers(state: dict, owned_workers, owned_processes) -> None:
 
 
 def supervise_probe(args, *, repository: Path = ROOT, loading_budget_fn=None,
-                    run_attempt=None, sleep=time.sleep, monotonic=time.monotonic) -> int:
+                    run_attempt=None, legacy_hosts_fn=active_legacy_audio_hosts,
+                    sleep=time.sleep, monotonic=time.monotonic) -> int:
     """Wait boundedly for three H: idle samples and preserve each isolated attempt."""
     maximum_wait = float(getattr(args, "max_wait_seconds", 86400))
     poll_seconds = float(getattr(args, "poll_seconds", 15))
@@ -891,6 +930,23 @@ def supervise_probe(args, *, repository: Path = ROOT, loading_budget_fn=None,
     idle_samples = 0
     while monotonic() < deadline:
         try:
+            hosts = legacy_hosts_fn()
+        except Exception as error:
+            report.update(status="blocked_process_check", error=repr(error),
+                          finished_at_utc=datetime.now(UTC).isoformat())
+            _atomic_json(progress, report)
+            return 2
+        if hosts:
+            idle_samples = 0
+            report.update(status="waiting_for_idle", idle_samples=0,
+                          last_preflight={"at_utc": datetime.now(UTC).isoformat(),
+                                          "active_legacy_audio_hosts": hosts})
+            _atomic_json(progress, report)
+            remaining = deadline - monotonic()
+            if remaining > 0:
+                sleep(min(poll_seconds, remaining))
+            continue
+        try:
             budget = wait_h_idle(loading_budget_fn, attempts=1)
         except StorageDeferred as error:
             idle_samples = 0
@@ -933,7 +989,9 @@ def supervise_probe(args, *, repository: Path = ROOT, loading_budget_fn=None,
                     return code
                 attempt_state = attempt_output / "progress.json"
                 if attempt_state.is_file():
-                    attempt_summary["defer"] = _read_json(attempt_state).get("storage_defer")
+                    attempt_progress = _read_json(attempt_state)
+                    attempt_summary["defer"] = (attempt_progress.get("storage_defer")
+                                                 or attempt_progress.get("host_defer"))
                 report.update(status="waiting_for_idle", idle_samples=0,
                               last_attempt=attempt_summary)
                 _atomic_json(progress, report)

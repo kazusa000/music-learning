@@ -259,6 +259,13 @@ def test_process_cleanup_matches_pid_and_creation_time_and_detects_survivors():
     assert probe.live_owned_processes(owned, lambda _pid: None) == []
 
 
+def test_active_legacy_audio_host_is_a_cold_probe_blocker():
+    assert probe.active_legacy_audio_hosts(process_iter=[
+        {"pid": 5, "name": "other.exe", "create_time": 1.0},
+        {"pid": 8, "name": "ml_audio_host.exe", "create_time": 2.0},
+    ]) == [{"pid": 8, "created_at": 2.0}]
+
+
 def test_storage_budget_unknown_or_busy_defers_without_claiming_success():
     with pytest.raises(probe.StorageDeferred, match="unknown"):
         probe.wait_h_idle(lambda _drive: {"reason": "counter timeout"})
@@ -321,6 +328,7 @@ def test_supervisor_waits_for_three_idle_samples_and_preserves_deferred_attempts
     args.expected_products = 3
     code = probe.supervise_probe(args, repository=repository,
         loading_budget_fn=lambda _drive: next(budgets), run_attempt=attempt,
+        legacy_hosts_fn=lambda: [],
         sleep=clock.sleep, monotonic=clock.monotonic)
     assert code == 0
     assert len(outputs) == 2
@@ -361,8 +369,50 @@ def test_supervisor_times_out_without_launching_when_storage_stays_busy(tmp_path
     code = probe.supervise_probe(args, repository=repository,
         loading_budget_fn=lambda _drive: {"allowed": False, "reason": "io_pressure"},
         run_attempt=lambda _args: attempts.append(True) or 0,
+        legacy_hosts_fn=lambda: [],
         sleep=clock.sleep, monotonic=clock.monotonic)
     state = json.loads((intake / "busy-qa/supervision.json").read_text())
     assert code == 2
     assert not attempts
     assert state["status"] == "deferred_storage_timeout"
+
+
+def test_supervisor_waits_while_direct_audio_host_owns_device(tmp_path, monkeypatch):
+    repository = tmp_path
+    intake = repository / "data/maintenance/instrument-intake"
+    intake.mkdir(parents=True)
+    runtime = repository / "runtime"
+    runtime.mkdir()
+    record = {"commit": "release", "source_manifest_sha256": "a" * 64,
+              "native_audio_bundle": "bundle", "web_root": "web",
+              "native_files": {}, "web_files": {}}
+    (runtime / "application-release.local.json").write_text(json.dumps(record), encoding="utf-8")
+    monkeypatch.setattr(probe, "_load_source", lambda _root, _release: (record, repository / "source"))
+    monkeypatch.setattr(probe, "publication_plan_files", lambda *_args: [repository / "plan.json"])
+
+    class Clock:
+        current = 0.0
+
+        def monotonic(self):
+            return self.current
+
+        def sleep(self, seconds):
+            self.current += seconds
+
+    clock = Clock()
+    launched = []
+    args = Namespace(release=runtime / "release.local.json",
+                     publication_plan=intake / "publication", output=intake / "device-busy",
+                     max_wait_seconds=2, poll_seconds=1)
+    code = probe.supervise_probe(args, repository=repository,
+        loading_budget_fn=lambda _drive: {"allowed": True, "reason": "idle"},
+        run_attempt=lambda _args: launched.append(True) or 0,
+        legacy_hosts_fn=lambda: [{"pid": 8, "created_at": 2.0}],
+        sleep=clock.sleep, monotonic=clock.monotonic)
+    state = json.loads((intake / "device-busy/supervision.json").read_text())
+    assert code == 2
+    assert not launched
+    assert state["status"] == "deferred_storage_timeout"
+    assert state["last_preflight"]["active_legacy_audio_hosts"] == [
+        {"pid": 8, "created_at": 2.0},
+    ]
