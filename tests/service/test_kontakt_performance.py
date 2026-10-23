@@ -13,11 +13,32 @@ def profile():
 
 
 def test_source_channel_range_velocity_and_controllers_reach_native_project():
-    actual = KontaktProbeProfile(profile()).project({"identifier": "fixture"})
+    source_plugin = {"identifier": "fixture", "state_base64": "captured-state"}
+    original_plugin = deepcopy(source_plugin)
+    actual = KontaktProbeProfile(profile()).project(source_plugin)
     track = actual["tracks"][0]
+    assert track["plugins"] == [{**source_plugin, "id": "kontakt-probe-plugin"}]
+    assert source_plugin == original_plugin
     assert {n["channel"] for n in track["notes"]} == {4}
     assert all(72 <= n["note"] <= 79 and 80 / 127 <= n["velocity"] <= 100 / 127 for n in track["notes"])
     assert track["controllers"] == [dict(sample=0, channel=4, controller=1, value=100)]
+
+
+def test_native_plugin_instance_id_is_preserved_when_valid():
+    plugin = {"id": "captured-plugin-123", "identifier": "fixture"}
+    project = KontaktProbeProfile(profile()).project(plugin)
+    assert project["tracks"][0]["plugins"][0] == plugin
+
+
+@pytest.mark.parametrize("invalid_id", [None, 7, "", "   ", " padded "])
+def test_invalid_native_plugin_instance_id_is_rejected(invalid_id):
+    with pytest.raises(ValueError, match="plugin ID"):
+        KontaktProbeProfile(profile()).project({"id": invalid_id, "identifier": "fixture"})
+
+
+def test_plugin_specification_must_be_a_mapping():
+    with pytest.raises(ValueError, match="plugin must be a mapping"):
+        KontaktProbeProfile(profile()).project(None)
 
 
 def test_muted_and_non_solo_instruments_stay_out_of_audition():

@@ -109,8 +109,20 @@ class KontaktProbeProfile:
         self.profile = validate_profile(profile)
 
     def project(self, plugin):
+        if not isinstance(plugin, Mapping):
+            raise ValueError("Kontakt probe plugin must be a mapping")
+        plugin_spec = dict(plugin)
+        if "id" not in plugin_spec:
+            # Captured Kontakt state does not carry a host instance ID. Assign
+            # one at the shared project-building boundary, without changing
+            # the captured plugin/state object.
+            plugin_spec["id"] = "kontakt-probe-plugin"
+        elif (not isinstance(plugin_spec["id"], str)
+              or not plugin_spec["id"].strip()
+              or plugin_spec["id"] != plugin_spec["id"].strip()):
+            raise ValueError("Kontakt probe plugin ID must be a non-empty, trimmed string")
         phrase = profile_phrase(self.profile)
         return dict(revision_id="kontakt-instrument-probe", sample_rate=44100, block_size=512,
                     duration_samples=phrase["duration_samples"], tail_samples=phrase["tail_samples"],
-                    tracks=[dict(id="kontakt-probe", gain_db=-12, plugins=[dict(plugin)],
+                    tracks=[dict(id="kontakt-probe", gain_db=-12, plugins=[plugin_spec],
                                  notes=phrase["notes"], controllers=phrase["controllers"])])
