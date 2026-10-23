@@ -31,3 +31,5 @@ Codex App Server 打开 `features.fast_mode`；`thread/start` 传 `serviceTier` 
 4K／窄窗报告：`runtime/test-reports/studio-ui-1792746543674935400/report.json`。按钮与下拉框的请求参数、偏好重开恢复、输入区高度不变、单行无横向溢出通过；既有原生短播放、音量／静音、笔记与滚动仍通过。界面的消息提交用拦截检查参数，实际后端链路由 provider 检查，未冒充真实 AI 生成。
 
 测试均经 `scripts/maintenance/run-tests.ps1` 自动清理临时工程与浏览器数据。协议生成目录 `runtime/build/codex-protocol-controls` 的清理被自动审批以 `blocked by policy` 拒绝，保留且不换工具绕过；小型字段摘要在 `runtime/maintenance/ai-controls-20261023/protocol-fields.json`。不访问 H 音源库或 NAS，不启动音乐模型、正式渲染或额外音源验证。原生和桌面包保持原样；发布保护记录在同一 maintenance 目录。
+
+默认发布已激活 `8edf924aa9999a1bb0cc63d79bb2a4d6046470cf`，描述为 `runtime/application-release.ai-controls-20261023.local.json`，18765 实际重新启动并打开应用。只读确认新 API 返回独立字段、正式首页内容 SHA 匹配发布、原生四文件和桌面五文件 SHA 不变，正式九表与 head 前后相同。入库旧 locator 的准备 PID 已退出、另一个旧 PID 被非本项目程序复用，未拿旧 locator 当运行证据；本次独立实查的三个其他任务 Python 进程在窗口内退出，如实记录，未停止或恢复它们。维护 before/after 保存实际身份，不宣称仍在运行。

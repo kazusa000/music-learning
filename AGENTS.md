@@ -1,5 +1,7 @@
 # 项目开发约定
 
+AI设置发布收尾（2026-10-23）：默认8edf924已激活并重开应用，18765新API/前端SHA匹配，九表/head和native/desktop SHA不变；保护记录runtime/maintenance/ai-controls-20261023。其他任务进程在窗口内退出如实记录，不按旧locator称运行，不停改音源验证。下述协议生成临时目录清理拒绝仍保留。
+
 最新AI设置（2026-10-23）：思考强度与Codex快速模式独立，输入框底部紧凑下拉＋闪电开关，不增输入区高度。reasoning_effort从模型目录取档位，fast_mode按实际目录映射priority/fast，关闭明确default；本机固定Codex握手default→priority→default且始终medium通过，未生成推理。偏好和每轮参数保存SQLite，旧队列/幂等回执兼容；会话/回复/设置重开恢复及短回归通过。4K/窄窗studio-ui-1792746543674935400通过。临时测试自动清；runtime/build/codex-protocol-controls清理被blocked by policy拒绝，保留不绕过。H/NAS/固定包/音源验证不动。详见docs/architecture/ai-conversation-controls.md。
 
 最新滚动与画布修正（2026-10-23）：默认已发布1845a75，原生f056/桌面aa81不变。编排为唯一纵向滚动容器，LinkedTrackScroll同帧驱动左栏平移，取消双scrollTop追赶；两边滚轮统一推进，中键左栏转交中央。删除音符摘要/片段/原曲波形上的覆盖文字，保留左名与标尺。实际4K/窄窗短流程通过，左右快速正反/首尾218帧最大偏移0px；报告studio-ui-1792715550186988200，临时工程与profile自动清。runtime/maintenance/linked-scroll-20261023记录默认发布/保护；未动H/NAS、音源入库或重跑长测。详见composition-workspace文档末段。
