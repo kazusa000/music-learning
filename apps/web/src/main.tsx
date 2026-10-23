@@ -8,6 +8,7 @@ import {PanelResize,usePanelSize} from './PanelResize';
 import type {Project, ProjectDeletion, Job, Revision, StageRecord, PreprocessingView, PreprocessingResult} from '../../../packages/contracts/types';
 import {call, connect} from './api';
 import {Workbench} from './Workbench';
+import {WorkspaceOpening} from './WorkspaceLoading';
 import {publishDomain} from './events';
 import {AudioPreview} from './AudioPreview';
 import type {PreviewControl} from './AudioPreview';
@@ -221,7 +222,7 @@ function App() {
     {newComposition&&<NewCompositionDialog busy={creating} onCancel={()=>setNewComposition(false)} onCreate={createComposition}/>}
     {deleteTarget&&<DeleteProjectDialog title={deleteTarget.display_title??deleteTarget.title} busy={deleteSubmitting} onCancel={()=>setDeleteTarget(null)} onConfirm={()=>void deleteProject(deleteTarget)}/>}
     {stylesOpen?<Suspense fallback={<div className="style-detail-loading">正在打开风格库…</div>}><StyleLibrary onClose={()=>{setStylesOpen(false);history.replaceState(null,'','/');}}/></Suspense>:settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} composition={project.kind==='composition'} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh} onReimport={async()=>{const sha=revision.snapshot.source_asset_id;if(!sha)throw new Error('此工程没有原曲');const response=await fetch('/v1/assets/'+sha);if(!response.ok)throw new Error('原曲读取失败');const blob=await response.blob();setWorkspace(false);history.replaceState(null,'','/');await importFile(new File([blob],(project.display_title??project.title)+' · 新编排.audio',{type:blob.type}));}}
-      onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
+      onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : workspace ? <WorkspaceOpening error={refreshError||undefined} onRetry={()=>{setRefreshError('');void refresh().catch(e=>setRefreshError(e.message));}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
       <button className="new-composition-button" disabled={busy} onClick={()=>setNewComposition(true)}><Icon name="plus" size={18}/><span><strong>新建编曲</strong><small>从零创作</small></span></button>
       <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? `上传音频 ${uploadProgress??100}%` : '导入音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
           disabled={busy} onChange={e => {const file = e.target.files?.[0]; if (file) void importFile(file); e.target.value = '';}}/></label>

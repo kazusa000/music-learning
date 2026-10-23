@@ -12,6 +12,7 @@
 - [本地音频引擎](architecture/native-daw.md)
 - [音频图与插件执行](architecture/native-graph-runtime.md)
 - [创作工作区](architecture/composition-workspace.md)
+- [工程加载进度](architecture/workspace-loading.md)
 - [AI 会话设置](architecture/ai-conversation-controls.md)
 - [风格库](architecture/style-library.md)
 - [Kontakt 来源与键位查询](architecture/kontakt-source-keymap.md)
