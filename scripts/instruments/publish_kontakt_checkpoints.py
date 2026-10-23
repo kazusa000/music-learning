@@ -18,7 +18,15 @@ import time
 
 
 def read(path):
-    return json.loads(Path(path).read_bytes())
+    # A Windows atomic replacement can briefly deny an overlapping reader.
+    # Retry only access failures; malformed JSON must remain a real error.
+    for attempt in range(8):
+        try:
+            return json.loads(Path(path).read_bytes())
+        except PermissionError:
+            if attempt == 7:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def sha(path):
@@ -33,7 +41,8 @@ def run(plan_path):
     repo = Path(plan["repo"])
     root = Path(plan["resource_root"])
     assert root == Path(r"H:\music\Sound Library")
-    assert out.is_relative_to(repo / "data/maintenance/instrument-intake")
+    assert (out.is_relative_to(repo / "data/maintenance/instrument-intake")
+            or out.is_relative_to(repo / "runtime/maintenance"))
     assert sha(plan["helper"]) == plan["helper_sha256"]
     assert sha(__file__) == plan["runner_sha256"]
     assert sha(validation / "plan.json") == plan["validation_plan_sha256"]

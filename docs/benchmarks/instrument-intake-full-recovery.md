@@ -1,5 +1,13 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 21:36 UTC：发布进程的队列读取拒绝恢复
+
+03 publisher于21:23:54自然退出，traceback明确为读取原factory validation.json时`PermissionError(13)`，发生在本轮增量筛选前，760条已入库保留。验证62064及试听跟随17580仍正常，均未停止或修改。
+
+共享publisher的JSON读取增加8次/总1.4秒有界访问重试，仅处理PermissionError，不吞掉JSON损坏；原写入退避/CAS/完整状态检查保持。18项相关回归和Ruff通过。独立04保存旧错误/日志/locator/progress/catalog快照，复制03固定实现并只加入读取修复；按新目录规范放在`runtime/maintenance/kontakt-publication-recovery-20261023/incremental-publication-04`，同时允许该维护根作为publisher输出。原03及full-h任何计划、宿主、队列、报告均未改。
+
+canonical入口仍`runtime/kontakt-publication-job.local.json`，新wrapper62812/worker51360的ctime和实际argv已实核；只筛选尚未入库通过项，补入21项后781已入库、deferred0，实际产品查询通过。旧catalog所有条目逐项相同，正式九表/head相同，验证与试听跟随进程身份相同。保护与恢复结果见04/recovery-check.json。原验证16失败不处理，不恢复Ample/MODO。最终收尾继续以canonical publisher04和实际试听counts为准，不等待固定旧02引用的跟随器自行completed。
+
 DAW缓存与旧测试清理（2026-10-23）：用户授权清理可删除缓存、旧测试和编译残留，同时保护正在运行的Kontakt。uv官方cache clean只清data/uv-cache（未force），删除21705缓存文件/7.3GiB逻辑量，已安装env和模型保留；860个精确E目标删除22198文件/16797目录，包含旧data/t及data/tmp夹具、旧AD2诊断、根部obj/pdb、pytest/ruff/runtime缓存、旧N7重复音频。清理共43903文件、0删除错误，E窗口空闲净增1.981GiB，不把硬链接逻辑体积当实际释放量。保留10个历史测试reparse节点及manual-nz9w4u0m拒绝路径、不触碰codex-protocol-controls；固定N2、N7最终endurance-v8及455份N7 JSON报告保留。Kontakt全部instrument-intake目录/规则/状态及产品数据不动；验证62064、发布22256、试听17580前后PID/ctime/argv相同，正式九表/head、受保护SHA相同，API仍可用并继续703入库。runtime/maintenance/daw-cleanup-20261023保存白名单与前后结果；仅元数据/保护及API核对，未重跑音频或长测，未清H/NAS。首次报告计数误跟随旧N7测试junction遇到不存在目标，已改为不跟随链接的计数；与删除失败无关。
 
 音源导入清理／Ample退库（2026-10-23 20:34 UTC）：用户取消Ample及其他未完成新来源导入，明确授权清除其导入副本、废弃诊断和无用备份，覆盖旧Ample暂停/52试听必须续回/保留全部历史intake约定。Ample79条catalog项在共享library锁内精确移除，其余条目逐项不变；169条旧Ample试听记录/25缓存音频和38旧任务入口已清。64个已审核精确目录删除41234文件/10148目录，额外删除63文件，均0错/0跳链；逻辑体积32.544GiB，E窗口空闲增加5.812GiB，H仍保留原始素材硬链接，不把逻辑体积冒充释放量。H仅移除Sound Library/Ample Sound，Htmp/NAS未写，Keyscape/Pianoteq和正式工程保留。Kontakt full-h/prep/所有kf22现有记录与共享规则、固定134输入/14保护文件、当前产品包不改不搬；实际验证62064、发布22256及试听17580均按最新locator核验健康，前后正式九表/head和保护SHA相同。清理后API无Ample来源（搜索Ample会匹配Keyscape的Sampler名称，勿误删），Kontakt持续新增，Keyscape455/Pianoteq797仍可查询。runtime/maintenance/instrument-intake-retirement-20261023集中保存清理清单、最小退库记录和前后检查；旧Ample根入口已清，中央取消标记禁止恢复。以后仅继续当前Kontakt验证/入库/已运行试听，不扩展失败修复。
