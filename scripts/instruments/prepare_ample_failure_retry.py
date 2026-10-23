@@ -21,6 +21,10 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--native-host", type=Path, required=True)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
+    parser.add_argument(
+        "--exclude-parameter-readback-failures", action="store_true",
+        help="Keep exact parameter readback failures in the plan but omit them from this independent retry queue",
+    )
     args = parser.parse_args()
 
     intake_root = (ROOT / "data/maintenance/instrument-intake").resolve()
@@ -34,7 +38,10 @@ def main() -> None:
     if args.native_host.is_symlink() or not args.native_host.is_file():
         raise SystemExit("Native host must be an existing regular independent fixed executable")
 
-    queue, status = build_profiled_failure_queue(args.retry_plan, repository_root=ROOT)
+    queue, status = build_profiled_failure_queue(
+        args.retry_plan, repository_root=ROOT,
+        exclude_parameter_readback_failures=args.exclude_parameter_readback_failures,
+    )
     output.mkdir(parents=True, exist_ok=False)
     atomic_json(output / "queue.json", queue)
     atomic_json(output / "status.json", status)
@@ -54,6 +61,7 @@ def main() -> None:
         "profile_mapping_ids": sorted({
             item["event_profile_evidence"]["mapping_id"] for item in queue["items"]
         }),
+        "selection": queue.get("selection", {}),
         "automatic_retry": False,
         "formal_project_writes": 0,
         "catalog_writes": 0,

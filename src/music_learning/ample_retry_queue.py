@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Callable, Iterable
 
 from .ample_riffer_mapping import profile_from_factory
@@ -14,6 +15,10 @@ _TERMINAL_ITEM_STATES = {"passed", "failed", "inconclusive", "blocked_missing_sa
 _IDENTITY_FIELDS = ("id", "instrument", "name", "source_relative", "factory_sha256",
                     "db_name", "sample_group", "parameters", "source_root", "library",
                     "config", "plugin", "factory_xml")
+_PARAMETER_READBACK = re.compile(
+    r"^Ample preset parameter not retained: (?P<parameter>[^;]+); "
+    r"requested=(?P<requested>.*), observed=(?P<observed>.*)$"
+)
 
 
 def _canonical_sha(value: object) -> str:
@@ -33,10 +38,24 @@ def _read_json(path: Path, label: str) -> tuple[dict, str]:
     return value, hashlib.sha256(raw).hexdigest()
 
 
+def _parameter_readback_failure(value: object) -> dict | None:
+    """Recognize the validator's exact full-state readback failure shape."""
+    if not isinstance(value, dict):
+        return None
+    error = value.get("error")
+    if not isinstance(error, str):
+        return None
+    match = _PARAMETER_READBACK.fullmatch(error)
+    if match is None:
+        return None
+    return {key: match.group(key) for key in ("parameter", "requested", "observed")}
+
+
 def build_profiled_failure_queue(
     retry_plan_path: str | Path,
     *,
     repository_root: str | Path,
+    exclude_parameter_readback_failures: bool = False,
     active_process_scan: Callable[[Iterable[Path]], list[dict]] = find_active_ample_processes,
 ) -> tuple[dict, dict]:
     """Materialize only failed identities after rechecking all original receipts.
@@ -179,6 +198,7 @@ def build_profiled_failure_queue(
         key=lambda item: (failure_order.get(item.get("failure_class"), 99),
                           item.get("instrument", ""), item.get("id", "")),
     )
+    excluded_failures = []
     for planned in ordered_plan_items:
         key = (planned.get("instrument"), planned.get("id"))
         if not all(isinstance(value, str) and value for value in key) or key in seen:
@@ -198,6 +218,19 @@ def build_profiled_failure_queue(
                 or _canonical_sha(source_item.get("attempts", [])) != planned.get("source_attempts_sha256")
                 or queue_sha != planned.get("source_queue_sha256")):
             raise RetryPlanningError(f"Original evidence changed for {instrument}/{item_id}")
+        parameter_mismatch = _parameter_readback_failure(planned.get("failure"))
+        if exclude_parameter_readback_failures and parameter_mismatch is not None:
+            excluded_failures.append({
+                "id": item_id,
+                "instrument": instrument,
+                "name": planned.get("name"),
+                "failure_class": planned.get("failure_class"),
+                "source_item_sha256": planned["source_item_sha256"],
+                "source_attempts_sha256": planned["source_attempts_sha256"],
+                "parameter_readback": parameter_mismatch,
+                "reason": "Preserved for isolated full-state adapter diagnosis",
+            })
+            continue
         if any(source_item.get(field) != planned.get(field)
                for field in ("name", "factory_sha256", "db_name", "library", "config", "plugin")):
             raise RetryPlanningError(f"Original identity changed for {instrument}/{item_id}")
@@ -231,8 +264,10 @@ def build_profiled_failure_queue(
         retry_item["event_profile_evidence"] = mapping_evidence
         retry_items.append(retry_item)
 
-    if len(retry_items) != plan["failed_count"]:
-        raise RetryPlanningError("Profiled retry queue does not contain every planned failure")
+    if len(retry_items) + len(excluded_failures) != plan["failed_count"]:
+        raise RetryPlanningError("Profiled retry selection does not account for every planned failure")
+    if not retry_items:
+        raise RetryPlanningError("No retry items remain after the explicit failure selector")
     counts = {}
     for item in retry_items:
         counts[item["instrument"]] = counts.get(item["instrument"], 0) + 1
@@ -246,6 +281,10 @@ def build_profiled_failure_queue(
         "original_source_queue_sha256": source_sha,
         "requested": len(retry_items),
         "counts": dict(sorted(counts.items())),
+        "selection": {
+            "exclude_parameter_readback_failures": exclude_parameter_readback_failures,
+            "excluded_failures": excluded_failures,
+        },
         "items": retry_items,
     }
     status = {"status": "prepared", "requested": len(retry_items),

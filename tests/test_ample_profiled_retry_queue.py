@@ -57,10 +57,12 @@ def terminal_retry_fixture(tmp_path):
         if status == "failed":
             failure_class = ("state_parameter_readback" if name == "Riff One"
                              else "performance_event_or_audio")
+            error = ("Ample preset parameter not retained: Pedal-HM2-Dist; requested=10, observed=0"
+                     if name == "Riff One" else "silent")
             attempts = [{"number": 1, "returncode": 0,
-                         "probe": {"status": "failed", "error": "silent"}}]
+                         "probe": {"status": "failed", "error": error}}]
             run_item = {**source_item, "status": "failed", "attempts": attempts,
-                        "result": {"status": "failed", "error": "silent"}}
+                        "result": {"status": "failed", "error": error}}
             retry_rows.append({
                 "id": item_id, "instrument": "AGLP", "name": name,
                 "source_relative": source_item["source_relative"],
@@ -97,7 +99,8 @@ def terminal_retry_fixture(tmp_path):
         row["source_queue_sha256"] = queue_sha
         row["source_item_sha256"] = _canonical_sha(source_item)
         row["source_attempts_sha256"] = _canonical_sha(source_item["attempts"])
-        row["failure"] = {"status": "failed", "error": "silent"}
+        run_item = next(item for item in queue_items if item["id"] == row["id"])
+        row["failure"] = {"status": "failed", "error": run_item["result"]["error"]}
 
     checkpoint_path = intake / "chain-state.json"
     checkpoint_sha = _write(checkpoint_path, {
@@ -154,6 +157,29 @@ def test_profiled_retry_refuses_a_plan_that_omits_an_original_failure(
     with pytest.raises(RetryPlanningError, match="exact original failed identity set"):
         build_profiled_failure_queue(plan_path, repository_root=root,
                                      active_process_scan=lambda _: [])
+
+
+def test_explicit_parameter_exclusion_preserves_provenance_and_retries_other_failures(
+        terminal_retry_fixture):
+    root, plan_path = terminal_retry_fixture
+
+    queue, status = build_profiled_failure_queue(
+        plan_path, repository_root=root,
+        exclude_parameter_readback_failures=True,
+        active_process_scan=lambda _: [],
+    )
+
+    assert queue["requested"] == 1
+    assert {item["name"] for item in queue["items"]} == {"Riff Two"}
+    excluded = queue["selection"]["excluded_failures"]
+    assert queue["selection"]["exclude_parameter_readback_failures"] is True
+    assert len(excluded) == 1
+    assert excluded[0]["name"] == "Riff One"
+    assert excluded[0]["parameter_readback"] == {
+        "parameter": "Pedal-HM2-Dist", "requested": "10", "observed": "0",
+    }
+    assert status["requested"] == 1
+    assert status["original_passes_retested"] == 0
 
 
 def test_profiled_retry_refuses_changed_factory_even_if_xml_parses(terminal_retry_fixture):
