@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT / "scripts")]
@@ -26,9 +28,26 @@ from music_learning.instrument_probe_budget import loading_budget  # noqa: E402
 from music_learning.kontakt_import import _resolve_root, _resolve_under  # noqa: E402
 
 
+def wait_for_storage(root, *, wait, max_seconds=24 * 3600, budget_fn=loading_budget,
+                     clock=time.monotonic, sleep=time.sleep):
+    if not 1 <= max_seconds <= 24 * 3600:
+        raise ValueError("Publication storage wait must be bounded to 24 hours")
+    deadline = clock() + max_seconds
+    while True:
+        budget = budget_fn("H:", idle_samples=3)
+        (root / "budget.json").write_text(json.dumps(budget, indent=2), encoding="utf-8")
+        if budget.get("allowed") is True:
+            return budget
+        (root / "progress.json").write_text(json.dumps({"status": "waiting_storage", "pid": os.getpid(),
+            "budget": budget, "catalog_written": False}, indent=2), encoding="utf-8")
+        if not wait or clock() >= deadline:
+            raise TimeoutError("H budget denied; no preset or catalog was written")
+        sleep(min(20, max(0, deadline - clock())))
+
+
 def final_control_gate(checkpoint_path: Path, product: str):
     from instruments.supervise_ample_final_bank_controls import (
-        _audit_ready, _strict_control_evidence, _validate_plan,
+        _audit_ready, _replay_prior_products, _strict_control_evidence, _validate_plan,
     )
     checkpoint = json.loads(checkpoint_path.read_bytes())
     if checkpoint.get("status") not in {"completed", "completed_with_control_failures"}:
@@ -44,9 +63,16 @@ def final_control_gate(checkpoint_path: Path, product: str):
         if sha256_file(Path(path)) != digest:
             raise ValueError("Pinned final-control source/plugin/host changed")
     result = checkpoint["products"][product]
-    if result.get("status") != "passed" or result["attempt"].get("returncode") != 0:
+    if result.get("status") != "passed":
         raise ValueError("Fresh final-bank first/reopen control is not passed for " + product)
     attempt = result["attempt"]
+    if attempt.get("assessment_mode") == "offline_first_reopen_evidence_reassessment":
+        replayed, _ = _replay_prior_products(plan, {row["product"]: row for row in plan["products"]},
+            Path(plan["resource_audit_run"]["path"]), Path(r"H:\music\Sound Library"))
+        if replayed.get(product) != result:
+            raise ValueError("Final-bank replay differs from its pinned original raw evidence")
+    elif attempt.get("returncode") != 0:
+        raise ValueError("Fresh final-bank controller did not exit successfully")
     report = Path(attempt["report"])
     if sha256_file(report) != attempt["report_sha256"]:
         raise ValueError("Final-bank control report changed")
@@ -55,7 +81,8 @@ def final_control_gate(checkpoint_path: Path, product: str):
     if not ready:
         raise ValueError("Final-bank complete resource audit is not ready")
     observed = _strict_control_evidence(plan, item, report.parent, binding)
-    if observed != attempt["verified_evidence"]:
+    recorded = {key: value for key, value in attempt["verified_evidence"].items() if key != "evidence_replay"}
+    if observed != recorded:
         raise ValueError("Fresh final-bank raw evidence differs from its recorded verification")
     return observed, item
 
@@ -69,6 +96,8 @@ def main():
     parser.add_argument("--run", type=Path, required=True)
     parser.add_argument("--release", type=Path, default=ROOT / "runtime/application-release.local.json")
     parser.add_argument("--publish", action="store_true")
+    parser.add_argument("--wait-for-idle", action="store_true")
+    parser.add_argument("--max-wait-seconds", type=float, default=24 * 3600)
     args = parser.parse_args()
     maintenance = _resolve_root(ROOT / "data/maintenance/instrument-intake")
     root = _resolve_under(maintenance, args.run.absolute().relative_to(maintenance).as_posix(), must_exist=False)
@@ -77,10 +106,7 @@ def main():
     release_snapshot = root / "application-release.json"
     release_snapshot.write_bytes(args.release.read_bytes())
     library = Path(r"H:\music\Sound Library")
-    budget = loading_budget("H:", idle_samples=3)
-    (root / "budget.json").write_text(json.dumps(budget, indent=2), encoding="utf-8")
-    if not budget.get("allowed"):
-        raise ValueError("H budget denied; no preset or catalog was written")
+    wait_for_storage(root, wait=args.wait_for_idle, max_seconds=args.max_wait_seconds)
     control, control_item = final_control_gate(args.final_controls, args.product)
     (root / "final-control-verification.json").write_text(json.dumps(control, indent=2), encoding="utf-8")
     report = read_pinned_preflight(args.preflight, args.preflight_sha256, maintenance)
