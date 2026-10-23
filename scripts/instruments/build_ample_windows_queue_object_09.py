@@ -427,6 +427,8 @@ def prepare_plan(parent_plan: dict, core_manifest_path: Path, extra_manifest_pat
         "build_root": str(OUT.resolve()),
         "evidence_root": str(EVIDENCE.resolve()),
         "diagnostic_executables": host_outputs,
+        "builder_script": {"path": str(Path(__file__).resolve()),
+                           "sha256": digest(Path(__file__).resolve())},
         "source_snapshot_manifest": {"path": str(core_manifest_path.resolve()),
                                      "sha256": digest(core_manifest_path), "file_count": 16},
         "additional_source_manifests": [
