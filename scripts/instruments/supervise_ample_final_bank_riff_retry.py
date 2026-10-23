@@ -663,6 +663,10 @@ def run(plan_path: Path, locator_path: Path, *, inventory_fn=process_inventory,
     else:
         child_command = _child_command(run_dir, remaining)
         with child_log.open("ab") as stream:
+            # The queue may have taken time to prepare and validate; refuse to
+            # start the audio runner if any pinned supervisor dependency drifted
+            # during that interval.
+            _verify_code_dependency_sha256(plan)
             child = popen(child_command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT,
                           creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
             child_record = {"pid": int(child.pid), "command_line": subprocess.list2cmdline(child_command),
