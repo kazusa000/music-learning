@@ -1,5 +1,11 @@
 # 新音源全量入库与共享兼容恢复（进行中）
 
+## 2026-10-23 自动跟进保持暂停
+
+本次唤醒的末条约束明确要求保持暂停，只有用户明确恢复才启用；因此未启动新控制、验证队列、发布或预热。发现调度配置实际为 ACTIVE，已通过应用的 automation_update 将原 keyscape 跟进改回 PAUSED，保留原提示、周期与本音源导入聊天归属；未唤醒开发聊天。此前任务的完成不视为恢复授权。
+
+本次只读核对：资源准备 metadata-refresh-01 已 completed；full-e 为 blocked_no_automatic_retry，正式表和固定文件终态比较均相同；Ample retry4 监督已 completed，20失败/1通过。原记录中的 PID17008、32840、49692、47024 均已退出，旧 locator 的 started/waiting 不代表当前运行。Kontakt 路径相关插件标识共享修复已提交 b5d27bd，51项专项通过；真实首开/空机架恢复尚待用户恢复后进行，不能计作新增入库。保留所有旧结果与资源，未访问 NAS/tmp、未加载采样器、未写正式工程或更改固定文件。
+
 ## 2026-10-23 04:27 清单修订审计与实际加载排查
 
 当前准备 canonical locator 已改为 `metadata-refresh-01`，实际32840/ctime1792722161.8696787；运行时、CSS及CSS Solo已审计结果复用，Factory按新输入修订继续完整SHA审计。旧清单仍保留：两项 `.nkc` 大小不变但时间戳与原清单不同，原清单没有逐文件SHA，不能声称内容未变。修复 `56f37db` 只在全清单差异均为同大小普通NKC时，计算其当前SHA并建立独立E修订；主资源/其他大小变化成组拒绝，源文件不写入。新修订位于 `kf22/prep/inventory-revisions/metadata-refresh-20261023T022431.108684+0000/kontakt-factory.json`，SHA `54320cdd06fa3ebd99fc6b4fddc7f06d8fffcd61b0a9ae65a1437c8bf4fd1551`。19回归通过、Ruff通过；旧失败不改。04:27读回Factory审计1453/3699，未终态。
