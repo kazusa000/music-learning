@@ -30,7 +30,7 @@ def sha(path: Path) -> str:
 def instrument_source(source: str) -> str:
     include = '#include "Host.h"'
     hook = '    result.getDynamicObject()->setProperty("parameters_readback", parameters(plugin));'
-    readonly = '"description_xml", "parameters_readback", "latency_samples", "tail_seconds", "buses", "sidechain"});'
+    readonly = '"description_xml", "parameters_readback"'
     if source.count(include) != 1 or source.count(hook) != 1 or source.count(readonly) != 1:
         raise ValueError("Host source changed: Kontakt snapshot hook needs review")
     return source.replace(include, include + '\n#include "KontaktProbe.h"', 1).replace(

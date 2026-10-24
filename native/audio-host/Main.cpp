@@ -146,7 +146,8 @@ std::unique_ptr<AudioPluginInstance> load(const var& spec, double rate, int bloc
     checkKeys(spec, {"id", "path", "identifier", "state_base64", "state_encoding", "state_sha256",
         "binary_sha256", "vst3_class_id", "version", "parameters", "preset_path", "sfizz_sfz_path", "surge_fxp_path",
         "name", "manufacturer", "format", "unique_id", "is_instrument", "inputs", "outputs",
-        "description_xml", "parameters_readback", "latency_samples", "tail_seconds", "buses", "sidechain"});
+        "description_xml", "parameters_readback", "latency_samples", "tail_seconds", "buses", "sidechain",
+        "total_input_channels", "total_output_channels", "routing_layout"});
     const auto description = selectDescription(spec);
     const auto expectedHash = field(spec, "binary_sha256").toString();
     if (expectedHash.isNotEmpty())

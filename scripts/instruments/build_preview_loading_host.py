@@ -16,14 +16,29 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def render_source(source):
+def render_source(source, *, policy="pre-render-wall-clock-only-v1"):
     anchor = "            auto snapshot = pluginSnapshot(*plugin);"
     if source.count(anchor) != 1:
         raise ValueError("Expected one pre-render snapshot boundary")
-    return source.replace(anchor, "            Thread::sleep(1000); // sample loader wall-clock settling only\n" + anchor)
+    if policy == "pre-render-wall-clock-only-v1":
+        preparation = "            Thread::sleep(1000); // sample loader wall-clock settling only\n"
+    elif policy == "kontakt-async-progressive-warmup-v1":
+        preparation = """            { // Let asynchronous sampler callbacks finish before frame zero.
+                AudioBuffer<float> init (processChannels, blockSize);
+                const auto deadline = Time::getMillisecondCounterHiRes() + 5000.0;
+                while (Time::getMillisecondCounterHiRes() < deadline) {
+                    init.clear(); MidiBuffer midi; plugin->processBlock(init, midi);
+                    MessageManager::getInstance()->runDispatchLoopUntil(5);
+                    Thread::sleep(5);
+                }
+            }
+"""
+    else:
+        raise ValueError("Unknown sampler preparation policy")
+    return source.replace(anchor, preparation + anchor)
 
 
-def build(base_host, source_manifest, destination):
+def build(base_host, source_manifest, destination, *, policy="pre-render-wall-clock-only-v1"):
     destination = destination.resolve()
     destination.relative_to(ROOT / "runtime")
     destination.mkdir(parents=True, exist_ok=False)
@@ -39,7 +54,7 @@ def build(base_host, source_manifest, destination):
             raise ValueError("Base render source changed: " + name)
         content = path.read_text(encoding="utf-8")
         if name.endswith("Render.cpp"):
-            content = render_source(content)
+            content = render_source(content, policy=policy)
         content = content.replace('"../include/MainOutputBus.h"', '"MainOutputBus.h"')
         (destination / path.name).write_text(content, encoding="utf-8")
     library = json.loads((ROOT / "runtime/live-host-build.local.json").read_bytes())
@@ -64,11 +79,12 @@ def build(base_host, source_manifest, destination):
         subprocess.run(command, cwd=destination, env=environment, stdout=stream,
                        stderr=subprocess.STDOUT, check=True)
     host = destination / "ml_preview_loading_host.exe"
-    result = dict(policy="pre-render-wall-clock-only-v1", settle_ms=1000,
+    result = dict(policy=policy,
                   base_host_sha256=sha(base_host), host=str(host), host_sha256=sha(host),
                   source_manifest_sha256=sha(source_manifest), base_sources=source_pins,
                   built_sources={Path(name).name: sha(destination / Path(name).name) for name in names},
                   runtime_library=library, command=command)
+    result.update({"settle_ms": 1000} if policy == "pre-render-wall-clock-only-v1" else {"warmup_ms": 5000})
     (destination / "loading-host.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     return result
 
@@ -78,6 +94,8 @@ if __name__ == "__main__":
     parser.add_argument("--base-host", type=Path, required=True)
     parser.add_argument("--source-manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--policy", choices=("pre-render-wall-clock-only-v1", "kontakt-async-progressive-warmup-v1"),
+                        default="pre-render-wall-clock-only-v1")
     args = parser.parse_args()
-    result = build(args.base_host, args.source_manifest, args.output)
+    result = build(args.base_host, args.source_manifest, args.output, policy=args.policy)
     print(json.dumps(dict(host=result["host"], sha256=result["host_sha256"])))

@@ -149,3 +149,25 @@ def test_sample_zone_phrase_rejects_invalid_source_context(change):
     value["sample_zone_audition"]["notes"][0].update(change)
     with pytest.raises(ValueError):
         validate_profile(value)
+
+
+def test_script_trigger_evidence_is_distinct_and_reaches_the_same_phrase_contract():
+    source = profile()
+    source["instruments"][0]["key_range"] = [0, 127]
+    source["script_trigger_audition"] = dict(source_script_sha256="b" * 64,
+        source_getters_sha256="c" * 64, notes=[dict(instrument_index=128, note=n, velocity=90)
+                                             for n in (36, 43, 51)])
+    actual = validate_profile(source, expected_source_sha256="a" * 64)
+    assert "sample_zone_audition" not in actual
+    assert actual["instruments"] == source["instruments"]
+    assert [n["note"] for n in profile_phrase(actual)["notes"]] == [36, 43, 51]
+    changed = deepcopy(source)
+    changed["script_trigger_audition"]["source_script_sha256"] = "d" * 64
+    assert profile_phrase(changed)["profile_sha256"] != profile_phrase(actual)["profile_sha256"]
+    changed["sample_zone_audition"] = dict(source_getters_sha256="e" * 64, notes=[])
+    with pytest.raises(ValueError, match="cannot mix"):
+        validate_profile(changed)
+    changed = deepcopy(source)
+    del changed["script_trigger_audition"]["source_script_sha256"]
+    with pytest.raises(ValueError, match="provenance"):
+        validate_profile(changed)

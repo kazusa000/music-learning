@@ -26,6 +26,20 @@ def loading_host(settings, entry, primary, digest):
     root = getattr(settings, "data_root", None)
     if root is None or entry.get("native_admission") is None:
         return primary
+    performance = entry.get("performance_profile") or {}
+    if performance.get("kind") == "midi_context" and (
+            len(performance.get("instruments", [])) > 1 or performance.get("script_trigger_audition") is not None):
+        async_profile = Path(root) / "instrument-previews/async-loading-host.local.json"
+        if async_profile.exists():
+            record = json.loads(async_profile.read_bytes())
+            if record.get("base_host_sha256") == digest(primary):
+                if (record.get("policy") != "kontakt-async-progressive-warmup-v1"
+                        or record.get("warmup_ms") != 5000):
+                    raise ValueError("Invalid sampler async loading adapter policy")
+                target = Path(record["host"])
+                if digest(target) != record["host_sha256"]:
+                    raise ValueError("Sampler async loading adapter changed")
+                return target
     profile = Path(root) / "instrument-previews/loading-host.local.json"
     if not profile.exists():
         return primary

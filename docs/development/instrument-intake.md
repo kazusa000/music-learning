@@ -29,3 +29,7 @@
 Kontakt instrument 的全键盘范围不等于实际采样覆盖。已读取真实 sample-zone geometry 时，使用 `kontakt_recovery.with_zone_audition` 构造可选 `performance_profile.sample_zone_audition`：getter 证据 SHA 及按 instrument index 绑定的 note/velocity。原 instrument 通道、键域、力度、mute/solo 和完整状态保持原样；显式音符须落在其上下文内，缺少/错误索引、无可用 zone 不生成候选。
 
 验证与产品试听均通过 `kontakt_performance.profile_phrase` 消费同一合同并参与缓存指纹。单键鼓保留重复敲击；旧 profile 的短句和指纹不改变。含脚本重映射或 MIDI Player 的音源，sample zone 仅是候选依据，必须通过实际音频与两次状态恢复，不能据此直接发布。新合同发布到实际产品版本并验证兼容之后，才将相关条目加入正式 catalog。
+
+脚本驱动的鼓垫不能把 zone 的占位键当成输入键。未保护、已链接且未旁路的公开脚本源码，若存在明确的 `EVENT_NOTE` 范围、线性 pad index 和对应播放调用，可由 `script_pad_trigger_map` 生成独立来源证明，再用 `with_script_pad_audition` 附加 `script_trigger_audition`。它保留原 instrument context，绑定脚本及 getter SHA，不冒充采样区几何；不支持的脚本不推测映射。
+
+Kontakt Multi 的 MIDI Player 异步准备必须在首个测试音之前推进：空音频块、不发送 MIDI、短消息循环和 sleep，按固定 5 秒预算执行，丢弃准备输出；之后再取状态与开始正式短句。独立固定宿主及新 plan/pins 绑定此规则，原冻结宿主不覆盖。产品通过单独的 `instrument-previews/async-loading-host.local.json` 选择同一策略，仅用于已入库的 MIDI Multi 或带脚本触发证明的条目；原缓存指纹与旧条目不变。准备成功不能代替实际发声、完整参数和两次独立恢复验收。

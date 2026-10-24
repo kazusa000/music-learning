@@ -28,6 +28,37 @@ def test_wait_adapter_preserves_success_cache_but_rejects_changed_binary(tmp_pat
         loading_host(settings, entry, settings.native_host, file_digest)
 
 
+def test_async_sampler_adapter_is_scoped_and_does_not_invalidate_existing_pcm(tmp_path):
+    settings, entry, _ = admitted(tmp_path)
+    settings.data_root = tmp_path
+    entry["performance_profile"] = dict(kind="midi_context", instruments=[{}, {}])
+    original = fingerprint(settings, entry)
+    adapter = tmp_path / "async.exe"
+    adapter.write_bytes(b"bounded-async-ready-build")
+    profile = tmp_path / "instrument-previews/async-loading-host.local.json"
+    profile.parent.mkdir()
+    record = dict(policy="kontakt-async-progressive-warmup-v1", warmup_ms=5000,
+                  base_host_sha256=file_digest(settings.native_host), host=str(adapter),
+                  host_sha256=file_digest(adapter))
+    profile.write_text(json.dumps(record))
+    assert loading_host(settings, entry, settings.native_host, file_digest) == adapter
+    assert fingerprint(settings, entry) == original
+    single = dict(entry, performance_profile=dict(kind="midi_context", instruments=[{}]))
+    assert loading_host(settings, single, settings.native_host, file_digest) == settings.native_host
+    other = dict(entry, performance_profile=dict(kind="riff_toggle", instruments=[{}, {}]))
+    assert loading_host(settings, other, settings.native_host, file_digest) == settings.native_host
+    assert loading_host(settings, dict(entry, native_admission=None), settings.native_host, file_digest) == settings.native_host
+    profile.write_text(json.dumps(dict(record, base_host_sha256="wrong-base")))
+    assert loading_host(settings, entry, settings.native_host, file_digest) == settings.native_host
+    profile.write_text(json.dumps(dict(record, warmup_ms=1)))
+    with pytest.raises(ValueError, match="async loading adapter policy"):
+        loading_host(settings, entry, settings.native_host, file_digest)
+    profile.write_text(json.dumps(record))
+    adapter.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="async loading adapter changed"):
+        loading_host(settings, entry, settings.native_host, file_digest)
+
+
 def test_preview_reserve_is_independent_of_whole_song_import(tmp_path, monkeypatch):
     monkeypatch.setattr("music_learning.preview_loading.shutil.disk_usage", lambda _: SimpleNamespace(free=1000))
     settings = SimpleNamespace(instrument_min_free_bytes=100, pipeline_min_free_bytes=10**9)
@@ -62,3 +93,18 @@ def test_adapter_injects_only_wall_clock_wait_before_first_frame():
     assert result.replace("            Thread::sleep(1000); // sample loader wall-clock settling only\n", "") == original
     with pytest.raises(ValueError):
         render_source("missing boundary")
+
+
+def test_async_preparation_is_bounded_and_precedes_the_source_snapshot():
+    from instruments.build_preview_loading_host import render_source
+
+    boundary = "            auto snapshot = pluginSnapshot(*plugin);"
+    result = render_source(boundary, policy="kontakt-async-progressive-warmup-v1")
+    assert result.endswith(boundary)
+    assert "+ 5000.0" in result
+    assert "init.clear(); MidiBuffer midi; plugin->processBlock(init, midi);" in result
+    assert "runDispatchLoopUntil(5)" in result
+    assert "Thread::sleep(5)" in result
+    assert "addEvent" not in result
+    with pytest.raises(ValueError, match="Unknown sampler preparation policy"):
+        render_source(boundary, policy="unknown")
