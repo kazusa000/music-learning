@@ -8,7 +8,17 @@
 
 插件优先嵌入桌面原生子窗口：WebView 报告内容区域，桌面外壳提供专用 HWND，宿主核对父窗口 PID 并挂载插件 IPlugView。使用真实桌面 DPI；窗口尺寸变化重新布局，切换图片页隐藏子窗口。浏览器调试模式提供独立插件窗口入口。原生 GUI 能力以每个插件实际支持为准，不能将无自动化标记的占位参数当成可调旋钮。
 
-先等待 JUCE 的异步 DPI 通知，再遵守插件尺寸约束；必要时选用插件原生 1x/2x 显示档，不请求低于 100% 的任意栅格倍率。Keyscape 的异步采样加载沿用既有宿主的版本限定就绪等待，等待期间保持加载状态，个人预设恢复走同一规则。
+插件槽使用物理像素。原生包装窗口选择可容纳的整数平台 DPI 档，先处理 JUCE 的异步通知，再按空间请求插件自己的内容缩放；有效栅格倍率不低于 100%，避免旧界面访问不存在的 0 档素材。桌面与 WebView 保留真实每屏 DPI。顶栏默认「适应窗口」，另可选原始大小及插件支持的倍率，选择按型号保存在本机界面设置。
+
+忽略 VST3 内容缩放的旧界面，使用 Windows mixed-DPI 子窗口兼容缩放，不以截图替代插件，也不模拟网页旋钮。专用 Panel 启用 mixed hosting，只有该插件编辑器在 scoped unaware 上下文创建；其它窗口继续 PMv2。旧界面只显示实际支持的「适应窗口／100%」，空间不足时使用完整的原始大小，不裁掉控制区域。这类 Windows 位图兼容放大的清晰度受原始界面素材限制，不能等同于插件提供高分辨率素材。插件页试弹键盘为紧凑横条，展示页保持大键盘。
+
+依据：[Microsoft mixed-DPI hosting](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setthreaddpihostingbehavior)、[VST3 IPlugViewContentScaleSupport](https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical%2BDocumentation/Change%2BHistory/3.6.6/IPlugViewContentScaleSupport.html)。
+
+日常试听不重新遍历整套入库清单、样本文件和运行依赖。目录按原子发布文件的元数据缓存，变化后重新读取；每次选择仍核对插件身份和选中预设资源。二进制摘要由 Python 以文件元数据失效的缓存验证，私有启动收据记录准确路径、摘要、长度和修改时间，原生进程先核对未变化，避免同一次打开又读一遍整个插件。入库、离线验证和正式工程流程的完整检查没有改动。
+
+同一客户端在同一插件身份内切换预设，复用现有实例、音频设备和编辑器。先保留旧草稿、释放音符，再在音频状态屏障内应用新完整状态或 VST3 预设与控制器；失败恢复旧状态并如实报告。屏障期间音频回调输出零，不等待文件或数据库。不同插件、客户端或失效宿主仍走独立冷启动。换预设期间允许止音、抬键和隐藏旧编辑器，阻止新的起音。
+
+交互宿主不再使用离线渲染器的固定 10 秒 Keyscape 等待。处理器准备好即可打开 GUI、接受试弹，厂商的样本线程继续流式读取；这不是“全部样本已读取”的承诺。实际发声验证在隔离测试中等待真实音频并记录时间与进程读取量，不向日常试听插入测试音符。`timings_ms` 与 `native_timings_ms` 分别记录目录、选择验证、状态准备、设备、插件创建、界面和原位切换耗时，避免把软件等待误归因于 H 盘。
 
 ## 状态与保存
 
@@ -26,7 +36,7 @@
 - `resources/instruments/images.json`：型号图及 SHA；同一型号的所有预设共用图片。
 - `native/instrument-studio`：专用实时试听宿主与原生编辑器。
 - `src/music_learning/instrument_studio.py`：生命周期、草稿、个人预设和统一操作。
-- 新构建分别在 `runtime/build/instrument-studio`、`instrument-desktop` 和 `instrument-library-web`；不覆盖固定发布。
+- 新构建分别在 `runtime/build/instrument-studio`、`instrument-desktop-v2` 和 `instrument-library-web`；不覆盖固定发布。桌面外壳使用新构建目录，避免覆盖用户仍打开的旧预览可执行文件。
 
 ## 首批十个型号
 

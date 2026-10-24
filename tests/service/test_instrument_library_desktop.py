@@ -38,7 +38,7 @@ def test_real_instrument_library_desktop(tmp_path, model):
     report = ROOT / "runtime/test-reports" / ("instrument-desktop-" + model + "-" + str(time.time_ns()))
     report.mkdir(parents=True)
     env = dict(os.environ, PYTHONPATH=str(ROOT / "src"), MUSIC_APP_CONFIG=str(config), PYTHONDONTWRITEBYTECODE="1")
-    executable = ROOT / "runtime/build/instrument-desktop/MusicLearning.exe"
+    executable = ROOT / "runtime/build/instrument-desktop-v2/MusicLearning.exe"
     with (report / "api.log").open("wb") as log, OwnedProcess(
         [sys.executable, "-m", "uvicorn", "services.api.main:app", "--host", "127.0.0.1", "--port", str(port)],
         cwd=ROOT, env=env, stdout=log, stderr=log,
@@ -67,4 +67,6 @@ def test_real_instrument_library_desktop(tmp_path, model):
         assert value.get("workflow", {}).get("status") == "succeeded", value
         assert value["navigation_success"] and value["window_per_monitor_v2"] and value["zoom"] == 1
         assert abs(value["viewport"]["dpr"] - value["window_dpi"] / 96) < .01
-        assert value["foreground_unchanged"], value
+        # Other applications/user activity may legitimately change foreground
+        # while this hidden fixture runs. It must not finish owning that focus.
+        assert value["foreground_pid"] not in [value["desktop_pid"], value["workflow"]["embedded"]["pid"]], value

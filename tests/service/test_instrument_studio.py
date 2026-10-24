@@ -65,11 +65,11 @@ def test_cancelled_preparation_cannot_start_a_late_host(service, monkeypatch):
     entered, release = threading.Event(), threading.Event()
     entries = [dict(id="factory-" + str(i), model={"id": "model-fixture"}, backend="vst3-preset", native_admission={}) for i in range(2)]
     monkeypatch.setattr(module, "catalog", lambda settings: entries)
-    monkeypatch.setattr(module, "gallery", lambda *args: {"model_id": "model-fixture"})
+    monkeypatch.setattr(module, "gallery_definition", lambda: {"instruments": [{"model_id": "model-fixture"}]})
     def validate(*args):
         entered.set()
         assert release.wait(4)
-    monkeypatch.setattr(module, "validate_entry", validate)
+    monkeypatch.setattr(module.InstrumentStudio, "validate", validate)
     monkeypatch.setattr(module, "preview_plugin", lambda *args: ({}, None))
     studio = module.InstrumentStudio(service)
     try:
@@ -95,3 +95,94 @@ def test_curated_models_have_one_integral_image_each():
         path = module.resource_path(module.ROOT / "resources/instruments", image["file"])
         assert hashlib.sha256(path.read_bytes()).hexdigest() == image["sha256"]
         assert model["media"]["model_3d"] is None
+
+
+def test_studio_inventory_cache_tracks_atomic_publication(service, tmp_path, monkeypatch):
+    service.settings.instrument_library = tmp_path
+    target = tmp_path / "catalog.json"
+    target.write_text("one", encoding="utf-8")
+    reads = []
+    monkeypatch.setattr(module, "catalog", lambda _: reads.append(target.read_text()) or [reads[-1]])
+    assert module.studio_catalog(service.settings) == ["one"]
+    assert module.studio_catalog(service.settings) == ["one"]
+    pending = tmp_path / "next.json"
+    pending.write_text("two newer", encoding="utf-8")
+    pending.replace(target)
+    assert module.studio_catalog(service.settings) == ["two newer"]
+    assert reads == ["one", "two newer"]
+
+
+def test_live_selection_checks_binary_and_selected_resources_without_redoing_intake(service, tmp_path, monkeypatch):
+    service.settings.instrument_library = tmp_path
+    bank = tmp_path / "Bank"
+    bank.mkdir()
+    plugin = bank / "instrument.vst3"
+    plugin.write_bytes(b"plugin")
+    dependency = bank / "runtime.dll"
+    dependency.write_bytes(b"runtime")
+    manifest = bank / "manifest.json"
+    manifest.write_bytes(b"manifest")
+    monkeypatch.setattr(service.settings, "plugin_path", lambda _: plugin)
+    calls = []
+    monkeypatch.setattr(module, "validate_entry", lambda _, entry: calls.append(entry))
+    entry = dict(plugin_path="plugin", plugin_sha256="sha", bank_root="Bank", resources={"a": {}},
+        runtime_dependencies={"runtime.dll": {}}, installed_library={"bank_root": "Bank", "manifest_path": "manifest.json"})
+    studio = module.InstrumentStudio(service)
+    try:
+        studio.validate(entry)
+        studio.validate({**entry, "resources": {"b": {}}})
+        assert all("installed_library" not in x and x["runtime_dependencies"] == {} for x in calls)
+        assert calls[0]["resources"] == {"a": {}} and calls[1]["resources"] == {"b": {}}
+        assert entry["installed_library"] and entry["runtime_dependencies"], "Do not modify the admission record"
+        first = studio.validate(entry)
+        plugin.write_bytes(b"new plugin binary")
+        second = studio.validate(entry)
+        assert first["bytes"] != second["bytes"]
+    finally:
+        studio.close()
+
+
+def test_live_selection_rejects_changed_selected_state_and_binary(service, tmp_path, monkeypatch):
+    service.settings.instrument_library = tmp_path
+    binary, preset = tmp_path / "plugin.vst3", tmp_path / "voice.vstpreset"
+    binary.write_bytes(b"original binary")
+    preset.write_bytes(b"original preset")
+    monkeypatch.setattr(service.settings, "plugin_path", lambda _: binary)
+    entry = dict(plugin_path="plugin", plugin_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+        bank_root=".", resources={preset.name: dict(bytes=preset.stat().st_size, sha256=hashlib.sha256(preset.read_bytes()).hexdigest())})
+    studio = module.InstrumentStudio(service)
+    try:
+        ticket = studio.validate(entry)
+        assert ticket["sha256"] == entry["plugin_sha256"]
+        # Access time changes while hashing must not look like a file mutation.
+        assert studio.validate(entry)["mtime_ms"] == ticket["mtime_ms"]
+        preset.write_bytes(b"modified preset")
+        with pytest.raises(ValueError, match="Preset resource changed"):
+            studio.validate(entry)
+        binary.write_bytes(b"modified binary")
+        with pytest.raises(ValueError, match="Plugin changed"):
+            studio.validate(entry)
+    finally:
+        studio.close()
+
+
+def test_pending_preset_allows_release_but_does_not_accept_new_notes(service, monkeypatch):
+    studio, directory, _ = retained_studio(service)
+    studio.command = module.InstrumentStudio.command.__get__(studio)
+    studio.session["pending_preset_id"] = "factory-b"
+    monkeypatch.setattr(studio, "read_status", lambda: {"status": "loading"})
+    requests = []
+    def reply(path, value):
+        requests.append(value)
+        (directory / "reply.json").write_text(module.json.dumps(dict(sequence=value["sequence"], ok=True, result={"released": True})))
+    monkeypatch.setattr(module, "atomic_json", reply)
+    try:
+        assert studio.command("panic")["released"]
+        assert studio.command("note", {"on": False, "pitch": 60})["released"]
+        assert studio.command("editor", {"visible": False})["released"]
+        with pytest.raises(ValueError, match="正在加载"):
+            studio.command("note", {"on": True, "pitch": 60})
+        assert len(requests) == 3
+    finally:
+        studio.session["status"] = "closed"
+        studio.close()

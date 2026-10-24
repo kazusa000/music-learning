@@ -26,6 +26,25 @@ from .settings import ROOT
 from .service import DomainError
 
 
+_catalog_lock = threading.Lock()
+_catalog_versions = {}
+
+
+def studio_catalog(settings):
+    """Reuse the parsed inventory until its atomically published file changes."""
+    if settings.instrument_library is None:
+        return catalog(settings)
+    path = settings.instrument_library / "catalog.json"
+    stat = path.stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    with _catalog_lock:
+        if key not in _catalog_versions:
+            entries = catalog(settings)
+            _catalog_versions.clear()
+            _catalog_versions[key] = entries
+        return _catalog_versions[key]
+
+
 def gallery_definition():
     return json.loads((ROOT / "resources/instruments/gallery.json").read_bytes())
 
@@ -44,7 +63,7 @@ def personal(db, model_id):
 
 
 def gallery(settings, model_id=None):
-    installed = catalog(settings)
+    installed = studio_catalog(settings)
     result = []
     for definition in gallery_definition()["instruments"]:
         if model_id and definition["model_id"] != model_id:
@@ -89,13 +108,34 @@ class InstrumentStudio:
         self.future = None
         self.closing = False
 
+    def validate(self, preset):
+        # The published catalogue is the intake result, not a request to redo
+        # intake on each click. Verify the selected state/resources and binary;
+        # let the plugin load its installed sample bank and DLL dependencies.
+        # Full bank/dependency verification remains in intake and offline checks.
+        selected = {**preset, "runtime_dependencies": {}}
+        selected.pop("installed_library", None)
+        binary = self.settings.plugin_path(preset["plugin_path"])
+        if binary.is_dir():
+            binaries = list((binary / "Contents/x86_64-win").glob("*.vst3"))
+            if len(binaries) != 1:
+                raise ValueError("Ambiguous VST3 binary")
+            binary = binaries[0]
+        before = binary.stat()
+        validate_entry(self.settings, selected)
+        after = binary.stat()
+        if (after.st_size, after.st_mtime_ns, after.st_ctime_ns) != (before.st_size, before.st_mtime_ns, before.st_ctime_ns):
+            raise ValueError("Plugin changed while opening")
+        return dict(path=str(binary), sha256=preset["plugin_sha256"], bytes=before.st_size,
+                    mtime_ms=before.st_mtime_ns // 1_000_000)
+
     def open(self, args):
         with self.lock:
+            began = time.perf_counter()
             if self.closing:
                 raise ValueError("乐器库已关闭")
-            if self.session and self.session["client_id"] == args.client_id and self.session["preset_id"] == args.preset_id and self.session["status"] not in ["closed", "failed"]:
+            if self.session and self.session["client_id"] == args.client_id and self.session.get("pending_preset_id", self.session["preset_id"]) == args.preset_id and self.session["status"] not in ["closed", "failed"]:
                 return self.public()
-            self.close_current()
             # The homepage library has its own audition device. Pause an existing
             # project projection without creating an engine or changing music.
             if self.service.engine_broker is not None:
@@ -105,35 +145,53 @@ class InstrumentStudio:
                     dispatch(self.service, "transport", c.EngineTransport(
                         engine_session=self.service.engine_broker.identity, generation=state["generation"],
                         owner_id=state.get("owner_id"), playing=False))
-            preset = next((p for p in catalog(self.settings) if p["id"] == args.preset_id), None)
+            entries = studio_catalog(self.settings)
+            preset = next((p for p in entries if p["id"] == args.preset_id), None)
             own = None
             if preset is None:
                 with self.service.database.transaction(write=False) as db:
                     own = db.execute(select(tables.presets).where(tables.presets.c.id == args.preset_id)).mappings().first()
                 if own:
                     own = dict(own)
-                    preset = next((p for p in catalog(self.settings) if p["id"] == own["base_preset_id"]), None)
+                    preset = next((p for p in entries if p["id"] == own["base_preset_id"]), None)
             if preset is None:
                 raise ValueError("找不到此音色")
-            definition = gallery(self.settings, preset["model"]["id"])
+            definition = next((p for p in gallery_definition()["instruments"] if p["model_id"] == preset["model"]["id"]), None)
+            if definition is None:
+                raise ValueError("此乐器尚未接入乐器库")
+            identity = (preset.get("plugin_path"), preset.get("plugin_sha256"), preset.get("identifier"))
+            reuse = bool(self.owner and self.owner.process.poll() is None and self.session
+                         and self.session["client_id"] == args.client_id and not self.session.get("pending_preset_id")
+                         and self.read_status()["status"] == "ready" and self.session.get("plugin_identity") == identity
+                         and preset["backend"] == "vst3-preset")
+            if reuse:
+                self.session["pending_preset_id"] = args.preset_id
+                self.session["timings_ms"] = {"catalog": (time.perf_counter() - began) * 1000}
+                self.future = self.pool.submit(self.prepare, self.session, preset, own, args.resume_draft, True)
+                return self.public()
+            self.close_current()
             session_id = c.new_id()
             directory = self.settings.path("is", session_id[:12])
             directory.mkdir(parents=True)
             self.session = dict(session_id=session_id, client_id=args.client_id, preset_id=args.preset_id,
                                 base_preset_id=preset["id"], model_id=definition["model_id"], status="loading",
                                 directory=str(directory), token=secrets.token_hex(32), state_sha256=None,
-                                error=None, draft_saved_at=None, personal_preset_id=own["id"] if own else None)
+                                error=None, draft_saved_at=None, personal_preset_id=own["id"] if own else None,
+                                plugin_identity=identity, timings_ms={"catalog": (time.perf_counter() - began) * 1000})
             session = self.session
             self.future = self.pool.submit(self.prepare, session, preset, own, args.resume_draft)
             return self.public()
 
-    def prepare(self, session, preset, own, resume):
+    def prepare(self, session, preset, own, resume, reuse=False):
         try:
+            began = time.perf_counter()
             with self.lock:
                 if self.closing or self.session is not session or session["status"] == "closed":
                     return
             directory = Path(session["directory"])
-            validate_entry(self.settings, preset)
+            binary_verified = self.validate(preset)
+            session["timings_ms"]["validation"] = (time.perf_counter() - began) * 1000
+            preparing = time.perf_counter()
             if preset.get("native_admission"):
                 path = directory / "unused.vstpreset"
             elif preset["backend"] == "sfz":
@@ -153,7 +211,7 @@ class InstrumentStudio:
             if resume:
                 with self.service.database.transaction(write=False) as db:
                     draft = db.execute(select(tables.drafts).where(
-                        tables.drafts.c.model_id == session["model_id"], tables.drafts.c.base_preset_id == session["preset_id"],
+                        tables.drafts.c.model_id == preset["model"]["id"], tables.drafts.c.base_preset_id == session.get("pending_preset_id", session["preset_id"]),
                     )).mappings().first()
                 if draft:
                     saved = dict(draft)
@@ -168,8 +226,27 @@ class InstrumentStudio:
                 spec.update(state_base64=base64.b64encode(saved["state"]).decode(), state_sha256=saved["state_sha256"],
                             state_encoding="rfc4648-juce-vst3-state")
             config = dict(schema_version=1, session_id=session["session_id"], token=session["token"],
-                          model_id=session["model_id"], preset_id=session["preset_id"], plugin=spec,
+                          model_id=preset["model"]["id"], preset_id=session.get("pending_preset_id", session["preset_id"]), plugin=spec,
+                          binary_verified=binary_verified,
                           controllers=saved["metadata"].get("controllers", {}) if saved else {})
+            session["timings_ms"]["preset_state"] = (time.perf_counter() - preparing) * 1000
+            if reuse:
+                with self.lock:
+                    if self.closing or self.session is not session or session["status"] == "closed":
+                        return
+                    target = session.pop("pending_preset_id")
+                    self.command("panic")
+                    self.command("snapshot")
+                    self.harvest()
+                    atomic_json(directory / "selection.json", config)
+                    changing = time.perf_counter()
+                    self.command("load_preset", timeout=90)
+                    session.update(preset_id=target, base_preset_id=preset["id"], model_id=preset["model"]["id"],
+                                   source_identity=source_identity, personal_preset_id=own["id"] if own else None,
+                                   draft_sha256=None, draft_parameters_sha256=None, draft_saved_at=None, error=None)
+                    session["timings_ms"].update(preset_apply=(time.perf_counter()-changing)*1000,
+                                                preparation=(time.perf_counter()-began)*1000, reused_host=True)
+                    return
             atomic_json(directory / "config.json", config)
             host = self.settings.instrument_studio_host or ROOT / "runtime/build/instrument-studio/bin/ml_instrument_studio.exe"
             if not host.is_file():
@@ -184,9 +261,13 @@ class InstrumentStudio:
                 self.owner = OwnedProcess([str(host), str(directory / "config.json")], cwd=ROOT,
                                           stdout=self.log, stderr=self.log)
                 session["pid"] = self.owner.process.pid
+                session["timings_ms"]["preparation"] = (time.perf_counter() - began) * 1000
+                session["timings_ms"]["reused_host"] = False
         except Exception as error:
             if session["status"] != "closed":
-                session.update(status="failed", error=str(error))
+                session.pop("pending_preset_id", None)
+                session.update(status="ready" if reuse and self.owner and self.owner.process.poll() is None else "failed",
+                               error=("未更换预设，已保留原来的声音：" if reuse else "") + str(error))
         finally:
             if session["status"] == "closed":
                 self.clean_scratch(session)
@@ -207,7 +288,7 @@ class InstrumentStudio:
                 continue
             if path.is_symlink() or not path.is_file():
                 continue
-            if path.name in {"config.json", "status.json", "command.json", "reply.json", "host.log", "descriptor.json", "capture.wav", "preset.vstpreset"} or re.fullmatch(r"[0-9a-f]{16}\.(bin|params\.json)", path.name):
+            if path.name in {"config.json", "selection.json", "status.json", "command.json", "reply.json", "host.log", "descriptor.json", "capture.wav", "preset.vstpreset"} or re.fullmatch(r"[0-9a-f]{16}\.(bin|params\.json)", path.name):
                 try:
                     path.unlink(missing_ok=True)
                 except OSError:
@@ -222,7 +303,10 @@ class InstrumentStudio:
             raise ValueError("乐器试听会话已变化，请重新打开此乐器")
 
     def public(self):
-        return {k: v for k, v in self.session.items() if k not in ["directory", "token", "client_id"]}
+        value = {k: v for k, v in self.session.items() if k not in ["directory", "token", "client_id", "plugin_identity"]}
+        if value.get("pending_preset_id") and value["status"] != "failed":
+            value["status"] = "loading"
+        return value
 
     def read_status(self):
         if self.owner:
@@ -245,7 +329,9 @@ class InstrumentStudio:
     def command(self, action, args=None, timeout=6):
         if action == "editor":
             timeout = 45  # Native editor/font/resource creation is separate from audio readiness.
-        if self.read_status()["status"] != "ready":
+        state = self.read_status()
+        releasing = action == "panic" or (action == "editor" and args and not args.get("visible", True)) or (action == "note" and args and not args.get("on", True))
+        if state["status"] != "ready" and not (self.session.get("pending_preset_id") and self.session["status"] == "ready" and releasing):
             raise ValueError(self.session.get("error") or "乐器正在加载")
         self.sequence += 1
         directory = Path(self.session["directory"])
@@ -329,6 +415,7 @@ class InstrumentStudio:
     def close_current(self):
         if not self.session:
             return
+        self.session.pop("pending_preset_id", None)
         try:
             if self.read_status()["status"] == "ready":
                 self.command("panic")

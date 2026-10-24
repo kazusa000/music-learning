@@ -6,3 +6,16 @@
 .instrument-image-note{display:block;margin-top:9px;color:#8d8272;font-size:9px}.instrument-parameter-empty{font-size:10px;line-height:1.8;color:#a59680}.instrument-description>a{margin-right:10px}
 
 .instrument-plugin-tools{display:none}.instrument-piano-wrap{flex:none;min-height:0}.instrument-piano-wrap.is-hidden{display:none}.is-plugin-view .instrument-room-body{grid-template-columns:minmax(0,1fr)}.is-plugin-view .instrument-rack{display:none}.is-plugin-view .instrument-plugin-tools{display:flex;align-items:center;gap:7px;margin-left:auto;min-width:0}.instrument-plugin-tools select{width:230px;max-width:22vw;padding:7px;border:1px solid #ffffff16;border-radius:5px;background:#23211e;color:#c9bdac;font-size:10px}.instrument-plugin-tools button{display:inline-flex;align-items:center;gap:6px;padding:7px 9px;border:1px solid #ffffff13;border-radius:5px;background:#26221d;color:#b5a68e;font-size:10px;white-space:nowrap}.is-plugin-view .instrument-room-header nav{margin-left:14px}.is-plugin-view .instrument-room-identity{max-width:180px}.is-plugin-view .instrument-room-identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:1050px){.is-plugin-view .instrument-room-identity{display:none}.instrument-plugin-tools select{max-width:24vw}.instrument-plugin-tools button{padding:7px}.instrument-plugin-tools button:nth-of-type(2){display:none}.is-plugin-view .instrument-room-header{gap:7px}}
+
+.instrument-plugin-tools select.instrument-zoom{flex:0 0 96px;min-width:0;width:96px;color:var(--text-muted,#b4ac9e);font-size:12px;padding-inline:10px}
+
+/* The plugin remains the main surface; audition is a compact keyboard strip. */
+.is-plugin-view .instrument-keyboard{display:flex;align-items:center;gap:16px;height:37px;padding:0 16px;border-top:1px solid #ffffff0d}
+.is-plugin-view .instrument-keyboard-tools{flex:0 0 260px;height:36px;gap:12px}
+.is-plugin-view .instrument-keyboard-tools>button:first-child,.is-plugin-view .keyboard-shortcut{display:none}
+.is-plugin-view .keyboard-octave{margin-left:0;gap:5px}
+.is-plugin-view .instrument-keyboard-tools>label{gap:6px}
+.is-plugin-view .instrument-keyboard-tools input{width:62px}
+.is-plugin-view .instrument-keys{flex:1;min-width:0;height:36px;border-radius:3px}
+.is-plugin-view .instrument-keys button>span{bottom:3px;font-size:7px}
+@media(max-width:900px){.is-plugin-view .instrument-keyboard-tools{flex-basis:130px}.is-plugin-view .instrument-keyboard-tools>label{display:none}.is-plugin-view .instrument-keyboard{gap:10px;padding-inline:10px}}

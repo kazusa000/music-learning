@@ -33,7 +33,8 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
     double rate=48000,lastChange=0,lastSnapshot=0,lastStatus=0,lastContact=0;
     int block=512; String stateHash,parameterHash; bool stopping=false,embedded=false,editorAvailable=false,sustainHeld=false;
     int64 snapshotChanges=-1;
-    float viewScale=1;
+    float viewScale=1;bool legacyDpi=false,nativeZoomSupported=true;
+    var timings=ml::object({});
     HWND parent=nullptr; uint64_t commandSequence=0;
     std::array<bool,128> keys{};
     std::array<int,128> controllers;
@@ -65,7 +66,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             {"session_id",config["session_id"]},{"model_id",config["model_id"]},{"preset_id",config["preset_id"]},
             {"editor_available",editorAvailable},{"editor_open",editor&&editor->isVisible()},
             {"editor_embedded",embedded},{"state_sha256",stateHash},{"state_file",stateHash.isEmpty()?String():stateHash.substring(0,16)+".bin"},
-            {"editor_scale",viewScale},
+            {"editor_scale",viewScale},{"editor_legacy_dpi",legacyDpi},{"editor_native_zoom_supported",nativeZoomSupported},{"native_timings_ms",timings},
             {"controllers",controllerState()},
             {"held_notes",held.load()},
             {"changes",(int64)changes.load()},{"parameters_sha256",parameterHash},{"sample_rate",rate},{"callbacks",callbacks.load()},
@@ -76,8 +77,8 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
                 auto window=(HWND)peer->getNativeHandle();
                 result.getDynamicObject()->setProperty("editor_handle",String::toHexString((int64)(intptr_t)window));
                 result.getDynamicObject()->setProperty("editor_parent_handle",String::toHexString((int64)(intptr_t)GetParent(window)));
-                RECT box{};GetClientRect(window,&box);
-                result.getDynamicObject()->setProperty("editor_pixels_width",(int)box.right);result.getDynamicObject()->setProperty("editor_pixels_height",(int)box.bottom);
+                RECT box{};GetWindowRect(window,&box);
+                result.getDynamicObject()->setProperty("editor_pixels_width",(int)(box.right-box.left));result.getDynamicObject()->setProperty("editor_pixels_height",(int)(box.bottom-box.top));
             }}
         return result;
     }
@@ -108,6 +109,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
         if(editor){editor->setVisible(false);editor->removeFromDesktop();}
     }
     var showView(const var& args){
+        const auto began=Time::getMillisecondCounterHiRes();
         const bool visible=(bool)args.getProperty("visible",true);
         if(!visible){closeView();return state();}
         if(!editor)editor.reset(plugin->createEditorAndMakeActive());
@@ -117,7 +119,19 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             auto host=(HWND)(intptr_t)handle;DWORD pid=0;
             ml::require(IsWindow(host)&&GetWindowThreadProcessId(host,&pid)&&pid==(DWORD)(int)args["parent_pid"],"Native editor parent identity changed");
             if(!embedded||parent!=host){
-                closeView();parent=host;editor->addToDesktop(0,host);embedded=true;editor->setVisible(true);
+                closeView();parent=host;
+                if(legacyDpi){ScopedDPIAwarenessDisabler compatibility;editor->addToDesktop(0,host);}
+                else editor->addToDesktop(0,host);
+                embedded=true;editor->setVisible(true);
+                // Avoid fractional platform DPI selecting a missing legacy
+                // raster tier. Only this plugin wrapper uses an integer tier;
+                // the desktop/WebView keep their real per-monitor DPI.
+                if(!legacyDpi){
+                    RECT slot{};GetClientRect(host,&slot);
+                    const double available=jmin(slot.right/(double)jmax(1,editor->getWidth()),slot.bottom/(double)jmax(1,editor->getHeight()));
+                    const double wrapper=jmax(1.0,std::floor(jmin((double)args.getProperty("scale",1.0),available)));
+                    editor->getPeer()->setCustomPlatformScaleFactor(wrapper);
+                }
                 // JUCE delivers the peer's DPI notification asynchronously.
                 // Let it arrive before selecting content scale or size constraints.
                 MessageManager::getInstance()->runDispatchLoopUntil(60);
@@ -127,19 +141,58 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             ml::require(std::isfinite(scale)&&scale>=.5&&scale<=4,"Invalid editor scale");
             // The plugin's own size constraints and native DPI choose a supported
             // layout. Arbitrary zoom factors can select nonexistent raster assets.
-            if(viewScale!=1){viewScale=1;editor->setScaleFactor(1);}
-            if(editor->isResizable())editor->setBoundsConstrained(juce::Rectangle<int>(0,0,jmax(1,(int)(bounds.right/scale)),jmax(1,(int)(bounds.bottom/scale))));
+            const double zoom=(double)args.getProperty("zoom",0.0);
+            ml::require(std::isfinite(zoom)&&zoom>=0&&zoom<=4,"Invalid editor zoom");
+            if(legacyDpi&&zoom==1){closeView();editor.reset();legacyDpi=false;return showView(args);}
+            if(!legacyDpi&&viewScale!=1){viewScale=1;editor->setScaleFactor(1);}
+            if(!legacyDpi){
+                const double available=jmin(bounds.right/(double)jmax(1,editor->getWidth()),bounds.bottom/(double)jmax(1,editor->getHeight()));
+                const double wrapper=jmax(1.0,std::floor(jmin(scale,available)));
+                if(std::abs(editor->getPeer()->getPlatformScaleFactor()-wrapper)>.001){
+                    editor->getPeer()->setCustomPlatformScaleFactor(wrapper);
+                    MessageManager::getInstance()->runDispatchLoopUntil(60);
+                }
+            }
+            if(!legacyDpi&&editor->isResizable())editor->setBoundsConstrained(juce::Rectangle<int>(0,0,jmax(1,(int)bounds.right),jmax(1,(int)bounds.bottom)));
             editor->setTopLeftPosition(0,0);editor->setVisible(true);
             if(auto* peer=editor->getPeer()){
                 auto window=(HWND)peer->getNativeHandle();
                 RECT actual{};GetWindowRect(window,&actual);
                 const double fit=jmin(bounds.right/(double)jmax(1L,actual.right-actual.left),bounds.bottom/(double)jmax(1L,actual.bottom-actual.top));
-                if(fit<.999){
+                const int originalWidth=actual.right-actual.left,originalHeight=actual.bottom-actual.top;
+                if(!legacyDpi&&(std::abs(fit-1.0)>.001||zoom>0)){
                     // Never request a fractional raster scale below 100%.
                     // The plugin itself renders the selected native 1x/2x tier.
-                    const double effective=jmax(1.0,std::floor(scale*fit));
-                    viewScale=(float)jmin(1.0,effective/scale);editor->setScaleFactor(viewScale);
-                    GetWindowRect(window,&actual);
+                    const double effective=jmax(1.0,std::floor(jmin(fit,zoom>0?zoom:fit)*20)/20);
+                    for(const double tier:{effective,4.0,3.0,2.0,1.0}){
+                        if(tier>effective)continue;
+                        viewScale=(float)tier;editor->setScaleFactor(viewScale);
+                        MessageManager::getInstance()->runDispatchLoopUntil(10);
+                        GetWindowRect(window,&actual);
+                        const int w=actual.right-actual.left,h=actual.bottom-actual.top;
+                        if(w<=bounds.right&&h<=bounds.bottom&&(w>originalWidth||h>originalHeight||fit<=1.0))break;
+                    }
+                }
+                // Some older editors ignore the VST3 content-scale interface.
+                // Windows mixed-DPI hosting scales their actual native windows,
+                // retaining native mouse/keyboard controls (no screenshot proxy).
+                if(!legacyDpi&&zoom!=1&&fit>=scale&&scale>1.0
+                    &&actual.right-actual.left==originalWidth&&actual.bottom-actual.top==originalHeight
+                    &&GetWindowDpiHostingBehavior(host)==DPI_HOSTING_BEHAVIOR_MIXED){
+                    closeView();editor.reset();
+                    {
+                        ScopedDPIAwarenessDisabler compatibility;
+                        editor.reset(plugin->createEditorAndMakeActive());
+                        ml::require(editor!=nullptr,"Cannot reopen legacy plugin editor");
+                        parent=host;editor->addToDesktop(0,host);embedded=true;editor->setVisible(true);
+                    }
+                    legacyDpi=true;nativeZoomSupported=false;viewScale=(float)scale;
+                    MessageManager::getInstance()->runDispatchLoopUntil(60);
+                    window=(HWND)editor->getPeer()->getNativeHandle();GetWindowRect(window,&actual);
+                }
+                if(legacyDpi&&(actual.right-actual.left>bounds.right||actual.bottom-actual.top>bounds.bottom)){
+                    closeView();editor.reset();legacyDpi=false;
+                    auto smaller=args.clone();smaller.getDynamicObject()->setProperty("zoom",1.0);return showView(smaller);
                 }
                 const int width=actual.right-actual.left,height=actual.bottom-actual.top;
                 SetWindowPos(window,HWND_TOP,jmax(0,((int)bounds.right-width)/2),jmax(0,((int)bounds.bottom-height)/2),0,0,SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
@@ -147,12 +200,67 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             }
         }else{
             closeView();
+            if(legacyDpi){editor.reset();legacyDpi=false;viewScale=1;editor.reset(plugin->createEditorAndMakeActive());ml::require(editor!=nullptr,"Cannot reopen plugin editor");}
             class Window final:public DocumentWindow{public:Window():DocumentWindow("Instrument",Colour(0xff171719),DocumentWindow::allButtons){}void closeButtonPressed()override{setVisible(false);}};
             floating=std::make_unique<Window>();floating->setUsingNativeTitleBar(true);
             floating->setContentNonOwned(editor.get(),true);floating->setResizable(editor->isResizable(),false);
             floating->centreWithSize(editor->getWidth(),editor->getHeight());floating->setVisible(true);editor->setVisible(true);
         }
+        timings.getDynamicObject()->setProperty("editor",Time::getMillisecondCounterHiRes()-began);
         return state();
+    }
+    void loadPreset(){
+        const auto began=Time::getMillisecondCounterHiRes();
+        auto next=ml::parse(root.getChildFile("selection.json"));
+        ml::require(next["token"].toString()==token&&next["session_id"]==config["session_id"],"Preset selection session changed");
+        const auto spec=next["plugin"];
+        for(const auto* key:{"path","identifier","binary_sha256","version"})
+            ml::require(spec[key]==config["plugin"][key],"Preset belongs to another plugin instance");
+        std::array<int,128> retained;retained.fill(-1);
+        if(auto* saved=next["controllers"].getDynamicObject())for(auto item:saved->getProperties()){
+            const int number=item.name.toString().getIntValue(),value=(int)item.value;
+            ml::require((number==1||number==7||number==10||number==11)&&value>=0&&value<=127,"Invalid retained controller");
+            retained[(size_t)number]=value;
+        }
+        // Only the complete-state and VST3-preset routes used by this library
+        // can reuse an instance. Other formats keep their existing cold loader.
+        MemoryBlock desired;
+        const auto encoded=spec["state_base64"].toString(),presetPath=spec["preset_path"].toString();
+        if(encoded.isNotEmpty()){
+            MemoryOutputStream output(desired,false);
+            ml::require(Base64::convertFromBase64(output,encoded),"Invalid plugin state encoding");
+            ml::require(spec.getProperty("state_encoding","rfc4648-juce-vst3-state").toString()=="rfc4648-juce-vst3-state","Unsupported state encoding");
+            const auto sha=spec["state_sha256"].toString();
+            ml::require(sha.isEmpty()||SHA256(desired).toHexString()==sha,"Plugin state digest mismatch");
+            const auto xml=AudioProcessor::getXmlFromBinary(desired.getData(),(int)desired.getSize());
+            ml::require(xml&&xml->hasTagName("VST3PluginState")&&xml->getChildByName("IComponent"),"Invalid complete VST3 state");
+        }else ml::require(presetPath.isNotEmpty()&&File(presetPath).loadFileAsData(desired),"Cannot read VST3 preset");
+        releaseKeys();
+        const auto previousControllers=controllers;
+        {
+            Paused pause(*this);MemoryBlock previous;plugin->getStateInformation(previous);
+            try{
+                if(encoded.isNotEmpty())plugin->setStateInformation(desired.getData(),(int)desired.getSize());
+                else{auto* client=plugin->getVST3Client();ml::require(client&&client->setPreset(desired),"VST3 preset rejected");}
+                if(auto* overrides=spec["parameters"].getDynamicObject())for(auto item:overrides->getProperties()){
+                    auto* p=ml::parameter(*plugin,item.name.toString());const float value=(float)item.value;
+                    ml::require(std::isfinite(value)&&value>=0&&value<=1,"Invalid parameter value");
+                    ml::require(p->isAutomatable()||std::abs(p->getValue()-value)<=1e-5f,"Parameter is not writable");
+                    p->beginChangeGesture();p->setValueNotifyingHost(value);p->endChangeGesture();
+                    ml::require(std::abs(p->getValue()-value)<1e-4f,"Plugin did not retain parameter");
+                }
+                ml::require(ml::selectStereoMainOutput(*plugin,AudioChannelSet::stereo(),ml::needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription())),"Could not retain stereo output after preset change");
+                work.setSize(jmax(2,jmax(plugin->getTotalNumInputChannels(),plugin->getTotalNumOutputChannels())),jmax(4096,block));
+            }catch(...){plugin->setStateInformation(previous.getData(),(int)previous.getSize());throw;}
+            controllers=retained;
+            for(int i:{1,7,10,11}){
+                const int reset=i==7?100:i==10?64:i==11?127:0;
+                if(retained[(size_t)i]>=0||previousControllers[(size_t)i]>=0)
+                    enqueue(MidiMessage::controllerEvent(1,i,retained[(size_t)i]>=0?retained[(size_t)i]:reset));
+            }
+            config=next;stateHash.clear();parameterHash.clear();changes.fetch_add(1);
+        }
+        snapshot();timings.getDynamicObject()->setProperty("preset_apply",Time::getMillisecondCounterHiRes()-began);
     }
     var command(const var& request){
         const auto action=request["action"].toString();const auto args=request["arguments"];
@@ -185,6 +293,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             Array<var> page;for(int i=offset;i<jmin(found.size(),offset+limit);++i)page.add(found[i]);
             return ml::object({{"total",found.size()},{"items",var(page)}});
         }else if(action=="editor")return showView(args);
+        else if(action=="load_preset")loadPreset();
         else if(action=="describe"){Paused pause(*this);ml::writeJson(root.getChildFile("descriptor.json"),ml::pluginSnapshot(*plugin));}
         else if(action=="snapshot")snapshot();
         else if(action=="capture_start"){recordFrames.store(0);energy.store(0);nonzero.store(0);record.store(true);}
@@ -200,13 +309,32 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
     }
 public:
     explicit Studio(const File& file):root(file.getParentDirectory()),config(ml::parse(file)),token(config["token"].toString()){
+        const auto began=Time::getMillisecondCounterHiRes();
         controllers.fill(-1);
         lastContact=Time::getMillisecondCounterHiRes();
         ml::require(token.length()>=32,"Missing instrument session token");
         ml::writeJson(root.getChildFile("status.json"),ml::object({{"status","loading"},{"pid",(int)GetCurrentProcessId()},{"session_id",config["session_id"]}}));
         ml::require(device.initialise(0,2,nullptr,true).isEmpty(),"Could not open the audition audio device");
+        timings.getDynamicObject()->setProperty("device",Time::getMillisecondCounterHiRes()-began);
         if(auto* output=device.getCurrentAudioDevice()){rate=output->getCurrentSampleRate();block=output->getCurrentBufferSizeSamples();}
-        plugin=ml::load(config["plugin"],rate,block);plugin->setNonRealtime(false);editorAvailable=plugin->hasEditor();
+        const auto loading=Time::getMillisecondCounterHiRes();
+        auto spec=config["plugin"].clone();
+        // This private mailbox is prepared by InstrumentStudio.validate(), which
+        // already verified this exact binary. Do not hash it a second time here.
+        // Direct native fixtures without that receipt still use the cold loader.
+        if(config["binary_verified"].isObject()){
+            const auto receipt=config["binary_verified"];File binary(spec["path"].toString());
+            if(binary.isDirectory()){
+                const auto files=binary.getChildFile("Contents/x86_64-win").findChildFiles(File::findFiles,false,"*.vst3");
+                ml::require(files.size()==1,"Ambiguous VST3 binary");binary=files[0];
+            }
+            ml::require(binary==File(receipt["path"].toString())&&binary.existsAsFile()
+                &&receipt["sha256"]==spec["binary_sha256"]&&binary.getSize()==(int64)receipt["bytes"]
+                &&binary.getLastModificationTime().toMilliseconds()==(int64)receipt["mtime_ms"],"Verified plugin binary changed before launch");
+            spec.getDynamicObject()->removeProperty("binary_sha256");
+        }
+        plugin=ml::load(spec,rate,block);plugin->setNonRealtime(false);editorAvailable=plugin->hasEditor();
+        timings.getDynamicObject()->setProperty("plugin_load",Time::getMillisecondCounterHiRes()-loading);
         plugin->setRateAndBufferSizeDetails(rate,block);plugin->prepareToPlay(rate,block);
         work.setSize(jmax(2,jmax(plugin->getTotalNumInputChannels(),plugin->getTotalNumOutputChannels())),jmax(4096,block));
         midi.ensureSize(32768);recording.setSize(2,(int)(rate*12));recording.clear();
@@ -216,10 +344,10 @@ public:
             controllers[(size_t)number]=value;enqueue(MidiMessage::controllerEvent(1,number,value));
         }
         plugin->addListener(this);device.addAudioCallback(this);
-        // Same version-bound sample-worker settling rule as the existing renderer.
-        // Keep the published status loading during this phase, including restores.
-        if(ml::needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()))MessageManager::getInstance()->runDispatchLoopUntil(10000);
-        snapshot();publish();
+        // Interactive hosts accept input as soon as the processor is prepared.
+        // Sample streaming remains the plugin's job; an offline render's fixed
+        // worker-settling delay must not gate the editor or live MIDI input.
+        snapshot();timings.getDynamicObject()->setProperty("startup",Time::getMillisecondCounterHiRes()-began);publish();
     }
     ~Studio()override{
         closeView();editor.reset();device.removeAudioCallback(this);device.closeAudioDevice();

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import time
 import threading
+import psutil
 from ctypes import wintypes
 
 import pytest
@@ -34,6 +35,24 @@ def test_native_editor_audio_draft_and_personal_preset(tmp_path, image_id):
     studio = InstrumentStudio(service)
     service.instrument_studio = studio
     report = {"native": True, "formal_project_used": False, "model": image_id, "checks": []}
+    def wait_for_streamed_samples(sid, status, phase):
+        # Interactive readiness is not a vendor sample-stream completion signal.
+        # Measure actual sound in this isolated test instead of adding a fixed
+        # settling timer or test notes to the production audition host.
+        began = time.monotonic()
+        io = psutil.Process(status["pid"]).io_counters().read_bytes
+        until = began + 25
+        while True:
+            start = studio.command("status")["energy"]
+            invoke(service, "instruments.studio.note", {**sid, "pitch": 60, "on": True, "velocity": .8})
+            time.sleep(.2)
+            invoke(service, "instruments.studio.note", {**sid, "pitch": 60, "on": False})
+            if studio.command("status")["energy"] - start > 1e-7:
+                break
+            assert time.monotonic() < until, "The actual streamed preset stayed silent"
+            time.sleep(.15)
+        report[phase] = dict(first_sound_ms=(time.monotonic()-began)*1000,
+                             process_read_bytes=psutil.Process(status["pid"]).io_counters().read_bytes-io)
     user32 = ctypes.windll.user32
     user32.CreateWindowExW.restype = ctypes.c_void_p
     user32.GetParent.argtypes = [ctypes.c_void_p]
@@ -75,6 +94,7 @@ def test_native_editor_audio_draft_and_personal_preset(tmp_path, image_id):
             time.sleep(.1)
         assert status["editor_available"]
         before = status["state_sha256"]
+        wait_for_streamed_samples(sid, status, "initial_streaming")
         # A local fixture HWND tests the actual native attachment independently of the desktop trust gate.
         view = studio.command("editor", {"parent_handle": format(host, "x"), "parent_pid": os.getpid(), "scale": user32.GetDpiForWindow(ctypes.c_void_p(host)) / 96})
         assert view["editor_embedded"] and view["editor_open"], view
@@ -140,6 +160,7 @@ def test_native_editor_audio_draft_and_personal_preset(tmp_path, image_id):
                 break
             assert time.monotonic() < deadline
             time.sleep(.1)
+        wait_for_streamed_samples(sid, status, "restored_streaming")
         if writable:
             restored = invoke(service, "instruments.studio.parameters", {**sid, "search": writable["name"], "limit": 256})
             report["restored_parameters"] = restored

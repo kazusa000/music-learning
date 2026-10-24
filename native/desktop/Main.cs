@@ -12,8 +12,15 @@ using Microsoft.Web.WebView2.WinForms;
 [assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName=".NET Framework 4.8")]
 
 sealed class StudioWindow : Form {
+    sealed class PluginPanel : Panel {
+        [DllImport("user32.dll")] static extern int SetThreadDpiHostingBehavior(int behavior);
+        protected override void CreateHandle() {
+            var previous = SetThreadDpiHostingBehavior(1);
+            try { base.CreateHandle(); } finally { SetThreadDpiHostingBehavior(previous); }
+        }
+    }
     readonly WebView2 web = new WebView2();
-    readonly Panel instrumentPanel = new Panel { BackColor = Color.FromArgb(19,19,18), Visible = false };
+    readonly Panel instrumentPanel = new PluginPanel { BackColor = Color.FromArgb(19,19,18), Visible = false };
     readonly Uri target;
     readonly string profile;
     readonly JavaScriptSerializer json = new JavaScriptSerializer();
@@ -24,6 +31,7 @@ sealed class StudioWindow : Form {
     [DllImport("user32.dll")] static extern bool AreDpiAwarenessContextsEqual(IntPtr first, IntPtr second);
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr window);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
     readonly IntPtr originalForeground = GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
@@ -82,6 +90,7 @@ sealed class StudioWindow : Form {
                                 if (workflow == null) throw new TimeoutException("Native window workflow did not finish");
                             }
                             var metrics = await core.ExecuteScriptAsync("JSON.stringify({dpr:devicePixelRatio,width:innerWidth,height:innerHeight,screenWidth:screen.width,screenHeight:screen.height,visualScale:visualViewport.scale})");
+                            uint foregroundPid; GetWindowThreadProcessId(GetForegroundWindow(), out foregroundPid);
                             File.WriteAllText(diagnostic,json.Serialize(new {
                                 per_monitor_v2 = AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(), new IntPtr(-4)),
                                 window_per_monitor_v2 = AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(Handle), new IntPtr(-4)),
@@ -91,7 +100,8 @@ sealed class StudioWindow : Form {
                                 os = Environment.OSVersion.VersionString,
                                 navigation_success = args.IsSuccess,
                                 workflow = workflow,
-                                foreground_unchanged = GetForegroundWindow() == originalForeground
+                                foreground_unchanged = GetForegroundWindow() == originalForeground,
+                                foreground_pid = foregroundPid, desktop_pid = System.Diagnostics.Process.GetCurrentProcess().Id
                             }));
                             using (var image = File.Create(Path.ChangeExtension(diagnostic,"png"))) await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
                         } catch (Exception ex) { File.WriteAllText(diagnostic,json.Serialize(new { error = ex.ToString() })); }

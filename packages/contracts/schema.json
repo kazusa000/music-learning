@@ -6178,6 +6178,13 @@
           "minimum": 0.5,
           "title": "Scale",
           "type": "number"
+        },
+        "zoom": {
+          "default": 0,
+          "maximum": 4,
+          "minimum": 0,
+          "title": "Zoom",
+          "type": "number"
         }
       },
       "required": [

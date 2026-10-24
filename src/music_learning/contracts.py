@@ -812,6 +812,7 @@ class StudioEditor(StudioSession):
     parent_handle: str = Field(default="", max_length=32, pattern=r"^[a-fA-F0-9]*$")
     parent_pid: int = Field(default=0, ge=0)
     scale: float = Field(default=1, ge=.5, le=4)
+    zoom: float = Field(default=0, ge=0, le=4)
 
 
 class SaveStudioPreset(StudioSession):

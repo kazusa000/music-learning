@@ -25,7 +25,7 @@ def main():
         instrument_studio_host=ROOT / "runtime/build/instrument-studio/bin/ml_instrument_studio.exe",
         instrument_library=json.loads((origin / "runtime/instrument-library.local.json").read_bytes())["root"])
     settings = Settings(**values)
-    executable = ROOT / "runtime/build/instrument-desktop/MusicLearning.exe"
+    executable = ROOT / "runtime/build/instrument-desktop-v2/MusicLearning.exe"
     for path in [executable, settings.instrument_studio_host, settings.web_root / "index.html"]:
         if not path.is_file():
             raise SystemExit("请先完成独立工作树的构建：" + str(path))
