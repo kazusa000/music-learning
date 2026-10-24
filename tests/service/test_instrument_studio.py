@@ -1,5 +1,6 @@
 """Library persistence and cancellation rules, independent of installed plugins."""
 import hashlib
+from copy import deepcopy
 import threading
 
 import pytest
@@ -8,6 +9,7 @@ from sqlalchemy import select
 from music_learning import contracts as c
 from music_learning import schema_v11 as tables
 from music_learning import instrument_studio as module
+from music_learning.instrument_localization import localized
 from conftest import invoke
 
 
@@ -102,6 +104,43 @@ def test_curated_models_have_integral_images_with_valid_visual_identities():
         path = module.resource_path(module.ROOT / "resources/instruments", image["file"])
         assert hashlib.sha256(path.read_bytes()).hexdigest() == image["sha256"]
         assert model["media"]["model_3d"] is None
+
+
+def test_gallery_reuses_catalogue_translations_without_changing_identity(service, monkeypatch):
+    entry = localized(dict(id="factory-voice", name="Grand - Natural", variant_name="Natural",
+        model={"id": "grand-model", "name": "Grand"}, source={"library_name": "Keyscape"},
+        labels_zh={"model": "定制三角钢琴", "variant": "自然"}, key_range=[21, 108]))
+    # A reviewed variant title is already resolved by the catalogue. Do not
+    # translate again or replace it with the long model+variant display name.
+    entry["display_variant_name"] = "柔和自然（Natural Soft）"
+    before = deepcopy(entry)
+    monkeypatch.setattr(module, "studio_catalog", lambda _: [entry])
+    monkeypatch.setattr(module, "gallery_definition", lambda: {"instruments": [dict(
+        model_id="grand-model", default_preset_id="factory-voice", image_id="grand", image_url="/v1/instrument-images/grand",
+        title="Stale English Title", english_name="Stale English Name")]})
+    monkeypatch.setattr(module, "image_record", lambda _: None)
+    result = module.gallery(service.settings)["items"][0]
+    assert result["title"] == "定制三角钢琴" and result["english_name"] == "Grand"
+    assert result["source"]["display_name"] == "Keyscape"
+    assert result["variants"][0]["name"] == "柔和自然（Natural Soft）"
+    assert result["variants"][0]["original_name"] == "Grand - Natural"
+    assert result["model_id"] == "grand-model" and result["variants"][0]["id"] == "factory-voice"
+    assert entry == before
+
+
+def test_gallery_picture_replacement_invalidates_cached_url(service, monkeypatch):
+    entry = localized(dict(id="factory-voice", name="Grand - Natural", variant_name="Natural",
+        model={"id": "grand-model", "name": "Grand"}, source={"library_name": "Keyscape"}, key_range=[21, 108]))
+    monkeypatch.setattr(module, "studio_catalog", lambda _: [entry])
+    monkeypatch.setattr(module, "gallery_definition", lambda: {"instruments": [dict(
+        model_id="grand-model", default_preset_id="factory-voice", image_id="grand", image_url="/v1/instrument-images/grand")]})
+    record = {"sha256": "a" * 64}
+    monkeypatch.setattr(module, "image_record", lambda _: record)
+    first = module.gallery(service.settings)["items"][0]["image_url"]
+    assert module.gallery(service.settings)["items"][0]["image_url"] == first
+    record["sha256"] = "b" * 64
+    second = module.gallery(service.settings)["items"][0]["image_url"]
+    assert first != second and first.split("?")[0] == second.split("?")[0] == "/v1/instrument-images/grand"
 
 
 def test_studio_inventory_cache_tracks_atomic_publication(service, tmp_path, monkeypatch):

@@ -19,6 +19,7 @@ from sqlalchemy.dialects.sqlite import insert as upsert
 from . import contracts as c
 from . import schema_v11 as tables
 from .instruments import catalog, materialize, resource_path
+from .instrument_localization import translated_names
 from .instrument_previews import preview_plugin, validate_entry, file_digest
 from .processes import OwnedProcess
 from .serialization import canonical
@@ -71,10 +72,15 @@ def gallery(settings, model_id=None):
         variants = [entry for entry in installed if entry["model"]["id"] == definition["model_id"]]
         if not variants:
             continue
+        primary = next((entry for entry in variants if entry["id"] == definition["default_preset_id"]), variants[0])
         photo = image_record(definition["image_id"])
         credit = {key: photo.get(key) for key in ["author", "source_url", "license", "license_url"]} if photo else None
-        result.append({**definition, "image_credit": credit, "source": variants[0]["source"], "variant_count": len(variants),
-                       "variants": [dict(id=p["id"], name=p["display_name"], original_name=p["name"],
+        image_url = definition["image_url"] + "?v=" + photo["sha256"] if photo else definition["image_url"]
+        # The shared catalogue owns model/variant translations, including reviewed
+        # presentation amendments. Curated artwork must not fork that naming system.
+        result.append({**definition, "title": translated_names(primary)[0], "english_name": primary["model"]["name"],
+                       "image_url": image_url, "image_credit": credit, "source": primary["source"], "variant_count": len(variants),
+                       "variants": [dict(id=p["id"], name=p["display_variant_name"], original_name=p["name"],
                                          default=bool(p.get("default")), key_range=p["key_range"])
                                     for p in variants]})
     if model_id:

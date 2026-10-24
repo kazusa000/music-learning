@@ -12,6 +12,19 @@
 
 目前 LA Custom C7、Rhodes Mark I、Wurlitzer 200A、Hohner Clavinet C 标为型号专属；其余通用乐器图允许后续在对应类别复用。这是资源整理规则，不增加打开插件或切换预设时的检查。
 
+## 中文显示
+
+乐器卡片与型号页的中文名称从共享音源目录的 `instrument_localization.translated_names` 读取，预设选择使用目录的 `display_variant_name`（包含已审订的展示译名），不以配图清单的静态标题替代。英文原名作为辅助信息保留，Keyscape、Pianoteq、Kontakt 等产品名保持英文；个人预设保留用户命名。配图类别标签和界面标题使用中文。
+
+## 第二版型号图
+
+LA Custom C7 和 Wurlitzer 200A 使用 `*-illustration-v2.png`，通过内置 `image_gen` 编辑生成，完整输入提示词与参考图记录在 [prompts-v2.json](prompts-v2.json)。第一版文件保留用于版本追溯；产品映射以 `images.json` 为准。
+
+- Wurlitzer 200A：改正原图过于接近 Rhodes 的外形，表现紧凑圆角塑料机身、内置扬声器格栅、旋钮和独立细腿。参考 [Rhodes 官方 Wurlitzer 页面](https://rhodesmusic.com/wurlitzer-by-rhodes-plugin/)。
+- LA Custom C7：调整长尾轮廓、视角、木质与黑漆质感，修正上盖与琴体内部的结构关系。定制特点主要在内部整音，不以虚构外观装饰表达；参考 [Spectrasonics 官方型号介绍](https://www.spectrasonics.net/products/keyscape/models/la-custom-c7-grand-piano/)。
+
+二者均为带 alpha 的 1536 × 1024 展示插图，运行时直接使用本地资源，不增加插件加载或预设切换检查。画廊图片 URL 带清单中的 SHA 版本，更新后不会继续命中旧图缓存。
+
 ## 提示词
 
 共同提示词：

@@ -3,14 +3,14 @@
   "images": [
     {
       "id": "la-custom-c7",
-      "file": "images/la-custom-c7-illustration-v1.png",
+      "file": "images/la-custom-c7-illustration-v2.png",
       "author": "Music Learning · AI 生成展示插图",
       "source_url": null,
       "license": null,
       "license_url": null,
       "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
       "generation_tool": "image_gen",
-      "sha256": "a2c6bab288d66b2d53046e1502d2c741ad0cd330509775642473028b7d1f1cd6"
+      "sha256": "33974483335af97698ff9f9316a3ec971a7e95516dd20638ebd0003457c254a1"
     },
     {
       "id": "rhodes-mark-i",
@@ -25,14 +25,14 @@
     },
     {
       "id": "wurlitzer-200a",
-      "file": "images/wurlitzer-200a-illustration-v1.png",
+      "file": "images/wurlitzer-200a-illustration-v2.png",
       "author": "Music Learning · AI 生成展示插图",
       "source_url": null,
       "license": null,
       "license_url": null,
       "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
       "generation_tool": "image_gen",
-      "sha256": "c5c580e1a2b47f0ebe41c9380a581fc50ea05d7a54d497e05a1c82a2aa97d687"
+      "sha256": "f63af31f4af787eaef210136b445d6acd38125b74f8e8a2ad8e157947980882c"
     },
     {
       "id": "clavinet-c",
