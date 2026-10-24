@@ -34,13 +34,24 @@
 
 `instruments.gallery`、`instruments.gallery.get`、`instruments.personal.list` 和 `instruments.studio.*` 共用 Service、API、SDK、CLI。完整契约在生成的 `packages/contracts`；长耗时原生操作不持有 SQLite 写事务。`current` 可查询当前试听，`controller` 支持调制、音量、声像、表情四个标准 MIDI 控制器；没有通用自动化参数的插件仍能保存完整状态与这些控制器设置。
 
-- `resources/instruments/gallery.json`：首批型号、独立说明、默认预设与展示资源。
+- `resources/instruments/gallery.json`：首批精选顺序与默认预设。
+- `resources/instruments/gallery-models.json`：全量型号的形制、专属／通用图与演奏提示。
+- `src/music_learning/instrument_gallery.py`：按稳定型号身份聚合所有已验证的 VST3 预设，新发布的已入库条目自动可见。
+- `scripts/instruments/build_gallery_plan.py`：只读入库目录，整理型号展示资料；不修改音源资源或运行中的队列。
 - `resources/instruments/images.json`：型号图及 SHA；同一型号的所有预设共用图片。
 - `native/instrument-studio`：专用实时试听宿主与原生编辑器。
 - `src/music_learning/instrument_studio.py`：生命周期、草稿、个人预设和统一操作。
 - 新构建分别在 `runtime/build/instrument-studio`、`instrument-desktop-v2` 和 `instrument-library-web`；不覆盖固定发布。桌面外壳使用新构建目录，避免覆盖用户仍打开的旧预览可执行文件。
 
-## 首批十个型号
+## 全量型号与筛选
+
+当前目录包含 251 个型号、2244 个音色（会随入库发布更新），覆盖 Keyscape、Pianoteq 9、Kontakt Factory Library 2、Cinematic Studio Strings 和 Cinematic Studio Solo Strings。原十型号保留精选排序；不再作为可打开名单。分类、细分乐器、产品来源、双语型号／预设搜索、收藏与每页 24 张卡片共同定位型号。
+
+试弹键盘沿用入库条目的实际音区和力度，支持 MIDI 0–127；原生 MIDI 路由和初始控制器来自已验证的试听上下文。换预设保留用户控制器时，不用默认值覆盖新预设的原厂控制器配置。键位与来源通道属于共享规则，不按型号单独写补丁。
+
+厂商原生插件内的文字由厂商决定；应用卡片、型号、变体与操作使用中文，英文原名辅助显示，产品名保持英文。
+
+## 最初十个精选型号
 
 | 来源 | 型号 |
 | --- | --- |

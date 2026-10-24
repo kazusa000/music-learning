@@ -48,7 +48,9 @@ sealed class StudioWindow : Form {
     public StudioWindow(string url, string data, string report = null, string script = null) {
         diagnostic = report;
         verificationScript = script;
-        if (diagnostic != null) { ShowInTaskbar = false; Opacity = 0; }
+        // An enabled WebView/foreign child can activate its invisible root even
+        // with WS_EX_NOACTIVATE. Diagnostic scripts use DOM/API events only.
+        if (diagnostic != null) { ShowInTaskbar = false; Opacity = 0; Enabled = false; }
         target = new Uri(url); profile = data;
         if (target.Scheme != "http" || target.Host != "127.0.0.1") throw new ArgumentException("Local application URL required");
         Text = "Music Learning"; BackColor = Color.FromArgb(16,16,17);
@@ -109,6 +111,7 @@ sealed class StudioWindow : Form {
                                 os = Environment.OSVersion.VersionString,
                                 navigation_success = args.IsSuccess,
                                 workflow = workflow,
+                                verification_input_disabled = diagnostic != null && !Enabled,
                                 foreground_unchanged = GetForegroundWindow() == originalForeground,
                                 foreground_pid = foregroundPid, desktop_pid = System.Diagnostics.Process.GetCurrentProcess().Id
                             }));

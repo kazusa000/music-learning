@@ -598,6 +598,17 @@ def translated_names(entry):
     ids = entry.get("instrument_ids", ())
     translated_model = label(model["name"], names.get("model"), "乐器型号", instrument_ids=ids)
     translated_variant = label(variant, names.get("variant"), instrument_ids=ids)
+    # Factory codes carry meaning too. Explain their units/role in the shared
+    # display projection, keeping the original code and preset identity intact.
+    if not re.search(r"[\u4e00-\u9fff]", translated_variant):
+        if "harpsichord" in ids and re.fullmatch(r"(?:[LU]8')(?:\s*\+\s*[LU]8')*", variant):
+            translated_variant = " + ".join({"L8'": "下层 8 英尺", "U8'": "上层 8 英尺"}[x.strip()] for x in variant.split("+"))
+        elif set(ids) & {"reed-organ", "pipe-organ", "electric-organ"} and re.fullmatch(r"(?:16|8|4)(?:\+(?:16|8|4))+", variant):
+            translated_variant = variant + " 英尺音栓"
+        elif "acoustic-piano" in ids and re.fullmatch(r"[A-Z][ -]?\d{2,3}", variant):
+            translated_variant = variant + " 型"
+        elif re.fullmatch(r"(?:17|18|19|20)\d{2}", variant):
+            translated_variant = variant + " 年版"
     return translated_model, translated_variant
 
 

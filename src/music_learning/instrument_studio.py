@@ -19,7 +19,7 @@ from sqlalchemy.dialects.sqlite import insert as upsert
 from . import contracts as c
 from . import schema_v11 as tables
 from .instruments import catalog, materialize, resource_path
-from .instrument_localization import translated_names
+from . import instrument_gallery
 from .instrument_previews import preview_plugin, validate_entry, file_digest
 from .processes import OwnedProcess
 from .serialization import canonical
@@ -47,12 +47,11 @@ def studio_catalog(settings):
 
 
 def gallery_definition():
-    return json.loads((ROOT / "resources/instruments/gallery.json").read_bytes())
+    return instrument_gallery.document("gallery.json")
 
 
 def image_record(image_id):
-    document = json.loads((ROOT / "resources/instruments/images.json").read_bytes())
-    return next((image for image in document["images"] if image["id"] == image_id), None)
+    return instrument_gallery.image_record(image_id)
 
 
 def personal(db, model_id):
@@ -65,24 +64,7 @@ def personal(db, model_id):
 
 def gallery(settings, model_id=None):
     installed = studio_catalog(settings)
-    result = []
-    for definition in gallery_definition()["instruments"]:
-        if model_id and definition["model_id"] != model_id:
-            continue
-        variants = [entry for entry in installed if entry["model"]["id"] == definition["model_id"]]
-        if not variants:
-            continue
-        primary = next((entry for entry in variants if entry["id"] == definition["default_preset_id"]), variants[0])
-        photo = image_record(definition["image_id"])
-        credit = {key: photo.get(key) for key in ["author", "source_url", "license", "license_url"]} if photo else None
-        image_url = definition["image_url"] + "?v=" + photo["sha256"] if photo else definition["image_url"]
-        # The shared catalogue owns model/variant translations, including reviewed
-        # presentation amendments. Curated artwork must not fork that naming system.
-        result.append({**definition, "title": translated_names(primary)[0], "english_name": primary["model"]["name"],
-                       "image_url": image_url, "image_credit": credit, "source": primary["source"], "variant_count": len(variants),
-                       "variants": [dict(id=p["id"], name=p["display_variant_name"], original_name=p["name"],
-                                         default=bool(p.get("default")), key_range=p["key_range"])
-                                    for p in variants]})
+    result = instrument_gallery.gallery(installed, gallery_definition()["instruments"], model_id)
     if model_id:
         if not result:
             raise DomainError("not_found", "此乐器尚未接入乐器库", 404)
@@ -162,9 +144,8 @@ class InstrumentStudio:
                     preset = next((p for p in entries if p["id"] == own["base_preset_id"]), None)
             if preset is None:
                 raise ValueError("找不到此音色")
-            definition = next((p for p in gallery_definition()["instruments"] if p["model_id"] == preset["model"]["id"]), None)
-            if definition is None:
-                raise ValueError("此乐器尚未接入乐器库")
+            if not preset.get("audio_verified") or preset["backend"] != "vst3-preset":
+                raise ValueError("此音色尚未完成入库发声验证")
             identity = (preset.get("plugin_path"), preset.get("plugin_sha256"), preset.get("identifier"))
             reuse = bool(self.owner and self.owner.process.poll() is None and self.session
                          and self.session["client_id"] == args.client_id and not self.session.get("pending_preset_id")
@@ -180,7 +161,7 @@ class InstrumentStudio:
             directory = self.settings.path("is", session_id[:12])
             directory.mkdir(parents=True)
             self.session = dict(session_id=session_id, client_id=args.client_id, preset_id=args.preset_id,
-                                base_preset_id=preset["id"], model_id=definition["model_id"], status="loading",
+                                base_preset_id=preset["id"], model_id=preset["model"]["id"], status="loading",
                                 directory=str(directory), token=secrets.token_hex(32), state_sha256=None,
                                 error=None, draft_saved_at=None, personal_preset_id=own["id"] if own else None,
                                 plugin_identity=identity, timings_ms={"catalog": (time.perf_counter() - began) * 1000})
@@ -235,6 +216,8 @@ class InstrumentStudio:
                           model_id=preset["model"]["id"], preset_id=session.get("pending_preset_id", session["preset_id"]), plugin=spec,
                           binary_verified=binary_verified,
                           controllers=saved["metadata"].get("controllers", {}) if saved else {})
+            performance = instrument_gallery.audition(preset)
+            config.update(midi_channels=performance["channels"], initial_controllers=performance["controllers"])
             session["timings_ms"]["preset_state"] = (time.perf_counter() - preparing) * 1000
             if reuse:
                 with self.lock:

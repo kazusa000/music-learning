@@ -80,7 +80,7 @@ def test_native_editor_audio_draft_and_personal_preset(tmp_path, image_id):
     assert host
     try:
         gallery = invoke(service, "instruments.gallery")
-        assert len(gallery["items"]) == 10
+        assert len(gallery["items"]) >= 10
         model = next(x for x in gallery["items"] if x["image_id"] == image_id)
         opened = invoke(service, "instruments.studio.open", {"preset_id": model["default_preset_id"], "client_id": "a" * 32})
         sid = {"session_id": opened["session_id"]}

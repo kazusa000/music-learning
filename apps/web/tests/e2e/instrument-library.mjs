@@ -29,23 +29,39 @@ await page.route('**/*',async route=>{
 });
 try{
  await page.goto(base+'/#token='+f.token);await page.getByRole('button',{name:/^乐器库/}).click();
- await page.locator('.instrument-card').last().waitFor();assert.equal(await page.locator('.instrument-card').count(),10);
+ await page.locator('.instrument-card').last().waitFor();assert.equal(await page.locator('.instrument-card').count(),Math.min(24,f.gallery.items.length));
  assert(f.gallery.items.every(x=>/[\u3400-\u9fff]/u.test(x.title)&&/[\u3400-\u9fff]/u.test(x.eyebrow)&&x.variants.every(p=>/[\u3400-\u9fff]/u.test(p.name))));
- assert.deepEqual(await page.locator('.instrument-card h3').allTextContents(),f.gallery.items.map(x=>x.title));
- assert.deepEqual(await page.locator('.instrument-card-caption>p').allTextContents(),f.gallery.items.map(x=>x.english_name));
+ assert.deepEqual(await page.locator('.instrument-card h3').allTextContents(),f.gallery.items.slice(0,24).map(x=>x.title));
+ assert.deepEqual(await page.locator('.instrument-card-caption>p').allTextContents(),f.gallery.items.slice(0,24).map(x=>x.english_name));
  assert(!/INSTRUMENT COLLECTION|YOUR SOUND, YOUR WAY/.test(await page.locator('.instrument-library').innerText()));
  await page.locator('.instrument-collection').evaluate(e=>{e.scrollTop=e.scrollHeight;});
  await page.waitForFunction(()=>[...document.querySelectorAll('.instrument-card img')].every(i=>i.complete&&i.naturalWidth>0));
  await page.locator('.instrument-collection').evaluate(e=>{e.scrollTop=0;});
  await page.screenshot({path:path.join(f.report,'gallery-4k.png')});
- await page.getByLabel('搜索乐器',{exact:true}).fill('罗兹');assert.equal(await page.locator('.instrument-card').count(),1);
- await page.getByLabel('搜索乐器',{exact:true}).fill('Rhodes');assert.equal(await page.locator('.instrument-card').count(),1);
- await page.getByRole('button',{name:/^收藏 /}).click();await page.getByLabel('搜索乐器',{exact:true}).fill('');
+ if(f.gallery.items.length>24){
+  await page.getByRole('button',{name:'下一页',exact:true}).click();
+  assert.deepEqual(await page.locator('.instrument-card h3').allTextContents(),f.gallery.items.slice(24,48).map(x=>x.title));
+  await page.getByRole('button',{name:'上一页',exact:true}).click();
+ }
+ const source=f.gallery.items[0].source.display_name;
+ await page.getByLabel('筛选音源来源',{exact:true}).selectOption(source);
+ assert.deepEqual(await page.locator('.instrument-card h3').allTextContents(),f.gallery.items.filter(x=>x.source.display_name===source).slice(0,24).map(x=>x.title));
+ await page.getByLabel('筛选音源来源',{exact:true}).selectOption('全部来源');
+ const family=f.gallery.items.find(x=>x.category==='键盘');
+ if(family){
+  await page.getByRole('navigation',{name:'乐器分类'}).getByRole('button',{name:/^键盘/}).click();
+  await page.getByLabel('细分乐器',{exact:true}).getByRole('button',{name:family.eyebrow,exact:true}).click();
+  assert.deepEqual(await page.locator('.instrument-card h3').allTextContents(),f.gallery.items.filter(x=>x.category==='键盘'&&x.eyebrow===family.eyebrow).slice(0,24).map(x=>x.title));
+  await page.getByRole('navigation',{name:'乐器分类'}).getByRole('button',{name:/^全部/}).click();
+ }
+ await page.getByLabel('搜索乐器',{exact:true}).fill('罗兹');assert(await page.locator('.instrument-card').count()>0);
+ await page.getByLabel('搜索乐器',{exact:true}).fill('Rhodes');assert(await page.locator('.instrument-card').count()>0);
+ await page.getByRole('button',{name:/^收藏 /}).first().click();await page.getByLabel('搜索乐器',{exact:true}).fill('');
  await page.getByRole('button',{name:/我的收藏/}).click();assert.equal(await page.locator('.instrument-card').count(),1);
  await page.reload();await page.getByRole('button',{name:/我的收藏/}).click();assert.equal(await page.locator('.instrument-card').count(),1);
  await page.getByRole('button',{name:/我的收藏/}).click();await page.getByLabel('搜索乐器').fill('xyz no instrument');
  await page.getByRole('heading',{name:'没有找到匹配的乐器'}).waitFor();await page.getByRole('button',{name:'查看全部乐器'}).click();
- report.checks.push('Homepage-only entry, ten local images decoded offline, model search/favorites/reload/empty state');
+ report.checks.push('Homepage-only entry, paged local images decoded offline, model search/favorites/reload/empty state');
  report.checks.push('Chinese catalogue model/variant names and category labels, English originals secondary; search in either language');
  await page.getByRole('button',{name:'打开乐器 '+f.gallery.items[0].title,exact:true}).click();
  await page.getByText('可以试弹',{exact:true}).waitFor();await page.screenshot({path:path.join(f.report,'instrument-4k.png')});

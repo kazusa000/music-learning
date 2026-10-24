@@ -1,6 +1,6 @@
 # 乐器展示资源
 
-每个型号关联一张展示图，普通乐器可复用同类图，具有明确特色的型号使用对应视觉形象。当前十张为内置 image_gen 工具生成的展示插图，不是实际录音乐器的摄影或精确硬件结构图。透明背景用于深色界面。资源全部复制进当前工作树，运行时不依赖生成目录或外部网站。型号、预设与图片映射在 gallery.json，完整性在 images.json。未采用的实拍候选和研究记录留在本机维护目录，不随产品分发。
+每个型号关联一张展示图，普通乐器可复用同类图，具有明确特色的型号使用对应视觉形象。当前 203 张注册图为内置 image_gen 工具生成的展示插图，不是实际录音乐器的摄影或精确硬件结构图。透明背景用于深色界面。资源全部复制进当前工作树，运行时不依赖生成目录或外部网站。全量型号与图片映射在 gallery-models.json，首屏精选顺序在 gallery.json，完整性在 images.json。未采用的实拍候选和研究记录留在本机维护目录，不随产品分发。
 
 ## 配图规则
 
@@ -72,3 +72,11 @@ one vintage four-string Precision-style electric bass guitar, warm sunburst body
 one premium vintage analog monosynth keyboard, walnut wooden side panels, dark sloped panel with three oscillator sections of silver-black knobs, 44 piano keys, handsome original generic analog synth design with no branding, three-quarter front-left view
 
 
+
+## 全量扩展
+
+本轮通过内置 image_gen 生成 193 张透明展示插图：83 张普通乐器类别图、110 张特殊型号图。加上前版十张，共 203 个图片身份；历史 C7、Wurlitzer 第一版仍保留，实际文件共 205 张。完整提示词见 [普通乐器](prompts-expansion-ordinary.json) 与 [特殊型号](prompts-expansion-models.json)。全部资源随本地应用分发，浏览与换预设不依赖联网生成或检查原始生成目录。
+
+同型号的不同奏法、贝斯／铺底等预设仍共用型号图；例如 SK-1、VSS-30 保持电子键盘外形，不按某一个预设的音色角色改画另一件乐器。历史方钢琴、羽管键琴、手碟、鼓机等按各自形制组织。跨插件来源的同一型号可复用同一视觉身份。
+
+这些是按型号特征制作的插图，不是厂商实拍，也不作为精确机械结构资料。全部 203 张已通过本地解码、SHA 与 alpha 格式核对，并完成九页全量缩略图目视检查。

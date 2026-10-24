@@ -11,6 +11,9 @@
    checks.push('Homepage instrument-library entry opens the real library');
   }
   const gallery=await api('instruments.gallery'),item=gallery.items.find(x=>x.image_id===model);if(!item)throw Error('Missing curated model');
+  const search=await until(()=>document.querySelector('input[aria-label="搜索乐器"]'),'Model search unavailable');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(search,item.title);
+  search.dispatchEvent(new Event('input',{bubbles:true}));
   await until(()=>document.querySelector('[aria-label="打开乐器 '+item.title+'"]'),'Gallery button unavailable');
   document.querySelector('[aria-label="打开乐器 '+item.title+'"]').click();
   const sid=await until(()=>document.querySelector('.instrument-room')?.dataset.sessionId,'Session did not open');
@@ -37,9 +40,17 @@
   const withKeyboard=await until(async()=>{const value=await api('instruments.studio.status',args),box=document.querySelector('.instrument-native-well').getBoundingClientRect();return value.editor_open&&value.editor_pixels_width<=box.width*devicePixelRatio+4&&value.editor_pixels_height<=box.height*devicePixelRatio+4&&value;},'Editor does not fit with the audition keyboard expanded');
   if(model==='la-custom-c7'&&withKeyboard.editor_pixels_width<original.editor_pixels_width*1.5)throw Error('Expanded keyboard made the legacy editor tiny again');
   checks.push('Expanded audition keyboard preserves a large complete plugin view');
+  async function play(preset,duration){
+   const pitch=preset?.audition?.pitches?.[0]??60;
+   const codes=['KeyA','KeyW','KeyS','KeyE','KeyD','KeyF','KeyT','KeyG','KeyY','KeyH','KeyU','KeyJ','KeyK','KeyO','KeyL','KeyP','Semicolon','Quote'];
+   let first=await until(()=>document.querySelector('.instrument-keys button'),'Piano keys unavailable');
+   let offset=pitch-Number(first.getAttribute('aria-label').split(' ').pop());
+   if(offset>=codes.length){document.querySelector('[aria-label="升高八度"]').click();await pause(100);first=document.querySelector('.instrument-keys button');offset=pitch-Number(first.getAttribute('aria-label').split(' ').pop());}
+   if(!codes[offset])throw Error('Admitted audition pitch is outside the visible keyboard');
+   window.dispatchEvent(new KeyboardEvent('keydown',{code:codes[offset],bubbles:true}));await pause(duration);window.dispatchEvent(new KeyboardEvent('keyup',{code:codes[offset],bubbles:true}));
+  }
   const before=await api('instruments.studio.status',args);
-  window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyK',bubbles:true}));await pause(300);window.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyK',bubbles:true}));await pause(150);
-  const played=await until(async()=>{const value=await api('instruments.studio.status',args);return value.energy>before.energy&&value.midi_on>before.midi_on&&value.midi_off>before.midi_off&&value.held_notes===0&&value;},'UI piano did not complete native MIDI/audio/release',4000);
+  const played=await until(async()=>{await play(item.variants.find(p=>p.id===item.default_preset_id),300);await pause(150);const value=await api('instruments.studio.status',args);return value.energy>before.energy+1e-7&&value.midi_on>before.midi_on&&value.midi_off>before.midi_off&&value.held_notes===0&&value;},'UI piano did not complete native MIDI/audio/release',20000);
   checks.push('Actual onscreen keyboard reached the live plugin and produced nonzero audio');
   const nextPreset=item.variants.find(x=>x.id!==item.default_preset_id);
   let switched, switchMs;
@@ -50,7 +61,7 @@
    switchMs=performance.now()-start;
    if(switched.pid!==before.pid||switched.session_id!==before.session_id||!switched.timings_ms.reused_host)throw Error('Preset switch restarted the plugin host');
    const heardBefore=switched.energy;
-   await until(async()=>{window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyK',bubbles:true}));await pause(200);window.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyK',bubbles:true}));const value=await api('instruments.studio.status',args);return value.energy>heardBefore+1e-7&&value.midi_off>switched.midi_off;},'Switched preset did not produce actual audio',20000);
+   await until(async()=>{await play(nextPreset,200);const value=await api('instruments.studio.status',args);return value.energy>heardBefore+1e-7&&value.midi_off>switched.midi_off;},'Switched preset did not produce actual audio',20000);
    checks.push('UI preset switch retained native PID/session and the new preset produced audio');
   }
   [...document.querySelectorAll('.instrument-room-header nav button')].find(x=>x.textContent==='乐器').click();

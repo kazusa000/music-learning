@@ -10,7 +10,7 @@ import time
 from urllib.request import urlopen
 
 from music_learning.database import Database
-from music_learning.instrument_studio import gallery
+from music_learning.instrument_studio import gallery, studio_catalog
 from music_learning.processes import OwnedProcess
 from music_learning.session import session_token
 from music_learning.settings import ROOT, Settings
@@ -24,6 +24,9 @@ def test_instrument_library_browser(tmp_path):
     record = json.loads((origin / "runtime/instrument-library.local.json").read_bytes())
     installed = Settings(data_root=tmp_path / "inventory", instrument_library=Path(record["root"]))
     instruments = gallery(installed)
+    admitted = [p for p in studio_catalog(installed) if p.get("audio_verified") and p["backend"] == "vst3-preset"]
+    assert {p["id"] for p in admitted} == {v["id"] for m in instruments["items"] for v in m["variants"]}
+    assert len(instruments["items"]) == len({p["model"]["id"] for p in admitted})
     settings = Settings(data_root=tmp_path / "app", port=port, native_audio_enabled=False,
                         instrument_preview_warm=False, web_root=ROOT / "runtime/build/instrument-library-web")
     db = Database(settings)

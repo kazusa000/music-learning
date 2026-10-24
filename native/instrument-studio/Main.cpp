@@ -38,6 +38,23 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
     HWND parent=nullptr; uint64_t commandSequence=0;
     std::array<bool,128> keys{};
     std::array<int,128> controllers;
+    std::array<bool,16> routing{{true}};
+    template<typename Make> void routed(Make make){for(int ch=1;ch<=16;++ch)if(routing[(size_t)ch-1])enqueue(make(ch));}
+    std::array<bool,16> routingFor(const var& source){
+        std::array<bool,16> selected{};
+        if(auto* channels=source["midi_channels"].getArray()){
+            ml::require(!channels->isEmpty()&&channels->size()<=16,"Invalid audition MIDI channels");
+            for(const auto& value:*channels){const int ch=(int)value;ml::require(ch>=1&&ch<=16,"Invalid audition MIDI channel");selected[(size_t)ch-1]=true;}
+        }else selected[0]=true;
+        return selected;
+    }
+    void initialControllers(){
+        if(auto* values=config["initial_controllers"].getArray())for(const auto& item:*values){
+            const int ch=(int)item["channel"],number=(int)item["controller"],value=(int)item["value"];
+            ml::require(ch>=1&&ch<=16&&number>=0&&number<=127&&value>=0&&value<=127,"Invalid source controller");
+            enqueue(MidiMessage::controllerEvent(ch,number,value));
+        }
+    }
     var controllerState(){auto value=ml::object({});for(int i:{1,7,10,11})if(controllers[(size_t)i]>=0)value.getDynamicObject()->setProperty(String(i),controllers[(size_t)i]);return value;}
 
     struct Paused {
@@ -58,8 +75,8 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
         messages[(size_t)a]=message;fifo.finishedWrite(1);
     }
     void releaseKeys(){
-        for(int i=0;i<128;++i)if(keys[(size_t)i]){enqueue(MidiMessage::noteOff(1,i));keys[(size_t)i]=false;midiOff.fetch_add(1);}
-        enqueue(MidiMessage::controllerEvent(1,64,0));panic.store(true);held.store(0);sustainHeld=false;
+        for(int i=0;i<128;++i)if(keys[(size_t)i]){routed([&](int ch){return MidiMessage::noteOff(ch,i);});keys[(size_t)i]=false;midiOff.fetch_add(1);}
+        routed([](int ch){return MidiMessage::controllerEvent(ch,64,0);});panic.store(true);held.store(0);sustainHeld=false;
     }
     var state(){
         auto result=ml::object({{"status","ready"},{"pid",(int)GetCurrentProcessId()},
@@ -67,7 +84,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             {"editor_available",editorAvailable},{"editor_open",editor&&editor->isVisible()},
             {"editor_embedded",embedded},{"state_sha256",stateHash},{"state_file",stateHash.isEmpty()?String():stateHash.substring(0,16)+".bin"},
             {"editor_scale",viewScale},{"editor_legacy_dpi",legacyDpi},{"editor_native_zoom_supported",nativeZoomSupported},{"native_timings_ms",timings},
-            {"controllers",controllerState()},
+            {"controllers",controllerState()},{"midi_channels",config["midi_channels"]},
             {"held_notes",held.load()},
             {"changes",(int64)changes.load()},{"parameters_sha256",parameterHash},{"sample_rate",rate},{"callbacks",callbacks.load()},
             {"samples",samples.load()},{"nonzero_samples",nonzero.load()},{"energy",energy.load()},
@@ -223,6 +240,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
         auto next=ml::parse(root.getChildFile("selection.json"));
         ml::require(next["token"].toString()==token&&next["session_id"]==config["session_id"],"Preset selection session changed");
         const auto spec=next["plugin"];
+        const auto nextRouting=routingFor(next);
         for(const auto* key:{"path","identifier","binary_sha256","version"})
             ml::require(spec[key]==config["plugin"][key],"Preset belongs to another plugin instance");
         std::array<int,128> retained;retained.fill(-1);
@@ -261,11 +279,16 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
                 ml::require(ml::selectStereoMainOutput(*plugin,AudioChannelSet::stereo(),ml::needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription())),"Could not retain stereo output after preset change");
                 work.setSize(jmax(2,jmax(plugin->getTotalNumInputChannels(),plugin->getTotalNumOutputChannels())),jmax(4096,block));
             }catch(...){plugin->setStateInformation(previous.getData(),(int)previous.getSize());throw;}
-            controllers=retained;
+            controllers=retained;config=next;routing=nextRouting;initialControllers();
             for(int i:{1,7,10,11}){
                 const int reset=i==7?100:i==10?64:i==11?127:0;
-                if(retained[(size_t)i]>=0||previousControllers[(size_t)i]>=0)
-                    enqueue(MidiMessage::controllerEvent(1,i,retained[(size_t)i]>=0?retained[(size_t)i]:reset));
+                for(int ch=1;ch<=16;++ch)if(routing[(size_t)ch-1]){
+                    bool hasFactory=false;
+                    if(auto* values=config["initial_controllers"].getArray())for(const auto& item:*values)
+                        if((int)item["channel"]==ch&&(int)item["controller"]==i)hasFactory=true;
+                    if(retained[(size_t)i]>=0)enqueue(MidiMessage::controllerEvent(ch,i,retained[(size_t)i]));
+                    else if(previousControllers[(size_t)i]>=0&&!hasFactory)enqueue(MidiMessage::controllerEvent(ch,i,reset));
+                }
             }
             config=next;stateHash.clear();parameterHash.clear();changes.fetch_add(1);
         }
@@ -278,15 +301,15 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             const int pitch=(int)args["pitch"];const float velocity=(float)args.getProperty("velocity",.8);
             ml::require(pitch>=0&&pitch<=127&&std::isfinite(velocity)&&velocity>=0&&velocity<=1,"Invalid audition note");
             const bool on=(bool)args["on"];
-            if(on){enqueue(MidiMessage::noteOn(1,pitch,velocity));if(!keys[(size_t)pitch])held.fetch_add(1);keys[(size_t)pitch]=true;midiOn.fetch_add(1);}
-            else{enqueue(MidiMessage::noteOff(1,pitch));if(keys[(size_t)pitch])held.fetch_sub(1);keys[(size_t)pitch]=false;midiOff.fetch_add(1);lastChange=Time::getMillisecondCounterHiRes();}
+            if(on){routed([&](int ch){return MidiMessage::noteOn(ch,pitch,velocity);});if(!keys[(size_t)pitch])held.fetch_add(1);keys[(size_t)pitch]=true;midiOn.fetch_add(1);}
+            else{routed([&](int ch){return MidiMessage::noteOff(ch,pitch);});if(keys[(size_t)pitch])held.fetch_sub(1);keys[(size_t)pitch]=false;midiOff.fetch_add(1);lastChange=Time::getMillisecondCounterHiRes();}
         }else if(action=="panic")releaseKeys();
-        else if(action=="sustain"){sustainHeld=(bool)args["on"];enqueue(MidiMessage::controllerEvent(1,64,sustainHeld?127:0));lastChange=Time::getMillisecondCounterHiRes();}
+        else if(action=="sustain"){sustainHeld=(bool)args["on"];routed([&](int ch){return MidiMessage::controllerEvent(ch,64,sustainHeld?127:0);});lastChange=Time::getMillisecondCounterHiRes();}
         else if(action=="volume"){const float value=(float)args["value"];ml::require(std::isfinite(value)&&value>=0&&value<=1,"Invalid volume");volume.store(value);}
         else if(action=="controller"){
             const int number=(int)args["controller"],value=(int)args["value"];
             ml::require((number==1||number==7||number==10||number==11)&&value>=0&&value<=127,"Unsupported audition controller");
-            controllers[(size_t)number]=value;enqueue(MidiMessage::controllerEvent(1,number,value));changes.fetch_add(1);lastChange=Time::getMillisecondCounterHiRes();
+            controllers[(size_t)number]=value;routed([&](int ch){return MidiMessage::controllerEvent(ch,number,value);});changes.fetch_add(1);lastChange=Time::getMillisecondCounterHiRes();
         }
         else if(action=="parameter"){
             auto* parameter=ml::parameter(*plugin,args["parameter_id"].toString());float value=(float)args["value"];
@@ -347,10 +370,11 @@ public:
         plugin->setRateAndBufferSizeDetails(rate,block);plugin->prepareToPlay(rate,block);
         work.setSize(jmax(2,jmax(plugin->getTotalNumInputChannels(),plugin->getTotalNumOutputChannels())),jmax(4096,block));
         midi.ensureSize(32768);recording.setSize(2,(int)(rate*12));recording.clear();
+        routing=routingFor(config);initialControllers();
         if(auto* saved=config["controllers"].getDynamicObject())for(auto item:saved->getProperties()){
             const int number=item.name.toString().getIntValue(),value=(int)item.value;
             ml::require((number==1||number==7||number==10||number==11)&&value>=0&&value<=127,"Invalid retained controller");
-            controllers[(size_t)number]=value;enqueue(MidiMessage::controllerEvent(1,number,value));
+            controllers[(size_t)number]=value;routed([&](int ch){return MidiMessage::controllerEvent(ch,number,value);});
         }
         plugin->addListener(this);device.addAudioCallback(this);
         // Interactive hosts accept input as soon as the processor is prepared.
@@ -393,7 +417,7 @@ public:
         if(suspended.load()){ack.store(true);return;}
         if(count>work.getNumSamples())return;
         work.clear();midi.clear();
-        if(panic.exchange(false)){midi.addEvent(MidiMessage::allSoundOff(1),0);midi.addEvent(MidiMessage::allNotesOff(1),0);}
+        if(panic.exchange(false))for(int ch=1;ch<=16;++ch){midi.addEvent(MidiMessage::allSoundOff(ch),0);midi.addEvent(MidiMessage::allNotesOff(ch),0);}
         int a,n,b,m;fifo.prepareToRead(fifo.getNumReady(),a,n,b,m);
         for(int i=0;i<n;++i)midi.addEvent(messages[(size_t)(a+i)],0);
         for(int i=0;i<m;++i)midi.addEvent(messages[(size_t)(b+i)],0);fifo.finishedRead(n+m);

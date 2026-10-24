@@ -19,7 +19,7 @@ from music_learning.settings import ROOT, Settings
 
 
 @pytest.mark.skipif(os.environ.get("ML_STUDIO_NATIVE") != "1", reason="Explicit installed-plugin desktop validation")
-@pytest.mark.parametrize("model", ["la-custom-c7", "celesta", "analog-machines"])
+@pytest.mark.parametrize("model", ["la-custom-c7", "celesta", "analog-machines", "category-triangle", "category-bansuri", "category-beats-engine", "model-mks-20-digital-piano", "model-grand-steinway-d-new-york"])
 def test_real_instrument_library_desktop(tmp_path, model):
     origin = ROOT.parents[2] if ROOT.parent.name == "worktrees" else ROOT
     baseline = Settings.load(origin / "runtime/app.local.json")
@@ -68,6 +68,7 @@ def test_real_instrument_library_desktop(tmp_path, model):
             assert desktop.process.returncode == 0
         value = json.loads((report / "desktop.json").read_text(encoding="utf-8-sig"))
         assert value.get("workflow", {}).get("status") == "succeeded", value
+        assert value["verification_input_disabled"]
         assert value["navigation_success"] and value["window_per_monitor_v2"] and value["zoom"] == 1
         assert abs(value["viewport"]["dpr"] - value["window_dpi"] / 96) < .01
         # Other applications/user activity may legitimately change foreground
