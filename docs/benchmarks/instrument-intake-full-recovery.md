@@ -1,16 +1,18 @@
 # 新音源全量入库与共享兼容恢复
 
-## 2026-10-24：仅恢复剩余 86 款（进行中）
+## 2026-10-24：剩余 86 款全部恢复完成
 
-本轮维护根为 `runtime/maintenance/kontakt-remaining-86-20261024`，当前汇总入口 `runtime/kontakt-remaining-86.local.json`。阶段核对：80 款 Multi 已全部按原发声、完整参数/状态、身份、来源及两次独立空机架恢复标准通过，additions-only 入库 80 款，80 段当前指纹试听全部 ready；Kontakt 合计 986 款。原有 906 款不重新渲染、不重读旧 WAV、不重验。尚有 1 款 Flair - West 与 5 款 Classic Legato，实际检查等待 H 盘空闲，不据此判失败。当前三个入口分别是 `kontakt-remaining-multi-job.local.json`、`kontakt-remaining-beat-job.local.json`、`kontakt-remaining-classic-job.local.json`；旧自动跟进仍暂停，Ample/MODO 不恢复。
+本轮维护根为 `runtime/maintenance/kontakt-remaining-86-20261024`，当前汇总入口 `runtime/kontakt-remaining-86.local.json`。80 款 Multi、1 款 Flair - West、5 款 Classic Legato 均按原发声、完整参数/状态、身份、来源及两次独立空机架恢复标准通过，additions-only 入库 86 款；Kontakt 合计 992 款，992 段当前指纹试听全部 ready，剩余失败和未完成均为 0。原有 906 款不重新渲染、不重读旧 WAV、不重验。三个实际任务均终态并核实进程退出，入口分别是 `kontakt-remaining-multi-job.local.json`、`kontakt-remaining-beat-job.local.json`、`kontakt-remaining-classic-job.local.json`；旧自动跟进仍暂停，Ample/MODO 不恢复。
 
 Multi 的 MIDI 资源路径确实可打开；独立只读文件观察不是缺资源证据。仅空等一秒或处理消息不足以完成异步准备；在首音前按固定五秒预算交替处理空块、消息和 sleep，丢弃准备输出，恢复 MIDI Player 原功能且不旁路脚本、不改参数。严格检查使用独立宿主 `kontakt-async-ready-02`（SHA `ea21d512cc1e6d8b4c6fc9bb074ef27d585a1a876c20d2c0719a0cf3ce969325`）；共享 Main 修正了快照自身带有的三个总线只读字段无法再次输入的问题，真实隔离原生夹具通过恢复、伪造只读字段不改路由和未知字段拒绝检查。`strict-multis-08` 完成 72 款后遇到原 pending 行没有 diagnostics 键的读取错误，原进度保留；共享 `recovery_inputs` 区分原尝试与后续准备目录，`strict-multis-10` 绑定旧 72 个检查点、仅实际检查其余 8 款。09 在宿主启动前因误将生成的 pycache 纳入 pins 被拒绝，保留证据，没有重复音频验证。依赖旧父进程的未启动等待器留档后换独立 attempt，未改冻结实现或原 full-h 报告。
 
-Classic 原 NKI 在 `Kontakt/Libraries/Samples` 查找容器，实际采样在 `Libraries/css-solo/Samples`。受控私有 SourceLayouts 复制同 SHA NKI 并建立自身 Samples junction，原库与原 manifest 不改。Cello 的公开 getter 从 0 恢复至 29,024 zones；五份来源绑定 NKM 与 playback context 已转换完成，仍需完整 VST3 捕获及音频恢复，不能把转换当作入库。Flair 的 16 个 zone 占位键均为 0，真实公开脚本用 36–51 分派 drum pad；共享脚本映射合同绑定源码/getter SHA，独立于 sample-zone geometry，实际状态不改。此时两类均未宣布通过。
+Classic 原 NKI 在 `Kontakt/Libraries/Samples` 查找容器，实际采样在 `Libraries/css-solo/Samples`。受控私有 SourceLayouts 复制同 SHA NKI 并建立自身 Samples junction，原库与原 manifest 不改。Cello 的公开 getter 从 0 恢复至 29,024 zones；五份来源绑定 NKM 与 playback context 转换后，完成完整 VST3 捕获及两次独立空机架发声。`strict-classic-02` 的五项均在末尾因新增私有资源不在旧 installed-library manifest 内而拒绝收尾；原失败保留。共享 `extend_candidate_manifest` 保留原清单全部条目并追加实核普通文件，生成独立内容寻址清单，不放宽资源检查。`finalize-classic-03` 固定原进程退出、候选与原音频证据，逐字复制到新 attempt 后执行相同音频/状态/身份校验并生成新回执；5 项全部通过，没有重新启动音频验证宿主。Flair 的 16 个 zone 占位键均为 0，真实公开脚本用 36–51 分派 drum pad；共享脚本映射合同绑定源码/getter SHA，独立于 sample-zone geometry，实际状态不改。`root-beat-04` 两次空机架实际发声及完整检查通过，已入库。
 
-试听直接复用这批新通过项的 reopen 短句：严格核对已发布 admission、完整请求、原 MIDI/输送/增益、真实宿主指纹与证据 SHA，再用产品相同 PCM/IEEE float32 解析与 normalize 写缓存。不是再调用 Kontakt 检查一次。已有 ready 或其他队列状态不覆盖，只有缺失指纹追加；策略不匹配者交正常单一 worker。产品发布 `c571d5c95598b6750aa2760f374f86ed970afc69` 以现行 fe5d453 为父，只覆盖共享短句合同及试听加载选择，不回退前端、桌面、原生引擎或 Studio。完整 27fbd75 发布暂存被旧 Studio 对 Main 源码绑定拒绝，保留未激活包，没有改收据绕过检查；独立两文件发布通过原部署检查并正常重启服务。实际 API 已确认缓存命中，代表项约 0.75 秒返回 ready，并取得真实 WAV。98 项短回归和 1 项真实原生夹具通过；尚未执行全 86 款最终产品接口验收。
+80 款 Multi 和 1 款 Flair 的试听复用本批新通过的 reopen 短句：严格核对已发布 admission、完整请求、原 MIDI/输送/增益、真实宿主指纹与证据 SHA，再用产品相同 PCM/IEEE float32 解析与 normalize 写缓存。不是再调用 Kontakt 检查一次。已有 ready 或其他队列状态不覆盖，只有缺失指纹追加；5 款 Classic 的产品宿主策略不同，使用现有单一 worker 生成短试听，全部 ready，没有重新做入库验证。产品发布 `c571d5c95598b6750aa2760f374f86ed970afc69` 以现行 fe5d453 为父，只覆盖共享短句合同及试听加载选择，不回退前端、桌面、原生引擎或 Studio。完整 27fbd75 发布暂存被旧 Studio 对 Main 源码绑定拒绝，保留未激活包，没有改收据绕过检查；独立两文件发布通过原部署检查并正常重启服务。实际 API 已确认缓存命中，代表项约 0.75 秒返回 ready，并取得真实 WAV。
 
-`midway-protection-check.json` 核对正式九表/head、原三队列和 14 个保护文件全部不变；原 2,158 个 catalog 条目逐项一致、原 906 条 ready 缓存 ID/SHA/bytes/status 不变。资源只新增于指定 Sound Library，NAS/tmp 只读；各原失败报告和任务冻结输入保留。共享实现提交 `27fbd75`、`33d1242`，任务未完成，不能把本阶段统计当作最终收尾。
+98 项原共享短回归和 1 项真实原生夹具通过；清单扩展与证据收尾的 63 项回归通过。首次新夹具缺少 library_id 导致 5 项测试失败，修正夹具后全部通过，未改产品规则迎合测试。最终实际发布源码的 HTTP TestClient 在隔离空工程数据库对新增 86 款逐项验证型号、变体查询和真实 WAV GET/hash，1 项集成检查通过（151 秒）；使用实际 catalog/cache，无音源目录或音频 mock、无新音频验证宿主、未用正式工程，不宣称人工听辨或界面操作验收。
+
+`final-protection-check.json` 核对正式九表/head、原三队列和 14 个保护文件全部不变；原 2,158 个 catalog 条目逐项一致、原 906 条 ready 缓存 ID/SHA/bytes/status 不变；当前 992 个 Kontakt 指纹均 ready。资源只新增于指定 Sound Library，NAS/tmp 只读；各原失败报告和任务冻结输入保留。共享实现提交 `27fbd75`、`33d1242`、`a84de09`，最终结果见维护根 `result.json`。旧阶段报告不覆盖，`runtime/kontakt-failure-recovery.local.json` 指向本轮收尾结果；任务完成，不自动恢复旧批次或其他音源。
 
 
 ## 2026-10-24：失败与未完成项恢复调查
