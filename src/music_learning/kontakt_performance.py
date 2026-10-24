@@ -17,14 +17,17 @@ ROW_FIELDS = {"index", "midi_channel", "key_range", "velocity_range", "mute", "s
 LEGATO_AUDITION_PATTERN = "legato-overlap-v1"
 LEGATO_AUDITION_TIMING = {"onset_interval_ms": 500, "gate_ms": 550, "overlap_ms": 50}
 ZONE_AUDITION_FIELD = "sample_zone_audition"
+SCRIPT_AUDITION_FIELD = "script_trigger_audition"
 
 
 def validate_profile(profile: Mapping, *, expected_source_sha256=None) -> dict:
     if (not isinstance(profile, Mapping)
-            or set(profile) - {ZONE_AUDITION_FIELD} not in (FIELDS, FIELDS | AUDITION_FIELDS)
+            or set(profile) - {ZONE_AUDITION_FIELD, SCRIPT_AUDITION_FIELD} not in (FIELDS, FIELDS | AUDITION_FIELDS)
             or type(profile.get("schema_version")) is not int or profile["schema_version"] != 1
             or profile.get("kind") != "midi_context"):
         raise ValueError("Unsupported Kontakt MIDI performance profile")
+    if ZONE_AUDITION_FIELD in profile and SCRIPT_AUDITION_FIELD in profile:
+        raise ValueError("Kontakt audition cannot mix sample-zone and script-trigger evidence")
     has_audition_pattern = AUDITION_FIELDS <= set(profile)
     if bool(set(profile) & AUDITION_FIELDS) != has_audition_pattern:
         raise ValueError("Kontakt audition pattern and timing must be supplied together")
@@ -72,12 +75,16 @@ def validate_profile(profile: Mapping, *, expected_source_sha256=None) -> dict:
         clean.append(dict(item))
     result = dict(schema_version=1, kind="midi_context", source_factory_sha256=source,
                   instruments=normalized, controllers=clean)
-    if ZONE_AUDITION_FIELD in profile:
-        audition = profile[ZONE_AUDITION_FIELD]
+    explicit_field = next((key for key in (ZONE_AUDITION_FIELD, SCRIPT_AUDITION_FIELD) if key in profile), None)
+    if explicit_field is not None:
+        audition = profile[explicit_field]
+        provenance = {"source_getters_sha256"}
+        if explicit_field == SCRIPT_AUDITION_FIELD:
+            provenance.add("source_script_sha256")
         if (not isinstance(audition, Mapping)
-                or set(audition) != {"source_getters_sha256", "notes"}
-                or not isinstance(audition["source_getters_sha256"], str)
-                or not re.fullmatch(r"[0-9a-f]{64}", audition["source_getters_sha256"])
+                or set(audition) != provenance | {"notes"}
+                or any(not isinstance(audition[key], str) or not re.fullmatch(r"[0-9a-f]{64}", audition[key])
+                       for key in provenance)
                 or not isinstance(audition["notes"], list)
                 or not 1 <= len(audition["notes"]) <= 24576):
             raise ValueError("Invalid Kontakt sample-zone audition provenance")
@@ -95,7 +102,7 @@ def validate_profile(profile: Mapping, *, expected_source_sha256=None) -> dict:
             explicit.append(dict(note))
         if set(by_index) != {n["instrument_index"] for n in explicit}:
             raise ValueError("Kontakt sample-zone audition omits an instrument")
-        result[ZONE_AUDITION_FIELD] = dict(source_getters_sha256=audition["source_getters_sha256"], notes=explicit)
+        result[explicit_field] = {**{key: audition[key] for key in provenance}, "notes": explicit}
     if has_audition_pattern:
         result.update(audition_pattern=LEGATO_AUDITION_PATTERN,
                       audition_timing=dict(LEGATO_AUDITION_TIMING))
@@ -116,7 +123,7 @@ def profile_phrase(profile: Mapping, *, sample_rate=44100, max_seconds=30.0) -> 
         raise ValueError("Kontakt source uses MIDI port B-D; this host exposes port A only")
     notes, signatures, channels = [], set(), set()
     audition_timing = profile.get("audition_timing")
-    explicit = profile.get(ZONE_AUDITION_FIELD)
+    explicit = profile.get(ZONE_AUDITION_FIELD) or profile.get(SCRIPT_AUDITION_FIELD)
     if audition_timing is None:
         onset_interval = round(0.5 * sample_rate)
         gate_samples = round(0.35 * sample_rate)
