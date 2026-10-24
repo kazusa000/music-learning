@@ -50,7 +50,7 @@
 
 型号及默认预设全部用已入库的稳定身份匹配，不以展示名称猜测。Analog Machines 是合成器音色组，展示插图不声称为某一台实际采样硬件。
 
-隔离工作树 `data/worktrees/virtual-instrument-library`，分支 `codex/virtual-instrument-library`。实际覆盖见[验证记录](../benchmarks/instrument-library.md)。
+开发工作树 `data/worktrees/virtual-instrument-library`、分支 `codex/virtual-instrument-library` 已合并到应用集成分支。正式应用从主页进入，使用发布描述固定的 `instrument_studio_root / instrument_studio_files`，与源码、前端和桌面外壳配套校验；不依赖工作树构建目录。实际覆盖见[验证记录](../benchmarks/instrument-library.md)。
 
 ## 独立预览
 
