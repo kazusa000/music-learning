@@ -476,6 +476,25 @@ def test_validate_captured_binds_bytes_and_checks_full_native_identity_after_bot
     assert receipt["source_state_sha256"] == source["state_sha256"]
 
 
+def test_finalize_persisted_roundtrip_does_not_start_another_sampler(tmp_path, monkeypatch):
+    source,candidate,output,_,starts,pin=_validation_fixture(tmp_path,monkeypatch)
+    index=_roundtrip_artifacts(output,source,source)
+    monkeypatch.setattr(validation,'captured_state_roundtrip',lambda *_a,**_k:pytest.fail('must reuse evidence'))
+    result=validation.finalize_captured_evidence(candidate,source,output,index=index,
+        validator_pin=pin,resource_root=tmp_path)
+    assert starts==[]
+    assert result['receipt']['source_state_sha256']==source['state_sha256']
+
+
+def test_finalize_persisted_roundtrip_rejects_changed_identity(tmp_path,monkeypatch):
+    source,candidate,output,_,_,pin=_validation_fixture(tmp_path,monkeypatch)
+    index=_roundtrip_artifacts(output,source,_native_plugin(name='Wrong actual model'))
+    with pytest.raises(ValueError,match='native instrument identity'):
+        validation.finalize_captured_evidence(candidate,source,output,index=index,
+            validator_pin=pin,resource_root=tmp_path)
+    assert not (output/'receipt.json').exists()
+
+
 @pytest.mark.parametrize("phase", ["first", "reopen"])
 def test_validate_captured_rejects_native_identity_change_after_midi_in_either_process(
     tmp_path, monkeypatch, phase,

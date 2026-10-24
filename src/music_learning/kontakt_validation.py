@@ -259,9 +259,7 @@ def make_candidate(metadata, source_item, conversion, source_state, *, bank_root
     return _candidate_for_catalog(candidate)
 
 
-def validate_captured(host, candidate, source_state, output: Path, *, empty_startup,
-                      validator_pin: ValidatorPin, resource_root: Path, timeout_seconds=180):
-    """Both audio processes start empty, then restore the frozen source bytes."""
+def _verify_captured_source(candidate, source_state, resource_root):
     descriptor_identifier = candidate.get("identifier")
     _exact_identity(source_state, candidate["expected_identity"], descriptor_identifier=descriptor_identifier,
                     expected_plugin_path=candidate["plugin_path"])
@@ -276,9 +274,29 @@ def validate_captured(host, candidate, source_state, output: Path, *, empty_star
     if (serialized_sha != candidate["resources"][candidate["entrypoint"]]["sha256"]
             or sha256_file(actual_preset) != serialized_sha):
         raise ValueError("Installed full preset is not the captured source state")
+
+
+def validate_captured(host, candidate, source_state, output: Path, *, empty_startup,
+                      validator_pin: ValidatorPin, resource_root: Path, timeout_seconds=180):
+    """Both audio processes start empty, then restore the frozen source bytes."""
+    _verify_captured_source(candidate, source_state, resource_root)
     index = captured_state_roundtrip(host, source_state, output, empty_startup=empty_startup,
                                     profile=KontaktProbeProfile(candidate["performance_profile"]),
                                     timeout_seconds=timeout_seconds)
+    return finalize_captured_evidence(candidate, source_state, output, index=index,
+        validator_pin=validator_pin, resource_root=resource_root)
+
+
+def finalize_captured_evidence(candidate, source_state, output: Path, *, index,
+                               validator_pin: ValidatorPin, resource_root: Path):
+    """Check persisted first/reopen evidence without starting another sampler.
+
+    Recovery callers must pin the producing attempt and copy its original
+    evidence unchanged. All audio, state, source, parameters and identity checks
+    remain the same as a newly completed roundtrip.
+    """
+    _verify_captured_source(candidate, source_state, resource_root)
+    descriptor_identifier = candidate.get("identifier")
     # Native identities are checked again after MIDI processing, not merely in
     # the pre-render snapshot used by the shared admission receipt.
     profile = candidate["performance_profile"]
@@ -298,6 +316,9 @@ def validate_captured(host, candidate, source_state, output: Path, *, empty_star
                    first=index["first"], reopen=index["reopen"],
                    startup=dict(first="empty", reopen="empty"), source_state_sha256=source_state["state_sha256"])
     summary = verify_receipt(candidate, receipt, output, parser, validator_pin, resource_root=resource_root)
+    from .installed_libraries import verify_installed_library
+
+    settings = SimpleNamespace(instrument_library=Path(resource_root))
     verify_installed_library(settings, candidate["installed_library"])
     atomic_write_json(output / "receipt.json", receipt)
     return dict(receipt=receipt, summary=summary)

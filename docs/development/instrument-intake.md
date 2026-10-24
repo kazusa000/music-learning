@@ -36,4 +36,8 @@ Kontakt Multi 的 MIDI Player 异步准备必须在首个测试音之前推进�
 
 旧 NKI 引用的相对采样层级与安装目录不同时，可用 `kontakt_source_layout.prepare_kontakt_source_layout` 创建受控私有布局：只复制显式指定且同 SHA 的 NKI，并将布局自己的 Samples junction 指向已安装的同库 Samples。原文件、全局路径和原库 manifest 不改；拒绝盘相对路径、ADS、未知联接和不同内容的既有副本。转换仍保留原来源 SHA、Kontakt getter 身份和 playback context；目录接回不代表已通过音频验收。
 
+新建私有布局或转换资源时，原 installed-library manifest 不会自动包含它们。使用 `instrument_resource_extension.extend_candidate_manifest` 在原清单全部条目之外追加已存在且逐项核对的普通文件，生成新的内容寻址清单，并更新新候选的引用；原清单、既有候选和原来源身份不改。不得放宽“资源必须在清单内”的检查，也不将 Samples 联接当普通文件加入清单。
+
+若两次独立空机架的音频、完整状态和执行记录已保存，而收尾因资源清单问题失败，维护流程可固定原 attempt、确认其退出、逐字复制证据后调用 `kontakt_validation.finalize_captured_evidence`。它仍检查源状态、实际音频、MIDI、参数和前后身份，并生成绑定新清单的独立回执；不再启动采样器、不覆盖原失败报告。只有清单与资源引用可以调整，音源参数、来源、短句或身份变化均须重新进行对应实际验证。
+
 新通过项若已生成与产品试听完全一致的 reopen 短句，可由受信任维护流程调用 `instrument_preview_checkpoint.reuse_reopen_preview`。调用前完成检查点绑定与正式入库；函数再核对 catalog/admission、完整请求状态、MIDI/输送/增益、实际宿主 SHA 及证据文件 SHA，使用产品同一解析与 normalize 生成缓存。不匹配则交给正常试听 worker；不重开音源来验证已通过项。既有 ready/queued/loading/failed/cancelled 行保持原态，缺失指纹才可追加 ready，短事务防止覆盖并发请求或未知文件。新缓存仍由产品正常 API 和 WAV 摘要检查提供，旧缓存指纹不变。
