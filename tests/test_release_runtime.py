@@ -108,3 +108,52 @@ def test_desktop_publication_rejects_missing_or_external_resources(tmp_path, pro
 def test_legacy_release_keeps_development_desktop_path(tmp_path):
     release(tmp_path)
     assert release_runtime.desktop_executable(tmp_path) == tmp_path / 'runtime/desktop/bin/MusicLearning.exe'
+
+
+def studio_release(tmp_path):
+    source, descriptor = release(tmp_path)
+    root = tmp_path / 'runtime/instrument-studio-releases/fixed'
+    (root / 'bin').mkdir(parents=True)
+    host = root / 'bin/ml_instrument_studio.exe'
+    host.write_bytes(b'validated studio host')
+    (root / 'studio-build.json').write_text(json.dumps(dict(
+        host_sha256=release_runtime.digest(host), sources={'entry.py': release_runtime.digest(source / 'entry.py')})))
+    value = json.loads(descriptor.read_text())
+    value.update(instrument_studio_root=str(root), instrument_studio_files={
+        name: release_runtime.digest(root / name) for name in release_runtime.STUDIO_NAMES})
+    descriptor.write_text(json.dumps(value))
+    (tmp_path / 'runtime/app.local.json').write_text(json.dumps(dict(instrument_studio_host=str(host))))
+    return root, descriptor
+
+
+def test_studio_publication_selects_pinned_binary_and_rejects_mutable_setting(tmp_path):
+    root, descriptor = studio_release(tmp_path)
+    assert release_runtime.source_root(tmp_path) == Path(json.loads(descriptor.read_text())['source_root'])
+    (tmp_path / 'runtime/app.local.json').write_text(json.dumps(dict(instrument_studio_host=str(tmp_path / 'build/host.exe'))))
+    with pytest.raises(ValueError, match='studio settings differ'):
+        release_runtime.source_root(tmp_path)
+
+
+@pytest.mark.parametrize('problem', ['binary', 'receipt', 'partial', 'outside', 'source'])
+def test_studio_publication_rejects_incomplete_or_mismatched_build(tmp_path, problem):
+    root, descriptor = studio_release(tmp_path)
+    value = json.loads(descriptor.read_text())
+    if problem == 'binary':
+        (root / 'bin/ml_instrument_studio.exe').write_bytes(b'tampered')
+    elif problem == 'receipt':
+        receipt = root / 'studio-build.json'
+        receipt.write_text(json.dumps(dict(host_sha256='wrong')))
+        value['instrument_studio_files']['studio-build.json'] = release_runtime.digest(receipt)
+    elif problem == 'partial':
+        value['instrument_studio_files'].pop('studio-build.json')
+    elif problem == 'outside':
+        value['instrument_studio_root'] = str(tmp_path)
+    else:
+        receipt = root / 'studio-build.json'
+        data = json.loads(receipt.read_text())
+        data['sources']['entry.py'] = 'wrong'
+        receipt.write_text(json.dumps(data))
+        value['instrument_studio_files']['studio-build.json'] = release_runtime.digest(receipt)
+    descriptor.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match='Instrument studio'):
+        release_runtime.source_root(tmp_path)

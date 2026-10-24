@@ -8,6 +8,7 @@
 - `runtime/web-releases/<内容SHA>`：与源码配套的前端静态资源。
 - `runtime/engine-bundles/<内容SHA>`：固定的设备引擎、插件 worker、导出 runner 和回环工具。
 - `runtime/desktop-releases/<内容SHA>`：已测WebView2外壳及四个配套文件；发布启动逐文件核对，不再使用可变旧bin。
+- `runtime/instrument-studio-releases/<内容SHA>`：乐器库独立试听宿主及构建收据，绑定相同发布的源文件；不依赖开发工作树或可变构建目录。
 - `runtime/engine-diagnostics/<内容SHA>`：仅验收使用的进程隔离捕获工具，独立于生产四文件。
 
 发布描述保存在 `runtime/engine-release.*.local.json`。它只是候选；`runtime/application-release.local.json` 才是正式指针。源码目录中的 `runtime`、`plugins` 是明确的资源联接，禁止递归跟随它们扫描或删除发布树。
@@ -46,3 +47,9 @@
 首次原生发布没有上一份正式原生版本。此前 WebAudio 版本属于不同执行路径，不能把旧前端拼到新原生配置上，也不能删正式指针让应用落回未提交的开发树；若需要恢复旧执行路径，必须另做完整配套发布和独立验证。设备重连先使用上述恢复入口。
 
 当前验收结果、设备限制及实际部署状态以 [N7 记录](../benchmarks/native-engine-n7.md)最新段落为准。
+
+## 带乐器库的配套发布
+
+`build_app_release.py` 接受 `--instrument-studio runtime/build/instrument-studio` 和 `--desktop runtime/build/instrument-desktop-v2`，将试听宿主、收据和桌面文件固定后写入描述。部署与启动核对摘要、收据对应源码和配置路径。已有四文件工程音频 bundle 沿用已验收版本时，不为这项附加试听功能重跑整曲长循环；独立工程中检查新版配套发布的主页入口、真实编辑器、试弹和切换预设。
+
+首次乐器库启动将数据库从 0010 升至 0011，只新增 `instrument_drafts` 与 `instrument_personal_presets` 两张表。按现有迁移流程先自动备份，原工程表、修订与素材不改。旧 0010 应用会拒绝新版数据库，因此不能把仅切换到旧描述当作这次升级的可用回退；如需回退程序，应先准备兼容 0011 的配套版本，禁止降级或恢复旧数据库覆盖用户数据。

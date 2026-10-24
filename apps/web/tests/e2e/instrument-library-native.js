@@ -5,6 +5,11 @@
  async function api(operation,args={}){const response=await fetch('/v1/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation,arguments:args,idempotency_key:crypto.randomUUID().replaceAll('-','')})});const data=await response.json();if(!data.ok)throw Error(data.error?.message||operation);return data.result;}
  try{
   const model=new URLSearchParams(location.search).get('model');
+  if(!document.querySelector('.instrument-library')){
+   const entry=await until(()=>[...document.querySelectorAll('.style-entry-button')].find(x=>x.textContent.startsWith('乐器库')),'Homepage library entry unavailable');
+   entry.click();
+   checks.push('Homepage instrument-library entry opens the real library');
+  }
   const gallery=await api('instruments.gallery'),item=gallery.items.find(x=>x.image_id===model);if(!item)throw Error('Missing curated model');
   await until(()=>document.querySelector('[aria-label="打开乐器 '+item.title+'"]'),'Gallery button unavailable');
   document.querySelector('[aria-label="打开乐器 '+item.title+'"]').click();

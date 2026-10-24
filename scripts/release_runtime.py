@@ -5,6 +5,36 @@ from pathlib import Path
 
 DESKTOP_NAMES = frozenset(('MusicLearning.exe', 'MusicLearning.exe.config',
     'Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll', 'WebView2Loader.dll'))
+STUDIO_NAMES = frozenset(('bin/ml_instrument_studio.exe', 'studio-build.json'))
+
+
+def verify_instrument_studio(repository, value):
+    if 'instrument_studio_root' not in value and 'instrument_studio_files' not in value:
+        return None
+    repository = Path(repository).resolve()
+    root = Path(value.get('instrument_studio_root', '')).resolve()
+    if root.parent != (repository / 'runtime/instrument-studio-releases').resolve():
+        raise ValueError('Instrument studio release escaped this repository')
+    if set(value.get('instrument_studio_files', {})) != STUDIO_NAMES:
+        raise ValueError('Instrument studio release file set is incomplete')
+    for name, expected in value['instrument_studio_files'].items():
+        path = (root / name).resolve()
+        path.relative_to(root)
+        if not path.is_file() or digest(path) != expected:
+            raise ValueError('Instrument studio release changed: ' + name)
+    receipt = json.loads((root / 'studio-build.json').read_bytes())
+    if receipt.get('host_sha256') != value['instrument_studio_files']['bin/ml_instrument_studio.exe']:
+        raise ValueError('Instrument studio binary differs from its build receipt')
+    sources = receipt.get('sources', {})
+    if not sources or len(sources) > 1000:
+        raise ValueError('Instrument studio source receipt is empty or too large')
+    source = Path(value['source_root']).resolve()
+    for relative, expected in sources.items():
+        path = (source / relative).resolve()
+        path.relative_to(source)
+        if not path.is_file() or digest(path) != expected:
+            raise ValueError('Instrument studio build differs from published source: ' + relative)
+    return root
 
 
 def verify_desktop(repository, value):
@@ -71,9 +101,14 @@ def source_root(repository):
     value = json.loads(descriptor.read_bytes())
     root = verify_source(repository, value)
     verify_desktop(repository, value)
+    studio = verify_instrument_studio(repository, value)
     if 'web_root' in value or 'native_audio_bundle' in value:
         settings = json.loads((repository / 'runtime/app.local.json').read_bytes())
         for field in ('web_root', 'native_audio_bundle'):
             if Path(settings.get(field, '')).resolve() != Path(value[field]).resolve():
                 raise ValueError('Application release settings differ from the published version')
+    if studio:
+        settings = json.loads((repository / 'runtime/app.local.json').read_bytes())
+        if Path(settings.get('instrument_studio_host', '')).resolve() != studio / 'bin/ml_instrument_studio.exe':
+            raise ValueError('Instrument studio settings differ from the published version')
     return root

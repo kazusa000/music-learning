@@ -23,13 +23,16 @@ from music_learning.settings import ROOT, Settings
 def test_real_instrument_library_desktop(tmp_path, model):
     origin = ROOT.parents[2] if ROOT.parent.name == "worktrees" else ROOT
     baseline = Settings.load(origin / "runtime/app.local.json")
+    descriptor = os.environ.get("ML_STUDIO_RELEASE_DESCRIPTOR")
+    release = json.loads(Path(descriptor).read_bytes()) if descriptor else {}
+    source = Path(release.get("source_root", ROOT))
     library = Path(json.loads((origin / "runtime/instrument-library.local.json").read_bytes())["root"])
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     settings = replace(baseline, data_root=tmp_path / "app", port=port, instrument_library=library,
-        instrument_preview_warm=False, web_root=ROOT / "runtime/build/instrument-library-web",
-        instrument_studio_host=ROOT / "runtime/build/instrument-studio/bin/ml_instrument_studio.exe")
+        instrument_preview_warm=False, web_root=Path(release.get("web_root", ROOT / "runtime/build/instrument-library-web")),
+        instrument_studio_host=Path(release["instrument_studio_root"]) / "bin/ml_instrument_studio.exe" if release else ROOT / "runtime/build/instrument-studio/bin/ml_instrument_studio.exe")
     db = Database(settings)
     db.migrate()
     db.close()
@@ -37,11 +40,11 @@ def test_real_instrument_library_desktop(tmp_path, model):
     config.write_text(json.dumps(asdict(settings), default=str), encoding="utf-8")
     report = ROOT / "runtime/test-reports" / ("instrument-desktop-" + model + "-" + str(time.time_ns()))
     report.mkdir(parents=True)
-    env = dict(os.environ, PYTHONPATH=str(ROOT / "src"), MUSIC_APP_CONFIG=str(config), PYTHONDONTWRITEBYTECODE="1")
-    executable = ROOT / "runtime/build/instrument-desktop-v2/MusicLearning.exe"
+    env = dict(os.environ, PYTHONPATH=str(source / "src"), MUSIC_APP_CONFIG=str(config), PYTHONDONTWRITEBYTECODE="1")
+    executable = Path(release["desktop_root"]) / "MusicLearning.exe" if release else ROOT / "runtime/build/instrument-desktop-v2/MusicLearning.exe"
     with (report / "api.log").open("wb") as log, OwnedProcess(
         [sys.executable, "-m", "uvicorn", "services.api.main:app", "--host", "127.0.0.1", "--port", str(port)],
-        cwd=ROOT, env=env, stdout=log, stderr=log,
+        cwd=source, env=env, stdout=log, stderr=log,
     ) as owner:
         deadline = time.monotonic() + 15
         while True:
@@ -52,8 +55,8 @@ def test_real_instrument_library_desktop(tmp_path, model):
             except OSError:
                 assert time.monotonic() < deadline
                 time.sleep(.1)
-        command = [str(executable), "--verify", f"http://127.0.0.1:{port}/?view=instruments&model={model}#token=" + session_token(settings),
-            str(tmp_path / "webview-profile"), str(report / "desktop.json"), str(ROOT / "apps/web/tests/e2e/instrument-library-native.js")]
+        command = [str(executable), "--verify", f"http://127.0.0.1:{port}/?model={model}#token=" + session_token(settings),
+            str(tmp_path / "webview-profile"), str(report / "desktop.json"), str(source / "apps/web/tests/e2e/instrument-library-native.js")]
         with OwnedProcess(command, cwd=ROOT, env=env, stdout=log, stderr=log) as desktop:
             process = psutil.Process(desktop.process.pid)
             settings.path("desktop.local.json").write_text(json.dumps(dict(browser_pid=process.pid,

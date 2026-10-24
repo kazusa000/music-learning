@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 from music_learning.engine.bundle import pin  # noqa: E402
 from music_learning.settings import Settings  # noqa: E402
 from manage_app import owned, start_lock  # noqa: E402
-from release_runtime import digest, verify_desktop, verify_source  # noqa: E402
+from release_runtime import digest, verify_desktop, verify_instrument_studio, verify_source  # noqa: E402
 
 
 def publish(path, value):
@@ -31,6 +31,7 @@ def main():
     record = json.loads(path.read_bytes())
     source = verify_source(ROOT, record)
     verify_desktop(ROOT, record)
+    studio = verify_instrument_studio(ROOT, record)
     settings = Settings.load()
     if Path(record['repository']).resolve() != ROOT or Path(record['data_root']).resolve() != settings.data_root:
         raise ValueError('Release repository/data root differs from the running installation')
@@ -61,6 +62,10 @@ def main():
         config = json.loads(config_path.read_bytes())
         publish(barrier, dict(descriptor=str(path), descriptor_sha256=digest(path)))
         config.update(native_audio_enabled=True, native_audio_bundle=str(bundle), web_root=str(web))
+        if studio:
+            config['instrument_studio_host'] = str(studio / 'bin/ml_instrument_studio.exe')
+        else:
+            config.pop('instrument_studio_host', None)
         publish(config_path, config)
         publish(pointer, record)
         publish(ROOT / 'runtime/application-release-state.local.json', dict(activated_at=time.time(),
