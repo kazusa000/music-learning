@@ -10,6 +10,7 @@ import time
 from urllib.request import urlopen
 
 from music_learning.database import Database
+from music_learning import contracts as c
 from music_learning.processes import OwnedProcess
 from music_learning.service import Service
 from music_learning.session import session_token
@@ -28,7 +29,7 @@ def test_project_loading_rules(tmp_path):
     assert result.returncode == 0, (result.stdout + result.stderr).decode(errors="replace")
 
 
-def test_project_loading_browser(tmp_path):
+def test_project_loading_browser(tmp_path, wav):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -46,10 +47,21 @@ def test_project_loading_browser(tmp_path):
     db = Database(settings)
     db.migrate()
     service = Service(db)
-    project = invoke(service, "projects.create", dict(title="夜航 · 编曲", kind="composition"))
-    revision = invoke(
-        service, "revisions.get", dict(project_id=project["id"], revision_id=project["current_revision"])
-    )
+    project = invoke(service, "projects.create", dict(title="夜航 · 编曲", kind="research"))
+    data = wav.read_bytes()
+    sha = service.storage.put(data)
+    with service.database.transaction() as tx:
+        service.register_asset(tx, project["id"], sha, len(data), "audio/wav",
+                               dict(sample_rate=44100, duration_samples=44100, channels=2),
+                               dict(origin="rule", source_id="workspace-loading-fixture"))
+    provenance = c.Provenance(origin="rule", source_id="workspace-loading-fixture")
+    track = c.Track(id=c.new_id(), name="测试轨道", kind="instrument", provenance=provenance)
+    snapshot = c.Snapshot(source_asset_id=sha, duration_samples=44100,
+                          tracks=[track], track_order=[track.id])
+    revision = invoke(service, "revisions.commit", dict(project_id=project["id"],
+                      snapshot=snapshot.model_dump(), author="test", description="Isolated source switch fixture"),
+                      project["current_revision"])
+    project["current_revision"] = revision["id"]
     report = ROOT / "runtime/test-reports" / ("workspace-loading-ui-" + str(time.time_ns()))
     report.mkdir()
     config = tmp_path / "config.json"

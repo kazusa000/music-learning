@@ -9,7 +9,8 @@ const browser=await chromium.launch({channel:'msedge',headless:true});
 const context=await browser.newContext({viewport:{width:1536,height:864},deviceScaleFactor:2.5});
 const page=await context.newPage();page.setDefaultTimeout(6000);
 const report={checks:[],errors:[],external:[],evidence:'Isolated real project API; native telemetry injected, no audio or plugins loaded'};
-let state={status:'stopped'},opens=0,releaseMetadata,releaseOpen;
+let state={status:'stopped'},opens=0,transports=0,releaseMetadata,releaseOpen;
+const settling=new Set();
 let metadataGate=new Promise(resolve=>releaseMetadata=resolve),openGate=new Promise(resolve=>releaseOpen=resolve);
 const track=f.revision.snapshot.tracks[0].id;
 page.on('pageerror',e=>report.errors.push(e.message));
@@ -28,7 +29,12 @@ await page.route('**/*',async route=>{
  }
  if(operation==='engine.claim')state={...state,owner_id:args.owner_id};
  if(operation==='engine.monitor')state={...state,monitor:args.tracks};
- if(operation==='engine.transport')state={...state,...args};
+ if(operation==='engine.transport'){
+  transports++;state={...state,...args,status:'loading',applied_revision:null};
+  const pending=state;
+  const timer=setTimeout(()=>{settling.delete(timer);if(state===pending)state={...state,status:'ready',applied_revision:state.revision_id};},220);
+  settling.add(timer);
+ }
  if(operation==='engine.close')state={status:'stopped'};
  return route.fulfill({json:{ok:true,result:state}});
 });
@@ -57,10 +63,7 @@ try{
  await page.screenshot({path:path.join(f.report,'loading-narrow.png')});
  state.plugins.bus={status:'ready'};
  await until(()=>bar().getAttribute('aria-valuenow').then(n=>n==='99'),'Graph handoff must not announce 100 early');
- state.status='ready';state.applied_revision=state.revision_id;
- await until(()=>bar().getAttribute('aria-valuenow').then(n=>n==='100'),'Applied graph did not complete');
- await page.getByText('工程已就绪',{exact:true}).waitFor();await bar().waitFor({state:'detached'});
- report.checks.push('Narrow layout, graph handoff below 100%, correct applied revision and auto-hide while telemetry continues');
+ // Initial-entry failure remains actionable until this entry first succeeds.
  state.status='loading';state.applied_revision=null;state.plugins.bus={status:'failed',error:'采样文件不可用'};
  await page.getByText('部分音源加载失败',{exact:true}).waitFor();
  await page.getByRole('button',{name:'重新加载',exact:true}).waitFor();
@@ -71,14 +74,53 @@ try{
  await until(()=>bar().getAttribute('aria-valuenow').then(n=>n==='0'),'Retry retained stale progress');
  state.plugins={[track]:{status:'ready'},bus:{status:'ready'}};state.status='ready';state.applied_revision=state.revision_id;
  await bar().waitFor({state:'detached'});
+ report.checks.push('Initial-entry failure and retry remain visible; the first ready graph retires the entry bar');
+ let unexpectedBars=0;
+ await page.evaluate(()=>{
+  window.__loadingFlashes=0;
+  window.__loadingObserver=new MutationObserver(records=>{
+   for(const record of records)for(const node of record.addedNodes)
+    if(node instanceof Element&&(node.matches('.workspace-loading')||node.querySelector('.workspace-loading')))window.__loadingFlashes++;
+  });
+  window.__loadingObserver.observe(document.querySelector('.studio'),{childList:true,subtree:true});
+ });
+ await page.setViewportSize({width:1536,height:864});
+ // Exercise actual UI mode controls. Inject a loading graph for every view switch.
+ for(const mode of ['重建','原曲','重建']){
+  const count=opens;
+  await page.getByRole('button',{name:new RegExp('^'+mode)}).click();
+  await until(()=>Promise.resolve(opens>count),'View switch did not reach native transport');
+  await new Promise(r=>setTimeout(r,180));assert.equal(await bar().count(),0);
+  state.plugins={[track]:{status:'ready'},bus:{status:'ready'}};state.status='ready';state.applied_revision=state.revision_id;
+ }
+ await page.locator('.daw-playlist-ruler svg').waitFor();
+ // Seeking while paused and while playing both pass through temporary loading.
+ for(const playing of [false,true]){
+  if(playing)await page.getByRole('button',{name:'播放',exact:true}).click();
+  for(const x of [90,240,390]){
+   const count=transports;
+   await page.locator('.daw-playlist-ruler svg').click({position:{x,y:12}});
+   await until(()=>Promise.resolve(transports>count),'Timeline seek did not reach native transport');
+   await new Promise(r=>setTimeout(r,280));assert.equal(await bar().count(),0);
+  }
+ }
+ state.playing=false;state.status='loading';state.plugins.bus={status:'failed',error:'后续音源故障'};
+ await page.locator('.studio-message').filter({hasText:'后续音源故障'}).waitFor();
+ assert.equal(await bar().count(),0);
+ state.status='ready';state.applied_revision=state.revision_id;state.plugins.bus={status:'ready'};
+ unexpectedBars=await page.evaluate(()=>{window.__loadingObserver.disconnect();return window.__loadingFlashes;});
+ assert.equal(unexpectedBars,0,'Entry bar flashed during an in-workspace operation');
+ report.checks.push('Three original/reconstruction switches, six paused/playing seeks, and a later failure produce zero loading-bar mounts');
  // Re-enter a new controller: old status belongs to a different project and must not finish it.
+ const beforeReentry=opens;
  await page.getByRole('button',{name:'返回音乐库',exact:true}).click();
- await page.getByRole('button',{name:/打开编曲/}).click();
- await until(()=>Promise.resolve(opens===3),'Re-entry did not open graph');
+ await page.getByRole('button',{name:/打开编曲|打开工程/}).click();
+ await until(()=>Promise.resolve(opens>beforeReentry),'Re-entry did not open graph');
  await until(()=>bar().getAttribute('aria-valuenow').then(n=>n==='0'),'Re-entry failed to reset progress');
- report.checks.push('Failure stays visible, explicit retry resets native graph and progress, re-entering project resets');
+ report.checks.push('Leaving and re-entering the project starts a fresh entry loading lifecycle');
  assert.deepEqual(report.errors,[]);assert.deepEqual(report.external,[]);
  console.log(JSON.stringify(report));
 }finally{
+ for(const timer of settling)clearTimeout(timer);
  releaseMetadata();releaseOpen();await writeFile(path.join(f.report,'report.json'),JSON.stringify(report,null,2));await browser.close();
 }
