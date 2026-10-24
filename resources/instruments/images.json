@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "images": [
+    {
+      "id": "la-custom-c7",
+      "file": "images/la-custom-c7-illustration-v1.png",
+      "author": "Music Learning · AI 生成展示插图",
+      "source_url": null,
+      "license": null,
+      "license_url": null,
+      "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
+      "generation_tool": "image_gen",
+      "sha256": "a2c6bab288d66b2d53046e1502d2c741ad0cd330509775642473028b7d1f1cd6"
+    },
+    {
+      "id": "rhodes-mark-i",
+      "file": "images/rhodes-mark-i-illustration-v1.png",
+      "author": "Music Learning · AI 生成展示插图",
+      "source_url": null,
+      "license": null,
+      "license_url": null,
+      "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
+      "generation_tool": "image_gen",
+      "sha256": "1a1ebfde11b0177b9009c7b4ea7f742259793de14a066bdd9ef6627e9973dbac"
+    },
+    {
+      "id": "wurlitzer-200a",
+      "file": "images/wurlitzer-200a-illustration-v1.png",
+      "author": "Music Learning · AI 生成展示插图",
+      "source_url": null,
+      "license": null,
+      "license_url": null,
+      "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
+      "generation_tool": "image_gen",
+      "sha256": "c5c580e1a2b47f0ebe41c9380a581fc50ea05d7a54d497e05a1c82a2aa97d687"
+    },
+    {
+      "id": "clavinet-c",
+      "file": "images/clavinet-c-illustration-v1.png",
+      "author": "Music Learning · AI 生成展示插图",
+      "source_url": null,
+      "license": null,
+      "license_url": null,
+      "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
+      "generation_tool": "image_gen",
+      "sha256": "6d6518c9b955d4d9f606d688f0b7df08f05923fdf0dbdc97b0d846e5b4cf5e98"
+    },
+    {
+      "id": "classical-guitar",
+      "file": "images/classical-guitar-illustration-v1.png",
+      "author": "Music Learning · AI 生成展示插图",
+      "source_url": null,
+      "license": null,
+      "license_url": null,
+      "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
+      "generation_tool": "image_gen",
+      "sha256": "00de7c6d33978c16d1440130f6262ba1299c19945fce384184f27d7cc9b09a3e"
+    },
+    {
+      "id": "celesta",
+      "file": "images/celesta-illustration-v1.png",
+      "author": "Music Learning · AI 生成展示插图",
+      "source_url": null,
+      "license": null,
+      "license_url": null,
+      "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
+      "generation_tool": "image_gen",
+      "sha256": "e36bdb45a1a4d257179b54c0f7a142921eb5a3cce49152aeca6ef78a8d2a623f"
+    },
+    {
+      "id": "flute",
+      "file": "images/flute-illustration-v1.png",
+      "author": "Music Learning · AI 生成展示插图",
+      "source_url": null,
+      "license": null,
+      "license_url": null,
+      "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
+      "generation_tool": "image_gen",
+      "sha256": "94a4b47b3771bdfcf2c84eda4ce2829d691bde5d7c35d8be4a1efc38715627dc"
+    },
+    {
+      "id": "violins",
+      "file": "images/violins-illustration-v1.png",
+      "author": "Music Learning · AI 生成展示插图",
+      "source_url": null,
+      "license": null,
+      "license_url": null,
+      "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
+      "generation_tool": "image_gen",
+      "sha256": "2b84fcb09c1f6c0f081ed0f1ddd891fef79fcf97495aa27d6f9d57fa12cea5a2"
+    },
+    {
+      "id": "electric-bass",
+      "file": "images/electric-bass-illustration-v1.png",
+      "author": "Music Learning · AI 生成展示插图",
+      "source_url": null,
+      "license": null,
+      "license_url": null,
+      "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
+      "generation_tool": "image_gen",
+      "sha256": "208e5f13cc58ebd08ab9b96d341d412986077bfe96467351e0282cb5fc2a05c3"
+    },
+    {
+      "id": "analog-machines",
+      "file": "images/analog-machines-illustration-v1.png",
+      "author": "Music Learning · AI 生成展示插图",
+      "source_url": null,
+      "license": null,
+      "license_url": null,
+      "provenance": "AI-generated instrument illustration; not a photograph of the recorded instrument",
+      "generation_tool": "image_gen",
+      "sha256": "acc9f8856d12f51deb7b07310745039c4dc7e49d0e607b6f8879b09a01c2d1bb"
+    }
+  ]
+}

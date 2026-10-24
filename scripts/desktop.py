@@ -61,6 +61,7 @@ def main():
         with OwnedProcess(command, stdout=log, stderr=log, cwd=ROOT) as window:
             settings.path("desktop.local.json").write_text(json.dumps({
                 "pid": process.pid, "created_at": process.create_time(), "browser_pid": window.process.pid,
+                "browser_created_at": psutil.Process(window.process.pid).create_time(), "browser_exe": str(executable.resolve()),
                 "repository": str(ROOT), "mode": "native-webview2",
             }))
             while window.process.poll() is None:

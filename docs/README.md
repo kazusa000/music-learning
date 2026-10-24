@@ -15,6 +15,7 @@
 - [工程加载进度](architecture/workspace-loading.md)
 - [AI 会话设置](architecture/ai-conversation-controls.md)
 - [风格库](architecture/style-library.md)
+- [虚拟乐器库](architecture/instrument-library.md)
 - [Kontakt 来源与键位查询](architecture/kontakt-source-keymap.md)
 
 ## 开发与维护

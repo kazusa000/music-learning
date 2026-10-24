@@ -20,6 +20,7 @@ import {WindowControls,dragWindow} from './WindowChrome';
 import {useStudioMouse} from './useStudioMouse';
 
 const StyleLibrary=lazy(()=>import('./StyleLibrary'));
+const InstrumentLibrary=lazy(()=>import('./InstrumentLibrary'));
 const connection = connect();
 const statuses: Record<string, string> = {queued: '排队中', running: '正在处理', cancel_requested: '正在取消',
   cancelled: '已取消', succeeded: '已完成', failed: '处理失败'};
@@ -30,6 +31,7 @@ const stageNames: Record<string, string> = {normalize:'音频规范化', beat_th
 
 function App() {
   useStudioMouse();
+  const [instrumentsOpen,setInstrumentsOpen]=useState(new URLSearchParams(location.search).get('view')==='instruments');
   const [stylesOpen,setStylesOpen]=useState(new URLSearchParams(location.search).get('view')==='styles');
   const [settingsOpen,setSettingsOpen]=useState(new URLSearchParams(location.search).get('view')==='settings');
   const [libraryWidth,setLibraryWidth]=usePanelSize('library.sidebar-width',260,180,500);
@@ -59,7 +61,7 @@ function App() {
   const detailCache = useRef<{id:string; revision:Revision; publication:PreprocessingResult | null} | null>(null);
   const homeAudio=useRef<PreviewControl|null>(null);
   useEffect(()=>{
-    if(workspace||settingsOpen||stylesOpen)return;
+    if(workspace||settingsOpen||stylesOpen||instrumentsOpen)return;
     const key=(event:KeyboardEvent)=>{
       const target=event.target as HTMLElement|null;
       if(event.code!=='Space'||event.repeat||event.ctrlKey||event.metaKey||event.altKey||target?.closest('input,textarea,select,[contenteditable="true"]'))return;
@@ -68,7 +70,7 @@ function App() {
       if(audio.paused)void audio.play().catch(e=>setError(e.message));else audio.pause();
     };
     window.addEventListener('keydown',key,true);return()=>window.removeEventListener('keydown',key,true);
-  },[workspace,settingsOpen,stylesOpen]);
+  },[workspace,settingsOpen,stylesOpen,instrumentsOpen]);
   const refreshGeneration = useRef(0);
   const [showArchived,setShowArchived]=useState(false);
   const project = projects.find(p => p.id === selected);
@@ -93,7 +95,7 @@ function App() {
     if (activeSelection.current !== selected || generation !== refreshGeneration.current) return;
     setProjects(list);
     setDeletions(deleting);
-    if(stylesOpen)return;
+    if(stylesOpen||instrumentsOpen)return;
     for(const item of deleting){if(item.status==='completed'&&watchedDeletes.current.has(item.project_id)){
       watchedDeletes.current.delete(item.project_id);setDeleteNotice(`已彻底删除「${item.title}」，未创建备份。`);
     }}
@@ -122,7 +124,7 @@ function App() {
         [job.id, await call<StageRecord[]>('jobs.stages', {job_id:job.id})] as const));
       if (activeSelection.current === selected && generation === refreshGeneration.current) {setStages(Object.fromEntries(details));setRefreshError('');}
     } else {setRevision(null); setJobs([]); setVersionCount(0);setPublication(null);setPlaybackReady(false);setRefreshError('');}
-  }, [selected,showArchived,stylesOpen]);
+  }, [selected,showArchived,stylesOpen,instrumentsOpen]);
 
   useEffect(() => {
     let active = true;
@@ -211,7 +213,7 @@ function App() {
   }
 
   return <main className={workspace ? 'workspace-page' : 'library-page'}>
-    <header hidden={workspace&&!settingsOpen&&!!project&&!!revision} onPointerDown={dragWindow}><a className="brand" href="/" aria-label="Music Learning 音乐库"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><b>Music Learning</b><span className="brand-divider"/><small>{workspace?'Studio':'音乐库'}</small></a>
+    <header hidden={instrumentsOpen||(workspace&&!settingsOpen&&!!project&&!!revision)} onPointerDown={dragWindow}><a className="brand" href="/" aria-label="Music Learning 音乐库"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><b>Music Learning</b><span className="brand-divider"/><small>{workspace?'Studio':'音乐库'}</small></a>
       <div className="header-actions">{!workspace&&<button className="header-settings" onClick={()=>{homeAudio.current?.pause();setSettingsOpen(true);history.replaceState(null,'','/?view=settings');}}>设置</button>}<span className={'connection '+(connected?'is-connected':'')}><i/>{connected ? '本机已连接' : '正在连接'}</span><WindowControls/></div></header>
     {(error||refreshError) && <div role="alert">{error||refreshError}<button onClick={() => {setError('');setRefreshError('');}} aria-label="关闭提示">×</button></div>}
     {!workspace&&deleteNotice&&<div className="deletion-notice" role="status">{deleteNotice}<button aria-label="关闭删除提示" onClick={()=>setDeleteNotice('')}>×</button></div>}
@@ -221,12 +223,13 @@ function App() {
     </div>)}
     {newComposition&&<NewCompositionDialog busy={creating} onCancel={()=>setNewComposition(false)} onCreate={createComposition}/>}
     {deleteTarget&&<DeleteProjectDialog title={deleteTarget.display_title??deleteTarget.title} busy={deleteSubmitting} onCancel={()=>setDeleteTarget(null)} onConfirm={()=>void deleteProject(deleteTarget)}/>}
-    {stylesOpen?<Suspense fallback={<div className="style-detail-loading">正在打开风格库…</div>}><StyleLibrary onClose={()=>{setStylesOpen(false);history.replaceState(null,'','/');}}/></Suspense>:settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} composition={project.kind==='composition'} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh} onReimport={async()=>{const sha=revision.snapshot.source_asset_id;if(!sha)throw new Error('此工程没有原曲');const response=await fetch('/v1/assets/'+sha);if(!response.ok)throw new Error('原曲读取失败');const blob=await response.blob();setWorkspace(false);history.replaceState(null,'','/');await importFile(new File([blob],(project.display_title??project.title)+' · 新编排.audio',{type:blob.type}));}}
+    {instrumentsOpen?<Suspense fallback={<div className="style-detail-loading">正在打开乐器库…</div>}><InstrumentLibrary onClose={()=>{setInstrumentsOpen(false);history.replaceState(null,'','/');}}/></Suspense>:stylesOpen?<Suspense fallback={<div className="style-detail-loading">正在打开风格库…</div>}><StyleLibrary onClose={()=>{setStylesOpen(false);history.replaceState(null,'','/');}}/></Suspense>:settingsOpen?<SettingsPage onBack={()=>{setSettingsOpen(false);history.replaceState(null,'','/');}}/>:workspace && project && revision ? <Workbench key={project.id} composition={project.kind==='composition'} title={project.display_title??project.title} revision={revision} publication={publication} jobs={jobs} onCommitted={refresh} onReimport={async()=>{const sha=revision.snapshot.source_asset_id;if(!sha)throw new Error('此工程没有原曲');const response=await fetch('/v1/assets/'+sha);if(!response.ok)throw new Error('原曲读取失败');const blob=await response.blob();setWorkspace(false);history.replaceState(null,'','/');await importFile(new File([blob],(project.display_title??project.title)+' · 新编排.audio',{type:blob.type}));}}
       onBack={() => {setWorkspace(false); history.replaceState(null, '', '/');}}/> : workspace ? <WorkspaceOpening error={refreshError||undefined} onRetry={()=>{setRefreshError('');void refresh().catch(e=>setRefreshError(e.message));}}/> : <div className="layout resizable-library" style={{'--library-width':libraryWidth+'px'} as CSSProperties}><aside>
       <button className="new-composition-button" disabled={busy} onClick={()=>setNewComposition(true)}><Icon name="plus" size={18}/><span><strong>新建编曲</strong><small>从零创作</small></span></button>
       <label className={'import ' + (busy ? 'disabled' : '')}><Icon name="upload" size={20}/><div className="import-copy"><strong>{busy ? `上传音频 ${uploadProgress??100}%` : '导入音乐'}</strong><span>FLAC / WAV / MP3 / OGG</span></div><input aria-label="选择音乐" type="file" accept="audio/*,.flac,.wav,.mp3,.ogg,.m4a"
           disabled={busy} onChange={e => {const file = e.target.files?.[0]; if (file) void importFile(file); e.target.value = '';}}/></label>
       <label className="import-vocal-mode">导入类型<select aria-label="导入人声类型" disabled={busy} value={vocalMode} onChange={e=>setVocalMode(e.target.value)}><option value="auto">自动判断</option><option value="vocal">有人声</option><option value="instrumental">纯音乐 · 跳过分离</option></select></label>
+      <button className="style-entry-button" onClick={()=>{homeAudio.current?.pause();setInstrumentsOpen(true);history.replaceState(null,'','/?view=instruments');}}><Icon name="piano" size={15}/>乐器库<small>收藏与声音实验 ↗</small></button>
       <button className="style-entry-button" onClick={()=>{homeAudio.current?.pause();setStylesOpen(true);history.replaceState(null,'','/?view=styles');}}><Icon name="music" size={15}/>风格库<small>探索与参考 ↗</small></button>
       <div className="list-title">我的工程 <span>{projects.length}</span></div><div className="library-kind" aria-label="工程类型">{[['all','全部'],['composition','创作'],['research','扒带']].map(([id,label])=><button key={id} aria-pressed={libraryKind===id} onClick={()=>setLibraryKind(id)}>{label}</button>)}</div><label className="archive-toggle"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/>显示归档工程</label>
       <nav aria-label="工程列表">{projects.filter(p=>libraryKind==='all'||p.kind===libraryKind).map(p => <div className="project-row" key={p.id}><button className="project-open" aria-pressed={selected === p.id} disabled={deletions.some(d=>d.project_id===p.id&&d.status!=='completed')} onClick={() => {

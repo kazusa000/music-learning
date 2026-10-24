@@ -1,0 +1,97 @@
+"""Library persistence and cancellation rules, independent of installed plugins."""
+import hashlib
+import threading
+
+import pytest
+from sqlalchemy import select
+
+from music_learning import contracts as c
+from music_learning import schema_v11 as tables
+from music_learning import instrument_studio as module
+from conftest import invoke
+
+
+def retained_studio(service):
+    studio = module.InstrumentStudio(service)
+    directory = service.settings.path("is", "fixture")
+    directory.mkdir(parents=True)
+    studio.session = dict(session_id="a" * 32, preset_id="factory-a", base_preset_id="factory-a",
+        model_id="model-fixture", status="ready", directory=str(directory), client_id="b" * 32, token="c" * 64)
+    service.instrument_studio = studio
+    value = b"complete plugin component and controller fixture"
+    sha = hashlib.sha256(value).hexdigest()
+    (directory / (sha[:16] + ".bin")).write_bytes(value)
+    params = [{"id": "cutoff", "value": .7, "automatable": True}]
+    module.atomic_json(directory / (sha[:16] + ".params.json"), params)
+    studio.session.update(state_sha256=sha, parameters_sha256="1" * 64)
+    studio.command = lambda *args, **kwargs: {}
+    return studio, directory, sha
+
+
+def test_explicit_save_is_distinct_from_draft_and_versioned(service):
+    studio, directory, sha = retained_studio(service)
+    studio.harvest()
+    assert invoke(service, "instruments.personal.list", {"model_id": "model-fixture"})["items"] == []
+    args = dict(session_id=studio.session["session_id"], name="个人声音")
+    first = invoke(service, "instruments.studio.save", args, key="preset-create")
+    assert first["version"] == 1 and first["state_sha256"] == sha
+    assert invoke(service, "instruments.studio.save", args, key="preset-create") == first
+    args.update(preset_id=first["id"], expected_version=1)
+    second = invoke(service, "instruments.studio.save", args, key="preset-update")
+    assert second["id"] == first["id"] and second["version"] == 2
+    with pytest.raises(module.DomainError, match="已经更新"):
+        service.execute(dict(operation="instruments.studio.save", arguments=args, idempotency_key="preset-stale"))
+    listed = invoke(service, "instruments.personal.list", {"model_id": "model-fixture"})["items"]
+    assert len(listed) == 1 and "state" not in listed[0]
+    with service.database.transaction(write=False) as db:
+        row = db.execute(select(tables.presets)).mappings().one()
+        assert row["state"] == (directory / (sha[:16] + ".bin")).read_bytes()
+        assert row["metadata"]["parameters"] == {"cutoff": .7}
+    studio.close()
+
+
+def test_controller_only_changes_are_retained_even_with_equal_component_hash(service):
+    studio, directory, sha = retained_studio(service)
+    studio.harvest()
+    studio.session["parameters_sha256"] = "2" * 64
+    module.atomic_json(directory / (sha[:16] + ".params.json"), [{"id": "cutoff", "value": .3, "automatable": True}])
+    studio.harvest()
+    with service.database.transaction(write=False) as db:
+        assert db.execute(select(tables.drafts)).mappings().one()["metadata"]["parameters"] == {"cutoff": .3}
+    studio.close()
+
+
+def test_cancelled_preparation_cannot_start_a_late_host(service, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    entries = [dict(id="factory-" + str(i), model={"id": "model-fixture"}, backend="vst3-preset", native_admission={}) for i in range(2)]
+    monkeypatch.setattr(module, "catalog", lambda settings: entries)
+    monkeypatch.setattr(module, "gallery", lambda *args: {"model_id": "model-fixture"})
+    def validate(*args):
+        entered.set()
+        assert release.wait(4)
+    monkeypatch.setattr(module, "validate_entry", validate)
+    monkeypatch.setattr(module, "preview_plugin", lambda *args: ({}, None))
+    studio = module.InstrumentStudio(service)
+    try:
+        first = studio.open(c.OpenInstrumentStudio(preset_id="factory-0", client_id="b" * 32))
+        assert entered.wait(2)
+        second = studio.open(c.OpenInstrumentStudio(preset_id="factory-1", client_id="b" * 32))
+        assert first["session_id"] != second["session_id"]
+        studio.close_current()
+        release.set()
+    finally:
+        release.set()
+        studio.close()
+    assert studio.owner is None and studio.session["status"] == "closed"
+
+
+def test_curated_models_have_one_integral_image_each():
+    definitions = module.gallery_definition()["instruments"]
+    assert len(definitions) == len({x["model_id"] for x in definitions}) == 10
+    assert len({x["image_id"] for x in definitions}) == 10
+    for model in definitions:
+        image = module.image_record(model["image_id"])
+        assert image and image["author"]
+        path = module.resource_path(module.ROOT / "resources/instruments", image["file"])
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == image["sha256"]
+        assert model["media"]["model_3d"] is None
