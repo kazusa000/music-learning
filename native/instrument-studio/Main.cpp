@@ -108,7 +108,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
         if(floating){floating->clearContentComponent();floating.reset();}
         if(editor){editor->setVisible(false);editor->removeFromDesktop();}
     }
-    var showView(const var& args){
+    var showView(const var& args,double maximumPlatformScale=4.0){
         const auto began=Time::getMillisecondCounterHiRes();
         const bool visible=(bool)args.getProperty("visible",true);
         if(!visible){closeView();return state();}
@@ -129,7 +129,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
                 if(!legacyDpi){
                     RECT slot{};GetClientRect(host,&slot);
                     const double available=jmin(slot.right/(double)jmax(1,editor->getWidth()),slot.bottom/(double)jmax(1,editor->getHeight()));
-                    const double wrapper=jmax(1.0,std::floor(jmin((double)args.getProperty("scale",1.0),available)));
+                    const double wrapper=jmax(1.0,std::floor(jmin(maximumPlatformScale,jmin((double)args.getProperty("scale",1.0),available))));
                     editor->getPeer()->setCustomPlatformScaleFactor(wrapper);
                 }
                 // JUCE delivers the peer's DPI notification asynchronously.
@@ -143,11 +143,11 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             // layout. Arbitrary zoom factors can select nonexistent raster assets.
             const double zoom=(double)args.getProperty("zoom",0.0);
             ml::require(std::isfinite(zoom)&&zoom>=0&&zoom<=4,"Invalid editor zoom");
-            if(legacyDpi&&zoom==1){closeView();editor.reset();legacyDpi=false;return showView(args);}
+            if(legacyDpi&&zoom==1){closeView();editor.reset();legacyDpi=false;return showView(args,maximumPlatformScale);}
             if(!legacyDpi&&viewScale!=1){viewScale=1;editor->setScaleFactor(1);}
             if(!legacyDpi){
                 const double available=jmin(bounds.right/(double)jmax(1,editor->getWidth()),bounds.bottom/(double)jmax(1,editor->getHeight()));
-                const double wrapper=jmax(1.0,std::floor(jmin(scale,available)));
+                const double wrapper=jmax(1.0,std::floor(jmin(maximumPlatformScale,jmin(scale,available))));
                 if(std::abs(editor->getPeer()->getPlatformScaleFactor()-wrapper)>.001){
                     editor->getPeer()->setCustomPlatformScaleFactor(wrapper);
                     MessageManager::getInstance()->runDispatchLoopUntil(60);
@@ -193,6 +193,15 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
                 if(legacyDpi&&(actual.right-actual.left>bounds.right||actual.bottom-actual.top>bounds.bottom)){
                     closeView();editor.reset();legacyDpi=false;
                     auto smaller=args.clone();smaller.getDynamicObject()->setProperty("zoom",1.0);return showView(smaller);
+                }
+                // An editor can restore its own saved size while receiving DPI
+                // notifications. If the actual window still overflows, retry a
+                // smaller integer platform tier, never a sub-100% raster scale.
+                // The cap decreases on each retry, so it cannot oscillate back
+                // to the oversized tier or wait indefinitely for a vendor UI.
+                if(!legacyDpi&&zoom==0&&(actual.right-actual.left>bounds.right||actual.bottom-actual.top>bounds.bottom)){
+                    const double current=peer->getPlatformScaleFactor();
+                    if(current>1.0)return showView(args,jmax(1.0,std::floor(current)-1.0));
                 }
                 const int width=actual.right-actual.left,height=actual.bottom-actual.top;
                 SetWindowPos(window,HWND_TOP,jmax(0,((int)bounds.right-width)/2),jmax(0,((int)bounds.bottom-height)/2),0,0,SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
