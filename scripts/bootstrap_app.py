@@ -27,7 +27,7 @@ def main():
             str(uv),
             "pip",
             "sync",
-            str(ROOT / "requirements-app.lock"),
+            str(ROOT / "requirements/app.lock"),
             "--require-hashes",
             "--python",
             str(python),

@@ -45,7 +45,7 @@ class Production:
             ROOT / "src/music_learning/midi_input.py",
             Path(__file__),
             *sorted((ROOT / "src/music_learning").glob("*.py")),
-            *sorted(ROOT.glob("requirements*.lock")),
+            *sorted((ROOT / "requirements").glob("*.lock")),
             ROOT / "scripts/pipeline_adapter.py",
             ROOT / "scripts/native_host.py",
             ROOT / "scripts/media_runtime.py",

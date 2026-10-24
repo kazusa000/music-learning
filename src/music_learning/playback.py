@@ -207,7 +207,7 @@ def sources(service, db, revision, *, exact_mixer=False, tail_samples=None):
                 ROOT / "scripts/native_host.py",
                 ROOT / "scripts/media_runtime.py",
                 ROOT / "config/media-runtime.json",
-                *ROOT.glob("requirements*.lock"),
+                *sorted((ROOT / "requirements").glob("*.lock")),
             ]
         }
         if exact_mixer

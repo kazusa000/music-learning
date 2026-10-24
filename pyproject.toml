@@ -16,7 +16,7 @@ music-learning = "music_learning.cli:main"
 where = ["src"]
 
 [tool.setuptools.dynamic]
-dependencies = {file = ["requirements-app.in"]}
+dependencies = {file = ["requirements/app.in"]}
 
 [tool.ruff]
 target-version = "py311"

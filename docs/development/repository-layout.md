@@ -7,11 +7,14 @@
 | `src/music_learning` | 工程服务、持久化、AI、音源与模型任务 |
 | `services` | API、worker 入口与数据库迁移 |
 | `packages` | 生成契约和 SDK 接入说明 |
+| `requirements` | 应用、原生构建与三个分析环境的依赖输入及哈希锁 |
 | `scripts`、`tests` | 启动、构建、维护工具与回归 |
 | `config`、`resources` | 固定依赖、无凭据配置及产品资源 |
 | `docs/guides` | 当前使用说明 |
 | `docs/architecture`、`docs/development` | 当前架构、开发与维护规则 |
 | `docs/benchmarks` | 仍需保留的验收与当前任务记录 |
+
+脚本详细导航见 [scripts/README.md](../../scripts/README.md)：当前启动／构建及执行适配器保留在 `scripts` 根目录，新诊断归入 `scripts/probes`，历史 P0–P6 人工验收工具在 `scripts/probes/legacy`。`probes/player` 是独立浏览器播放诊断，不是产品前端。根目录仅保留项目元数据、构建入口和日常 `.cmd` 启动命令。
 
 ## 本机数据
 
@@ -28,3 +31,5 @@
 音源库保留在用户指定的 H 盘路径。数据、环境、固定发布和活动任务不随文档整理搬迁。根目录不再放 obj/pdb、临时录音或一轮一份的状态文档。旧阶段说明由 Git 历史保存。
 
 测试与清理见[测试收尾](test-cleanup.md)，构建与激活见[发布操作](native-release-operations.md)，音源任务见[入库规则](instrument-intake.md)。
+
+源码共享的范围与未定事项见[开源准备](open-source-preparation.md)。目录迁移不搬动本机数据、已安装环境、其他 worktree 或不可变发布目录。

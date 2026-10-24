@@ -7,14 +7,11 @@ import json
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 from music_learning.sdk import Client  # noqa: E402
 from music_learning.settings import Settings, local_fixed  # noqa: E402
 from music_learning.storage import Storage  # noqa: E402
-import numpy as np  # noqa: E402
-import soundfile as sf  # noqa: E402
-import mido  # noqa: E402
 
 
 def main():
@@ -23,6 +20,10 @@ def main():
     parser.add_argument("production_directory", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    import numpy as np
+    import soundfile as sf
+    import mido
+
     args.output = local_fixed(args.output)
     store = Storage(Settings.load())
     owner = json.loads((args.pulse_directory / "owner.json").read_text())

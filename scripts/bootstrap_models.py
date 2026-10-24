@@ -40,7 +40,7 @@ def main() -> None:
                 uv,
                 "pip",
                 "sync",
-                str(ROOT / f"requirements-{name}.lock"),
+                str(ROOT / "requirements" / f"{name}.lock"),
                 "--python",
                 str(python),
                 "--torch-backend",

@@ -3,7 +3,10 @@
 .env.*
 !.env.example
 *.local
+*.local.*
 .secrets/
+/config/private/
+/.codex/
 .vscode/
 .idea/
 
@@ -62,3 +65,4 @@ Desktop.ini
 .DS_Store
 *.log
 *.tmp
+*.dmp

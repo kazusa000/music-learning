@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import time
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 from music_learning.sdk import Client  # noqa: E402
 from music_learning.settings import local_fixed  # noqa: E402
 

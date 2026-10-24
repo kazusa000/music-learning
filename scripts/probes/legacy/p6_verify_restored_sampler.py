@@ -9,7 +9,7 @@ import sys
 
 import psutil
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 from music_learning.sdk import Client  # noqa: E402
 from music_learning.settings import Settings, local_fixed  # noqa: E402
