@@ -58,7 +58,10 @@ def test_real_instrument_library_desktop(tmp_path, model):
             process = psutil.Process(desktop.process.pid)
             settings.path("desktop.local.json").write_text(json.dumps(dict(browser_pid=process.pid,
                 browser_created_at=process.create_time(), browser_exe=str(executable))), encoding="utf-8")
-            desktop.process.wait(timeout=90)
+            try:
+                desktop.process.wait(timeout=90)
+            except subprocess.TimeoutExpired:
+                raise AssertionError("Isolated desktop workflow timed out; session token omitted") from None
             assert desktop.process.returncode == 0
         value = json.loads((report / "desktop.json").read_text(encoding="utf-8-sig"))
         assert value.get("workflow", {}).get("status") == "succeeded", value

@@ -790,12 +790,18 @@ class StudioVolume(StudioSession):
     value: float = Field(ge=0, le=1)
 
 
+class StudioController(StudioSession):
+    controller: Literal[1, 7, 10, 11]
+    value: int = Field(ge=0, le=127)
+
+
 class StudioParameter(StudioSession):
     parameter_id: str = Field(min_length=1, max_length=200)
     value: float = Field(ge=0, le=1)
 
 
 class StudioParameters(StudioSession):
+    writable_only: bool = False
     search: str = Field(default="", max_length=200)
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=48, ge=1, le=256)
@@ -1449,6 +1455,8 @@ OPERATIONS = {
     'instruments.gallery': (Empty, False),
     'instruments.gallery.get': (StudioModel, False),
     'instruments.studio.open': (OpenInstrumentStudio, True),
+    'instruments.studio.current': (Empty, False),
+    'instruments.studio.controller': (StudioController, True),
     'instruments.studio.status': (StudioSession, False),
     'instruments.studio.note': (StudioNote, True),
     'instruments.studio.sustain': (StudioSustain, True),
@@ -1542,6 +1550,8 @@ RESULT_TYPES = {
     'instruments.gallery': dict,
     'instruments.gallery.get': dict,
     'instruments.studio.open': dict,
+    'instruments.studio.current': dict,
+    'instruments.studio.controller': dict,
     'instruments.studio.status': dict,
     'instruments.studio.note': dict,
     'instruments.studio.sustain': dict,

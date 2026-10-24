@@ -17,12 +17,11 @@
   const embedded=await until(async()=>{const value=await api('instruments.studio.status',args);return value.editor_open&&value.editor_embedded&&slot&&value;},'Actual native editor did not embed');
   if(BigInt('0x'+embedded.editor_parent_handle)!==BigInt('0x'+slot.parent_handle))throw Error('Native editor parent does not match desktop panel: '+JSON.stringify({embedded,slot}));
   const stage=document.querySelector('.instrument-native-well').getBoundingClientRect();
-  if(embedded.editor_pixels_width>stage.width*slot.scale+4||embedded.editor_pixels_height>stage.height*slot.scale+4)throw Error('Native editor overflows its reserved slot');
+  if(embedded.editor_pixels_width>stage.width*slot.scale+4||embedded.editor_pixels_height>stage.height*slot.scale+4)throw Error('Native editor overflows its reserved slot: '+JSON.stringify({embedded,stage:stage.toJSON(),slot}));
   checks.push('Actual desktop panel HWND is the native plugin parent, within physical-pixel slot bounds');
   const before=await api('instruments.studio.status',args);
   window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyK',bubbles:true}));await pause(300);window.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyK',bubbles:true}));await pause(150);
-  const played=await api('instruments.studio.status',args);
-  if(played.energy<=before.energy||played.midi_on<=before.midi_on||played.midi_off<=before.midi_off)throw Error('UI piano produced no native MIDI/audio');
+  const played=await until(async()=>{const value=await api('instruments.studio.status',args);return value.energy>before.energy&&value.midi_on>before.midi_on&&value.midi_off>before.midi_off&&value.held_notes===0&&value;},'UI piano did not complete native MIDI/audio/release',4000);
   checks.push('Actual onscreen keyboard reached the live plugin and produced nonzero audio');
   [...document.querySelectorAll('.instrument-room-header nav button')].find(x=>x.textContent==='乐器').click();
   await until(async()=>!(await api('instruments.studio.status',args)).editor_open,'Image tab did not hide editor');

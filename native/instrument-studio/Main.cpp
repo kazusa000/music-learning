@@ -33,9 +33,11 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
     double rate=48000,lastChange=0,lastSnapshot=0,lastStatus=0,lastContact=0;
     int block=512; String stateHash,parameterHash; bool stopping=false,embedded=false,editorAvailable=false,sustainHeld=false;
     int64 snapshotChanges=-1;
-    int naturalWidth=0,naturalHeight=0; float viewScale=1;
+    float viewScale=1;
     HWND parent=nullptr; uint64_t commandSequence=0;
     std::array<bool,128> keys{};
+    std::array<int,128> controllers;
+    var controllerState(){auto value=ml::object({});for(int i:{1,7,10,11})if(controllers[(size_t)i]>=0)value.getDynamicObject()->setProperty(String(i),controllers[(size_t)i]);return value;}
 
     struct Paused {
         Studio& s;
@@ -55,7 +57,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
         messages[(size_t)a]=message;fifo.finishedWrite(1);
     }
     void releaseKeys(){
-        for(int i=0;i<128;++i)if(keys[(size_t)i]){enqueue(MidiMessage::noteOff(1,i));keys[(size_t)i]=false;}
+        for(int i=0;i<128;++i)if(keys[(size_t)i]){enqueue(MidiMessage::noteOff(1,i));keys[(size_t)i]=false;midiOff.fetch_add(1);}
         enqueue(MidiMessage::controllerEvent(1,64,0));panic.store(true);held.store(0);sustainHeld=false;
     }
     var state(){
@@ -64,6 +66,8 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             {"editor_available",editorAvailable},{"editor_open",editor&&editor->isVisible()},
             {"editor_embedded",embedded},{"state_sha256",stateHash},{"state_file",stateHash.isEmpty()?String():stateHash.substring(0,16)+".bin"},
             {"editor_scale",viewScale},
+            {"controllers",controllerState()},
+            {"held_notes",held.load()},
             {"changes",(int64)changes.load()},{"parameters_sha256",parameterHash},{"sample_rate",rate},{"callbacks",callbacks.load()},
             {"samples",samples.load()},{"nonzero_samples",nonzero.load()},{"energy",energy.load()},
             {"peak",peak.load()},{"midi_on",midiOn.load()},{"midi_off",midiOff.load()}});
@@ -73,7 +77,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
                 result.getDynamicObject()->setProperty("editor_handle",String::toHexString((int64)(intptr_t)window));
                 result.getDynamicObject()->setProperty("editor_parent_handle",String::toHexString((int64)(intptr_t)GetParent(window)));
                 RECT box{};GetClientRect(window,&box);
-                result.getDynamicObject()->setProperty("editor_pixels_width",box.right);result.getDynamicObject()->setProperty("editor_pixels_height",box.bottom);
+                result.getDynamicObject()->setProperty("editor_pixels_width",(int)box.right);result.getDynamicObject()->setProperty("editor_pixels_height",(int)box.bottom);
             }}
         return result;
     }
@@ -92,7 +96,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             ml::require(SHA256(target).toHexString()==sha,"Audition state identity collision");
             stateHash=sha;
         }
-        const auto parameterState=ml::parameters(*plugin);
+        const auto parameterState=ml::object({{"parameters",ml::parameters(*plugin)},{"controllers",controllerState()}});
         parameterHash=SHA256(JSON::toString(parameterState).toUTF8()).toHexString();
         ml::writeJson(root.getChildFile(sha.substring(0,16)+".params.json"),parameterState);
         lastSnapshot=Time::getMillisecondCounterHiRes();
@@ -106,25 +110,39 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
     var showView(const var& args){
         const bool visible=(bool)args.getProperty("visible",true);
         if(!visible){closeView();return state();}
-        if(!editor){editor.reset(plugin->createEditorAndMakeActive());if(editor){naturalWidth=editor->getWidth();naturalHeight=editor->getHeight();}}
+        if(!editor)editor.reset(plugin->createEditorAndMakeActive());
         ml::require(editor!=nullptr,"This plugin does not provide a native editor");
         const auto handle=args.getProperty("parent_handle","").toString().getHexValue64();
         if(handle){
             auto host=(HWND)(intptr_t)handle;DWORD pid=0;
             ml::require(IsWindow(host)&&GetWindowThreadProcessId(host,&pid)&&pid==(DWORD)(int)args["parent_pid"],"Native editor parent identity changed");
-            if(!embedded||parent!=host){closeView();parent=host;editor->addToDesktop(0,host);embedded=true;}
+            if(!embedded||parent!=host){
+                closeView();parent=host;editor->addToDesktop(0,host);embedded=true;editor->setVisible(true);
+                // JUCE delivers the peer's DPI notification asynchronously.
+                // Let it arrive before selecting content scale or size constraints.
+                MessageManager::getInstance()->runDispatchLoopUntil(60);
+            }
             RECT bounds{};GetClientRect(host,&bounds);
             const double scale=(double)args.getProperty("scale",1.0);
             ml::require(std::isfinite(scale)&&scale>=.5&&scale<=4,"Invalid editor scale");
-            viewScale=(float)jlimit(.35,1.0,jmin(bounds.right/(scale*jmax(1,naturalWidth)),bounds.bottom/(scale*jmax(1,naturalHeight))));
-            editor->setScaleFactor(viewScale);
-            // The peer owns physical DPI conversion; plugin minimum/fixed-size constraints remain intact.
-            if(editor->isResizable())editor->setSize(jmax(1,(int)(bounds.right/scale)),jmax(1,(int)(bounds.bottom/scale)));
+            // The plugin's own size constraints and native DPI choose a supported
+            // layout. Arbitrary zoom factors can select nonexistent raster assets.
+            if(viewScale!=1){viewScale=1;editor->setScaleFactor(1);}
+            if(editor->isResizable())editor->setBoundsConstrained(juce::Rectangle<int>(0,0,jmax(1,(int)(bounds.right/scale)),jmax(1,(int)(bounds.bottom/scale))));
             editor->setTopLeftPosition(0,0);editor->setVisible(true);
             if(auto* peer=editor->getPeer()){
                 auto window=(HWND)peer->getNativeHandle();
-                const int width=jmin(bounds.right,roundToInt(editor->getWidth()*scale)),height=jmin(bounds.bottom,roundToInt(editor->getHeight()*scale));
-                SetWindowPos(window,HWND_TOP,(bounds.right-width)/2,(bounds.bottom-height)/2,width,height,SWP_NOACTIVATE|SWP_SHOWWINDOW);
+                RECT actual{};GetWindowRect(window,&actual);
+                const double fit=jmin(bounds.right/(double)jmax(1L,actual.right-actual.left),bounds.bottom/(double)jmax(1L,actual.bottom-actual.top));
+                if(fit<.999){
+                    // Never request a fractional raster scale below 100%.
+                    // The plugin itself renders the selected native 1x/2x tier.
+                    const double effective=jmax(1.0,std::floor(scale*fit));
+                    viewScale=(float)jmin(1.0,effective/scale);editor->setScaleFactor(viewScale);
+                    GetWindowRect(window,&actual);
+                }
+                const int width=actual.right-actual.left,height=actual.bottom-actual.top;
+                SetWindowPos(window,HWND_TOP,jmax(0,((int)bounds.right-width)/2),jmax(0,((int)bounds.bottom-height)/2),0,0,SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
                 ml::require(GetParent(window)==host,"Plugin editor could not attach to the application");
             }
         }else{
@@ -148,6 +166,11 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
         }else if(action=="panic")releaseKeys();
         else if(action=="sustain"){sustainHeld=(bool)args["on"];enqueue(MidiMessage::controllerEvent(1,64,sustainHeld?127:0));lastChange=Time::getMillisecondCounterHiRes();}
         else if(action=="volume"){const float value=(float)args["value"];ml::require(std::isfinite(value)&&value>=0&&value<=1,"Invalid volume");volume.store(value);}
+        else if(action=="controller"){
+            const int number=(int)args["controller"],value=(int)args["value"];
+            ml::require((number==1||number==7||number==10||number==11)&&value>=0&&value<=127,"Unsupported audition controller");
+            controllers[(size_t)number]=value;enqueue(MidiMessage::controllerEvent(1,number,value));changes.fetch_add(1);lastChange=Time::getMillisecondCounterHiRes();
+        }
         else if(action=="parameter"){
             auto* parameter=ml::parameter(*plugin,args["parameter_id"].toString());float value=(float)args["value"];
             ml::require(parameter->isAutomatable()&&std::isfinite(value)&&value>=0&&value<=1,"Parameter is not writable");
@@ -158,7 +181,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
             auto all=ml::parameters(*plugin);Array<var> found;
             const auto search=args.getProperty("search","").toString();const int offset=(int)args.getProperty("offset",0),limit=(int)args.getProperty("limit",48);
             ml::require(offset>=0&&limit>0&&limit<=256,"Invalid parameter page");
-            for(auto item:*all.getArray())if(search.isEmpty()||item["name"].toString().containsIgnoreCase(search))found.add(item);
+            for(auto item:*all.getArray())if((!(bool)args.getProperty("writable_only",false)||(bool)item["automatable"])&&(search.isEmpty()||item["name"].toString().containsIgnoreCase(search)))found.add(item);
             Array<var> page;for(int i=offset;i<jmin(found.size(),offset+limit);++i)page.add(found[i]);
             return ml::object({{"total",found.size()},{"items",var(page)}});
         }else if(action=="editor")return showView(args);
@@ -177,6 +200,7 @@ class Studio final : public AudioIODeviceCallback, public AudioProcessorListener
     }
 public:
     explicit Studio(const File& file):root(file.getParentDirectory()),config(ml::parse(file)),token(config["token"].toString()){
+        controllers.fill(-1);
         lastContact=Time::getMillisecondCounterHiRes();
         ml::require(token.length()>=32,"Missing instrument session token");
         ml::writeJson(root.getChildFile("status.json"),ml::object({{"status","loading"},{"pid",(int)GetCurrentProcessId()},{"session_id",config["session_id"]}}));
@@ -186,7 +210,16 @@ public:
         plugin->setRateAndBufferSizeDetails(rate,block);plugin->prepareToPlay(rate,block);
         work.setSize(jmax(2,jmax(plugin->getTotalNumInputChannels(),plugin->getTotalNumOutputChannels())),jmax(4096,block));
         midi.ensureSize(32768);recording.setSize(2,(int)(rate*12));recording.clear();
-        plugin->addListener(this);device.addAudioCallback(this);snapshot();publish();
+        if(auto* saved=config["controllers"].getDynamicObject())for(auto item:saved->getProperties()){
+            const int number=item.name.toString().getIntValue(),value=(int)item.value;
+            ml::require((number==1||number==7||number==10||number==11)&&value>=0&&value<=127,"Invalid retained controller");
+            controllers[(size_t)number]=value;enqueue(MidiMessage::controllerEvent(1,number,value));
+        }
+        plugin->addListener(this);device.addAudioCallback(this);
+        // Same version-bound sample-worker settling rule as the existing renderer.
+        // Keep the published status loading during this phase, including restores.
+        if(ml::needsKeyscapeAuxiliaryOutputs(plugin->getPluginDescription()))MessageManager::getInstance()->runDispatchLoopUntil(10000);
+        snapshot();publish();
     }
     ~Studio()override{
         closeView();editor.reset();device.removeAudioCallback(this);device.closeAudioDevice();

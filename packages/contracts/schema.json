@@ -6113,6 +6113,39 @@
       "title": "Stem",
       "type": "object"
     },
+    "StudioController": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "controller": {
+          "enum": [
+            1,
+            7,
+            10,
+            11
+          ],
+          "title": "Controller",
+          "type": "integer"
+        },
+        "value": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_id",
+        "controller",
+        "value"
+      ],
+      "title": "StudioController",
+      "type": "object"
+    },
     "StudioEditor": {
       "additionalProperties": false,
       "properties": {
@@ -6240,6 +6273,11 @@
           "pattern": "^[a-f0-9]{32}$",
           "title": "Session Id",
           "type": "string"
+        },
+        "writable_only": {
+          "default": false,
+          "title": "Writable Only",
+          "type": "boolean"
         },
         "search": {
           "default": "",
@@ -9733,6 +9771,22 @@
     },
     "instruments.studio.open": {
       "arguments": "OpenInstrumentStudio",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.studio.current": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.studio.controller": {
+      "arguments": "StudioController",
       "result": {
         "additionalProperties": true,
         "type": "object"

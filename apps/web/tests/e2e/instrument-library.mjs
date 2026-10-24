@@ -66,6 +66,8 @@ try{
  await page.screenshot({path:path.join(f.report,'gallery-narrow.png')});
  await page.getByLabel('关闭乐器库').click();await page.getByRole('button',{name:/^乐器库/}).waitFor();
  assert(commands.some(x=>x.op==='instruments.studio.close'));assert.deepEqual(report.errors,[]);assert.deepEqual(report.external,[]);
+ await context.clearCookies();await page.route(base+'/v1/session',async route=>{await new Promise(r=>setTimeout(r,350));return route.continue();});
+ await page.goto(base+'/?view=instruments#token='+f.token);await page.locator('.instrument-card').first().waitFor();await page.waitForFunction(()=>{const i=document.querySelector('.instrument-card img');return i?.complete&&i.naturalWidth>0;});report.checks.push('Fresh desktop/session entry waits for authentication before local image/gallery requests');
  report.checks.push('4K 2.5x and narrow layouts; fixed keyboard; browser fallback identified; close releases audition');report.status='succeeded';
 }catch(e){report.status='failed';report.failure=String(e.stack??e);await page.screenshot({path:path.join(f.report,'failure.png')}).catch(()=>{});throw e;}
 finally{await writeFile(path.join(f.report,'report.json'),JSON.stringify(report,null,2));await browser.close();}

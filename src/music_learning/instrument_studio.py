@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import re
 import shutil
 import threading
 import time
@@ -18,7 +19,7 @@ from sqlalchemy.dialects.sqlite import insert as upsert
 from . import contracts as c
 from . import schema_v11 as tables
 from .instruments import catalog, materialize, resource_path
-from .instrument_previews import preview_plugin, validate_entry
+from .instrument_previews import preview_plugin, validate_entry, file_digest
 from .processes import OwnedProcess
 from .serialization import canonical
 from .settings import ROOT
@@ -95,6 +96,15 @@ class InstrumentStudio:
             if self.session and self.session["client_id"] == args.client_id and self.session["preset_id"] == args.preset_id and self.session["status"] not in ["closed", "failed"]:
                 return self.public()
             self.close_current()
+            # The homepage library has its own audition device. Pause an existing
+            # project projection without creating an engine or changing music.
+            if self.service.engine_broker is not None:
+                from .engine.controller import dispatch
+                state = self.service.engine_broker.status()
+                if state.get("playing"):
+                    dispatch(self.service, "transport", c.EngineTransport(
+                        engine_session=self.service.engine_broker.identity, generation=state["generation"],
+                        owner_id=state.get("owner_id"), playing=False))
             preset = next((p for p in catalog(self.settings) if p["id"] == args.preset_id), None)
             own = None
             if preset is None:
@@ -137,6 +147,8 @@ class InstrumentStudio:
                 if hashlib.sha256(path.read_bytes()).hexdigest() != preset["resources"][preset["entrypoint"]]["sha256"]:
                     raise ValueError("音色文件在读取时发生变化")
             spec, _ = preview_plugin(self.settings, preset, path)
+            source_identity = {"binary_sha256": preset.get("plugin_sha256"), "identifier": spec.get("identifier")}
+            session["source_identity"] = source_identity
             saved = own
             if resume:
                 with self.service.database.transaction(write=False) as db:
@@ -146,6 +158,8 @@ class InstrumentStudio:
                 if draft:
                     saved = dict(draft)
             if saved:
+                if saved["metadata"].get("source_identity", source_identity) != source_identity:
+                    raise ValueError("个人预设对应的音源版本已变化，请先重新核对音源")
                 if hashlib.sha256(saved["state"]).hexdigest() != saved["state_sha256"]:
                     raise ValueError("保存的乐器状态校验失败")
                 for key in ["preset_path", "sfizz_sfz_path", "surge_fxp_path", "parameters"]:
@@ -154,11 +168,15 @@ class InstrumentStudio:
                 spec.update(state_base64=base64.b64encode(saved["state"]).decode(), state_sha256=saved["state_sha256"],
                             state_encoding="rfc4648-juce-vst3-state")
             config = dict(schema_version=1, session_id=session["session_id"], token=session["token"],
-                          model_id=session["model_id"], preset_id=session["preset_id"], plugin=spec)
+                          model_id=session["model_id"], preset_id=session["preset_id"], plugin=spec,
+                          controllers=saved["metadata"].get("controllers", {}) if saved else {})
             atomic_json(directory / "config.json", config)
             host = self.settings.instrument_studio_host or ROOT / "runtime/build/instrument-studio/bin/ml_instrument_studio.exe"
             if not host.is_file():
                 raise ValueError("乐器插件宿主尚未构建")
+            receipt = json.loads((host.parent.parent / "studio-build.json").read_bytes())
+            if receipt["host_sha256"] != file_digest(host) or any(file_digest(ROOT / p) != sha for p, sha in receipt["sources"].items()):
+                raise ValueError("乐器插件宿主与当前代码不一致，请重新构建")
             with self.lock:
                 if self.closing or self.session is not session or session["status"] == "closed":
                     return
@@ -169,6 +187,35 @@ class InstrumentStudio:
         except Exception as error:
             if session["status"] != "closed":
                 session.update(status="failed", error=str(error))
+        finally:
+            if session["status"] == "closed":
+                self.clean_scratch(session)
+
+    def clean_scratch(self, session):
+        """Only flat, owned transport files; durable drafts/presets live in SQLite."""
+        directory = Path(session["directory"])
+        import ctypes
+        if os.name == "nt" and any(ctypes.windll.kernel32.GetFileAttributesW(str(p)) & 0x400 for p in [directory, self.settings.data_root / "is"] if p.exists()):
+            return
+        root = self.settings.path("is").resolve()
+        if directory.is_symlink() or not directory.resolve().is_relative_to(root) or directory.resolve() == root:
+            return
+        if not directory.exists():
+            return
+        for path in directory.iterdir():
+            if os.name == "nt" and ctypes.windll.kernel32.GetFileAttributesW(str(path)) & 0x400:
+                continue
+            if path.is_symlink() or not path.is_file():
+                continue
+            if path.name in {"config.json", "status.json", "command.json", "reply.json", "host.log", "descriptor.json", "capture.wav", "preset.vstpreset"} or re.fullmatch(r"[0-9a-f]{16}\.(bin|params\.json)", path.name):
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        try:
+            directory.rmdir()
+        except OSError:
+            pass  # Unknown files or linked/nested resources are deliberately retained.
 
     def require(self, session_id):
         if not self.session or self.session["session_id"] != session_id:
@@ -230,8 +277,12 @@ class InstrumentStudio:
         if not value or len(value) > 64 * 1024**2 or hashlib.sha256(value).hexdigest() != sha:
             raise ValueError("乐器草稿状态校验失败")
         params = json.loads((Path(self.session["directory"]) / (sha[:16] + ".params.json")).read_bytes())
+        controllers = params.get("controllers", {}) if isinstance(params, dict) else {}
+        if isinstance(params, dict):
+            params = params["parameters"]
         metadata = {"base_preset_id": state["base_preset_id"], "plugin_state_encoding": "rfc4648-juce-vst3-state",
-                    "parameters": {p["id"]: p["value"] for p in params if p["automatable"]}}
+                    "source_identity": state.get("source_identity"),
+                    "controllers": controllers, "parameters": {p["id"]: p["value"] for p in params if p["automatable"]}}
         with self.service.database.transaction() as db:
             statement = upsert(tables.drafts).values(id=c.new_id(), model_id=state["model_id"],
                 base_preset_id=state["preset_id"], state_sha256=sha, state=value, metadata=metadata, updated_at=time.time())
@@ -298,12 +349,16 @@ class InstrumentStudio:
                 self.log.close()
                 self.log = None
             self.session["status"] = "closed"
+            if self.future is None or self.future.done():
+                self.clean_scratch(self.session)
 
     def dispatch(self, operation, args, key):
         action = operation.rsplit(".", 1)[-1]
         if action == "open":
             return self.open(args)
         with self.lock:
+            if action == "current":
+                return self.read_status() if self.session else {"status": "closed", "session_id": None}
             self.require(args.session_id)
             if action == "status":
                 value = self.read_status()
@@ -331,3 +386,5 @@ class InstrumentStudio:
             self.closing = True
             self.close_current()
         self.pool.shutdown(wait=True, cancel_futures=True)
+        if self.session and self.session["status"] == "closed":
+            self.clean_scratch(self.session)

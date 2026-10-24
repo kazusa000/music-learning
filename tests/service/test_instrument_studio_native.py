@@ -43,7 +43,8 @@ def test_native_editor_audio_draft_and_personal_preset(tmp_path, image_id):
     handles = []
     def parent_loop():
         user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-        hwnd = user32.CreateWindowExW(0x08000000, "STATIC", "Studio isolated editor fixture", 0x90000000, 0, 0, 1400, 900, None, None, None, None)
+        hwnd = user32.CreateWindowExW(0x08080000, "STATIC", "Studio isolated editor fixture", 0x90000000, 0, 0, 3400, 1900, None, None, None, None)
+        user32.SetLayeredWindowAttributes(ctypes.c_void_p(hwnd), 0, 0, 2)
         handles.append(hwnd)
         parent_ready.set()
         message = wintypes.MSG()
@@ -80,68 +81,36 @@ def test_native_editor_audio_draft_and_personal_preset(tmp_path, image_id):
         hwnd = int(view["editor_handle"], 16)
         assert user32.GetParent(hwnd) == host
         report["checks"].append("Real installed " + image_id + " editor attached to native child HWND")
-        if image_id == "la-custom-c7":
-            gdi = ctypes.windll.gdi32
-            user32.GetWindowDC.restype = ctypes.c_void_p
-            gdi.CreateCompatibleDC.restype = ctypes.c_void_p
-            gdi.CreateCompatibleBitmap.restype = ctypes.c_void_p
-            for name in ["CreateCompatibleDC", "SelectObject", "DeleteObject", "DeleteDC"]:
-                getattr(gdi, name).argtypes = [ctypes.c_void_p] if name != "SelectObject" else [ctypes.c_void_p, ctypes.c_void_p]
-            gdi.CreateCompatibleBitmap.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
-            rect = wintypes.RECT()
-            user32.GetClientRect(ctypes.c_void_p(hwnd), ctypes.byref(rect))
-            width, height = rect.right, rect.bottom
-            time.sleep(1)
-            children = []
-            callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
-            def child_info(child, unused):
-                label = ctypes.create_unicode_buffer(256)
-                user32.GetClassNameW(ctypes.c_void_p(child), label, 256)
-                bounds = wintypes.RECT()
-                user32.GetWindowRect(ctypes.c_void_p(child), ctypes.byref(bounds))
-                children.append(dict(hwnd=int(child), name=label.value, bounds=[bounds.left,bounds.top,bounds.right,bounds.bottom]))
-                return True
-            user32.EnumChildWindows(ctypes.c_void_p(hwnd), callback_type(child_info), None)
-            report["editor_children"] = children
-            if children:
-                target = children[-1]["hwnd"]
-                user32.SendMessageW(ctypes.c_void_p(target), 0x200, 0, 300 | (200 << 16))
-                user32.SendMessageW(ctypes.c_void_p(target), 0x201, 1, 300 | (200 << 16))
-                user32.SendMessageW(ctypes.c_void_p(target), 0x202, 0, 300 | (200 << 16))
-                time.sleep(3)
-            user32.GetClientRect(ctypes.c_void_p(hwnd), ctypes.byref(rect))
-            width, height = rect.right, rect.bottom
-            source = user32.GetWindowDC(ctypes.c_void_p(hwnd))
-            memory = gdi.CreateCompatibleDC(source)
-            bitmap = gdi.CreateCompatibleBitmap(source, width, height)
-            gdi.SelectObject(memory, bitmap)
-            user32.PrintWindow(ctypes.c_void_p(hwnd), ctypes.c_void_p(memory), 3)
-            header = ctypes.create_string_buffer(40)
-            import struct
-            header.raw = struct.pack("<IiiHHIIiiII", 40, width, -height, 1, 32, 0, width * height * 4, 0, 0, 0, 0)
-            pixels = ctypes.create_string_buffer(width * height * 4)
-            gdi.GetDIBits(ctypes.c_void_p(memory), ctypes.c_void_p(bitmap), 0, height, pixels, header, 0)
-            import zlib
-            raw = pixels.raw
-            rgb = bytearray(width * height * 3)
-            rgb[0::3], rgb[1::3], rgb[2::3] = raw[2::4], raw[1::4], raw[0::4]
-            def chunk(kind, data):
-                return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
-            scan = b"".join(b"\0" + rgb[y * width * 3:(y + 1) * width * 3] for y in range(height))
-            png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(scan)) + chunk(b"IEND", b"")
-            (ROOT / "runtime/test-reports/keyscape-native-editor.png").write_bytes(png)
-            gdi.DeleteObject(bitmap)
-            gdi.DeleteDC(memory)
-            user32.ReleaseDC(ctypes.c_void_p(hwnd), ctypes.c_void_p(source))
-        parameters = invoke(service, "instruments.studio.parameters", {**sid, "limit": 256})
-        for offset in range(256, min(parameters["total"], 8192), 256):
-            parameters["items"].extend(invoke(service, "instruments.studio.parameters", {**sid, "limit": 256, "offset": offset})["items"])
-        report["parameters"] = parameters
-        writable = next(x for x in parameters["items"] if x["automatable"] and not x["discrete"] and x["name"].lower() not in ["instrument", "preset"])
-        wanted = .3 if writable["value"] > .5 else .7
-        invoke(service, "instruments.studio.parameter", {**sid, "parameter_id": writable["id"], "value": wanted})
-        after = invoke(service, "instruments.studio.parameters", {**sid, "search": writable["name"], "limit": 256})
-        assert any(p["id"] == writable["id"] and abs(p["value"] - wanted) < .0001 for p in after["items"])
+        parameters = invoke(service, "instruments.studio.parameters", {**sid, "limit": 256, "writable_only": True})
+        writable = next((x for x in parameters["items"] if not x["discrete"] and x["name"].lower() not in ["instrument", "preset"]), None)
+        if writable:
+            wanted = .3 if writable["value"] > .5 else .7
+            invoke(service, "instruments.studio.parameter", {**sid, "parameter_id": writable["id"], "value": wanted})
+            after = invoke(service, "instruments.studio.parameters", {**sid, "search": writable["name"], "limit": 256})
+            assert any(p["id"] == writable["id"] and abs(p["value"] - wanted) < .0001 for p in after["items"])
+            report["parameter"] = {"id": writable["id"], "name": writable["name"], "value": wanted}
+        else:
+            # Generic VST automation is not exposed by every engine. Use the
+            # documented MIDI volume controller, verifying actual audio change.
+            assert parameters["total"] == 0
+            invoke(service, "instruments.studio.controller", {**sid, "controller": 7, "value": 110})
+            time.sleep(.1)
+            start_energy = studio.command("status")["energy"]
+            invoke(service, "instruments.studio.note", {**sid, "pitch": 60, "on": True, "velocity": .8})
+            time.sleep(.25)
+            invoke(service, "instruments.studio.note", {**sid, "pitch": 60, "on": False})
+            baseline_energy = studio.command("status")["energy"] - start_energy
+            time.sleep(.4)
+            wanted = 32
+            invoke(service, "instruments.studio.controller", {**sid, "controller": 7, "value": wanted})
+            time.sleep(.1)
+            start_energy = studio.command("status")["energy"]
+            invoke(service, "instruments.studio.note", {**sid, "pitch": 60, "on": True, "velocity": .8})
+            time.sleep(.25)
+            invoke(service, "instruments.studio.note", {**sid, "pitch": 60, "on": False})
+            quieter_energy = studio.command("status")["energy"] - start_energy
+            report["controller_audio"] = {"controller": 7, "before": baseline_energy, "after": quieter_energy, "saved_value": wanted}
+            assert baseline_energy > 1e-7 and 1e-7 < quieter_energy < baseline_energy * .8, report["controller_audio"]
         studio.command("capture_start")
         windows = []
         low, high = next(x for x in model["variants"] if x["id"] == model["default_preset_id"])["key_range"]
@@ -159,7 +128,7 @@ def test_native_editor_audio_draft_and_personal_preset(tmp_path, image_id):
         assert saved["id"].startswith("user-") and saved["state_sha256"] != before
         duplicate = invoke(service, "instruments.studio.save", {**sid, "name": image_id + " · 自定义实测"}, key="studio-native-save-01")
         assert duplicate == saved
-        report.update(parameter={"id": writable["id"], "name": writable["name"], "value": wanted}, energies=windows,
+        report.update(energies=windows,
                       initial_state=before, saved_state=saved["state_sha256"], capture_sha256=hashlib.sha256((Path(studio.session["directory"]) / "capture.wav").read_bytes()).hexdigest())
         invoke(service, "instruments.studio.close", sid)
         reopened = invoke(service, "instruments.studio.open", {"preset_id": saved["id"], "client_id": "a" * 32})
@@ -171,10 +140,20 @@ def test_native_editor_audio_draft_and_personal_preset(tmp_path, image_id):
                 break
             assert time.monotonic() < deadline
             time.sleep(.1)
-        restored = invoke(service, "instruments.studio.parameters", {**sid, "search": writable["name"], "limit": 256})
-        report["restored_parameters"] = restored
-        assert any(p["id"] == writable["id"] and abs(p["value"] - wanted) < .0001 for p in restored["items"])
-        report["checks"].append("Three live MIDI on/off windows nonzero, parameter changed, explicit save idempotent, personal state restored")
+        if writable:
+            restored = invoke(service, "instruments.studio.parameters", {**sid, "search": writable["name"], "limit": 256})
+            report["restored_parameters"] = restored
+            assert any(p["id"] == writable["id"] and abs(p["value"] - wanted) < .0001 for p in restored["items"])
+        else:
+            assert status["controllers"]["7"] == wanted
+            energy = studio.command("status")["energy"]
+            invoke(service, "instruments.studio.note", {**sid, "pitch": 60, "on": True, "velocity": .8})
+            time.sleep(.25)
+            invoke(service, "instruments.studio.note", {**sid, "pitch": 60, "on": False})
+            restored_energy = studio.command("status")["energy"] - energy
+            assert 1e-7 < restored_energy < baseline_energy * .8
+            report["controller_audio"]["restored"] = restored_energy
+        report["checks"].append("Three live MIDI on/off windows nonzero, writable parameter or documented MIDI controller changed, explicit save idempotent, personal state restored")
     finally:
         if studio.session:
             report["last_status"] = studio.public()
