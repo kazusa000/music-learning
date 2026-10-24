@@ -36,6 +36,15 @@ sealed class StudioWindow : Form {
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
     protected override bool ShowWithoutActivation { get { return diagnostic != null; } }
+    protected override CreateParams CreateParams {
+        get {
+            var value = base.CreateParams;
+            // WebView autofocus and child editors must not activate an invisible
+            // verification window. Normal product windows keep their usual focus.
+            if (diagnostic != null) value.ExStyle |= 0x08000000; // WS_EX_NOACTIVATE
+            return value;
+        }
+    }
     public StudioWindow(string url, string data, string report = null, string script = null) {
         diagnostic = report;
         verificationScript = script;
