@@ -33,6 +33,7 @@
 ## 验证记录
 
 - [源码目录与共享检查](benchmarks/source-layout-preparation.md)
+- [源码公开发布与许可检查](benchmarks/source-publication.md)
 - [原生引擎验收摘要](benchmarks/native-engine-completion.md)与[详细记录](benchmarks/native-engine-n7.md)
 - [播放与混音操作验证](benchmarks/playback-mixer-workflow.md)
 - [AI 编辑工具验证](benchmarks/ai-edit-tools.md)

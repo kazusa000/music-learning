@@ -37,4 +37,4 @@ docs/                 使用、架构、开发和验收文档
 
 当前主要运行环境为 Windows x64、Python 3.11、Node.js 和原生 C++ 工具链。首次拿到源码还需要准备本地运行环境，见[源码准备](docs/development/source-checkout.md)；`start.cmd` 面向已经准备好的本机安装，不是完整安装器。
 
-项目许可证尚未选定，本次仍处于[开源准备](docs/development/open-source-preparation.md)阶段。第三方组件、模型及资源来源单独记录在 [THIRD_PARTY.md](THIRD_PARTY.md)，商用音源插件和采样库不在源码仓库中。
+软件源码采用 [AGPL-3.0-only](LICENSE)；乐器图片与风格库的项目原创内容采用 [CC BY 4.0](LICENSES/CC-BY-4.0.txt)，均随源码公开。许可范围和署名见 [NOTICE.md](NOTICE.md)，共享与首次运行说明见[开源准备](docs/development/open-source-preparation.md)。第三方组件、模型及资源来源单独记录在 [THIRD_PARTY.md](THIRD_PARTY.md)，商用音源插件和采样库不在源码仓库中。

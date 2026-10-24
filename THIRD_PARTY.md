@@ -2,9 +2,11 @@
 
 本仓库的原生部分使用第三方 SDK，并加载独立插件；源码、构建工具、插件与采样库的使用条件分别记录。下载文件保存在被忽略的目录，不随源码提交重新分发。
 
+项目软件采用 [AGPL-3.0-only](LICENSE)，项目原创乐器图片和风格整理内容采用 [CC BY 4.0](LICENSES/CC-BY-4.0.txt)。完整范围和署名见 [NOTICE.md](NOTICE.md)；以下第三方内容保持其原许可。
+
 | 依赖 | 当前方式与来源 |
 | --- | --- |
-| JUCE 9.0.4 | 模块为 AGPLv3/商业双许可，详见 [JUCE LICENSE](https://github.com/juce-framework/JUCE/blob/9.0.4/LICENSE.md)。本地原型使用其开源许可路径；未来对外发布方式可能需要商业 JUCE 许可，不能将其视为 MIT 依赖。 |
+| JUCE 9.0.4 | 模块为 AGPLv3/商业双许可，详见 [JUCE LICENSE](https://github.com/juce-framework/JUCE/blob/9.0.4/LICENSE.md)。本项目公开源码及基于它的开源构建采用 AGPLv3 路线，保留 JUCE 与其依赖的许可声明。 |
 | VST3 SDK | 使用 JUCE 包中附带版本，具体版本与第三方许可见该包的 JUCE.spdx.json 和 VST3_SDK/LICENSE.txt；不修改 SDK。 |
 | MSVC / Windows SDK | 从微软固定渠道清单获取，个人本地构建工具；不随本项目重新分发。 |
 | Microsoft.Web.WebView2 1.0.4258.31 / .NET Framework 4.8 | 桌面壳使用本机.NET编译器及微软[WebView2 NuGet包](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31)，下载SHA固定在scripts/build_desktop.py。SDK/DLL/EXE位于忽略的runtime/desktop；使用系统已有WebView2 Runtime，未把组件提交源码或系统安装包。包内许可随下载保留。 |

@@ -1,5 +1,6 @@
 """Short entry/path checks only; never run a legacy acceptance workflow."""
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,9 @@ def test_python_package_metadata_reads_relocated_dependency_input(tmp_path):
     if python == sys.executable and importlib.util.find_spec('setuptools') is None:
         pytest.skip('Set ML_PACKAGING_PYTHON to an existing packaging environment with setuptools')
     shutil.copyfile(ROOT / 'pyproject.toml', tmp_path / 'pyproject.toml')
+    for name in ('LICENSE', 'NOTICE.md', 'THIRD_PARTY.md'):
+        shutil.copyfile(ROOT / name, tmp_path / name)
+    shutil.copytree(ROOT / 'LICENSES', tmp_path / 'LICENSES')
     (tmp_path / 'requirements').mkdir()
     shutil.copyfile(ROOT / 'requirements/app.in', tmp_path / 'requirements/app.in')
     package = tmp_path / 'src/music_learning'
@@ -43,6 +47,8 @@ def test_python_package_metadata_reads_relocated_dependency_input(tmp_path):
     assert result.returncode == 0, result.stderr.decode(errors='replace')
     text = next(metadata.glob('*.dist-info/METADATA')).read_text(encoding='utf-8')
     assert 'Requires-Dist: fastapi' in text and 'Requires-Dist: psutil' in text
+    assert 'License-Expression: AGPL-3.0-only' in text
+    assert 'License-File: LICENSE' in text and 'License-File: NOTICE.md' in text
 
 
 def test_source_audit_redacts_candidates_and_leaves_files_unchanged(tmp_path, monkeypatch):
@@ -62,3 +68,45 @@ def test_source_audit_redacts_candidates_and_leaves_files_unchanged(tmp_path, mo
     assert result['tracked_private_paths'] == ['config.local.json']
     assert token not in json.dumps(result)
     assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == before
+
+
+def test_history_audit_finds_old_text_without_disclosing_values(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location('history_audit', ROOT / 'scripts/maintenance/audit-source-tree.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    token = 'hf_' + 'Y' * 40
+    old_text = ('removed configuration\n' + token + '\n').encode()
+    blobs = {'a' * 40: old_text, 'b' * 40: b'\0binary'}
+    oid, binary_oid = blobs
+    large_oid = 'c' * 40
+    objects = (f'{oid} old config.txt\n{oid} duplicate.txt\n{binary_oid} binary.dat\n'
+               f'{large_oid} huge.txt\n').encode()
+    monkeypatch.setattr(module.subprocess, 'check_output', lambda *args, **kwargs: objects)
+
+    def inventory(command, **kwargs):
+        assert kwargs['input'].splitlines() == [key.encode() for key in (*blobs, large_oid)]
+        text = ''.join(f'{key} blob {len(value)}\n' for key, value in blobs.items())
+        text += f'{large_oid} blob {module.MAX_TEXT_BLOB_BYTES + 1}\n'
+        return subprocess.CompletedProcess(command, 0, stdout=text.encode())
+
+    class Reader:
+        def __enter__(self):
+            self.stdin = io.BytesIO()
+            self.stdout = io.BytesIO(b''.join(
+                f'{key} blob {len(value)}\n'.encode() + value + b'\n' for key, value in blobs.items()))
+            return self
+
+        def __exit__(self, *args):
+            self.stdout.close()
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(module.subprocess, 'run', inventory)
+    monkeypatch.setattr(module.subprocess, 'Popen', lambda *args, **kwargs: Reader())
+    result = module.scan_history_text(tmp_path)
+    assert result['unique_text_blobs'] == 1
+    assert result['binary_blobs_skipped'] == 1
+    assert result['credential_candidates'] == [dict(oid=oid, path='old config.txt', line=2, rule='huggingface-token')]
+    assert result['oversized_blobs_skipped'][0]['oid'] == large_oid
+    assert token not in json.dumps(result)

@@ -6,6 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "music-learning"
 version = "0.1.0"
 description = "Local AI-operated music project service"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE", "LICENSES/*.txt", "NOTICE.md", "THIRD_PARTY.md"]
 requires-python = ">=3.11"
 dynamic = ["dependencies"]
 

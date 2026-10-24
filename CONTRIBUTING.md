@@ -1,6 +1,6 @@
 # 开发入口
 
-先看[源码准备](docs/development/source-checkout.md)、[目录职责](docs/development/repository-layout.md)和[统一 API](docs/development/unified-api.md)。项目尚在整理公开发布方式，当前没有选定项目许可证。
+先看[源码准备](docs/development/source-checkout.md)、[目录职责](docs/development/repository-layout.md)和[统一 API](docs/development/unified-api.md)。软件采用 AGPL-3.0-only；乐器展示与风格库的原创内容采用 CC BY 4.0，详见 [NOTICE.md](NOTICE.md)。提交的新贡献沿用对应目录的许可，不要求转让版权。
 
 ## 修改放在哪里
 

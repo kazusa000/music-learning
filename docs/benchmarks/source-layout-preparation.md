@@ -11,4 +11,4 @@
 
 最后一轮测试夹具已完整清理。前两轮的审查夹具曾用 Git 写对象，留下四个只读 Git 对象，共 96 字节；按现有规则没有改只读属性或绕过删除失败，精确位置保存在本机 `closure.json`。夹具现已改为注入只读索引，不再生成这些对象。原小报告保留，不声称前三轮都成功或全部文件都删除。
 
-完整审查、依赖差异、前后保护及清理记录在 `runtime/maintenance/open-source-layout-20261024`。尚未选定项目许可证，也未决定展示资源的许可范围；这项整理不等于已完成公开发行，后续入口见[开源准备](../development/open-source-preparation.md)。
+完整审查、依赖差异、前后保护及清理记录在 `runtime/maintenance/open-source-layout-20261024`。以上是目录整理阶段的记录，当时尚未确定许可或推送；后续公开范围与历史文本检查见[开源准备](../development/open-source-preparation.md)和[公开发布记录](source-publication.md)。

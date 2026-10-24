@@ -1,6 +1,7 @@
 {
   "name": "music-learning-p0-player-probe",
   "private": true,
+  "license": "AGPL-3.0-only",
   "packageManager": "pnpm@11.25.0",
   "type": "module",
   "scripts": {"probe": "node probe.mjs"},
