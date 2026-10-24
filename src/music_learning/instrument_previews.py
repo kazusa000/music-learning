@@ -335,12 +335,16 @@ class InstrumentPreviews:
         )
         if entry is None or not entry.get("audio_verified"):
             raise ValueError("该音色尚未入库，无法试听")
-        if not _background:
+        identifier = fingerprint(self.settings, entry)
+        with self.db() as db:
+            cached = db.execute("select status from previews where id=?", (identifier,)).fetchone()
+        # A finished WAV is independent of the sampler and its installed library.
+        # Keep source validation on cache misses; playback verifies the WAV itself.
+        if not _background and (cached is None or cached["status"] != "ready"):
             try:
                 validate_entry(self.settings, entry)
             except (ValueError, OSError) as error:
                 raise ValueError("音源文件检查失败，请检查音源库") from error
-        identifier = fingerprint(self.settings, entry)
         with self.db() as db:
             db.execute("BEGIN IMMEDIATE")
             receipt = db.execute("select * from receipts where key=?", (key,)).fetchone()
@@ -403,7 +407,6 @@ class InstrumentPreviews:
         if row is None:
             raise ValueError("试听尚未准备好")
         entry = json.loads(row["entry"])
-        validate_entry(self.settings, entry)
         if fingerprint(self.settings, entry) != identifier:
             raise ValueError("音源版本已变化，请重新准备试听")
         path = self.root / "audio" / (identifier + ".wav")

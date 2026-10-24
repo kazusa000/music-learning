@@ -100,6 +100,41 @@ def test_failure_retry_and_cancel_fence_late_publication(service, previews):
     assert store.get(a["id"])["status"] == "ready"
 
 
+def test_ready_preview_plays_without_reopening_source_library(service, previews, monkeypatch):
+    store, entry = previews
+    args = PrepareInstrumentPreview(preset_id=entry["id"])
+    prepared = store.prepare(args, "first")
+    assert store.process_next()
+    path = store.audio(prepared["id"])
+    original = path.read_bytes()
+    # A disconnected or busy sample disk cannot block an existing local WAV.
+    (service.settings.instrument_library / "bank/test.sfz").unlink()
+
+    def source_access(*_args):
+        raise AssertionError("Cached playback must not inspect the sample library")
+
+    monkeypatch.setattr("music_learning.instrument_previews.validate_entry", source_access)
+    reopened = InstrumentPreviews(service.settings, source_access)
+    hit = reopened.prepare(args, "cached-after-restart")
+    assert hit["cached"] and hit["status"] == "ready" and hit["id"] == prepared["id"]
+    assert reopened.audio(hit["id"]).read_bytes() == original
+
+
+def test_changed_preview_identity_still_validates_source_on_cache_miss(service, previews):
+    store, entry = previews
+    args = PrepareInstrumentPreview(preset_id=entry["id"])
+    prepared = store.prepare(args, "first")
+    store.process_next()
+    entry["key_range"] = [60, 70]
+    (service.settings.instrument_library / "catalog.json").write_text(
+        json.dumps(dict(schema_version=1, presets=[entry]))
+    )
+    (service.settings.instrument_library / "bank/test.sfz").unlink()
+    with pytest.raises(ValueError, match="音源文件检查失败"):
+        store.prepare(args, "changed-source")
+    assert store.get(prepared["id"])["status"] == "ready"
+
+
 def test_failed_preview_retains_native_response_bound_to_exact_queue_attempt(previews):
     store, entry = previews
     queued = store.prepare(PrepareInstrumentPreview(preset_id=entry["id"]), "diagnostic-failure")
