@@ -99,6 +99,18 @@ def apply(service, db, revision, args):
     data = snapshot.model_dump(mode="json")
     data["frozen_tracks"] = {}
     for operation in args.operations:
+        if operation.op == "add_plugin":
+            from .instruments import captured_plugin
+
+            if operation.track_id not in {track["id"] for track in data["tracks"]}:
+                raise ValueError("Target track does not exist; create the track before add_plugin")
+            if any(p["id"] == operation.id for p in data["plugins"]):
+                raise ValueError("Plugin ID already exists; use patch_plugin for an existing plugin")
+            if any(p["track_id"] == operation.track_id and p["order"] == operation.order for p in data["plugins"]):
+                raise ValueError("Plugin slot already occupied; use patch_plugin with its plugin ID")
+            source = captured_plugin(service, db, args.project_id, operation.preset_capture_job_id)
+            plugin = dict(copy.deepcopy(source), id=operation.id or c.new_id(), track_id=operation.track_id, order=operation.order)
+            operation = c.PutEntity(op="put", collection="plugins", entity=c.PluginInstance.model_validate(plugin))
         if operation.op == "patch_note":
             old = next((note for note in data["notes"] if note["id"] == operation.id), None)
             if old is None:
@@ -205,9 +217,15 @@ def apply(service, db, revision, args):
                     )
                     if not meta["automatable"]:
                         raise ValueError("parameter cannot be automated")
+                if name == "tracks" and previous is None:
+                    order = data["track_order"] or [track["id"] for track in data["tracks"]]
+                    if identifier not in order:
+                        data["track_order"] = [*order, identifier]
                 data[name] = [e for e in data[name] if e["id"] != identifier] + [entity]
             elif previous:
                 data[name] = [e for e in data[name] if e["id"] != identifier]
+                if name == "tracks":
+                    data["track_order"] = [track for track in data["track_order"] if track != identifier]
             else:
                 raise ValueError("cannot delete an unknown entity")
         elif operation.op == "timing":

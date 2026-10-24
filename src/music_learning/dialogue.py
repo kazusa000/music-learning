@@ -182,6 +182,19 @@ def music_query(service, db, args):
             }
         )
     if args.action == "summary":
+        timing = snapshot.get("timing_map")
+        if timing:
+            anchors = timing["anchors"][args.offset:args.offset + args.limit]
+            result["timing_grid"] = {
+                "id": timing["id"], "sample_rate": timing["sample_rate"],
+                "project_duration_samples": snapshot["duration_samples"],
+                "pickup": timing["pickup"], "meters": timing["meters"][args.offset:args.offset + args.limit],
+                "meter_total": len(timing["meters"]),
+                "meter_next_offset": args.offset + args.limit if args.offset + args.limit < len(timing["meters"]) else None,
+                "anchors": anchors, "anchor_total": len(timing["anchors"]),
+                "next_offset": args.offset + len(anchors) if args.offset + len(anchors) < len(timing["anchors"]) else None,
+                "first_anchor": timing["anchors"][0], "last_anchor": timing["anchors"][-1],
+            }
         result["original_reference"] = ({"has_vocals":reference["has_vocals"],
             "annotations":[a for a in reference["annotations"] if a["start_sample"]<end and a["end_sample"]>start][:args.limit],
             "melody_note_count":sum(n["start_sample"]<end and n["end_sample"]>start for n in reference["notes"])} if reference else None)
@@ -223,6 +236,7 @@ def music_query(service, db, args):
         "revision_id": revision["id"],
         "snapshot_sha256": revision["snapshot_sha256"],
         "sample_rate": snapshot["sample_rate"],
+        "project_duration_samples": snapshot["duration_samples"],
         "view": args.view,
         "evidence": result,
         "citations": citations,

@@ -2,6 +2,52 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "schema_version": 1,
   "$defs": {
+    "AddPlugin": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "add_plugin",
+          "title": "Op",
+          "type": "string"
+        },
+        "track_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Track Id",
+          "type": "string"
+        },
+        "preset_capture_job_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Preset Capture Job Id",
+          "type": "string"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "order": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "track_id",
+        "preset_capture_job_id"
+      ],
+      "title": "AddPlugin",
+      "type": "object"
+    },
     "AdoptPreprocessing": {
       "additionalProperties": false,
       "properties": {
@@ -40,6 +86,7 @@
           "items": {
             "discriminator": {
               "mapping": {
+                "add_plugin": "#/$defs/AddPlugin",
                 "arrange_clip": "#/$defs/ArrangeClip",
                 "delete": "#/$defs/DeleteEntity",
                 "freeze": "#/$defs/FreezeTrack",
@@ -76,6 +123,9 @@
               },
               {
                 "$ref": "#/$defs/PatchPlugin"
+              },
+              {
+                "$ref": "#/$defs/AddPlugin"
               },
               {
                 "$ref": "#/$defs/PatchNote"
@@ -374,6 +424,7 @@
           "items": {
             "discriminator": {
               "mapping": {
+                "add_plugin": "#/$defs/AddPlugin",
                 "arrange_clip": "#/$defs/ArrangeClip",
                 "delete": "#/$defs/DeleteEntity",
                 "freeze": "#/$defs/FreezeTrack",
@@ -410,6 +461,9 @@
               },
               {
                 "$ref": "#/$defs/PatchPlugin"
+              },
+              {
+                "$ref": "#/$defs/AddPlugin"
               },
               {
                 "$ref": "#/$defs/PatchNote"
@@ -3559,6 +3613,7 @@
           "type": "integer"
         },
         "velocity": {
+          "description": "Normalized MIDI velocity in (0, 1], e.g. 0.65. Divide MIDI 0-127 values by 127.",
           "exclusiveMinimum": 0,
           "maximum": 1,
           "title": "Velocity",

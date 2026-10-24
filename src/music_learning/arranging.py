@@ -58,7 +58,7 @@ def production_query(service, db, args):
             or lane.get("track_id") == args.track_id
             or lane.get("plugin_id") in {plugin["id"] for plugin in plugins}
         ],
-        "notice": "Use patch_plugin to change parameters or load a preset. Changes follow the user's requested musical extent.",
+        "notice": "Use add_plugin(track_id,preset_capture_job_id) to bind a captured instrument to an empty track; patch_plugin uses an existing plugin ID to change parameters or sounds. Changes follow the user's requested musical extent.",
     }
     from .instruments import categories, models, query, recommend
 

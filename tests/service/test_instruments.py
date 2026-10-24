@@ -252,7 +252,7 @@ def test_real_capture_apply_render_preserves_notes_and_tracks(service, project, 
         dict(
             project_id=project["id"],
             scope=dict(track_ids=[track], start_sample=0, end_sample=44100, structural=True),
-            operations=[dict(op="put", collection="plugins", entity=plugin)],
+            operations=[dict(op="add_plugin", id=plugin["id"], track_id=track, preset_capture_job_id=job["id"])],
             description="Explicit sampled preset",
         ),
         rev["id"],

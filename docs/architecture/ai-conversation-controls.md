@@ -33,3 +33,13 @@ Codex App Server 打开 `features.fast_mode`；`thread/start` 传 `serviceTier` 
 测试均经 `scripts/maintenance/run-tests.ps1` 自动清理临时工程与浏览器数据。协议生成目录 `runtime/build/codex-protocol-controls` 的清理被自动审批以 `blocked by policy` 拒绝，保留且不换工具绕过；小型字段摘要在 `runtime/maintenance/ai-controls-20261023/protocol-fields.json`。不访问 H 音源库或 NAS，不启动音乐模型、正式渲染或额外音源验证。原生和桌面包保持原样；发布保护记录在同一 maintenance 目录。
 
 默认发布已激活 `8edf924aa9999a1bb0cc63d79bb2a4d6046470cf`，描述为 `runtime/application-release.ai-controls-20261023.local.json`，18765 实际重新启动并打开应用。只读确认新 API 返回独立字段、正式首页内容 SHA 匹配发布、原生四文件和桌面五文件 SHA 不变，正式九表与 head 前后相同。入库旧 locator 的准备 PID 已退出、另一个旧 PID 被非本项目程序复用，未拿旧 locator 当运行证据；本次独立实查的三个其他任务 Python 进程在窗口内退出，如实记录，未停止或恢复它们。维护 before/after 保存实际身份，不宣称仍在运行。
+
+## 编辑工具的数据契约
+
+动态工具仍接 Codex App Server，调用统一 Service 事务。`agent_tool_schema.py` 从正式 Python 契约生成模型所见参数：展开嵌套引用，用 collection 绑定 put 的实体结构，保留必填项、数值范围和字面标签；校验失败反馈也使用同一份自包含结构。服务仍按正式契约严格校验，不自动猜测或补写音乐内容。
+
+新轨道与没有插件的 MIDI 轨使用 `add_plugin(track_id, preset_capture_job_id)` 绑定已成功捕获的音源；完整状态、描述符、资源与身份均从同工程捕获结果复制，插件 ID 可由服务生成。它与现有 `patch_plugin`（修改已有插件）分开，加入与音符创建可以在同一原子批次完成。直接 API、SDK、CLI 与内置助手使用同一个操作。新轨默认追加至已有顺序，显式 track_order 仍可指定位置；占用插槽、跨工程捕获、未完成任务、越权范围仍拒绝。
+
+`music_query(action=summary)` 返回真实速度／拍号网格、工程长度、首尾锚点和分页锚点、拍号，不只返回 timing_map_id。只改音符时保留现有网格；力度使用 (0,1]，时间为绝对采样点。put 按 collection 先校验正确实体，单个音符错误不会展开七种实体的无关错误。
+
+本轮实际模型与原生发声验证见[编辑工具验证](../benchmarks/ai-edit-tools.md)。

@@ -31,6 +31,7 @@
 
 - [原生引擎验收摘要](benchmarks/native-engine-completion.md)与[详细记录](benchmarks/native-engine-n7.md)
 - [播放与混音操作验证](benchmarks/playback-mixer-workflow.md)
+- [AI 编辑工具验证](benchmarks/ai-edit-tools.md)
 - [Kontakt 当前任务记录](benchmarks/instrument-intake-full-recovery.md)
 - [Kontakt 索引处理](benchmarks/kontakt-derived-index-postload.md)
 

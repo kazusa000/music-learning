@@ -6,7 +6,7 @@ from fractions import Fraction
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Id = Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]
 Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
@@ -134,7 +134,7 @@ class NoteEvent(Model):
     spelling: str | None = None
     start_sample: Sample
     end_sample: Sample
-    velocity: float = Field(gt=0, le=1)
+    velocity: float = Field(gt=0, le=1, description="Normalized MIDI velocity in (0, 1], e.g. 0.65. Divide MIDI 0-127 values by 127.")
     channel: int = Field(default=1, ge=1, le=16)
     notation_beat: Beat | None = None
     notation_duration: Beat | None = None
@@ -981,6 +981,14 @@ class PutEntity(Model):
     collection: Literal["tracks", "clips", "notes", "controllers", "plugins", "automation", "annotations"]
     entity: Track | Clip | NoteEvent | ControlEvent | PluginInstance | AutomationLane | Annotation
 
+    @field_validator("entity", mode="before")
+    @classmethod
+    def collection_entity(cls, value, info):
+        models = dict(tracks=Track, clips=Clip, notes=NoteEvent, controllers=ControlEvent,
+                      plugins=PluginInstance, automation=AutomationLane, annotations=Annotation)
+        model = models.get(info.data.get("collection"))
+        return model.model_validate(value) if model else value
+
 
 class DeleteEntity(Model):
     op: Literal["delete"]
@@ -1028,6 +1036,14 @@ class PatchPlugin(Model):
     preset_capture_job_id: Id | None = None
 
 
+class AddPlugin(Model):
+    op: Literal["add_plugin"]
+    track_id: Id
+    preset_capture_job_id: Id
+    id: Id | None = None
+    order: int = Field(default=0, ge=0)
+
+
 class PatchNote(Model):
     op: Literal["patch_note"]
     id: Id
@@ -1045,6 +1061,7 @@ EditOperation = Annotated[
     | ArrangeClip
     | FreezeTrack
     | PatchPlugin
+    | AddPlugin
     | PatchNote,
     Field(discriminator="op"),
 ]
