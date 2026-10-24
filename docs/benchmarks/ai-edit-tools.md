@@ -13,3 +13,7 @@
 官方协议核对：[Codex App Server 动态工具](https://developers.openai.com/codex/app-server/)。文档没有建立“所有 union 都无法使用”的结论；这里是将当前应用契约完整呈现给模型，并用真实调用验证效果，没有据此改动固定 Codex 程序。
 
 原始现场、小报告路径和正式前后核对保存在 `runtime/maintenance/ai-edit-schema-20261024`，测试小报告在 `runtime/test-reports`，临时工程及运行诊断由统一测试入口自动清理。活动发布以 runtime/application-release.local.json 为准。
+
+正式版本已激活 `5bcb3f41b34f9305ad5f4a1a2e8bbf603763b773`，描述为 `runtime/application-release.ai-edit-tools-20261024.local.json`。产品 API 已返回新的实际网格，主页正常，乐器库仍为 251 型号／2244 音色。正式九表及 14 项固定文件前后摘要相同，原生、桌面及乐器试听包均沿用发布前版本。
+
+当前工程已是 112 个音符和 1 个插件，发布时保留当前状态，没有恢复早期失败轮的无插件快照，也没有代写正式音乐。所有 8 次测试入口执行的临时目录均已清理；重复预览截图和该任务自用预览宿主的 CMake 编译中间文件完成精确白名单清理，最终图集、各型号最新桌面截图、JSON 和失败文本日志保留。未触及历史拒绝路径、原音源文件或任何已发布包。
