@@ -33,8 +33,6 @@ def compile_track(service, db, revision, track_id, directory, *, sidechains=()):
     snapshot.routing = None
     snapshot.frozen_tracks = {}
     snapshot.track_order = [track_id]
-    if snapshot.notes and not any(not plugin.bypass for plugin in snapshot.plugins):
-        raise ValueError("MIDI音轨未分配可发声的实时插件")
     descriptors, resources, paths = {}, {}, {}
     directory.mkdir(parents=True,exist_ok=True)
     for clip in snapshot.clips:
@@ -75,6 +73,15 @@ def compile_track(service, db, revision, track_id, directory, *, sidechains=()):
     project = compile_project(snapshot,revision["id"],descriptors,paths,resources,tail_seconds=0)
     project["tracks"] = [track for track in project["tracks"] if track["id"] == track_id]
     project.pop("graph")
+    issue = {}
+    if snapshot.notes and not snapshot.plugins:
+        issue = dict(playback_issue=dict(code="instrument_unassigned", message="这条 MIDI 音轨尚未选择乐器"))
+        # Missing instruments are silent inputs on this track. Saved MIDI and
+        # every other track stay intact, including audio through an FX chain.
+        project["tracks"][0]["notes"] = []
+        project["tracks"][0]["controllers"] = []
+    if not project["tracks"][0]["plugins"] and not project["tracks"][0]["audio_clips"]:
+        return dict(plugin_count=0, audio_clip_count=0, **issue)
     for plugin in project["tracks"][0]["plugins"]:
         if plugin["id"] in sidechains:
             plugin["sidechain"] = True
@@ -100,4 +107,4 @@ def compile_track(service, db, revision, track_id, directory, *, sidechains=()):
         pending.write_bytes(content)
         os.replace(pending,path)
     return dict(runtime_signature=signature,storage_key=storage_key,plugin_project_path=str(path),
-        plugin_count=len(project["tracks"][0]["plugins"]),audio_clip_count=len(project["tracks"][0]["audio_clips"]))
+        plugin_count=len(project["tracks"][0]["plugins"]),audio_clip_count=len(project["tracks"][0]["audio_clips"]),**issue)

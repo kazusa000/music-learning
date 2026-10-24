@@ -1,8 +1,6 @@
 """Compile verified local programs and one shared live/export routing graph."""
 import hashlib
-import json
 import os
-from pathlib import Path
 
 from .. import contracts as c
 from ..graph import compile_routes
@@ -59,8 +57,7 @@ def compile_graph(service, db, revision, directory, calibration):
             automation = [dict(parameter_id=lane.parameter_id, interpolation=lane.interpolation,
                 points=[point.model_dump(mode="json") for point in lane.points])
                 for lane in snapshot.automation if lane.track_id == track.id]
-            program = json.loads(Path(spec["plugin_project_path"]).read_bytes())
-            if program["tracks"][0]["plugins"]:
+            if spec.get("plugin_project_path") and spec["plugin_count"]:
                 tail = max(tail, snapshot.sample_rate*2)
         tracks.append(dict(id=track.id, gain_db=track.gain_db, pan=track.pan, mute=track.mute, solo=track.solo,
             monitor_gain_db=0, solo_gain_db=0, mix_automation=automation, **spec))

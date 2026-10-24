@@ -10,7 +10,8 @@ from . import contracts as c, schema_v1 as t
 from .daw import apply, check_scope, diff, plugin_metadata
 from .schema_v4 import turns
 from .schema_v5 import arrangements
-from .service import DomainError, canonical, row
+from .service import DomainError, row
+from .query_context import fit_pages, preset_context
 
 
 def production_query(service, db, args):
@@ -62,19 +63,17 @@ def production_query(service, db, args):
     }
     from .instruments import categories, models, query, recommend
 
-    result["instrument_advice"] = recommend(service.settings, s)
-    if args.track_id:
-        result["instrument_advice"]["assignments"] = [
-            assignment
-            for assignment in result["instrument_advice"]["assignments"]
-            if assignment["track_id"] == args.track_id
-        ]
+    result["instrument_advice"] = recommend(service.settings, s, args.track_id)
+    for assignment in result["instrument_advice"]["assignments"]:
+        assignment["preset"] = preset_context(assignment["preset"])
+    pages = []
     if args.include_instrument_categories:
         result["instrument_categories"] = categories(service.settings)
     if args.include_instrument_models:
         result["instrument_models"] = models(service.settings, c.InstrumentModelQuery(
             instrument_id=args.instrument_id, search=args.preset_search or "",
             model_id=args.model_id, offset=args.offset, limit=args.limit))
+        pages.append((result["instrument_models"], "items", result["instrument_models"]["total"], "next_offset"))
     if args.preset_search is not None or args.instrument_id is not None or args.model_id is not None:
         result["library"] = query(
             service.settings,
@@ -86,6 +85,8 @@ def production_query(service, db, args):
                 limit=args.limit,
             ),
         )
+        result["library"]["items"] = [preset_context(preset) for preset in result["library"]["items"]]
+        pages.append((result["library"], "items", result["library"]["total"], "next_offset"))
     if args.capture_job_id:
         capture = row(db, t.jobs, "id", args.capture_job_id)
         if capture["project_id"] != args.project_id or capture["kind"] != "instrument.capture":
@@ -94,7 +95,7 @@ def production_query(service, db, args):
             "job_id": capture["id"],
             "status": capture["status"],
             "error": capture["error"],
-            "preset": (capture["result"] or {}).get("preset"),
+            "preset": preset_context((capture["result"] or {}).get("preset")),
             "metrics": (capture["result"] or {}).get("metrics"),
         }
     if args.plugin_id:
@@ -115,8 +116,9 @@ def production_query(service, db, args):
             parameters=parameters[args.offset : args.offset + args.limit],
             next_offset=args.offset + args.limit if args.offset + args.limit < len(parameters) else None,
         )
-    if len(canonical(result)) > 45000:
-        raise DomainError("context_too_large", "Lower the production query page size", 422)
+        pages.append((result, "parameters", len(parameters), "next_offset"))
+    if not fit_pages(result, pages, args.offset):
+        raise DomainError("context_too_large", "Select a track or query catalogue and plugin parameters separately", 422)
     return result
 
 

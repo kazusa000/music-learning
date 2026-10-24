@@ -12,6 +12,10 @@
 
 SQLite 与内容寻址存储是工程权威，播放引擎是其运行投影。音频线程不能等待 AI、HTTP、Python 或数据库操作。工程的全部能力应可以通过程序操作，无需模拟鼠标点击插件窗口。
 
+`production.query` 的音色目录是适合助手读取的选择信息，不返回内部状态恢复参数或资源校验清单；`instrument.capture` 仍使用完整固定库存。查询页可能因实际响应大小少于请求的 limit，调用者必须使用响应的 next_offset 继续翻页。`music.query` 事件页遵循同样规则，引用 ID 与实际返回项一致。
+
+原生播放对未选择乐器的 MIDI 轨返回 `plugins[track_id].status=unassigned` 与明确原因，其他音轨继续播放。`applied_revision` 只表示完整就绪；存在这类静音输入时，`playable_revision` 表示其余节点已经应用的修订，不能据此声称所有轨道都有声音。绑定插件后仍通过统一编辑事务及既有音源身份验证，随后更新播放图。
+
 以下示例只查询音源，不写工程：
 
 ```python

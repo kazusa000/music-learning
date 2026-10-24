@@ -72,6 +72,12 @@ try{
  await page.getByRole('button',{name:'重新加载',exact:true}).click();
  await until(()=>Promise.resolve(opens===2),'Retry did not reopen native graph');
  await until(()=>bar().getAttribute('aria-valuenow').then(n=>n==='0'),'Retry retained stale progress');
+ state.plugins={[track]:{status:'ready'},bus:{status:'unassigned',error:'这条 MIDI 音轨尚未选择乐器'}};
+ state.status='partial';state.applied_revision=null;state.playable_revision=state.revision_id;
+ await page.getByText('部分 MIDI 音轨未选择乐器',{exact:true}).waitFor();
+ assert.match(await page.locator('.workspace-loading-copy p').innerText(),/其他已就绪音轨可以播放/);
+ assert.equal(await page.getByRole('button',{name:'重新加载',exact:true}).count(),0);
+ report.checks.push('Unassigned sibling is shown separately; no useless reload loop for missing instrument');
  state.plugins={[track]:{status:'ready'},bus:{status:'ready'}};state.status='ready';state.applied_revision=state.revision_id;
  await bar().waitFor({state:'detached'});
  report.checks.push('Initial-entry failure and retry remain visible; the first ready graph retires the entry bar');

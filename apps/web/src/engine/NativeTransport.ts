@@ -6,6 +6,7 @@ export type EngineState={status:string;engine_session?:string;generation?:number
   owner_id?:string;
   control_error?:string;
   applied_revision?:string|null;view?:string;source_sample_rate?:number;sample_rate?:number;duration_samples?:number;
+  playable_revision?:string|null;
   position_sample?:number;playing?:boolean;loop?:boolean;peak?:number;underruns?:number;xruns?:number;
   loop_start_sample?:number;loop_end_sample?:number;
   meters?:Record<string,number>;monitor?:Record<string,MixValues>;plugins?:Record<string,{status:string;error?:string;pid?:number;load_stage?:number}>};
@@ -44,7 +45,7 @@ export class NativeTransport {
   get renderPosition(){return this.position;}
   get offset(){return this.position;}
   set offset(seconds:number){this.offsetOverride=seconds;}
-  get liveErrors(){return Object.fromEntries(Object.entries(this.state.plugins??{}).filter(([,p])=>p.status==='failed').map(([id,p])=>[id,p.error??'音轨载入失败']));}
+  get liveErrors(){return Object.fromEntries(Object.entries(this.state.plugins??{}).filter(([,p])=>p.status==='failed'||p.status==='unassigned').map(([id,p])=>[id,p.error??'音轨载入失败']));}
   meterLevels(){return this.state.meters??{};}
   private accept(state:EngineState){
     if(this.disposed)return;
@@ -108,8 +109,8 @@ export class NativeTransport {
       const state=await this.serialize(async()=>{const value=await this.invoke<EngineState>('engine.status');this.accept(value);return value;});
       if(this.target?.revision!==target.revision)throw new Error('音轨的音色已发生变化');
       const plugin=state.plugins?.[track];
-      if(plugin?.status==='failed')throw new Error(plugin.error??'音轨载入失败');
-      if(state.applied_revision===target.revision&&(!plugin||plugin.status==='ready'))return;
+      if(plugin?.status==='failed'||plugin?.status==='unassigned')throw new Error(plugin.error??'音轨载入失败');
+      if((state.applied_revision??state.playable_revision)===target.revision&&(!plugin||plugin.status==='ready'))return;
       if(!plugin&&state.status!=='loading'&&!state.monitor?.[track])return;
       await new Promise(resolve=>setTimeout(resolve,80));
     }

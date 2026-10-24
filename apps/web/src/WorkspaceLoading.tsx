@@ -19,7 +19,7 @@ export function WorkspaceLoading({progress,loadKey,onRetry}:{progress:LoadProgre
         <span>{progress.total>0?`${progress.ready} / ${progress.total} 个音源就绪`:''}{active&&elapsed>0?` · 已用 ${elapsed} 秒`:''}</span></div>
         <p>{progress.detail}</p></div>
       {value!==null&&<span className="workspace-loading-percent">{value}<small>%</small></span>}
-      {progress.phase==='error'&&onRetry&&<button className="workspace-loading-retry" onClick={onRetry}>重新加载</button>}
+      {progress.phase==='error'&&progress.retryable!==false&&onRetry&&<button className="workspace-loading-retry" onClick={onRetry}>重新加载</button>}
       {!!progress.tracks.length&&<details className="workspace-loading-details"><summary>详情</summary><ul>{progress.tracks.map(track=><li key={track.id} data-status={track.status}>
         <span>{track.name}</span><small>{track.stage}</small>{track.error&&<p>{track.error}</p>}</li>)}</ul></details>}
     </div>

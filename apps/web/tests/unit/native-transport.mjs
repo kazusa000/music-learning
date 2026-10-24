@@ -43,5 +43,10 @@ await new Promise(resolve=>setTimeout(resolve,20));
 assert.equal(returned,false,'A ready old plugin must not satisfy a new revision');
 state={...state,status:'ready',applied_revision:pendingTarget.revision};
 await waiting;
+state={...state,status:'partial',applied_revision:null,playable_revision:pendingTarget.revision,
+  plugins:{a:{status:'ready'},b:{status:'unassigned',error:'这条 MIDI 音轨尚未选择乐器'}}};
+await pendingTransport.waitTrack(pendingTarget,'a');
+await assert.rejects(pendingTransport.waitTrack(pendingTarget,'b'),/尚未选择乐器/);
+assert.deepEqual(pendingTransport.liveErrors,{b:'这条 MIDI 音轨尚未选择乐器'});
 await pendingTransport.close();
 console.log('Native control serialization, revision update, loop preservation, monitor fields and stale-owner close passed');

@@ -17,6 +17,9 @@ assert.equal(read(nodesReady).percent,99);assert.equal(read({...nodesReady,statu
 assert.equal(read({...nodesReady,status:'ready',applied_revision:'new'}).percent,100);
 const failure=read({...state,plugins:{...state.plugins,b:{status:'failed',error:'采样文件不可用'}}});
 assert.equal(failure.phase,'error');assert.equal(failure.percent,50);assert.equal(failure.detail,'采样文件不可用');
+const unassigned=read({...state,status:'partial',playable_revision:'new',plugins:{a:{status:'ready'},b:{status:'unassigned',error:'这条 MIDI 音轨尚未选择乐器'}}});
+assert.equal(unassigned.phase,'error');assert.equal(unassigned.tracks[1].stage,'未选择乐器');
+assert.equal(unassigned.ready,1);assert.equal(unassigned.retryable,false);assert.match(unassigned.detail,/其他已就绪音轨可以播放/);
 assert.equal(read({status:'stopped'},[],'本机连接中断').phase,'error');
 // Runtime graph owns the count: empty/frozen/bypassed nodes are not permanently pending.
 const audio={...nodesReady,plugins:{},status:'ready',applied_revision:'new'};

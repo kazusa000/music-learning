@@ -12,6 +12,7 @@ from . import contracts as c
 from . import schema_v1 as t
 from .schema_v7 import turns
 from .service import DomainError, canonical, emit, paged, row
+from .query_context import fit_pages
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
@@ -198,6 +199,11 @@ def music_query(service, db, args):
         result["original_reference"] = ({"has_vocals":reference["has_vocals"],
             "annotations":[a for a in reference["annotations"] if a["start_sample"]<end and a["end_sample"]>start][:args.limit],
             "melody_note_count":sum(n["start_sample"]<end and n["end_sample"]>start for n in reference["notes"])} if reference else None)
+    if args.action in ("events", "annotations"):
+        # Leave room for citation IDs and the query envelope. The next page is
+        # based on returned items, rather than a rejected requested page size.
+        fit_pages(result, [(result, "items", result["total"], "next_offset")], args.offset, 30000)
+        entities = [item["id"] for item in result["items"]]
     intervals = [(start, end)]
     if args.action == "metrics":
         intervals = (

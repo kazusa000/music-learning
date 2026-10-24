@@ -1,6 +1,7 @@
 """Short loading UI check with deterministic native telemetry; no real plugins/audio."""
 
 from dataclasses import asdict
+from pathlib import Path
 import json
 import os
 import socket
@@ -42,7 +43,7 @@ def test_project_loading_browser(tmp_path, wav):
         instrument_preview_warm=False,
         native_audio_enabled=True,
         port=port,
-        web_root=ROOT / "runtime/build/workspace-loading-web",
+        web_root=Path(os.environ.get('ML_WORKSPACE_WEB_ROOT', ROOT / "runtime/build/workspace-loading-web")),
     )
     db = Database(settings)
     db.migrate()

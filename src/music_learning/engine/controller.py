@@ -26,6 +26,21 @@ def preflight(service,args):
         return service._revision(db,args)
 
 
+def playback_state(service, state):
+    manifest = service.engine_workspaces.manifest if service.engine_workspaces else None
+    if not manifest or any(state.get(key) != manifest.get(key) for key in ("project_id", "revision_id", "view")):
+        return state
+    issues = {track["id"]: track["playback_issue"] for track in manifest["tracks"] if track.get("playback_issue")}
+    if not issues:
+        return state
+    plugins = dict(state.get("plugins", {}))
+    for track_id, issue in issues.items():
+        plugins[track_id] = dict(plugins.get(track_id, {}), status="unassigned", code=issue["code"], error=issue["message"])
+    return dict(state, plugins=plugins, track_issues=issues,
+                playable_revision=state.get("applied_revision"), applied_revision=None,
+                status="partial" if state["status"] == "ready" else state["status"])
+
+
 def dispatch(service,action,args):
     broker=get_broker(service)
     owner=getattr(args,"owner_id",None)
@@ -66,7 +81,7 @@ def dispatch(service,action,args):
                 service.engine_workspaces.applied(manifest)
                 result["compile_ms"]=compile_ms
                 service.engine_sync_error=None
-                return result
+                return playback_state(service,result)
         if action=="preview":
             if args.preview_id:
                 from ..playback import wav_extent
@@ -76,16 +91,16 @@ def dispatch(service,action,args):
                 arguments["manifest"]=dict(project_id="preview",revision_id=args.preview_id,view="preview",
                     sample_rate=rate,duration_samples=frames,tracks=[dict(id="preview",gain_db=0,pan=0,
                         clips=[dict(path=str(path),start_sample=0,duration_samples=frames,source_offset_samples=0,gain=1)])])
-            return broker.preview(arguments)
+            return playback_state(service,broker.preview(arguments))
         if action=="status":
             result=broker.status()
             if service.engine_sync_error:
                 result["control_error"]=service.engine_sync_error
-            return result
+            return playback_state(service,result)
         if action=="close":
             if owner:
                 if args.engine_session and args.engine_session!=broker.identity:
-                    return broker.status()
+                    return playback_state(service,broker.status())
                 if args.generation is not None:
                     arguments["expected_generation"]=arguments.pop("generation")
                 result=broker.release(arguments)
@@ -93,11 +108,11 @@ def dispatch(service,action,args):
                 result=broker.close()
             if not result.get("project_id"):
                 service.engine_workspaces.close(retry=True)
-            return result
+            return playback_state(service,result)
         result=broker.command(action,arguments)
         if action=="configure":
             service.engine_workspaces.close(retry=True)
-        return result
+        return playback_state(service,result)
 
 
 def close_project(service,project):
