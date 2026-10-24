@@ -1,4 +1,18 @@
-# 新音源全量入库与共享兼容恢复（本轮已结束）
+# 新音源全量入库与共享兼容恢复
+
+
+## 2026-10-24：失败与未完成项恢复调查
+
+用户明确恢复失败与未完成项处理。独立维护根为 `runtime/maintenance/kontakt-failure-recovery-20261024`，原 full-h 及其原三个停止入口保持不变；不恢复 Ample/MODO。原 895 个通过检查点和音频不重验、不重读。
+
+`remaining-timeouts-02` 只处理原 4 个超时与 8 个未完成项：CSS 1st Violins、CSSS Cello、Celli、Cozy Pad 全部通过原严格验证及两次独立空机架恢复，已 additions-only 入库；原 8 个未完成 Multi 均完成尝试但静音。正式九表/head、原三队列和 14 个保护文件前后相同。原报告未覆盖。`runtime/kontakt-recovery-job.local.json` 和 `runtime/kontakt-recovery-publication.local.json` 定位本次独立结果，不代表旧任务恢复。
+
+`zone-audit-09` 读取失败来源实际采样映射；旧 48/60/67 固定短句错过短笛与多数打击乐键位。共享 `zone_audition_notes/with_zone_audition` 按实际 zone 的键位及力度与原 instrument context 求交，附加 getter SHA 和明确短句，不改音源状态、通道或原上下文；单键音源保留重复敲击。`kontakt_performance` 让验证、产品试听及缓存指纹共用该短句，旧 profile 不变。未知/空映射不猜测。`mapped-validation-14` 独立固定原实现副本，仅更新共享短句合同及恢复辅助模块，仍使用原 native probe 和原音频、身份、参数、来源、两次恢复标准。Piccolo、Bass Drum、Claves、Snare Drum、Triangle、Woodblock、Shaper Bell 七款全部严格通过；该阶段正式表、原队列及保护文件检查均通过。发布及试听状态另以最终维护收尾记录为准。
+
+剩余共性调查：80 个 Multi 为 MIDI Player 工具加实际音源的组合，已有样本和 MIDI 资源；音高、通道、控制器、消息处理、空块及启动来源对照尚未恢复声音，不能宣称缺采样或已定位唯一原因。其未加密的 MIDI Player 源脚本有 persistence/async 门控，正在核实资源初始化。公开 API 对 linked script 的临时替换实验未得到有效读回或诊断文件，所有实验均丢弃临时 rack，不改资源容器/插件或原预设。Classic Legato Cello 原始及转换来源均返回 280 groups / 0 zones；已发声的普通 CSSS Cello 对照返回 29024 zones，延长为重叠音符仍静音。这是加载结果异常证据，尚不足以认定五份源文件缺采样。Flair - West 保留独立调查，不能把 ghost/sample zone 自动当作其脚本触发键。
+
+78 项短回归通过（恢复选择、来源身份、有效采样键位/力度、单键重复、原 profile 不变、验证/试听同合同、篡改短句拒绝、既有入库检查点流程）；Ruff 通过。真实音频结论与测试结论分列，不把诊断正例直接当作入库。
+
 
 ## 2026-10-24：按用户要求结束本轮 Kontakt 入库
 

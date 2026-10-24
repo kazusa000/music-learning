@@ -1,6 +1,6 @@
 # 音源入库规则
 
-资源只安装到用户指定的 `H:\music\Sound Library`；`H:\music\tmp` 与 NAS 作为来源只读。当前 Kontakt 工作继续验证、增量入库和已运行的试听跟随；Ample 与 MODO 后续工作已取消。
+资源只安装到用户指定的 `H:\music\Sound Library`；`H:\music\tmp` 与 NAS 作为来源只读。Kontakt 运行范围及任务状态以用户最新指示和恢复记录为准；Ample 与 MODO 后续工作已取消。
 
 ## 正式条目
 
@@ -20,6 +20,12 @@
 
 运行状态须核对 PID、出生时间、实际命令及进度；旧定位文件的 started 字段不证明进程存活。健康任务只轻量观察，不重启、不另开重复批次、不搬动目录；正式工程不作为入库试验对象。
 
-试听是独立阶段，只有实际缓存 ready 才算准备完成。当前失败音色暂不分析或重试；后续是否恢复由用户安排。
+试听是独立阶段，只有实际缓存 ready 才算准备完成。失败项只能在明确授权后进入独立 attempt；不得覆盖原报告或重验已通过项。
 
 来源键位查询与 VST3 状态恢复有不同语义，详见[Kontakt 来源查询](../architecture/kontakt-source-keymap.md)。当前任务细节与过程边界保留在[恢复记录](../benchmarks/instrument-intake-full-recovery.md)，具体固定文件以对应任务 plan/pins 为准。
+
+## 来源采样映射与试听短句
+
+Kontakt instrument 的全键盘范围不等于实际采样覆盖。已读取真实 sample-zone geometry 时，使用 `kontakt_recovery.with_zone_audition` 构造可选 `performance_profile.sample_zone_audition`：getter 证据 SHA 及按 instrument index 绑定的 note/velocity。原 instrument 通道、键域、力度、mute/solo 和完整状态保持原样；显式音符须落在其上下文内，缺少/错误索引、无可用 zone 不生成候选。
+
+验证与产品试听均通过 `kontakt_performance.profile_phrase` 消费同一合同并参与缓存指纹。单键鼓保留重复敲击；旧 profile 的短句和指纹不改变。含脚本重映射或 MIDI Player 的音源，sample zone 仅是候选依据，必须通过实际音频与两次状态恢复，不能据此直接发布。新合同发布到实际产品版本并验证兼容之后，才将相关条目加入正式 catalog。

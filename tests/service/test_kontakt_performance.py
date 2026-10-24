@@ -3,6 +3,7 @@ from copy import deepcopy
 import pytest
 
 from music_learning.kontakt_performance import KontaktProbeProfile, profile_phrase, validate_profile
+from music_learning.kontakt_recovery import with_zone_audition
 
 
 def profile():
@@ -115,3 +116,36 @@ def test_source_mismatch_duplicate_and_silent_context_are_rejected():
     value["instruments"][0]["mute"] = True
     with pytest.raises(ValueError, match="no unmuted"):
         profile_phrase(value)
+
+
+def test_sample_zone_phrase_is_shared_by_native_validation_and_product_preview():
+    from music_learning.instrument_preview_audio import phrase_spec
+    from music_learning.instrument_intake_publication import _performance_phrase_contract
+
+    source = profile()
+    source["instruments"][0].update(key_range=[0, 127], velocity_range=[1, 127])
+    zone = dict(low_key=80, high_key=80, root_key=80, low_velocity=64, high_velocity=127)
+    original = deepcopy(source)
+    mapped = with_zone_audition(source, {128: [zone]}, source_getters_sha256="b" * 64)
+    assert source == original
+    entry = dict(performance_profile=mapped, source_factory_sha256="a" * 64)
+    phrase = phrase_spec(entry)
+    project = KontaktProbeProfile(mapped).project({"identifier": "fixture"})
+    assert phrase["notes"] == project["tracks"][0]["notes"]
+    assert [n["note"] for n in phrase["notes"]] == [80, 80, 80]
+    assert all(n["channel"] == 4 and n["velocity"] >= 64 / 127 for n in phrase["notes"])
+    assert _performance_phrase_contract(entry, dict(project=project)) is not None
+    assert phrase["profile_sha256"] != profile_phrase(source)["profile_sha256"]
+    project["tracks"][0]["notes"][0]["note"] = 60
+    with pytest.raises(ValueError, match="MIDI differs"):
+        _performance_phrase_contract(entry, dict(project=project))
+
+
+@pytest.mark.parametrize("change", [dict(instrument_index=0), dict(note=True), dict(velocity=0), dict(note=128)])
+def test_sample_zone_phrase_rejects_invalid_source_context(change):
+    value = profile()
+    value["sample_zone_audition"] = dict(source_getters_sha256="b" * 64, notes=[
+        dict(instrument_index=128, note=74, velocity=90, **{})])
+    value["sample_zone_audition"]["notes"][0].update(change)
+    with pytest.raises(ValueError):
+        validate_profile(value)

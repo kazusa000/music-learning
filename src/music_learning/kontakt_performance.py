@@ -16,10 +16,12 @@ AUDITION_FIELDS = {"audition_pattern", "audition_timing"}
 ROW_FIELDS = {"index", "midi_channel", "key_range", "velocity_range", "mute", "solo"}
 LEGATO_AUDITION_PATTERN = "legato-overlap-v1"
 LEGATO_AUDITION_TIMING = {"onset_interval_ms": 500, "gate_ms": 550, "overlap_ms": 50}
+ZONE_AUDITION_FIELD = "sample_zone_audition"
 
 
 def validate_profile(profile: Mapping, *, expected_source_sha256=None) -> dict:
-    if (not isinstance(profile, Mapping) or set(profile) not in (FIELDS, FIELDS | AUDITION_FIELDS)
+    if (not isinstance(profile, Mapping)
+            or set(profile) - {ZONE_AUDITION_FIELD} not in (FIELDS, FIELDS | AUDITION_FIELDS)
             or type(profile.get("schema_version")) is not int or profile["schema_version"] != 1
             or profile.get("kind") != "midi_context"):
         raise ValueError("Unsupported Kontakt MIDI performance profile")
@@ -70,6 +72,30 @@ def validate_profile(profile: Mapping, *, expected_source_sha256=None) -> dict:
         clean.append(dict(item))
     result = dict(schema_version=1, kind="midi_context", source_factory_sha256=source,
                   instruments=normalized, controllers=clean)
+    if ZONE_AUDITION_FIELD in profile:
+        audition = profile[ZONE_AUDITION_FIELD]
+        if (not isinstance(audition, Mapping)
+                or set(audition) != {"source_getters_sha256", "notes"}
+                or not isinstance(audition["source_getters_sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", audition["source_getters_sha256"])
+                or not isinstance(audition["notes"], list)
+                or not 1 <= len(audition["notes"]) <= 24576):
+            raise ValueError("Invalid Kontakt sample-zone audition provenance")
+        by_index = {row["index"]: row for row in normalized}
+        explicit = []
+        for note in audition["notes"]:
+            if (not isinstance(note, Mapping) or set(note) != {"instrument_index", "note", "velocity"}
+                    or any(type(note[key]) is not int for key in note)
+                    or note["instrument_index"] not in by_index):
+                raise ValueError("Invalid Kontakt sample-zone audition note")
+            row = by_index[note["instrument_index"]]
+            if (not row["key_range"][0] <= note["note"] <= row["key_range"][1]
+                    or not max(1, row["velocity_range"][0]) <= note["velocity"] <= row["velocity_range"][1]):
+                raise ValueError("Kontakt sample-zone audition lies outside source context")
+            explicit.append(dict(note))
+        if set(by_index) != {n["instrument_index"] for n in explicit}:
+            raise ValueError("Kontakt sample-zone audition omits an instrument")
+        result[ZONE_AUDITION_FIELD] = dict(source_getters_sha256=audition["source_getters_sha256"], notes=explicit)
     if has_audition_pattern:
         result.update(audition_pattern=LEGATO_AUDITION_PATTERN,
                       audition_timing=dict(LEGATO_AUDITION_TIMING))
@@ -90,6 +116,7 @@ def profile_phrase(profile: Mapping, *, sample_rate=44100, max_seconds=30.0) -> 
         raise ValueError("Kontakt source uses MIDI port B-D; this host exposes port A only")
     notes, signatures, channels = [], set(), set()
     audition_timing = profile.get("audition_timing")
+    explicit = profile.get(ZONE_AUDITION_FIELD)
     if audition_timing is None:
         onset_interval = round(0.5 * sample_rate)
         gate_samples = round(0.35 * sample_rate)
@@ -104,17 +131,21 @@ def profile_phrase(profile: Mapping, *, sample_rate=44100, max_seconds=30.0) -> 
         if vhi == 0:
             raise ValueError("Kontakt source instrument accepts only zero velocity")
         base = min(high, max(low, 60))
-        for pitch in sorted({base, min(high, base + 7), max(low, base - 12)}):
-            signature = (channel, pitch, velocity)
-            if signature in signatures:
-                continue
-            signatures.add(signature)
+        row_notes = ([(n["note"], n["velocity"] / 127) for n in explicit["notes"]
+                      if n["instrument_index"] == row["index"]] if explicit else
+                     [(pitch, velocity) for pitch in sorted({base, min(high, base + 7), max(low, base - 12)})])
+        for pitch, note_velocity in row_notes:
+            signature = (channel, pitch, note_velocity)
+            if not explicit:
+                if signature in signatures:
+                    continue
+                signatures.add(signature)
             start = len(notes) * onset_interval
             duration = gate_samples
             if start + duration > max_seconds * sample_rate:
                 raise ValueError("Kontakt source needs more than the bounded audition window")
             notes.append(dict(sample=start, duration_samples=duration, note=pitch,
-                              velocity=velocity, channel=channel))
+                              velocity=note_velocity, channel=channel))
         channels.add(channel)
     controllers = [dict(sample=0, channel=channel, **cc)
                    for channel in sorted(channels) for cc in profile["controllers"]]
