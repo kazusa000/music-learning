@@ -1,5 +1,17 @@
 # 新音源全量入库与共享兼容恢复
 
+## 2026-10-24：仅恢复剩余 86 款（进行中）
+
+本轮维护根为 `runtime/maintenance/kontakt-remaining-86-20261024`，当前汇总入口 `runtime/kontakt-remaining-86.local.json`。阶段核对：80 款 Multi 已全部按原发声、完整参数/状态、身份、来源及两次独立空机架恢复标准通过，additions-only 入库 80 款，80 段当前指纹试听全部 ready；Kontakt 合计 986 款。原有 906 款不重新渲染、不重读旧 WAV、不重验。尚有 1 款 Flair - West 与 5 款 Classic Legato，实际检查等待 H 盘空闲，不据此判失败。当前三个入口分别是 `kontakt-remaining-multi-job.local.json`、`kontakt-remaining-beat-job.local.json`、`kontakt-remaining-classic-job.local.json`；旧自动跟进仍暂停，Ample/MODO 不恢复。
+
+Multi 的 MIDI 资源路径确实可打开；独立只读文件观察不是缺资源证据。仅空等一秒或处理消息不足以完成异步准备；在首音前按固定五秒预算交替处理空块、消息和 sleep，丢弃准备输出，恢复 MIDI Player 原功能且不旁路脚本、不改参数。严格检查使用独立宿主 `kontakt-async-ready-02`（SHA `ea21d512cc1e6d8b4c6fc9bb074ef27d585a1a876c20d2c0719a0cf3ce969325`）；共享 Main 修正了快照自身带有的三个总线只读字段无法再次输入的问题，真实隔离原生夹具通过恢复、伪造只读字段不改路由和未知字段拒绝检查。`strict-multis-08` 完成 72 款后遇到原 pending 行没有 diagnostics 键的读取错误，原进度保留；共享 `recovery_inputs` 区分原尝试与后续准备目录，`strict-multis-10` 绑定旧 72 个检查点、仅实际检查其余 8 款。09 在宿主启动前因误将生成的 pycache 纳入 pins 被拒绝，保留证据，没有重复音频验证。依赖旧父进程的未启动等待器留档后换独立 attempt，未改冻结实现或原 full-h 报告。
+
+Classic 原 NKI 在 `Kontakt/Libraries/Samples` 查找容器，实际采样在 `Libraries/css-solo/Samples`。受控私有 SourceLayouts 复制同 SHA NKI 并建立自身 Samples junction，原库与原 manifest 不改。Cello 的公开 getter 从 0 恢复至 29,024 zones；五份来源绑定 NKM 与 playback context 已转换完成，仍需完整 VST3 捕获及音频恢复，不能把转换当作入库。Flair 的 16 个 zone 占位键均为 0，真实公开脚本用 36–51 分派 drum pad；共享脚本映射合同绑定源码/getter SHA，独立于 sample-zone geometry，实际状态不改。此时两类均未宣布通过。
+
+试听直接复用这批新通过项的 reopen 短句：严格核对已发布 admission、完整请求、原 MIDI/输送/增益、真实宿主指纹与证据 SHA，再用产品相同 PCM/IEEE float32 解析与 normalize 写缓存。不是再调用 Kontakt 检查一次。已有 ready 或其他队列状态不覆盖，只有缺失指纹追加；策略不匹配者交正常单一 worker。产品发布 `c571d5c95598b6750aa2760f374f86ed970afc69` 以现行 fe5d453 为父，只覆盖共享短句合同及试听加载选择，不回退前端、桌面、原生引擎或 Studio。完整 27fbd75 发布暂存被旧 Studio 对 Main 源码绑定拒绝，保留未激活包，没有改收据绕过检查；独立两文件发布通过原部署检查并正常重启服务。实际 API 已确认缓存命中，代表项约 0.75 秒返回 ready，并取得真实 WAV。98 项短回归和 1 项真实原生夹具通过；尚未执行全 86 款最终产品接口验收。
+
+`midway-protection-check.json` 核对正式九表/head、原三队列和 14 个保护文件全部不变；原 2,158 个 catalog 条目逐项一致、原 906 条 ready 缓存 ID/SHA/bytes/status 不变。资源只新增于指定 Sound Library，NAS/tmp 只读；各原失败报告和任务冻结输入保留。共享实现提交 `27fbd75`、`33d1242`，任务未完成，不能把本阶段统计当作最终收尾。
+
 
 ## 2026-10-24：失败与未完成项恢复调查
 
