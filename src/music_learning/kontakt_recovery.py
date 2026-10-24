@@ -4,8 +4,33 @@ from __future__ import annotations
 from collections import Counter
 from copy import deepcopy
 import hashlib
+from pathlib import Path
 import re
 from typing import Mapping
+
+
+def recovery_inputs(record: Mapping, completed_recovery_root: Path) -> tuple[Path, Path]:
+    """Locate preserved inputs for either an attempted or a formerly pending row.
+
+    Pending rows have no original diagnostics directory. Their later completed
+    preparation is under the explicitly supplied recovery root, not the absent
+    original attempt. This only resolves files; it never opens audio evidence.
+    """
+    identifier = record.get("id", "")
+    library = record.get("library", "")
+    if (not isinstance(identifier, str) or not re.fullmatch(r"kontakt-[0-9a-f]{24}", identifier)
+            or library not in {"kontakt-factory", "css", "css-solo"}):
+        raise ValueError("Invalid recovery row identity")
+    locations = []
+    if record.get("diagnostics"):
+        original = Path(record["diagnostics"])
+        locations.append((original / "candidate.json", original / "c/state.json"))
+    recovered = Path(completed_recovery_root) / library / identifier[-12:]
+    locations.append((recovered / "candidate.json", recovered / "capture/state.json"))
+    for candidate, state in locations:
+        if candidate.is_file() and state.is_file():
+            return candidate, state
+    raise ValueError("Recovery row has no preserved complete candidate and captured state")
 
 
 def with_zone_audition(profile: Mapping, zones: Mapping[int, list[Mapping]], *, source_getters_sha256: str) -> dict:

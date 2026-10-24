@@ -280,3 +280,29 @@ def test_script_pad_audition_rejects_malformed_source_provenance_hashes():
     _, trigger_map = script_audition_case()
     with pytest.raises(ValueError, match="provenance"):
         with_script_pad_audition(profile, trigger_map, source_getters_sha256="not-a-sha256")
+def test_recovery_inputs_resolves_pending_preparation_without_original_diagnostics(tmp_path):
+    from music_learning.kontakt_recovery import recovery_inputs
+
+    row = dict(id="kontakt-" + "a" * 24, library="kontakt-factory")
+    case = tmp_path / row["library"] / ("a" * 12)
+    (case / "capture").mkdir(parents=True)
+    candidate, state = case / "candidate.json", case / "capture/state.json"
+    candidate.write_text("{}")
+    state.write_text("{}")
+    assert recovery_inputs(row, tmp_path) == (candidate, state)
+    original = tmp_path / "original"
+    (original / "c").mkdir(parents=True)
+    (original / "candidate.json").write_text("{}")
+    (original / "c/state.json").write_text("{}")
+    assert recovery_inputs(dict(row, diagnostics=str(original)), tmp_path) == (
+        original / "candidate.json", original / "c/state.json")
+
+
+def test_recovery_inputs_rejects_missing_state_and_invalid_row(tmp_path):
+    from music_learning.kontakt_recovery import recovery_inputs
+
+    with pytest.raises(ValueError, match="complete candidate"):
+        recovery_inputs(dict(id="kontakt-" + "b" * 24, library="css"), tmp_path)
+    with pytest.raises(ValueError, match="row identity"):
+        recovery_inputs(dict(id="../../escape", library="../escape"), tmp_path)
+

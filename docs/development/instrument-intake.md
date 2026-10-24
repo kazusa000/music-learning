@@ -33,3 +33,7 @@ Kontakt instrument 的全键盘范围不等于实际采样覆盖。已读取真�
 脚本驱动的鼓垫不能把 zone 的占位键当成输入键。未保护、已链接且未旁路的公开脚本源码，若存在明确的 `EVENT_NOTE` 范围、线性 pad index 和对应播放调用，可由 `script_pad_trigger_map` 生成独立来源证明，再用 `with_script_pad_audition` 附加 `script_trigger_audition`。它保留原 instrument context，绑定脚本及 getter SHA，不冒充采样区几何；不支持的脚本不推测映射。
 
 Kontakt Multi 的 MIDI Player 异步准备必须在首个测试音之前推进：空音频块、不发送 MIDI、短消息循环和 sleep，按固定 5 秒预算执行，丢弃准备输出；之后再取状态与开始正式短句。独立固定宿主及新 plan/pins 绑定此规则，原冻结宿主不覆盖。产品通过单独的 `instrument-previews/async-loading-host.local.json` 选择同一策略，仅用于已入库的 MIDI Multi 或带脚本触发证明的条目；原缓存指纹与旧条目不变。准备成功不能代替实际发声、完整参数和两次独立恢复验收。
+
+旧 NKI 引用的相对采样层级与安装目录不同时，可用 `kontakt_source_layout.prepare_kontakt_source_layout` 创建受控私有布局：只复制显式指定且同 SHA 的 NKI，并将布局自己的 Samples junction 指向已安装的同库 Samples。原文件、全局路径和原库 manifest 不改；拒绝盘相对路径、ADS、未知联接和不同内容的既有副本。转换仍保留原来源 SHA、Kontakt getter 身份和 playback context；目录接回不代表已通过音频验收。
+
+新通过项若已生成与产品试听完全一致的 reopen 短句，可由受信任维护流程调用 `instrument_preview_checkpoint.reuse_reopen_preview`。调用前完成检查点绑定与正式入库；函数再核对 catalog/admission、完整请求状态、MIDI/输送/增益、实际宿主 SHA 及证据文件 SHA，使用产品同一解析与 normalize 生成缓存。不匹配则交给正常试听 worker；不重开音源来验证已通过项。既有 ready/queued/loading/failed/cancelled 行保持原态，缺失指纹才可追加 ready，短事务防止覆盖并发请求或未知文件。新缓存仍由产品正常 API 和 WAV 摘要检查提供，旧缓存指纹不变。
