@@ -41,6 +41,7 @@ class Settings:
     native_audio_bundle: Path | None = None
     web_root: Path | None = None
     admitted_preset_host: Path | None = None
+    instrument_studio_host: Path | None = None
 
     def __post_init__(self):
         self.data_root = local_fixed(Path(self.data_root))
@@ -52,6 +53,8 @@ class Settings:
         self.native_host = local_fixed(Path(self.native_host))
         if self.admitted_preset_host is not None:
             self.admitted_preset_host = local_fixed(Path(self.admitted_preset_host))
+        if self.instrument_studio_host is not None:
+            self.instrument_studio_host = local_fixed(Path(self.instrument_studio_host))
         self.live_host = local_fixed(Path(self.live_host))
         if self.model_runtime is None:
             profile = ROOT / "runtime/model-runtime.json"

@@ -762,6 +762,65 @@ class PluginPayload(Model):
     identifier: str | None = None
 
 
+class StudioModel(Model):
+    model_id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
+
+
+class OpenInstrumentStudio(Model):
+    preset_id: PresetId
+    client_id: Id
+    resume_draft: bool = True
+
+
+class StudioSession(Model):
+    session_id: Id
+
+
+class StudioNote(StudioSession):
+    pitch: int = Field(ge=0, le=127)
+    on: bool
+    velocity: float = Field(default=.8, ge=0, le=1)
+
+
+class StudioSustain(StudioSession):
+    on: bool
+
+
+class StudioVolume(StudioSession):
+    value: float = Field(ge=0, le=1)
+
+
+class StudioController(StudioSession):
+    controller: Literal[1, 7, 10, 11]
+    value: int = Field(ge=0, le=127)
+
+
+class StudioParameter(StudioSession):
+    parameter_id: str = Field(min_length=1, max_length=200)
+    value: float = Field(ge=0, le=1)
+
+
+class StudioParameters(StudioSession):
+    writable_only: bool = False
+    search: str = Field(default="", max_length=200)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=48, ge=1, le=256)
+
+
+class StudioEditor(StudioSession):
+    visible: bool = True
+    parent_handle: str = Field(default="", max_length=32, pattern=r"^[a-fA-F0-9]*$")
+    parent_pid: int = Field(default=0, ge=0)
+    scale: float = Field(default=1, ge=.5, le=4)
+    zoom: float = Field(default=0, ge=0, le=4)
+
+
+class SaveStudioPreset(StudioSession):
+    name: str = Field(min_length=1, max_length=120)
+    preset_id: PresetId | None = None
+    expected_version: int | None = Field(default=None, ge=1)
+
+
 class CaptureInstrument(Model):
     preset_id: PresetId
 
@@ -1394,6 +1453,22 @@ OPERATIONS = {
     "arrangements.apply": (AgentEdit, True),
     "arrangements.get": (DialogueRef, False),
     "production.query": (ProductionQuery, False),
+    'instruments.gallery': (Empty, False),
+    'instruments.gallery.get': (StudioModel, False),
+    'instruments.studio.open': (OpenInstrumentStudio, True),
+    'instruments.studio.current': (Empty, False),
+    'instruments.studio.controller': (StudioController, True),
+    'instruments.studio.status': (StudioSession, False),
+    'instruments.studio.note': (StudioNote, True),
+    'instruments.studio.sustain': (StudioSustain, True),
+    'instruments.studio.volume': (StudioVolume, True),
+    'instruments.studio.parameter': (StudioParameter, True),
+    'instruments.studio.parameters': (StudioParameters, False),
+    'instruments.studio.editor': (StudioEditor, True),
+    'instruments.studio.panic': (StudioSession, True),
+    'instruments.studio.save': (SaveStudioPreset, True),
+    'instruments.studio.close': (StudioSession, True),
+    'instruments.personal.list': (StudioModel, False),
     "instruments.list": (InstrumentQuery, False),
     "instruments.models": (InstrumentModelQuery, False),
     "instruments.labels": (InstrumentLabels, False),
@@ -1473,6 +1548,22 @@ RESULT_TYPES = {
     "graph.get": dict,
     "renders.list": list[dict],
     "plugins.presets": list[dict],
+    'instruments.gallery': dict,
+    'instruments.gallery.get': dict,
+    'instruments.studio.open': dict,
+    'instruments.studio.current': dict,
+    'instruments.studio.controller': dict,
+    'instruments.studio.status': dict,
+    'instruments.studio.note': dict,
+    'instruments.studio.sustain': dict,
+    'instruments.studio.volume': dict,
+    'instruments.studio.parameter': dict,
+    'instruments.studio.parameters': dict,
+    'instruments.studio.editor': dict,
+    'instruments.studio.panic': dict,
+    'instruments.studio.save': dict,
+    'instruments.studio.close': dict,
+    'instruments.personal.list': dict,
     "instruments.list": dict,
     "instruments.models": InstrumentModels,
     "instruments.labels": dict,

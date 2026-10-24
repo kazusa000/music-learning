@@ -70,6 +70,8 @@ def create_app(settings: Settings | None = None):
         try:
             yield
         finally:
+            if service.instrument_studio is not None:
+                await asyncio.to_thread(service.instrument_studio.close)
             engine_stopping.set()
             await engine_runner
             await asyncio.to_thread(previews.close)
@@ -285,6 +287,16 @@ def create_app(settings: Settings | None = None):
         return StreamingResponse(
             stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
         )
+
+    @app.get("/v1/instrument-images/{image_id}")
+    async def instrument_image(image_id: str):
+        from .instrument_studio import image_record
+        from .instruments import resource_path
+        record = image_record(image_id)
+        if record is None:
+            raise DomainError("not_found", "找不到乐器图片", 404)
+        path = resource_path(ROOT / "resources/instruments", record["file"])
+        return FileResponse(path, headers={"Cache-Control": "private, max-age=86400", "ETag": '"' + record["sha256"] + '"'})
 
     web = settings.web_root or ROOT / "apps/web/dist"
     if web.is_dir():

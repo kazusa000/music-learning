@@ -65,6 +65,7 @@ class Service:
         self.storage = Storage(self.settings)
         self.live_playback = None
         self.instrument_previews = None
+        self.instrument_studio = None
         self.engine_broker = None
         self.engine_sync_error = None
         self.engine_workspaces = None
@@ -84,6 +85,14 @@ class Service:
             args = model.model_validate(request.arguments)
             if mutates and not request.idempotency_key:
                 raise DomainError("idempotency_required", "Writes require idempotency_key", 422)
+            if request.operation.startswith("instruments.studio."):
+                from .instrument_studio import InstrumentStudio
+                with self.live_lock:
+                    if self.instrument_studio is None:
+                        self.instrument_studio = InstrumentStudio(self)
+                result = self.instrument_studio.dispatch(request.operation, args, request.idempotency_key)
+                TypeAdapter(c.RESULT_TYPES[request.operation]).validate_python(result)
+                return {"schema_version": 1, "request_id": request.request_id, "ok": True, "result": result}
             if request.operation.startswith("engine."):
                 from .engine.controller import dispatch
 
@@ -429,6 +438,11 @@ class Service:
         return revision
 
     def _dispatch(self, db, op, args, request):
+        if op in ("instruments.gallery", "instruments.gallery.get", "instruments.personal.list"):
+            from .instrument_studio import gallery, personal
+            if op == "instruments.personal.list":
+                return {"items": personal(db, args.model_id)}
+            return gallery(self.settings, args.model_id if op.endswith(".get") else None)
         if op.startswith("storage."):
             from .retention import dispatch
 

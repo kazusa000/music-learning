@@ -5,13 +5,22 @@ using System.Runtime.InteropServices;
 using System.IO;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
+using System.Collections.Generic;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
 [assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName=".NET Framework 4.8")]
 
 sealed class StudioWindow : Form {
+    sealed class PluginPanel : Panel {
+        [DllImport("user32.dll")] static extern int SetThreadDpiHostingBehavior(int behavior);
+        protected override void CreateHandle() {
+            var previous = SetThreadDpiHostingBehavior(1);
+            try { base.CreateHandle(); } finally { SetThreadDpiHostingBehavior(previous); }
+        }
+    }
     readonly WebView2 web = new WebView2();
+    readonly Panel instrumentPanel = new PluginPanel { BackColor = Color.FromArgb(19,19,18), Visible = false };
     readonly Uri target;
     readonly string profile;
     readonly JavaScriptSerializer json = new JavaScriptSerializer();
@@ -22,6 +31,7 @@ sealed class StudioWindow : Form {
     [DllImport("user32.dll")] static extern bool AreDpiAwarenessContextsEqual(IntPtr first, IntPtr second);
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr window);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
     readonly IntPtr originalForeground = GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
@@ -36,7 +46,7 @@ sealed class StudioWindow : Form {
         AutoScaleDimensions = new SizeF(96,96); AutoScaleMode = AutoScaleMode.Dpi;
         FormBorderStyle = FormBorderStyle.None; Padding = new Padding(5);
         MinimumSize = new Size(960,640); Size = new Size(1520,980); StartPosition = FormStartPosition.CenterScreen;
-        web.Dock = DockStyle.Fill; web.DefaultBackgroundColor = BackColor; Controls.Add(web);
+        web.Dock = DockStyle.Fill; web.DefaultBackgroundColor = BackColor; Controls.Add(web); Controls.Add(instrumentPanel);
         Shown += async (s,e) => {
             try {
                 var env = await CoreWebView2Environment.CreateAsync(null, profile);
@@ -58,6 +68,7 @@ sealed class StudioWindow : Form {
                     else if (action == "maximize") WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
                     else if (action == "close") Close();
                     else if (action == "drag") { ReleaseCapture(); SendMessage(Handle,0xA1,new IntPtr(2),IntPtr.Zero); }
+                    else if (action.StartsWith("{")) HandleInstrumentSlot(action);
                 };
                 await core.AddScriptToExecuteOnDocumentCreatedAsync("Object.defineProperty(window,'mlDesktop',{value:{post:function(a){chrome.webview.postMessage(a);}},writable:false});document.addEventListener('DOMContentLoaded',function(){document.documentElement.dataset.desktop='native';});");
                 core.NavigationCompleted += async (sender,args) => {
@@ -79,6 +90,7 @@ sealed class StudioWindow : Form {
                                 if (workflow == null) throw new TimeoutException("Native window workflow did not finish");
                             }
                             var metrics = await core.ExecuteScriptAsync("JSON.stringify({dpr:devicePixelRatio,width:innerWidth,height:innerHeight,screenWidth:screen.width,screenHeight:screen.height,visualScale:visualViewport.scale})");
+                            uint foregroundPid; GetWindowThreadProcessId(GetForegroundWindow(), out foregroundPid);
                             File.WriteAllText(diagnostic,json.Serialize(new {
                                 per_monitor_v2 = AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(), new IntPtr(-4)),
                                 window_per_monitor_v2 = AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(Handle), new IntPtr(-4)),
@@ -88,7 +100,8 @@ sealed class StudioWindow : Form {
                                 os = Environment.OSVersion.VersionString,
                                 navigation_success = args.IsSuccess,
                                 workflow = workflow,
-                                foreground_unchanged = GetForegroundWindow() == originalForeground
+                                foreground_unchanged = GetForegroundWindow() == originalForeground,
+                                foreground_pid = foregroundPid, desktop_pid = System.Diagnostics.Process.GetCurrentProcess().Id
                             }));
                             using (var image = File.Create(Path.ChangeExtension(diagnostic,"png"))) await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,image);
                         } catch (Exception ex) { File.WriteAllText(diagnostic,json.Serialize(new { error = ex.ToString() })); }
@@ -103,6 +116,31 @@ sealed class StudioWindow : Form {
             }
         };
         Resize += (s,e) => PublishState();
+    }
+    void HandleInstrumentSlot(string source) {
+        string request = null;
+        try {
+            var message = json.Deserialize<Dictionary<string,object>>(source);
+            if (!message.ContainsKey("action") || Convert.ToString(message["action"]) != "instrument-slot") return;
+            request = Convert.ToString(message["request_id"]);
+            if (!Convert.ToBoolean(message["visible"])) { instrumentPanel.Hide(); return; }
+            var scale = web.DeviceDpi / 96.0 * web.ZoomFactor;
+            var x = Convert.ToDouble(message["x"]); var y = Convert.ToDouble(message["y"]);
+            var width = Convert.ToDouble(message["width"]); var height = Convert.ToDouble(message["height"]);
+            if (Double.IsNaN(x) || Double.IsNaN(y) || Double.IsInfinity(x) || Double.IsInfinity(y)
+                || Double.IsNaN(width) || Double.IsNaN(height) || width < 1 || height < 1
+                || width > 20000 || height > 20000 || x < 0 || y < 0) throw new ArgumentException("Invalid plugin area");
+            var bounds = new Rectangle(web.Left + (int)Math.Round(x * scale), web.Top + (int)Math.Round(y * scale),
+                (int)Math.Round(width * scale), (int)Math.Round(height * scale));
+            bounds.Intersect(web.Bounds);
+            if (bounds.Width < 1 || bounds.Height < 1) { instrumentPanel.Hide(); return; }
+            instrumentPanel.Bounds = bounds; instrumentPanel.Show(); instrumentPanel.BringToFront();
+            web.CoreWebView2.PostWebMessageAsJson(json.Serialize(new { type = "instrument-slot", request_id = request,
+                parent_handle = instrumentPanel.Handle.ToInt64().ToString("x"), parent_pid = System.Diagnostics.Process.GetCurrentProcess().Id, scale = scale }));
+        } catch (Exception error) {
+            instrumentPanel.Hide();
+            web.CoreWebView2.PostWebMessageAsJson(json.Serialize(new { type = "instrument-slot", request_id = request, error = error.Message }));
+        }
     }
     void UpdateMonitorMetrics() {
         var area = Screen.FromHandle(Handle).WorkingArea;

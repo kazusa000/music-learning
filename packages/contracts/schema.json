@@ -3652,6 +3652,34 @@
       "title": "NoteRef",
       "type": "object"
     },
+    "OpenInstrumentStudio": {
+      "additionalProperties": false,
+      "properties": {
+        "preset_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
+          "title": "Preset Id",
+          "type": "string"
+        },
+        "client_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Client Id",
+          "type": "string"
+        },
+        "resume_draft": {
+          "default": true,
+          "title": "Resume Draft",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "preset_id",
+        "client_id"
+      ],
+      "title": "OpenInstrumentStudio",
+      "type": "object"
+    },
     "OrganizeProject": {
       "additionalProperties": false,
       "properties": {
@@ -5472,6 +5500,56 @@
       "title": "SaveNote",
       "type": "object"
     },
+    "SaveStudioPreset": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "preset_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset Id"
+        },
+        "expected_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Version"
+        }
+      },
+      "required": [
+        "session_id",
+        "name"
+      ],
+      "title": "SaveStudioPreset",
+      "type": "object"
+    },
     "SaveVersion": {
       "additionalProperties": false,
       "properties": {
@@ -6033,6 +6111,262 @@
         "provenance"
       ],
       "title": "Stem",
+      "type": "object"
+    },
+    "StudioController": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "controller": {
+          "enum": [
+            1,
+            7,
+            10,
+            11
+          ],
+          "title": "Controller",
+          "type": "integer"
+        },
+        "value": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_id",
+        "controller",
+        "value"
+      ],
+      "title": "StudioController",
+      "type": "object"
+    },
+    "StudioEditor": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "visible": {
+          "default": true,
+          "title": "Visible",
+          "type": "boolean"
+        },
+        "parent_handle": {
+          "default": "",
+          "maxLength": 32,
+          "pattern": "^[a-fA-F0-9]*$",
+          "title": "Parent Handle",
+          "type": "string"
+        },
+        "parent_pid": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Parent Pid",
+          "type": "integer"
+        },
+        "scale": {
+          "default": 1,
+          "maximum": 4,
+          "minimum": 0.5,
+          "title": "Scale",
+          "type": "number"
+        },
+        "zoom": {
+          "default": 0,
+          "maximum": 4,
+          "minimum": 0,
+          "title": "Zoom",
+          "type": "number"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "title": "StudioEditor",
+      "type": "object"
+    },
+    "StudioModel": {
+      "additionalProperties": false,
+      "properties": {
+        "model_id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+$",
+          "title": "Model Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model_id"
+      ],
+      "title": "StudioModel",
+      "type": "object"
+    },
+    "StudioNote": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "pitch": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Pitch",
+          "type": "integer"
+        },
+        "on": {
+          "title": "On",
+          "type": "boolean"
+        },
+        "velocity": {
+          "default": 0.8,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Velocity",
+          "type": "number"
+        }
+      },
+      "required": [
+        "session_id",
+        "pitch",
+        "on"
+      ],
+      "title": "StudioNote",
+      "type": "object"
+    },
+    "StudioParameter": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "parameter_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Parameter Id",
+          "type": "string"
+        },
+        "value": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "session_id",
+        "parameter_id",
+        "value"
+      ],
+      "title": "StudioParameter",
+      "type": "object"
+    },
+    "StudioParameters": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "writable_only": {
+          "default": false,
+          "title": "Writable Only",
+          "type": "boolean"
+        },
+        "search": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Search",
+          "type": "string"
+        },
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 48,
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "title": "StudioParameters",
+      "type": "object"
+    },
+    "StudioSession": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "title": "StudioSession",
+      "type": "object"
+    },
+    "StudioSustain": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "on": {
+          "title": "On",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session_id",
+        "on"
+      ],
+      "title": "StudioSustain",
+      "type": "object"
+    },
+    "StudioVolume": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "pattern": "^[a-f0-9]{32}$",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "value": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "session_id",
+        "value"
+      ],
+      "title": "StudioVolume",
       "type": "object"
     },
     "StyleQuery": {
@@ -9420,6 +9754,134 @@
     },
     "production.query": {
       "arguments": "ProductionQuery",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.gallery": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.gallery.get": {
+      "arguments": "StudioModel",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.studio.open": {
+      "arguments": "OpenInstrumentStudio",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.studio.current": {
+      "arguments": "Empty",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.studio.controller": {
+      "arguments": "StudioController",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.studio.status": {
+      "arguments": "StudioSession",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.studio.note": {
+      "arguments": "StudioNote",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.studio.sustain": {
+      "arguments": "StudioSustain",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.studio.volume": {
+      "arguments": "StudioVolume",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.studio.parameter": {
+      "arguments": "StudioParameter",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.studio.parameters": {
+      "arguments": "StudioParameters",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": false
+    },
+    "instruments.studio.editor": {
+      "arguments": "StudioEditor",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.studio.panic": {
+      "arguments": "StudioSession",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.studio.save": {
+      "arguments": "SaveStudioPreset",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.studio.close": {
+      "arguments": "StudioSession",
+      "result": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "mutates": true
+    },
+    "instruments.personal.list": {
+      "arguments": "StudioModel",
       "result": {
         "additionalProperties": true,
         "type": "object"
