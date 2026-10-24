@@ -3,6 +3,15 @@
 
 ## 2026-10-24：失败与未完成项恢复调查
 
+本次实测收尾：新增修复、入库 11 款，Kontakt 合计 906 款，当前 906 段试听全部 ready；未完成项为 0，尚失败 86（80 Multi、5 Classic Legato、1 Flair - West）。新 canonical 汇总入口为 `runtime/kontakt-failure-recovery.local.json`，结果在维护根 `result.json`；本次各实际任务均已终态并核实原 PID/ctime/命令不再存活，未恢复旧 full-h 或原自动任务。
+
+产品发布 `a75442e63111125a6440b01e25ead202f9d2f3f4` 以原部署 af5885ab 为父，只覆盖共享 `kontakt_performance.py`，没有夹带工作区其他开发改动；原网页、桌面和 native bundle 保持同一文件指纹，未启动用户已关闭的应用。新七项 CAS 追加发布、既有目录条目逐项相等、实际完整 state 可加载；原四项 publisher 最终 existing_catalog_unchanged=true。使用产品原单一 worker/进程锁和忙盘门控完成 11 个新增短缓存，全局 warm=false；旧 895 段不重渲染。实际发布源码的 HTTP TestClient 在隔离空工程数据库验证 11 个型号、变体查询和 11 个真实 WAV GET/hash（无 mock 音源目录或缓存，未启动正式应用或正式渲染）；1 项产品接口集成检查通过。第一次测试误把 projects.list 的数组返回当分页对象，报告保留，纠正测试后通过；没有修改产品接口迁就测试。
+
+Multi 实验已有进一步定位：`multi-script-isolation-24` 在代表项 Accumulation 的临时 rack 里，仅通过公开 API 旁路 MIDI Player 后恢复声音（RMS 0.00381，peak 0.03235，无削波）；只旁路实际音源的三个未加密脚本仍为零。原 Multi 字节和正式工程不变。因此故障已收敛到 MIDI Player 处理链，尚未确定其资源/异步初始化的唯一根因。旁路实验不能等价原短句功能，未将旁路版本入库。`multi-automation-control-25` 显式调高该脚本 Dynamics/Max 参数有正确参数读回，但仍静音；不据此改出厂参数。其余四个 Classic 原始来源只读查询也都为 280 groups / 0 zones，五项共同异常已确认；普通 CSSS Cello 阳性对照 29024 zones。`mapped-validation-19` 对 Flair - West 的 ghost-key 候选仍静音，保留失败，尚须脚本真实触发映射。
+
+正式九表/head 的各阶段前后核对通过；原三 validation 文件哈希与 14 项保护文件不变。新维护报告曾因 Windows 默认 GBK 编码导致预热协调器启动前读取失败；原字节与失败日志保留，独立下一 attempt 明确读取该旧报告并以 UTF-8 输出，未启动重复 worker 或重验音频。原诊断、固定实现与失败证据均保留。下一步围绕上述三类来源/运行时原因继续，不重跑已通过 906 项。
+
+
 用户明确恢复失败与未完成项处理。独立维护根为 `runtime/maintenance/kontakt-failure-recovery-20261024`，原 full-h 及其原三个停止入口保持不变；不恢复 Ample/MODO。原 895 个通过检查点和音频不重验、不重读。
 
 `remaining-timeouts-02` 只处理原 4 个超时与 8 个未完成项：CSS 1st Violins、CSSS Cello、Celli、Cozy Pad 全部通过原严格验证及两次独立空机架恢复，已 additions-only 入库；原 8 个未完成 Multi 均完成尝试但静音。正式九表/head、原三队列和 14 个保护文件前后相同。原报告未覆盖。`runtime/kontakt-recovery-job.local.json` 和 `runtime/kontakt-recovery-publication.local.json` 定位本次独立结果，不代表旧任务恢复。
