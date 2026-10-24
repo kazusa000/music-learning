@@ -85,11 +85,18 @@ def test_cancelled_preparation_cannot_start_a_late_host(service, monkeypatch):
     assert studio.owner is None and studio.session["status"] == "closed"
 
 
-def test_curated_models_have_one_integral_image_each():
+def test_curated_models_have_integral_images_with_valid_visual_identities():
     definitions = module.gallery_definition()["instruments"]
     assert len(definitions) == len({x["model_id"] for x in definitions}) == 10
-    assert len({x["image_id"] for x in definitions}) == 10
+    image_owners = {}
     for model in definitions:
+        media = model["media"]
+        assert media["image_scope"] in {"instrument", "model"}
+        assert media["image_identity"]
+        # Generic assets may be shared; distinct special models must not be
+        # flattened into the same picture. The same identity may cross sources.
+        owner = (media["image_scope"], media["image_identity"])
+        assert image_owners.setdefault(model["image_id"], owner) == owner
         image = module.image_record(model["image_id"])
         assert image and image["author"]
         path = module.resource_path(module.ROOT / "resources/instruments", image["file"])

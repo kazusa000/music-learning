@@ -15,7 +15,9 @@
       "accent": "#c5946e",
       "media": {
         "type": "image",
-        "model_3d": null
+        "model_3d": null,
+        "image_scope": "model",
+        "image_identity": "la-custom-c7"
       }
     },
     {
@@ -32,7 +34,9 @@
       "accent": "#cbad75",
       "media": {
         "type": "image",
-        "model_3d": null
+        "model_3d": null,
+        "image_scope": "model",
+        "image_identity": "rhodes-mark-i"
       }
     },
     {
@@ -49,7 +53,9 @@
       "accent": "#b29272",
       "media": {
         "type": "image",
-        "model_3d": null
+        "model_3d": null,
+        "image_scope": "model",
+        "image_identity": "wurlitzer-200a"
       }
     },
     {
@@ -66,7 +72,9 @@
       "accent": "#a8a67d",
       "media": {
         "type": "image",
-        "model_3d": null
+        "model_3d": null,
+        "image_scope": "model",
+        "image_identity": "clavinet-c"
       }
     },
     {
@@ -83,7 +91,9 @@
       "accent": "#b98c70",
       "media": {
         "type": "image",
-        "model_3d": null
+        "model_3d": null,
+        "image_scope": "instrument",
+        "image_identity": "classical-guitar"
       }
     },
     {
@@ -100,7 +110,9 @@
       "accent": "#b3b0cb",
       "media": {
         "type": "image",
-        "model_3d": null
+        "model_3d": null,
+        "image_scope": "instrument",
+        "image_identity": "celesta"
       }
     },
     {
@@ -117,7 +129,9 @@
       "accent": "#86a8a2",
       "media": {
         "type": "image",
-        "model_3d": null
+        "model_3d": null,
+        "image_scope": "instrument",
+        "image_identity": "flute"
       }
     },
     {
@@ -134,7 +148,9 @@
       "accent": "#b08793",
       "media": {
         "type": "image",
-        "model_3d": null
+        "model_3d": null,
+        "image_scope": "instrument",
+        "image_identity": "violins"
       }
     },
     {
@@ -151,7 +167,9 @@
       "accent": "#9ba894",
       "media": {
         "type": "image",
-        "model_3d": null
+        "model_3d": null,
+        "image_scope": "instrument",
+        "image_identity": "electric-bass"
       }
     },
     {
@@ -168,7 +186,9 @@
       "accent": "#9b94bb",
       "media": {
         "type": "image",
-        "model_3d": null
+        "model_3d": null,
+        "image_scope": "instrument",
+        "image_identity": "analog-machines"
       }
     }
   ]
