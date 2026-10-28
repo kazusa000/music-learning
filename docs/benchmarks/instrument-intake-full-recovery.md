@@ -1,5 +1,7 @@
 # 新音源全量入库与共享兼容恢复
 
+> 2026-10-28 收尾：用户已授权清理部分已完成任务的大体积请求、响应、过程状态和测试 WAV。正式音源、最终结果、来源资料与检查点保留，以下是完成时的历史记录；其中过程证据路径不再保证存在，不直接恢复旧 attempt 或用缺失证据的旧队列重新发布。精确范围与保护核对见[历史过程文件清理](history-cleanup-20261028.md)。
+
 ## 2026-10-24：剩余 86 款全部恢复完成
 
 本轮维护根为 `runtime/maintenance/kontakt-remaining-86-20261024`，当前汇总入口 `runtime/kontakt-remaining-86.local.json`。80 款 Multi、1 款 Flair - West、5 款 Classic Legato 均按原发声、完整参数/状态、身份、来源及两次独立空机架恢复标准通过，additions-only 入库 86 款；Kontakt 合计 992 款，992 段当前指纹试听全部 ready，剩余失败和未完成均为 0。原有 906 款不重新渲染、不重读旧 WAV、不重验。三个实际任务均终态并核实进程退出，入口分别是 `kontakt-remaining-multi-job.local.json`、`kontakt-remaining-beat-job.local.json`、`kontakt-remaining-classic-job.local.json`；旧自动跟进仍暂停，Ample/MODO 不恢复。
