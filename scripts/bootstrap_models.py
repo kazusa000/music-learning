@@ -46,6 +46,8 @@ def main() -> None:
                 "--torch-backend",
                 "cu128",
                 "--require-hashes",
+                "--link-mode",
+                "hardlink",
             ],
             env=env,
             check=True,

@@ -21,3 +21,5 @@ uv pip compile requirements/transcription.in --python 3.11 --torch-backend cu128
 ```
 
 `reference`、`separation` 按相同 GPU 方式使用各自输入与输出文件。锁文件更新是独立依赖变更，需要检查差异；日常安装使用已提交的锁文件与 `--require-hashes`，不重新解析新版本。模型权重、登录及插件资源分别按配置准备，不包含在 Python 锁文件中。
+
+安装显式使用硬链接复用同一缓存中的包；现有环境的相同大文件可按[环境空间共享](../docs/development/environment-storage.md)独立维护。三个环境及锁文件保持分开，不通过混用依赖版本节省空间。
