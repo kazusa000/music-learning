@@ -167,7 +167,7 @@ function App() {
     } catch (e) {setError((e as Error).message);} finally {setBusy(false);setUploadProgress(null);}
   }
 
-  async function createComposition(args:{title:string;tempo:number;bars:number;beats_per_bar:number}){
+  async function createComposition(args:{title:string;tempo:number;bars:number;beats_per_bar:number;beat_unit:number}){
     setCreating(true);setError('');
     try{
       const created=await call<Project>('projects.create',{...args,kind:'composition'},undefined,true);

@@ -312,6 +312,7 @@ class SourceReference(Model):
 
 class Snapshot(Model):
     source_reference: SourceReference | None = None
+    source_duration_samples: Sample | None = None
     listening_calibration: ListeningCalibration | None = None
     schema_version: Literal[1] = 1
     sample_rate: int = Field(default=44100, ge=8000, le=192000)
@@ -333,9 +334,12 @@ class Snapshot(Model):
 
     @model_validator(mode="after")
     def references(self):
+        source_frames = self.source_duration_samples if self.source_duration_samples is not None else self.duration_samples
+        if self.source_duration_samples is not None and (not self.source_asset_id or not 0 < source_frames <= self.duration_samples):
+            raise ValueError("invalid original recording duration")
         if self.source_reference:
             from .source_reference import validate_reference
-            validate_reference(self.source_reference, self.source_asset_id, self.duration_samples)
+            validate_reference(self.source_reference, self.source_asset_id, source_frames)
         if self.listening_calibration and self.listening_calibration.source_asset_id != self.source_asset_id:
             raise ValueError("Listening calibration belongs to a different source")
         collections = [
@@ -396,7 +400,7 @@ class Snapshot(Model):
             if (
                 stem.source_asset_id != self.source_asset_id
                 or stem.sample_rate != self.sample_rate
-                or stem.duration_samples != self.duration_samples
+                or stem.duration_samples != source_frames
                 or stem.offset_samples != 0
             ):
                 raise ValueError("stem does not share the original audio time base")
@@ -547,6 +551,7 @@ class CreateProject(Model):
     tempo: float = Field(default=120, ge=20, le=300)
     bars: int = Field(default=32, ge=1, le=2048)
     beats_per_bar: int = Field(default=4, ge=1, le=16)
+    beat_unit: Literal[1, 2, 4, 8, 16, 32] = 4
 
 
 class ProjectRef(Model):
@@ -1001,6 +1006,22 @@ class SetTiming(Model):
     timing_map: TimingMap
 
 
+class SetProjectTiming(Model):
+    op: Literal["project_timing"]
+    tempo: float | None = Field(default=None, ge=20, le=300)
+    numerator: int | None = Field(default=None, ge=1, le=32)
+    denominator: Literal[1, 2, 4, 8, 16, 32] | None = None
+    reference_sample: Sample = 0
+
+    @model_validator(mode="after")
+    def complete(self):
+        if (self.numerator is None) != (self.denominator is None):
+            raise ValueError("provide both time-signature values")
+        if self.tempo is None and self.numerator is None:
+            raise ValueError("provide tempo or time signature")
+        return self
+
+
 class SetRouting(Model):
     op: Literal["routing"]
     routing: RoutingGraph
@@ -1056,6 +1077,7 @@ EditOperation = Annotated[
     PutEntity
     | DeleteEntity
     | SetTiming
+    | SetProjectTiming
     | SetRouting
     | SetTrackOrder
     | ArrangeClip

@@ -37,6 +37,7 @@ def compile_files(service, args):
         directory = (service.engine_workspaces.directory(revision["project_id"]) if service.engine_workspaces
                      else service.settings.path("engine",session_key))
         if args.view == "original":
+            duration = snapshot.get("source_duration_samples") or duration
             reference = snapshot.get("source_reference")
             if reference:
                 for track in reference["tracks"]:

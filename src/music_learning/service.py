@@ -130,7 +130,7 @@ class Service:
                 return {"schema_version": 1, "request_id": request.request_id, "ok": True, "result": result}
             hash_arguments = args.model_dump(mode="json")
             if isinstance(args, c.CreateProject):
-                for key, default in (("tempo", 120), ("bars", 32), ("beats_per_bar", 4)):
+                for key, default in (("tempo", 120), ("bars", 32), ("beats_per_bar", 4), ("beat_unit", 4)):
                     if hash_arguments[key] == default:
                         hash_arguments.pop(key)
             if isinstance(args, c.SaveNote) and args.note_id is None:
@@ -369,7 +369,8 @@ class Service:
                 audio = asset["metadata"]
                 if (
                     audio.get("sample_rate") != snapshot.sample_rate
-                    or audio.get("duration_samples") != snapshot.duration_samples
+                    or audio.get("duration_samples") != (snapshot.source_duration_samples
+                                                        if snapshot.source_duration_samples is not None else snapshot.duration_samples)
                 ):
                     raise DomainError("source_timing_mismatch", "Original source timing is immutable", 422)
         for run_id in snapshot.analysis_run_ids:
@@ -621,7 +622,8 @@ class Service:
             db.execute(insert(t.projects).values(**project))
             snapshot = c.Snapshot()
             if args.kind == "composition":
-                beats = args.bars * args.beats_per_bar
+                from fractions import Fraction
+                beats = Fraction(args.bars * args.beats_per_bar * 4, args.beat_unit)
                 duration = round(snapshot.sample_rate * beats * 60 / args.tempo)
                 provenance = c.Provenance(origin="user", source_id="composition:" + pid)
                 track = c.Track(id=c.new_id(), name="乐器 1", kind="instrument", provenance=provenance)
@@ -629,8 +631,8 @@ class Service:
                     duration_samples=duration, tracks=[track], track_order=[track.id],
                     timing_map=c.TimingMap(id=c.new_id(), sample_rate=snapshot.sample_rate,
                         anchors=[c.TimingAnchor(sample=0, beat=c.Beat(n=0)),
-                                 c.TimingAnchor(sample=duration, beat=c.Beat(n=beats))],
-                        meters=[c.Meter(beat=c.Beat(n=0), bar=1, numerator=args.beats_per_bar, denominator=4)],
+                                 c.TimingAnchor(sample=duration, beat=c.Beat.of(beats))],
+                        meters=[c.Meter(beat=c.Beat(n=0), bar=1, numerator=args.beats_per_bar, denominator=args.beat_unit)],
                         provenance=provenance))
             rev = self.commit(db, pid, None, snapshot, "user", "Create project", request.request_id)
             project["current_revision"] = rev["id"]

@@ -23,8 +23,8 @@ from music_learning.source_reference import build
 from native_host import NativeHost
 
 
-def test_composition_and_reconstruction_browser(tmp_path):
-    web = ROOT / "runtime/build/studio-web"
+def run_studio_browser(tmp_path, witness="studio-composition.mjs", prefix="studio-ui"):
+    web = ROOT / os.environ.get("MUSIC_TEST_STUDIO_WEB", "runtime/build/studio-web")
     assert (web / "index.html").is_file(), "Build the independent studio-web first"
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -66,7 +66,7 @@ def test_composition_and_reconstruction_browser(tmp_path):
         melody=[dict(sample=0,duration_samples=44100,note=60,velocity=.5)],annotations=[],raw_assets=[waveform])
     revision = invoke(service,"revisions.commit",dict(project_id=project["id"],snapshot=snapshot.model_dump(mode="json"),author="test",description="Studio source fixture"),project["current_revision"])
     # No admission, third-party sample library, full render or music model.
-    report = ROOT/"runtime/test-reports"/("studio-ui-"+str(time.time_ns()))
+    report = ROOT/"runtime/test-reports"/(prefix+"-"+str(time.time_ns()))
     report.mkdir()
     (tmp_path/"fixture.json").write_text(json.dumps(dict(port=port,token=session_token(settings),project=project,
         revision=revision,template=snapshot.plugins[0].model_dump(mode="json"),report=str(report))),encoding="utf-8")
@@ -85,7 +85,11 @@ def test_composition_and_reconstruction_browser(tmp_path):
                 if time.monotonic()>deadline:
                     raise
                 time.sleep(.1)
-        result=subprocess.run(["node",str(ROOT/"apps/web/tests/e2e/studio-composition.mjs"),str(tmp_path)],cwd=ROOT,timeout=120,capture_output=True,
+        result=subprocess.run(["node",str(ROOT/"apps/web/tests/e2e"/witness),str(tmp_path)],cwd=ROOT,timeout=120,capture_output=True,
             env=dict(os.environ,TEMP=str(tmp_path),TMP=str(tmp_path)))
         (report/"browser.log").write_bytes(result.stdout+result.stderr)
         assert result.returncode==0, (result.stdout+result.stderr).decode("utf-8",errors="replace")
+
+
+def test_composition_and_reconstruction_browser(tmp_path):
+    run_studio_browser(tmp_path)

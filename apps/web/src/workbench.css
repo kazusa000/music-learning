@@ -253,6 +253,20 @@
 .studio-toolbar .studio-stages button { min-height: 28px; padding: 5px 8px; font-size: 10px; }
 .studio-toolbar .clock { gap: 4px; white-space: nowrap; }
 .studio-toolbar .clock strong { font-size: 14px; }
+.project-timing{display:flex;align-items:center;gap:5px;position:relative;flex:none;padding-left:3px}
+.tempo-control{display:flex;align-items:center;gap:4px;height:29px;padding:0 7px;background:#222225;border:1px solid #ffffff0b;border-radius:5px}
+.tempo-control input{width:51px!important;min-width:0;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;color:#eee7dd;font:12px var(--mono);font-variant-numeric:tabular-nums;appearance:textfield}
+.tempo-control input::-webkit-inner-spin-button,.tempo-control input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.tempo-control:focus-within{border-color:#c6a077}
+.tempo-control span{font-size:8px;letter-spacing:.04em;color:#a59c94;white-space:nowrap}
+.project-timing>select{width:58px;height:29px;min-height:0;padding:0 4px!important;border:1px solid #ffffff0b!important;border-radius:5px;background:#222225!important;font:11px var(--mono);color:#ddd3c7}
+.project-timing input:disabled,.project-timing>select:disabled{opacity:.55}
+.timing-custom,.timing-error{position:absolute;top:36px;left:0;z-index:90;width:270px;display:flex;align-items:end;gap:8px;padding:12px;background:#262427;border:1px solid var(--line-strong);border-radius:7px;box-shadow:0 10px 25px #0008;font-size:10px}
+.timing-custom label{display:flex;flex-direction:column;gap:6px;color:var(--muted)}
+.timing-custom input,.timing-custom select{width:56px;padding:5px!important;font:11px var(--mono)}
+.timing-custom button{padding:6px 8px;font-size:10px}
+.timing-error{align-items:center;color:#f1b58c;line-height:1.6}
+.timing-error button{margin-left:auto;padding:2px;background:transparent}
 .studio-toolbar .play-button { width: 29px; height: 29px; }
 .studio-toolbar .icon-button { width: 25px; height: 28px; }
 .studio-toolbar .zoom-control { min-width: 145px; margin-left: auto; gap: 2px; }

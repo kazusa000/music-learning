@@ -92,6 +92,7 @@
                 "freeze": "#/$defs/FreezeTrack",
                 "patch_note": "#/$defs/PatchNote",
                 "patch_plugin": "#/$defs/PatchPlugin",
+                "project_timing": "#/$defs/SetProjectTiming",
                 "put": "#/$defs/PutEntity",
                 "routing": "#/$defs/SetRouting",
                 "timing": "#/$defs/SetTiming",
@@ -108,6 +109,9 @@
               },
               {
                 "$ref": "#/$defs/SetTiming"
+              },
+              {
+                "$ref": "#/$defs/SetProjectTiming"
               },
               {
                 "$ref": "#/$defs/SetRouting"
@@ -430,6 +434,7 @@
                 "freeze": "#/$defs/FreezeTrack",
                 "patch_note": "#/$defs/PatchNote",
                 "patch_plugin": "#/$defs/PatchPlugin",
+                "project_timing": "#/$defs/SetProjectTiming",
                 "put": "#/$defs/PutEntity",
                 "routing": "#/$defs/SetRouting",
                 "timing": "#/$defs/SetTiming",
@@ -446,6 +451,9 @@
               },
               {
                 "$ref": "#/$defs/SetTiming"
+              },
+              {
+                "$ref": "#/$defs/SetProjectTiming"
               },
               {
                 "$ref": "#/$defs/SetRouting"
@@ -1332,6 +1340,19 @@
           "maximum": 16,
           "minimum": 1,
           "title": "Beats Per Bar",
+          "type": "integer"
+        },
+        "beat_unit": {
+          "default": 4,
+          "enum": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "title": "Beat Unit",
           "type": "integer"
         }
       },
@@ -5719,6 +5740,75 @@
       "title": "SetMixer",
       "type": "object"
     },
+    "SetProjectTiming": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "project_timing",
+          "title": "Op",
+          "type": "string"
+        },
+        "tempo": {
+          "anyOf": [
+            {
+              "maximum": 300,
+              "minimum": 20,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tempo"
+        },
+        "numerator": {
+          "anyOf": [
+            {
+              "maximum": 32,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Numerator"
+        },
+        "denominator": {
+          "anyOf": [
+            {
+              "enum": [
+                1,
+                2,
+                4,
+                8,
+                16,
+                32
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Denominator"
+        },
+        "reference_sample": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Reference Sample",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op"
+      ],
+      "title": "SetProjectTiming",
+      "type": "object"
+    },
     "SetRouting": {
       "additionalProperties": false,
       "properties": {
@@ -5794,6 +5884,19 @@
             }
           ],
           "default": null
+        },
+        "source_duration_samples": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Duration Samples"
         },
         "listening_calibration": {
           "anyOf": [

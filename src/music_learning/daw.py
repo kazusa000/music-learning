@@ -32,7 +32,7 @@ def diff(before, after):
         }
     result["settings"] = {
         key: {"before": before.get(key), "after": after.get(key)}
-        for key in ("timing_map", "routing", "track_order", "frozen_tracks")
+        for key in ("timing_map", "duration_samples", "source_duration_samples", "routing", "track_order", "frozen_tracks")
         if before.get(key) != after.get(key)
     }
     return result
@@ -228,6 +228,14 @@ def apply(service, db, revision, args):
                     data["track_order"] = [track for track in data["track_order"] if track != identifier]
             else:
                 raise ValueError("cannot delete an unknown entity")
+        elif operation.op == "project_timing":
+            if (not args.scope.structural or args.scope.start_sample
+                    or args.scope.end_sample != snapshot.duration_samples
+                    or not {t.id for t in snapshot.tracks}.issubset(args.scope.track_ids)):
+                raise ValueError("project timing requires the whole project and all tracks")
+            from .project_timing import change
+
+            change(data, operation, revision["id"])
         elif operation.op == "timing":
             if (
                 not args.scope.structural
