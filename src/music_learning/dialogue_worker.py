@@ -525,7 +525,7 @@ class DialogueWorker:
                 terminal="failed",
                 error=err.as_dict()
                 if isinstance(err, DomainError)
-                else {
+                else getattr(err, "public_error", None) or {
                     "code": "provider_error",
                     "message": "Provider failed; inspect private local diagnostics",
                     "type": type(err).__name__,

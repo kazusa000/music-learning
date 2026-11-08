@@ -39,6 +39,49 @@ class RpcError(RuntimeError):
         super().__init__(error.get("message", "RPC failed"))
 
 
+class CodexLoginError(RuntimeError):
+    public_error = {"code": "needs_login", "message": "现有 Codex 登录不可用，请在 Codex 中确认登录后重试。"}
+
+    def __init__(self):
+        super().__init__(self.public_error["message"])
+
+
+class CodexRequestTimeout(TimeoutError):
+    def __init__(self, method, timeout):
+        self.method, self.timeout = method, timeout
+        self.public_error = {
+            "code": "provider_timeout",
+            "message": "AI 连接初始化超时，请重试。" if method == "initialize" else "AI 服务响应超时，请重试。",
+            "details": {"phase": method, "timeout_seconds": timeout},
+        }
+        super().__init__(f"Codex {method} timed out after {timeout:g}s")
+
+
+def existing_credentials(home):
+    """Read only the selected login; never import its configuration or history."""
+    try:
+        data = json.loads((home / "auth.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as error:
+        raise CodexLoginError() from error
+    if not isinstance(data, dict):
+        raise CodexLoginError()
+    mode = data.get("auth_mode")
+    key = data.get("OPENAI_API_KEY")
+    if mode in (None, "apikey", "apiKey") and isinstance(key, str) and key:
+        return {"type": "apiKey", "apiKey": key}
+    if mode not in (None, "chatgpt", "chatgptAuthTokens"):
+        return None
+    tokens = data.get("tokens") or {}
+    if not isinstance(tokens, dict):
+        raise CodexLoginError()
+    access, account = tokens.get("access_token"), tokens.get("account_id")
+    if isinstance(access, str) and access and isinstance(account, str) and account:
+        return {"type": "chatgptAuthTokens", "accessToken": access, "chatgptAccountId": account}
+    return None
+
+
 class CodexAppServer:
     def __init__(self, directory: Path, *, existing_login: bool = False):
         self.directory = local_fixed(directory)
@@ -52,6 +95,9 @@ class CodexAppServer:
         self.reader = None
         self.tool_calls = []
         self.owns_directory = False
+        self.auth_source = None
+        self.auth_account = None
+        self.auth_fingerprint = None
 
     def record(self, kind, **fields):
         with (self.directory / "rpc-events.jsonl").open("a", encoding="utf-8") as stream:
@@ -76,11 +122,19 @@ class CodexAppServer:
                 "HF_ACCESS_TOKEN",
             ):
                 env.pop(key)
-        auth_home = Path(env.get("CODEX_HOME", Path.home() / ".codex"))
-        if not self.existing_login:
+        credentials = None
+        if self.existing_login:
+            self.auth_source = local_fixed(Path(env.get("CODEX_HOME", Path.home() / ".codex")))
+            credentials = existing_credentials(self.auth_source)
+            # A fresh SQLite home paired with the user's CODEX_HOME triggers a
+            # full historical rollout backfill before initialize can respond.
+            # Share authentication in memory, not the user's runtime home.
+            auth_home = self.directory / "codex-home"
+            auth_home.mkdir()
+        else:
             auth_home = runtime_root() / "codex-home"
             auth_home.mkdir(exist_ok=True)
-            env["CODEX_HOME"] = str(auth_home)
+        env["CODEX_HOME"] = str(auth_home)
         options = {
             "model_provider": "openai",
             "approval_policy": "on-request",
@@ -99,6 +153,8 @@ class CodexAppServer:
             "sqlite_home": str(self.directory / "state"),
             "log_dir": str(self.directory / "logs"),
         }
+        if self.existing_login:
+            options["cli_auth_credentials_store"] = "ephemeral"
         # Disable inherited MCP servers by name without exposing their settings.
         config = auth_home / "config.toml"
         if config.exists():
@@ -141,6 +197,14 @@ class CodexAppServer:
             },
         )
         await self.send({"method": "initialized", "params": {}})
+        if credentials is not None:
+            try:
+                await self.request("account/login/start", credentials)
+            except RpcError as error:
+                raise CodexLoginError() from error
+            if credentials["type"] == "chatgptAuthTokens":
+                self.auth_account = credentials["chatgptAccountId"]
+                self.auth_fingerprint = hashlib.sha256(credentials["accessToken"].encode()).hexdigest()
         return result
 
     async def send(self, message):
@@ -155,7 +219,11 @@ class CodexAppServer:
         self.record("request", method=method, id=identifier)
         try:
             await self.send({"id": identifier, "method": method, "params": params})
-            return await asyncio.wait_for(future, timeout)
+            try:
+                return await asyncio.wait_for(future, timeout)
+            except TimeoutError as error:
+                self.record("timeout", method=method, timeout_seconds=timeout)
+                raise CodexRequestTimeout(method, timeout) from error
         finally:
             self.pending.pop(identifier, None)
 
@@ -196,7 +264,28 @@ class CodexAppServer:
     async def handle_request(self, message):
         method = message["method"]
         self.record("server_request", method=method)
-        if method == "item/tool/call" and self.handler:
+        if method == "account/chatgptAuthTokens/refresh" and self.existing_login:
+            try:
+                if self.auth_source is None or self.auth_account is None:
+                    raise CodexLoginError()
+                credentials = existing_credentials(self.auth_source)
+                previous = message.get("params", {}).get("previousAccountId")
+                if (not credentials or credentials["type"] != "chatgptAuthTokens"
+                        or credentials["chatgptAccountId"] != self.auth_account
+                        or previous not in (None, self.auth_account)):
+                    raise CodexLoginError()
+                fingerprint = hashlib.sha256(credentials["accessToken"].encode()).hexdigest()
+                if fingerprint == self.auth_fingerprint:
+                    # The desktop/CLI owns renewal. Do not rotate its refresh
+                    # token or retry the same rejected access token indefinitely.
+                    raise CodexLoginError()
+                self.auth_fingerprint = fingerprint
+                await self.send({"id": message["id"], "result": {
+                    key: credentials[key] for key in ("accessToken", "chatgptAccountId")}})
+            except CodexLoginError as error:
+                await self.send({"id": message["id"], "error": {
+                    "code": -32001, "message": str(error)}})
+        elif method == "item/tool/call" and self.handler:
             params = message["params"]
             self.tool_calls.append({"tool": params["tool"], "arguments": params["arguments"]})
             try:

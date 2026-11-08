@@ -37,6 +37,7 @@
 - [源码公开发布与许可检查](benchmarks/source-publication.md)
 - [已完成验证任务的历史清理](benchmarks/history-cleanup-20261028.md)
 - [旧副本清理与模型环境去重](benchmarks/storage-dedup-20261028.md)
+- [内置 AI 初始化超时修复](benchmarks/ai-connectivity-20261108.md)
 - [原生引擎验收摘要](benchmarks/native-engine-completion.md)与[详细记录](benchmarks/native-engine-n7.md)
 - [播放与混音操作验证](benchmarks/playback-mixer-workflow.md)
 - [AI 编辑工具验证](benchmarks/ai-edit-tools.md)

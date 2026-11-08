@@ -2,7 +2,7 @@
 import asyncio
 import threading
 import time
-from .codex import CodexAppServer
+from .codex import CodexAppServer, CodexLoginError, CodexRequestTimeout
 from .contracts import new_id
 
 _cache = {}
@@ -52,6 +52,13 @@ def models(settings, login_mode, *, refresh=False):
 
         try:
             result = asyncio.run(asyncio.wait_for(discover(), timeout=35))
+        except CodexLoginError as error:
+            from .service import DomainError
+            raise DomainError("needs_login", str(error), 409) from error
+        except CodexRequestTimeout as error:
+            from .service import DomainError
+            raise DomainError("model_catalog_unavailable", error.public_error["message"], 503,
+                              error.public_error["details"]) from error
         except (TimeoutError, ConnectionError, RuntimeError) as error:
             from .service import DomainError
             raise DomainError("model_catalog_unavailable", "读取模型列表失败，请检查登录或连接后重试。", 503) from error

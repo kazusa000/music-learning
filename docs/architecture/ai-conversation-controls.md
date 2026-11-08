@@ -1,5 +1,15 @@
 # 对话的思考强度、Codex 快速模式与保存
 
+## 2026-11-08：现有登录与运行状态隔离
+
+现有登录不再把用户的整个 `CODEX_HOME` 交给每轮进程。之前同时设置全局 home 和全新 `sqlite_home`，会在 `initialize` 完成前回填全局旧聊天记录；本次故障时已导入 527 条，回填仍为 running，30 秒后握手超时。
+
+现在每轮使用应用自己的私有运行 home，从所选 Codex home 的 `auth.json` 只读取得认证信息，通过 `account/login/start` 在进程内接入，`cli_auth_credentials_store=ephemeral` 禁止凭据落盘。ChatGPT 使用官方 `chatgptAuthTokens`，既有 API Key 使用内存登录；不继承全局历史、项目、技能或插件配置，不改全局登录文件。独立登录仍由 `scripts/codex_login.py` 管理，路径不变。
+
+ChatGPT 登录的续期仍由 Codex 管理；服务端请求刷新时应用重新读取更新后的访问凭据，校验账号相同，不消费或改写全局刷新令牌，也不无限重试同一份被拒绝的凭据。文件式登录缺失或认证不可用会返回明确登录错误。模型、思考强度、快速模式及工程工具接口不变。
+
+RPC 超时现在保留阶段和时长，并给界面返回初始化／响应超时提示，不再只留下空的 `TimeoutError` 详情。验证及实际发布见[AI 连接修复](../benchmarks/ai-connectivity-20261108.md)。协议来源：[App Server 身份认证](https://learn.chatgpt.com/docs/app-server#authentication)、[凭据存储](https://learn.chatgpt.com/docs/auth#credential-storage)。
+
 2026-10-23。两项控制放在既有输入框底部操作行，保持聊天与输入区高度；思考强度为紧凑下拉框，Codex 快速模式为有开关状态的闪电按钮。原曲、重建、从零编曲共用同一组件。
 
 ## 独立控制

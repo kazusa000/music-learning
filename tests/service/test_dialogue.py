@@ -250,3 +250,19 @@ def test_plain_reply_does_not_require_a_music_citation_or_edit(service, project)
     result = invoke(service, "dialogue.get", {"project_id": project["id"], "turn_id": turn["id"]})
     assert result["status"] == "succeeded" and not result["citations"]
     assert invoke(service, "revisions.get", {"project_id": project["id"]})["id"] == rev["id"]
+
+
+def test_startup_timeout_is_visible_and_does_not_change_music(service, project):
+    from music_learning.codex import CodexRequestTimeout
+    turn, rev, _ = queued(service, project)
+    class StartupTimeout(Provider):
+        async def start(self):
+            raise CodexRequestTimeout('initialize', 30)
+    worker = DialogueWorker(service.database, StartupTimeout)
+    asyncio.run(worker.execute(worker.claim()))
+    value = invoke(service, 'dialogue.get', {'project_id': project['id'], 'turn_id': turn['id']})
+    assert value['status'] == 'failed'
+    assert value['error']['code'] == 'provider_timeout'
+    assert value['error']['details']['phase'] == 'initialize'
+    assert '初始化' in value['error']['message']
+    assert invoke(service, 'revisions.get', {'project_id': project['id']})['id'] == rev['id']
